@@ -1,0 +1,37 @@
+{
+  "facts": [
+    {
+      "id": "d1",
+      "tenant": "t42",
+      "visibility": "tenant",
+      "region": "us-west",
+      "version_min": "2.0",
+      "os": "ubuntu",
+      "title": "Fix PDF export crash",
+      "text": "Workaround for PDF export crash on Ubuntu 22.04 in App v2.1. Update renderer library to v1.5. No PII involved.",
+      "tags": ["bug", "pdf", "ubuntu"]
+    },
+    {
+      "id": "d2",
+      "tenant": "public",
+      "visibility": "public",
+      "region": "global",
+      "version_min": "1.0",
+      "os": "any",
+      "title": "General export guide",
+      "text": "How export works in the app. Basic steps for PDF and CSV. Compatible with all versions.",
+      "tags": ["guide", "export"]
+    },
+    {
+      "id": "d3",
+      "tenant": "t42",
+      "visibility": "tenant",
+      "region": "eu-central",
+      "version_min": "2.1",
+      "os": "windows",
+      "title": "App crash troubleshooting",
+      "text": "Troubleshoot crashes on Windows. Check logs for SSN or credit card errors. Internal use only.",
+      "tags": ["crash", "debug", "windows"]
+    }
+  ]
+}

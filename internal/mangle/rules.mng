@@ -1,0 +1,48 @@
+// Basic Mangle rules for Manglekit (Datalog-like syntax)
+// Pre-processing: Normalize and filter queries/documents
+// Post-processing: Hard filters with explanations
+
+// Pre: Normalize query text
+rule normalize_query {
+  ?query <- query(?text)
+  ?normalized <- normalized_query(?lower_text)
+  :- ?lower_text = lower(?text)
+}
+
+// Pre: Visibility filter - allow public or matching tenant
+rule visibility_filter_pre {
+  ?doc <- document(?id, ?tenant, ?visibility)
+  ?allowed_doc <- allowed_document(?id)
+  :- ?visibility = "public" or ?tenant = ?user_tenant
+}
+
+// Pre: Region filter example (optional)
+rule region_filter_pre {
+  ?doc <- document(?id, ?tenant, ?visibility, ?region)
+  ?allowed_doc <- allowed_document(?id)
+  :- ?region = ?user_region
+}
+
+// Post: Hard filter for entitlement - drop if tenant mismatch
+rule entitlement_filter_post {
+  ?doc <- document(?id, ?tenant, ?visibility)
+  ?dropped_doc(?id) <- true
+  :- ?visibility = "tenant" and ?tenant != ?user_tenant
+  explain(?id, "Document dropped due to tenant entitlement mismatch")
+}
+
+// Post: PII filter example - drop if contains PII
+rule pii_filter_post {
+  ?doc <- document(?id, ?text)
+  ?dropped_doc(?id) <- true
+  :- contains(?text, "SSN") or contains(?text, "credit_card")
+  explain(?id, "Document dropped due to PII content")
+}
+
+// Post: Compatibility filter example
+rule compatibility_filter_post {
+  ?doc <- document(?id, ?version, ?os)
+  ?allowed_doc <- allowed_document(?id)
+  :- ?version >= ?user_version_min and ?os = ?user_os
+  explain(?id, "Document compatible with user environment")
+}
