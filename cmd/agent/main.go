@@ -10,6 +10,7 @@ import (
 	"github.com/firebase/genkit/go/plugins/server"
 	"gopkg.in/yaml.v3"
 	"ndduy.dev/manglekit/internal/orchestrator"
+	"ndduy.dev/manglekit/internal/rag"
 	"ndduy.dev/manglekit/internal/retrieval"
 	"ndduy.dev/manglekit/internal/types"
 )
@@ -17,6 +18,7 @@ import (
 type AppConfig struct {
 	Orchestrator orchestrator.Config `yaml:"orchestrator"`
 	LLM          types.LLMConfig     `yaml:"llm"`
+	RAG          rag.Config          `yaml:"rag"`
 }
 
 func main() {
@@ -32,9 +34,14 @@ func main() {
 	orchConfig := cfg.Orchestrator
 	orchConfig.LLM = cfg.LLM
 
+	rag, err := rag.New(ctx, g, &cfg.RAG)
+	if err != nil {
+		log.Fatalf("failed to create rag: %v", err)
+	}
+
 	retriever := retrieval.NewMock()
 
-	orch, err := orchestrator.New(ctx, orchConfig, retriever)
+	orch, err := orchestrator.New(ctx, orchConfig, retriever, rag)
 	if err != nil {
 		log.Fatalf("failed to create orchestrator: %v", err)
 	}

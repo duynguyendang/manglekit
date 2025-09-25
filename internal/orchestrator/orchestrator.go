@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"ndduy.dev/manglekit/internal/llm"
+	"ndduy.dev/manglekit/internal/rag"
 	"ndduy.dev/manglekit/internal/types"
 )
 
@@ -19,10 +20,11 @@ type Config struct {
 type orchestrator struct {
 	retriever  types.Retriever
 	llmGateway types.Gateway
+	rag        *rag.RAG
 }
 
 // New creates a new Orchestrator.
-func New(ctx context.Context, cfg Config, retriever types.Retriever) (types.Orchestrator, error) {
+func New(ctx context.Context, cfg Config, retriever types.Retriever, rag *rag.RAG) (types.Orchestrator, error) {
 	llmGateway, err := llm.New(ctx, cfg.LLM)
 	if err != nil {
 		return nil, err
@@ -31,6 +33,7 @@ func New(ctx context.Context, cfg Config, retriever types.Retriever) (types.Orch
 	return &orchestrator{
 		retriever:  retriever,
 		llmGateway: llmGateway,
+		rag:        rag,
 	}, nil
 }
 
@@ -38,10 +41,16 @@ func New(ctx context.Context, cfg Config, retriever types.Retriever) (types.Orch
 func (o *orchestrator) RunFlow(ctx context.Context, input *types.QueryInput) (*types.Response, error) {
 	// This is a simplified flow that only calls the LLM Gateway.
 	// A complete implementation would include Mangle-Pre, Retrieval, and Mangle-Post.
-	expandedQuery := &types.ExpandedQuery{NormalizedQuery: input.Query}
-	chunks, err := o.retriever.Search(ctx, expandedQuery, nil)
+	results, err := o.rag.Retrieve(ctx, input.Query)
 	if err != nil {
 		return nil, err
+	}
+
+	var chunks []*types.Chunk
+	for _, r := range results {
+		chunks = append(chunks, &types.Chunk{
+			Text: r,
+		})
 	}
 
 	return o.llmGateway.Generate(ctx, input.Query, chunks)
