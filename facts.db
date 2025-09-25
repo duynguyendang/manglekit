@@ -1,0 +1,8 @@
+# Alias relationships for query expansion
+alias("pdf", "portable document format").
+alias("export", "download").
+alias("rag", "retrieval augmented generation").
+alias("genkit", "firebase genkit").
+
+# Default filters that should always be applied
+default_filter("visibility", "public").
