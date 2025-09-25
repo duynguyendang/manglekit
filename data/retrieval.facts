@@ -1,0 +1,12 @@
+# Retrieval strategy specifics derived from Mangle expansion
+retrieval_channel("hybrid_retrieval", "bm25", "keyword").
+retrieval_channel("hybrid_retrieval", "mrl_ann", "dense").
+retrieval_parameter("hybrid_retrieval", "dense", "top_k", "vector", "128").
+retrieval_parameter("hybrid_retrieval", "keyword", "filter_type", "must_should", "terms").
+retrieval_parameter("hybrid_retrieval", "keyword", "constraint_source", "mangle", "constraints").
+
+rerank_model("fine_rerank", "mrl", "cosine", "512").
+rerank_model("fine_rerank", "mrl", "cosine", "768").
+
+synthesis_guardrail("llm_synthesis", "requires_citations").
+synthesis_guardrail("llm_synthesis", "grounding_required").

@@ -1,0 +1,29 @@
+# High-level flow definition for the answer pipeline
+flow("answer_pipeline").
+flow_stage("answer_pipeline", 1, "parse_intent_ner").
+flow_stage("answer_pipeline", 2, "mangle_pre").
+flow_stage("answer_pipeline", 3, "hybrid_retrieval").
+flow_stage("answer_pipeline", 4, "fine_rerank").
+flow_stage("answer_pipeline", 5, "llm_synthesis").
+
+stage_role("parse_intent_ner", "normalize_query").
+stage_tool("parse_intent_ner", "genkit").
+stage_output("parse_intent_ner", "intent, entities").
+
+stage_role("mangle_pre", "policy_expansion").
+stage_tool("mangle_pre", "mangle").
+stage_output("mangle_pre", "terms, entities, constraints").
+
+stage_role("hybrid_retrieval", "candidate_generation").
+stage_tool("hybrid_retrieval", "hybrid_search").
+stage_detail("hybrid_retrieval", "bm25_filter", "must_should_terms").
+stage_detail("hybrid_retrieval", "dense_ann", "mrl_128_topk").
+
+stage_role("fine_rerank", "rerank_candidates").
+stage_tool("fine_rerank", "mrl_cosine").
+stage_detail("fine_rerank", "embedding_dim", "512").
+stage_detail("fine_rerank", "embedding_dim", "768").
+
+stage_role("llm_synthesis", "compose_answer").
+stage_tool("llm_synthesis", "llm").
+stage_detail("llm_synthesis", "citations", "enabled").

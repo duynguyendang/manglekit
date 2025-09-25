@@ -1,26 +1,26 @@
 orchestrator:
   maxContextTokens: 4000
   fallbackThreshold: 0.5
+  intentParser:
+    flowName: "parse_intent_ner"
+  retrieval:
+    path: "docs"
+    hybrid:
+      bm25:
+        topK: 10
+      dense:
+        topK: 10
+  reranker:
+    topK: 5
 
 llm:
   provider: "openai"
   model: "gpt-4o-mini"
   apiKey: "${OPENAI_API_KEY}"
 
-retrieval:
-  topK: 5
-  vector:
-    model: "all-MiniLM-L6-v2"
-  keyword:
-    analyzer: "english"
-  fusion: "rrf"
-
-rag:
-  embedder:
-    model: "embedding-001"
-  retriever:
-    path: "docs"
+embedder:
+  model: "embedding-001"
 
 mangle:
   rulesFile: "rules.dlog"
-  factsFile: "facts.db"
+  factsFile: "data"

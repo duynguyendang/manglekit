@@ -1,3 +1,11 @@
+Decl query_token(Token).
+Decl expanded_query(Token, Expansion).
+Decl alias(Source, Target).
+Decl raw_query(Query).
+Decl normalized_query(Query).
+Decl query_filter(Key, Value).
+Decl default_filter(Key, Value).
+
 expanded_query(Token, Token) :- query_token(Token).
 expanded_query(Token, Expansion) :- query_token(Token), alias(Token, Expansion).
 expanded_query(Token, Alias) :- query_token(Token), alias(Alias, Token).
