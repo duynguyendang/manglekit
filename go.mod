@@ -4,14 +4,17 @@ go 1.24.1
 
 require (
 	github.com/firebase/genkit/go v1.0.4
+	github.com/google/mangle v0.3.0
 	github.com/openai/openai-go v1.8.2
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
+	bitbucket.org/creachadair/stringset v0.0.11 // indirect
 	cloud.google.com/go v0.120.0 // indirect
 	cloud.google.com/go/auth v0.16.2 // indirect
 	cloud.google.com/go/compute/metadata v0.7.0 // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -28,7 +31,6 @@ require (
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mbleigh/raymond v0.0.0-20250414171441-6b3a58ab9e0a // indirect
-	github.com/sashabaranov/go-openai v1.41.2 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
@@ -44,7 +46,9 @@ require (
 	go.opentelemetry.io/otel/metric v1.36.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.36.0 // indirect
 	go.opentelemetry.io/otel/trace v1.36.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
+	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0 // indirect
 	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.27.0 // indirect

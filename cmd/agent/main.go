@@ -9,6 +9,7 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/server"
 	"gopkg.in/yaml.v3"
+	"ndduy.dev/manglekit/internal/mangle"
 	"ndduy.dev/manglekit/internal/orchestrator"
 	"ndduy.dev/manglekit/internal/rag"
 	"ndduy.dev/manglekit/internal/retrieval"
@@ -19,6 +20,7 @@ type AppConfig struct {
 	Orchestrator orchestrator.Config `yaml:"orchestrator"`
 	LLM          types.LLMConfig     `yaml:"llm"`
 	RAG          rag.Config          `yaml:"rag"`
+	Mangle       mangle.Config       `yaml:"mangle"`
 }
 
 func main() {
@@ -33,6 +35,7 @@ func main() {
 	// Manually wire the LLM config into the orchestrator config
 	orchConfig := cfg.Orchestrator
 	orchConfig.LLM = cfg.LLM
+	orchConfig.Mangle = cfg.Mangle
 
 	rag, err := rag.New(ctx, g, &cfg.RAG)
 	if err != nil {

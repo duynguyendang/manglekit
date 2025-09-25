@@ -3,8 +3,11 @@ package orchestrator
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"ndduy.dev/manglekit/internal/llm"
+	"ndduy.dev/manglekit/internal/mangle"
 	"ndduy.dev/manglekit/internal/rag"
 	"ndduy.dev/manglekit/internal/types"
 )
@@ -14,6 +17,7 @@ type Config struct {
 	MaxContextTokens  int             `yaml:"maxContextTokens"`
 	FallbackThreshold float64         `yaml:"fallbackThreshold"`
 	LLM               types.LLMConfig `yaml:"llm"`
+	Mangle            mangle.Config   `yaml:"mangle"`
 }
 
 // orchestrator implements the types.Orchestrator interface.
@@ -21,6 +25,7 @@ type orchestrator struct {
 	retriever  types.Retriever
 	llmGateway types.Gateway
 	rag        *rag.RAG
+	processor  types.Processor
 }
 
 // New creates a new Orchestrator.
@@ -30,18 +35,32 @@ func New(ctx context.Context, cfg Config, retriever types.Retriever, rag *rag.RA
 		return nil, err
 	}
 
+	processor, err := mangle.New(ctx, cfg.Mangle)
+	if err != nil {
+		return nil, fmt.Errorf("create mangle processor: %w", err)
+	}
+
 	return &orchestrator{
 		retriever:  retriever,
 		llmGateway: llmGateway,
 		rag:        rag,
+		processor:  processor,
 	}, nil
 }
 
 // RunFlow executes the complete Sandwich pattern workflow.
 func (o *orchestrator) RunFlow(ctx context.Context, input *types.QueryInput) (*types.Response, error) {
-	// This is a simplified flow that only calls the LLM Gateway.
-	// A complete implementation would include Mangle-Pre, Retrieval, and Mangle-Post.
-	results, err := o.rag.Retrieve(ctx, input.Query)
+	expanded, err := o.processor.PreProcess(input)
+	if err != nil {
+		return nil, err
+	}
+
+	ragQuery := expanded.NormalizedQuery
+	if len(expanded.ExpansionTerms) > 0 {
+		ragQuery = strings.Join(append([]string{expanded.NormalizedQuery}, expanded.ExpansionTerms...), " ")
+	}
+
+	results, err := o.rag.Retrieve(ctx, ragQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -53,5 +72,20 @@ func (o *orchestrator) RunFlow(ctx context.Context, input *types.QueryInput) (*t
 		})
 	}
 
-	return o.llmGateway.Generate(ctx, input.Query, chunks)
+	postChunks, _ := o.processor.PostProcess(chunks, &types.Context{UserContext: input.UserContext})
+	response, err := o.llmGateway.Generate(ctx, input.Query, postChunks)
+	if err != nil {
+		return nil, err
+	}
+
+	if expanded != nil && expanded.Explanation != "" {
+		response.Explanations = append(response.Explanations, types.Explanation{
+			Type:   "mangle-pre",
+			Rule:   "expanded_query",
+			Action: "applied",
+			Reason: expanded.Explanation,
+		})
+	}
+
+	return response, nil
 }
