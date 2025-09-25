@@ -8,7 +8,6 @@ import (
 
 	"ndduy.dev/manglekit/internal/llm"
 	"ndduy.dev/manglekit/internal/mangle"
-	"ndduy.dev/manglekit/internal/rag"
 	"ndduy.dev/manglekit/internal/types"
 )
 
@@ -24,12 +23,16 @@ type Config struct {
 type orchestrator struct {
 	retriever  types.Retriever
 	llmGateway types.Gateway
-	rag        *rag.RAG
+	rag        ragRetriever
 	processor  types.Processor
 }
 
+type ragRetriever interface {
+	Retrieve(ctx context.Context, query string) ([]string, error)
+}
+
 // New creates a new Orchestrator.
-func New(ctx context.Context, cfg Config, retriever types.Retriever, rag *rag.RAG) (types.Orchestrator, error) {
+func New(ctx context.Context, cfg Config, retriever types.Retriever, rag ragRetriever) (types.Orchestrator, error) {
 	llmGateway, err := llm.New(ctx, cfg.LLM)
 	if err != nil {
 		return nil, err

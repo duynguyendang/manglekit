@@ -1,0 +1,7 @@
+# Policy defaults enforced by Mangle
+default_filter("visibility", "public").
+default_filter("tenant", "*").
+constraint_type("terms", "must").
+constraint_type("terms", "should").
+constraint_type("entities", "required").
+constraint_type("constraints", "metadata_filter").

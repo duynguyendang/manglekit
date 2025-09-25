@@ -1,0 +1,7 @@
+# Canonical names and aliases used by the flow
+alias("bm25", "best matching 25").
+alias("ann", "approximate nearest neighbor").
+alias("mrl", "multi representation learning").
+alias("llm", "large language model").
+alias("genkit", "firebase genkit").
+alias("mangle", "google mangle").
