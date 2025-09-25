@@ -18,28 +18,41 @@ import (
 
 // Config holds the configuration for the Orchestrator.
 type Config struct {
-	MaxContextTokens  int              `yaml:"maxContextTokens"`
-	FallbackThreshold float64          `yaml:"fallbackThreshold"`
-	LLM               types.LLMConfig  `yaml:"llm"`
-	Mangle            mangle.Config    `yaml:"mangle"`
-	IntentParser      genintent.Config `yaml:"intentParser"`
+	MaxContextTokens  int                   `yaml:"maxContextTokens"`
+	FallbackThreshold float64               `yaml:"fallbackThreshold"`
+	LLM               types.LLMConfig       `yaml:"llm"`
+	Mangle            mangle.Config         `yaml:"mangle"`
+	IntentParser      genintent.Config      `yaml:"intentParser"`
+	Retrieval         types.RetrievalConfig `yaml:"retrieval"`
+	Reranker          types.RerankConfig    `yaml:"reranker"`
 }
 
 // orchestrator implements the types.Orchestrator interface.
 type orchestrator struct {
-	retriever  types.Retriever
+	retriever  hybridRetriever
+	reranker   docReranker
 	llmGateway types.Gateway
-	rag        ragRetriever
 	processor  types.Processor
 	intent     types.IntentParser
+	cfg        Config
 }
 
-type ragRetriever interface {
-	Retrieve(ctx context.Context, query string) ([]string, error)
+type hybridRetriever interface {
+	Retrieve(ctx context.Context, query string, bm25Cfg types.BM25Config, denseCfg types.DenseConfig) ([]string, error)
+}
+
+type docReranker interface {
+	Rerank(ctx context.Context, query string, docs []string, cfg types.RerankConfig) ([]string, error)
 }
 
 // New creates a new Orchestrator.
-func New(ctx context.Context, g *genkit.Genkit, cfg Config, retriever types.Retriever, rag ragRetriever) (types.Orchestrator, error) {
+func New(
+	ctx context.Context,
+	g *genkit.Genkit,
+	cfg Config,
+	retriever hybridRetriever,
+	reranker docReranker,
+) (types.Orchestrator, error) {
 	if g == nil {
 		return nil, errors.New("genkit runtime is required")
 	}
@@ -61,10 +74,11 @@ func New(ctx context.Context, g *genkit.Genkit, cfg Config, retriever types.Retr
 
 	return &orchestrator{
 		retriever:  retriever,
+		reranker:   reranker,
 		llmGateway: llmGateway,
-		rag:        rag,
 		processor:  processor,
 		intent:     intentParser,
+		cfg:        cfg,
 	}, nil
 }
 
@@ -97,13 +111,20 @@ func (o *orchestrator) RunFlow(ctx context.Context, input *types.QueryInput) (*t
 	}
 	ragQuery := strings.Join(ragQueryParts, " ")
 
-	results, err := o.rag.Retrieve(ctx, ragQuery)
+	// Hybrid Retrieval
+	results, err := o.retriever.Retrieve(ctx, ragQuery, o.cfg.Retrieval.Hybrid.BM25, o.cfg.Retrieval.Hybrid.Dense)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("hybrid retrieval failed: %w", err)
+	}
+
+	// Reranking
+	rerankedDocs, err := o.reranker.Rerank(ctx, ragQuery, results, o.cfg.Reranker)
+	if err != nil {
+		return nil, fmt.Errorf("reranking failed: %w", err)
 	}
 
 	var chunks []*types.Chunk
-	for _, r := range results {
+	for _, r := range rerankedDocs {
 		chunks = append(chunks, &types.Chunk{
 			Text: r,
 		})

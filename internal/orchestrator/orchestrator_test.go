@@ -25,7 +25,7 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 		t.Fatalf("create mangle processor: %v", err)
 	}
 
-	mockRAG := &mockRAGRetriever{results: []string{
+	mockRetriever := &mockHybridRetriever{results: []string{
 		"parse_intent_ner: Genkit normalizes the query and extracts entities.",
 		"hybrid_retrieval: BM25 must/should filters combine with MRL ANN top-k.",
 	}}
@@ -45,8 +45,10 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 	orch := &orchestrator{
 		processor:  processor,
 		llmGateway: mockLLM,
-		rag:        mockRAG,
+		retriever:  mockRetriever,
+		reranker:   &mockReranker{},
 		intent:     &mockIntentParser{result: mockIntent},
+		cfg:        Config{}, // Use default config for test
 	}
 
 	input := &types.QueryInput{Query: "Explain bm25 ann pipeline"}
@@ -86,12 +88,12 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 	}
 	expectedQuery := strings.Join(expectedParts, " ")
 
-	if mockRAG.lastQuery != expectedQuery {
-		t.Fatalf("unexpected rag query. got %q want %q", mockRAG.lastQuery, expectedQuery)
+	if mockRetriever.lastQuery != expectedQuery {
+		t.Fatalf("unexpected rag query. got %q want %q", mockRetriever.lastQuery, expectedQuery)
 	}
 
-	if len(mockLLM.chunks) == 0 || mockLLM.chunks[0].Text != mockRAG.results[0] {
-		t.Fatalf("expected first chunk to match RAG context %q, got %+v", mockRAG.results[0], mockLLM.chunks)
+	if len(mockLLM.chunks) == 0 || mockLLM.chunks[0].Text != mockRetriever.results[0] {
+		t.Fatalf("expected first chunk to match RAG context %q, got %+v", mockRetriever.results[0], mockLLM.chunks)
 	}
 
 	if response.Answer != mockLLM.answer {
@@ -120,14 +122,21 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 	}
 }
 
-type mockRAGRetriever struct {
+type mockHybridRetriever struct {
 	results   []string
 	lastQuery string
 }
 
-func (m *mockRAGRetriever) Retrieve(_ context.Context, query string) ([]string, error) {
+func (m *mockHybridRetriever) Retrieve(_ context.Context, query string, _ types.BM25Config, _ types.DenseConfig) ([]string, error) {
 	m.lastQuery = query
 	return m.results, nil
+}
+
+type mockReranker struct{}
+
+func (m *mockReranker) Rerank(_ context.Context, _ string, docs []string, _ types.RerankConfig) ([]string, error) {
+	// Passthrough for testing
+	return docs, nil
 }
 
 type mockGateway struct {

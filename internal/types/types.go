@@ -78,6 +78,30 @@ type Retriever interface {
 	Search(ctx context.Context, query *ExpandedQuery, filters map[string]string) ([]*Chunk, error)
 }
 
+// BM25Config holds configuration for the BM25 retriever.
+type BM25Config struct {
+	TopK int `yaml:"topK"`
+}
+
+// DenseConfig holds configuration for the dense retriever.
+type DenseConfig struct {
+	TopK int `yaml:"topK"`
+}
+
+// RerankConfig holds configuration for the reranker.
+type RerankConfig struct {
+	TopK int `yaml:"topK"`
+}
+
+// RetrievalConfig holds configuration for the retrieval components.
+type RetrievalConfig struct {
+	Path   string `yaml:"path"`
+	Hybrid struct {
+		BM25  BM25Config  `yaml:"bm25"`
+		Dense DenseConfig `yaml:"dense"`
+	} `yaml:"hybrid"`
+}
+
 // LLMConfig holds the configuration for the LLM Gateway.
 type LLMConfig struct {
 	Provider string `json:"provider"` // "openai" or "ollama"
