@@ -3,9 +3,14 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
+	"github.com/firebase/genkit/go/genkit"
+	"ndduy.dev/manglekit/internal/genintent"
 	"ndduy.dev/manglekit/internal/llm"
 	"ndduy.dev/manglekit/internal/mangle"
 	"ndduy.dev/manglekit/internal/types"
@@ -13,10 +18,11 @@ import (
 
 // Config holds the configuration for the Orchestrator.
 type Config struct {
-	MaxContextTokens  int             `yaml:"maxContextTokens"`
-	FallbackThreshold float64         `yaml:"fallbackThreshold"`
-	LLM               types.LLMConfig `yaml:"llm"`
-	Mangle            mangle.Config   `yaml:"mangle"`
+	MaxContextTokens  int              `yaml:"maxContextTokens"`
+	FallbackThreshold float64          `yaml:"fallbackThreshold"`
+	LLM               types.LLMConfig  `yaml:"llm"`
+	Mangle            mangle.Config    `yaml:"mangle"`
+	IntentParser      genintent.Config `yaml:"intentParser"`
 }
 
 // orchestrator implements the types.Orchestrator interface.
@@ -25,6 +31,7 @@ type orchestrator struct {
 	llmGateway types.Gateway
 	rag        ragRetriever
 	processor  types.Processor
+	intent     types.IntentParser
 }
 
 type ragRetriever interface {
@@ -32,7 +39,11 @@ type ragRetriever interface {
 }
 
 // New creates a new Orchestrator.
-func New(ctx context.Context, cfg Config, retriever types.Retriever, rag ragRetriever) (types.Orchestrator, error) {
+func New(ctx context.Context, g *genkit.Genkit, cfg Config, retriever types.Retriever, rag ragRetriever) (types.Orchestrator, error) {
+	if g == nil {
+		return nil, errors.New("genkit runtime is required")
+	}
+
 	llmGateway, err := llm.New(ctx, cfg.LLM)
 	if err != nil {
 		return nil, err
@@ -43,25 +54,48 @@ func New(ctx context.Context, cfg Config, retriever types.Retriever, rag ragRetr
 		return nil, fmt.Errorf("create mangle processor: %w", err)
 	}
 
+	intentParser, err := genintent.New(g, cfg.IntentParser)
+	if err != nil {
+		return nil, fmt.Errorf("create intent parser: %w", err)
+	}
+
 	return &orchestrator{
 		retriever:  retriever,
 		llmGateway: llmGateway,
 		rag:        rag,
 		processor:  processor,
+		intent:     intentParser,
 	}, nil
 }
 
 // RunFlow executes the complete Sandwich pattern workflow.
 func (o *orchestrator) RunFlow(ctx context.Context, input *types.QueryInput) (*types.Response, error) {
+	intentResult, err := o.intent.Parse(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("parse intent: %w", err)
+	}
+	input.Intent = intentResult
+
 	expanded, err := o.processor.PreProcess(input)
 	if err != nil {
 		return nil, err
 	}
 
-	ragQuery := expanded.NormalizedQuery
+	ragQueryParts := []string{expanded.NormalizedQuery}
 	if len(expanded.ExpansionTerms) > 0 {
-		ragQuery = strings.Join(append([]string{expanded.NormalizedQuery}, expanded.ExpansionTerms...), " ")
+		ragQueryParts = append(ragQueryParts, expanded.ExpansionTerms...)
 	}
+	if intentResult != nil {
+		keys := make([]string, 0, len(intentResult.Entities))
+		for key := range intentResult.Entities {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			ragQueryParts = append(ragQueryParts, intentResult.Entities[key]...)
+		}
+	}
+	ragQuery := strings.Join(ragQueryParts, " ")
 
 	results, err := o.rag.Retrieve(ctx, ragQuery)
 	if err != nil {
@@ -79,6 +113,23 @@ func (o *orchestrator) RunFlow(ctx context.Context, input *types.QueryInput) (*t
 	response, err := o.llmGateway.Generate(ctx, input.Query, postChunks)
 	if err != nil {
 		return nil, err
+	}
+
+	if intentResult != nil {
+		exp := types.Explanation{
+			Type:      "intent",
+			Rule:      "genkit-intent",
+			Action:    intentResult.Intent,
+			Reason:    intentResult.Explanation,
+			Timestamp: time.Now(),
+		}
+		response.Explanations = append(response.Explanations, exp)
+		if response.Metadata == nil {
+			response.Metadata = map[string]any{}
+		}
+		if meta, ok := response.Metadata.(map[string]any); ok {
+			meta["intent"] = intentResult
+		}
 	}
 
 	if expanded != nil && expanded.Explanation != "" {

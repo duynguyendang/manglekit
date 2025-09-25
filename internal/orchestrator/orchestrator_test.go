@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -31,10 +32,21 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 
 	mockLLM := &mockGateway{answer: "Mock answer with citations."}
 
+	mockIntent := &types.IntentResult{
+		Intent:     "question",
+		Confidence: 0.9,
+		Entities: map[string][]string{
+			"topic":    {"bm25"},
+			"artifact": {"pdf"},
+		},
+		Explanation: "detected informational question",
+	}
+
 	orch := &orchestrator{
 		processor:  processor,
 		llmGateway: mockLLM,
 		rag:        mockRAG,
+		intent:     &mockIntentParser{result: mockIntent},
 	}
 
 	input := &types.QueryInput{Query: "Explain bm25 ann pipeline"}
@@ -60,10 +72,19 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 		t.Fatalf("RunFlow error: %v", err)
 	}
 
-	expectedQuery := expanded.NormalizedQuery
+	expectedParts := []string{expanded.NormalizedQuery}
 	if len(expanded.ExpansionTerms) > 0 {
-		expectedQuery = expectedQuery + " " + strings.Join(expanded.ExpansionTerms, " ")
+		expectedParts = append(expectedParts, expanded.ExpansionTerms...)
 	}
+	keys := make([]string, 0, len(mockIntent.Entities))
+	for key := range mockIntent.Entities {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		expectedParts = append(expectedParts, mockIntent.Entities[key]...)
+	}
+	expectedQuery := strings.Join(expectedParts, " ")
 
 	if mockRAG.lastQuery != expectedQuery {
 		t.Fatalf("unexpected rag query. got %q want %q", mockRAG.lastQuery, expectedQuery)
@@ -77,13 +98,25 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 		t.Fatalf("unexpected answer: got %q want %q", response.Answer, mockLLM.answer)
 	}
 
-	if len(response.Explanations) == 0 {
-		t.Fatalf("expected mangle explanation to be included")
+	if len(response.Explanations) < 2 {
+		t.Fatalf("expected intent and mangle explanations to be included")
 	}
 
-	explanation := response.Explanations[0]
+	if response.Explanations[0].Type != "intent" {
+		t.Fatalf("expected intent explanation first, got %+v", response.Explanations[0])
+	}
+
+	explanation := response.Explanations[1]
 	if explanation.Type != "mangle-pre" || explanation.Rule != "expanded_query" {
 		t.Fatalf("unexpected explanation metadata: %+v", explanation)
+	}
+
+	meta, ok := response.Metadata.(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata map, got %T", response.Metadata)
+	}
+	if _, ok := meta["intent"]; !ok {
+		t.Fatalf("intent metadata missing: %+v", meta)
 	}
 }
 
@@ -113,4 +146,16 @@ func (m *mockGateway) Generate(_ context.Context, prompt string, chunks []*types
 			"chunkCount": len(chunks),
 		},
 	}, nil
+}
+
+type mockIntentParser struct {
+	result *types.IntentResult
+	err    error
+}
+
+func (m *mockIntentParser) Parse(_ context.Context, _ *types.QueryInput) (*types.IntentResult, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.result, nil
 }
