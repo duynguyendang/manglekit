@@ -3,8 +3,11 @@ package mangle
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -143,15 +146,120 @@ func loadProgram(path string) (*analysis.ProgramInfo, []analysis.Nodeset, map[as
 func loadFacts(path string) (factstore.SimpleInMemoryStore, error) {
 	store := factstore.NewSimpleInMemoryStore()
 
-	file, err := os.Open(path)
+	files, err := resolveFactFiles(path)
 	if err != nil {
 		return store, err
+	}
+	if len(files) == 0 {
+		return store, fmt.Errorf("no fact files found in %q", path)
+	}
+
+	for _, file := range files {
+		if err := loadFactsFromFile(store, file); err != nil {
+			return store, err
+		}
+	}
+
+	return store, nil
+}
+
+func resolveFactFiles(path string) ([]string, error) {
+	info, err := os.Stat(path)
+	switch {
+	case err == nil:
+		if info.IsDir() {
+			return collectFactFiles(path)
+		}
+		return []string{path}, nil
+	case errors.Is(err, fs.ErrNotExist):
+		if hasMeta(path) {
+			matches, globErr := filepath.Glob(path)
+			if globErr != nil {
+				return nil, globErr
+			}
+			if len(matches) == 0 {
+				return nil, fmt.Errorf("no fact files matched %q", path)
+			}
+			var files []string
+			for _, match := range matches {
+				resolved, err := resolveFactFiles(match)
+				if err != nil {
+					return nil, err
+				}
+				files = append(files, resolved...)
+			}
+			sort.Strings(files)
+			return files, nil
+		}
+		return nil, err
+	default:
+		return nil, err
+	}
+}
+
+func collectFactFiles(root string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !isFactFile(d.Name()) {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func hasMeta(path string) bool {
+	return strings.ContainsAny(path, "*?[")
+}
+
+var factFileExtensions = map[string]struct{}{
+	".db":    {},
+	".data":  {},
+	".dlog":  {},
+	".dl":    {},
+	".edb":   {},
+	".fact":  {},
+	".facts": {},
+	".txt":   {},
+}
+
+func isFactFile(name string) bool {
+	if strings.HasPrefix(name, ".") {
+		return false
+	}
+	ext := strings.ToLower(filepath.Ext(name))
+	if _, ok := factFileExtensions[ext]; ok {
+		return true
+	}
+	if ext == "" && strings.Contains(strings.ToLower(name), "fact") {
+		return true
+	}
+	return false
+}
+
+func loadFactsFromFile(store factstore.SimpleInMemoryStore, path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
 	}
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
 	scanner.Split(bufio.ScanLines)
+	lineNum := 0
 	for scanner.Scan() {
+		lineNum++
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
@@ -161,15 +269,14 @@ func loadFacts(path string) (factstore.SimpleInMemoryStore, error) {
 		}
 		atom, err := parse.Atom(line)
 		if err != nil {
-			return store, fmt.Errorf("parse fact %q: %w", line, err)
+			return fmt.Errorf("parse fact %q (line %d in %s): %w", line, lineNum, path, err)
 		}
 		store.Add(atom)
 	}
 	if err := scanner.Err(); err != nil {
-		return store, err
+		return fmt.Errorf("read facts file %s: %w", path, err)
 	}
-
-	return store, nil
+	return nil
 }
 
 func evaluate(programInfo *analysis.ProgramInfo, strata []analysis.Nodeset, predToStratum map[ast.PredicateSym]int, store factstore.FactStore) error {
