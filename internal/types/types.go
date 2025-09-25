@@ -69,6 +69,13 @@ type Retriever interface {
 	Search(ctx context.Context, query *ExpandedQuery, filters map[string]string) ([]*Chunk, error)
 }
 
+// LLMConfig holds the configuration for the LLM Gateway.
+type LLMConfig struct {
+	Provider string `json:"provider"` // "openai" or "ollama"
+	Model    string `json:"model"`
+	APIKey   string `json:"apiKey,omitempty"`
+}
+
 // Gateway interface defines the LLM operations.
 type Gateway interface {
 	// Generate creates a response using the provided context

@@ -9,6 +9,15 @@ replace ndduy.dev/manglekit/internal/generator => ./internal/generator
 require github.com/sashabaranov/go-openai v1.41.2
 
 require (
+	github.com/openai/openai-go v1.8.2 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
+	github.com/yukinagae/genkit-go-plugins v0.2.2 // indirect
+)
+
+require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/firebase/genkit/go v1.0.4

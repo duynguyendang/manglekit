@@ -3,10 +3,9 @@ orchestrator:
   fallbackThreshold: 0.5
 
 llm:
-  provider: "mock"  # or "openai"
+  provider: "openai"
   model: "gpt-4o-mini"
-  apiKey: "${LLM_API_KEY}"
-  maxTokens: 500
+  apiKey: "${OPENAI_API_KEY}"
 
 retrieval:
   topK: 5
