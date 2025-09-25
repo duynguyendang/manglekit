@@ -1,0 +1,10 @@
+# Language-specific defaults for query processing
+stopword("the").
+stopword("a").
+stopword("an").
+stopword("of").
+stopword("and").
+stopword("or").
+stopword("to").
+stopword("for").
+stopword("in").

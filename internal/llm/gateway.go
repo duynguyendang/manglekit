@@ -4,6 +4,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/firebase/genkit/go/ai"
@@ -72,14 +73,20 @@ func (g *gateway) Generate(ctx context.Context, prompt string, chunks []*types.C
 // buildPrompt constructs the final prompt from a template, user query, and context chunks.
 func buildPrompt(userPrompt string, chunks []*types.Chunk) string {
 	var contextBuilder strings.Builder
-	for _, chunk := range chunks {
-		contextBuilder.WriteString(fmt.Sprintf("- %s\n", chunk.Text))
+	for i, chunk := range chunks {
+		title := chunk.Title
+		if title == "" {
+			title = chunk.DocID
+		}
+		contextBuilder.WriteString(fmt.Sprintf("[%d] DocID: %s | Title: %s | Score: %.3f\n", i+1, chunk.DocID, title, chunk.Score))
+		contextBuilder.WriteString(chunk.Text)
+		contextBuilder.WriteString("\n\n")
 	}
 
 	// Simple prompt template
 	return fmt.Sprintf(
-		"Answer the following question based on the provided context:\n\n"+
-			"Context:\n%s\n\n"+
+		"Answer the following question based only on the provided context. Use the numeric citations in brackets (e.g. [1]) to attribute statements.\n\n"+
+			"Context:\n%s\n"+
 			"Question: %s\n\n"+
 			"Answer:",
 		contextBuilder.String(),
@@ -89,14 +96,30 @@ func buildPrompt(userPrompt string, chunks []*types.Chunk) string {
 
 // extractCitations extracts document IDs from chunks to be used as citations.
 func extractCitations(chunks []*types.Chunk) []string {
-	citationSet := make(map[string]struct{})
+	type info struct {
+		Title string
+		Score float64
+	}
+	citationSet := make(map[string]info)
 	for _, chunk := range chunks {
-		citationSet[chunk.DocID] = struct{}{}
+		docID := chunk.DocID
+		if docID == "" {
+			docID = chunk.ID
+		}
+		title := chunk.Title
+		if title == "" {
+			title = docID
+		}
+		existing, ok := citationSet[docID]
+		if !ok || chunk.Score > existing.Score {
+			citationSet[docID] = info{Title: title, Score: chunk.Score}
+		}
 	}
 
 	citations := make([]string, 0, len(citationSet))
-	for docID := range citationSet {
-		citations = append(citations, docID)
+	for docID, meta := range citationSet {
+		citations = append(citations, fmt.Sprintf("%s (%s, score=%.2f)", docID, meta.Title, meta.Score))
 	}
+	sort.Strings(citations)
 	return citations
 }

@@ -10,18 +10,21 @@ llm:
   apiKey: "${OPENAI_API_KEY}"
 
 retrieval:
-  topK: 5
-  vector:
-    model: "all-MiniLM-L6-v2"
-  keyword:
-    analyzer: "english"
-  fusion: "rrf"
-
-rag:
-  embedder:
-    model: "embedding-001"
-  retriever:
+  corpus:
     path: "docs"
+    chunkSize: 220
+    chunkOverlap: 40
+  hybrid:
+    bm25:
+      must: 4
+      should: 6
+    dense:
+      topK: 20
+      dimensions: 128
+  rerank:
+    mrl:
+      topK: 8
+      dimensions: [512, 768]
 
 mangle:
   rulesFile: "rules.dlog"

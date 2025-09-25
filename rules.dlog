@@ -5,9 +5,24 @@ Decl raw_query(Query).
 Decl normalized_query(Query).
 Decl query_filter(Key, Value).
 Decl default_filter(Key, Value).
+Decl normalized_term(Term).
+Decl query_constraint(Type, Key, Value).
+Decl term_constraint(Bucket, Term).
+Decl input_entity(Type, Value).
+Decl query_entity(Type, Value).
+Decl stopword(Token).
 
 expanded_query(Token, Token) :- query_token(Token).
 expanded_query(Token, Expansion) :- query_token(Token), alias(Token, Expansion).
 expanded_query(Token, Alias) :- query_token(Token), alias(Alias, Token).
 
 query_filter(Key, Value) :- default_filter(Key, Value).
+
+normalized_term(Token) :- query_token(Token).
+normalized_term(Expansion) :- expanded_query(_, Expansion).
+
+term_constraint("must", Term) :- query_token(Term).
+term_constraint("should", Term) :- expanded_query(_, Term).
+
+query_constraint("metadata", Key, Value) :- query_filter(Key, Value).
+query_entity(Type, Value) :- input_entity(Type, Value).

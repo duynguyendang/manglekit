@@ -16,16 +16,41 @@ type QueryInput struct {
 
 // ExpandedQuery represents the processed query after Mangle-Pre processing.
 type ExpandedQuery struct {
-	NormalizedQuery string            `json:"normalized_query"`
-	ExpansionTerms  []string          `json:"expansion_terms,omitempty"`
-	Filters         map[string]string `json:"filters,omitempty"`
-	Explanation     string            `json:"explanation,omitempty"`
+	NormalizedQuery string              `json:"normalized_query"`
+	NormalizedTerms []string            `json:"normalized_terms,omitempty"`
+	ExpansionTerms  []string            `json:"expansion_terms,omitempty"`
+	Entities        map[string][]string `json:"entities,omitempty"`
+	Filters         map[string]string   `json:"filters,omitempty"`
+	Constraints     ConstraintSet       `json:"constraints"`
+	Explanation     string              `json:"explanation,omitempty"`
+}
+
+// ConstraintSet captures the structured constraint objects emitted by Mangle.
+type ConstraintSet struct {
+	Terms      TermConstraints      `json:"terms"`
+	Visibility string               `json:"visibility,omitempty"`
+	Metadata   []MetadataConstraint `json:"metadata,omitempty"`
+}
+
+// TermConstraints groups the must and should term buckets.
+type TermConstraints struct {
+	Must   []string `json:"must,omitempty"`
+	Should []string `json:"should,omitempty"`
+}
+
+// MetadataConstraint represents a structured filter to apply against chunk metadata.
+type MetadataConstraint struct {
+	Field    string   `json:"field"`
+	Operator string   `json:"operator"`
+	Values   []string `json:"values"`
+	Source   string   `json:"source,omitempty"`
 }
 
 // Chunk represents a document chunk with metadata and scoring.
 type Chunk struct {
 	ID        string                 `json:"id"`
 	DocID     string                 `json:"doc_id"`
+	Title     string                 `json:"title,omitempty"`
 	Text      string                 `json:"text"`
 	Snippet   string                 `json:"snippet,omitempty"`
 	Embedding []float64              `json:"embedding,omitempty"`
@@ -36,6 +61,7 @@ type Chunk struct {
 // Context represents user and system context for processing.
 type Context struct {
 	UserContext map[string]interface{} `json:"user_context,omitempty"`
+	Constraints ConstraintSet          `json:"constraints"`
 }
 
 // Explanation represents why a document was processed in a certain way.
@@ -76,6 +102,11 @@ type Processor interface {
 type Retriever interface {
 	// Search performs hybrid search with metadata filtering
 	Search(ctx context.Context, query *ExpandedQuery, filters map[string]string) ([]*Chunk, error)
+}
+
+// Reranker defines the fine ranking stage that reorders hybrid results.
+type Reranker interface {
+	Rerank(ctx context.Context, query *ExpandedQuery, candidates []*Chunk) ([]*Chunk, []Explanation, error)
 }
 
 // LLMConfig holds the configuration for the LLM Gateway.

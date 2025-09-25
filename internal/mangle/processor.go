@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
+	"unicode"
 
 	"github.com/google/mangle/analysis"
 	"github.com/google/mangle/ast"
@@ -82,6 +84,14 @@ func (p *processor) PreProcess(input *types.QueryInput) (*types.ExpandedQuery, e
 	workingStore.Add(ast.NewAtom("raw_query", ast.String(input.Query)))
 	workingStore.Add(ast.NewAtom("normalized_query", ast.String(normalized)))
 
+	if input != nil && input.Intent != nil {
+		for key, values := range input.Intent.Entities {
+			for _, value := range values {
+				workingStore.Add(ast.NewAtom("input_entity", ast.String(key), ast.String(strings.ToLower(value))))
+			}
+		}
+	}
+
 	if err := evaluate(p.programInfo, p.strata, p.predToStratum, workingStore); err != nil {
 		return nil, fmt.Errorf("evaluate query program: %w", err)
 	}
@@ -95,23 +105,189 @@ func (p *processor) PreProcess(input *types.QueryInput) (*types.ExpandedQuery, e
 		return nil, fmt.Errorf("collect filters: %w", err)
 	}
 
+	normalizedTerms, err := collectStrings(workingStore, "normalized_term", 1)
+	if err != nil {
+		return nil, fmt.Errorf("collect normalized terms: %w", err)
+	}
+
+	stopwords, err := collectStopwords(workingStore, "stopword")
+	if err != nil {
+		return nil, fmt.Errorf("collect stopwords: %w", err)
+	}
+
+	normalizedTerms = filterStopwords(normalizedTerms, stopwords)
+
+	mustTerms, shouldTerms, err := collectTermBuckets(workingStore, "term_constraint")
+	if err != nil {
+		return nil, fmt.Errorf("collect term constraints: %w", err)
+	}
+
+	mustTerms = dedupeStrings(filterStopwords(mustTerms, stopwords))
+	shouldTerms = dedupeStrings(filterStopwords(shouldTerms, stopwords))
+	shouldTerms = differenceStrings(shouldTerms, mustTerms)
+
+	entities, err := collectEntities(workingStore, "query_entity")
+	if err != nil {
+		return nil, fmt.Errorf("collect entities: %w", err)
+	}
+
+	metadataConstraints, err := collectConstraints(workingStore, "query_constraint")
+	if err != nil {
+		return nil, fmt.Errorf("collect metadata constraints: %w", err)
+	}
+
 	explanation := "mangle expansions applied"
 	if len(expansions) == 0 {
 		explanation = "no mangle expansions found"
 	}
 
+	constraints := types.ConstraintSet{
+		Terms: types.TermConstraints{
+			Must:   mustTerms,
+			Should: shouldTerms,
+		},
+		Metadata: metadataConstraints,
+	}
+	if visibility, ok := filters["visibility"]; ok {
+		constraints.Visibility = visibility
+	}
+
 	return &types.ExpandedQuery{
 		NormalizedQuery: normalized,
+		NormalizedTerms: normalizedTerms,
 		ExpansionTerms:  expansions,
+		Entities:        entities,
 		Filters:         filters,
+		Constraints:     constraints,
 		Explanation:     explanation,
 	}, nil
 }
 
-// PostProcess currently returns the chunks unchanged. It could be extended to
-// leverage Mangle rules for policy enforcement or redaction.
+// PostProcess enforces policy constraints on the retrieved chunks.
 func (p *processor) PostProcess(chunks []*types.Chunk, ctx *types.Context) ([]*types.Chunk, *[]types.Explanation) {
-	return chunks, nil
+	if len(chunks) == 0 {
+		return nil, nil
+	}
+
+	var (
+		filtered     []*types.Chunk
+		explanations []types.Explanation
+	)
+
+	constraints := types.ConstraintSet{}
+	if ctx != nil {
+		constraints = ctx.Constraints
+	}
+
+	now := time.Now()
+	userTenant := ""
+	if ctx != nil && ctx.UserContext != nil {
+		if tenant, ok := ctx.UserContext["tenant"].(string); ok {
+			userTenant = strings.ToLower(strings.TrimSpace(tenant))
+		}
+	}
+
+	for _, chunk := range chunks {
+		if chunk == nil {
+			continue
+		}
+		if chunk.Metadata == nil {
+			chunk.Metadata = map[string]any{}
+		}
+
+		visibility := strings.ToLower(asString(chunk.Metadata["visibility"]))
+		if visibility == "" {
+			visibility = "public"
+		}
+
+		if constraints.Visibility != "" && constraints.Visibility != "*" && visibility != constraints.Visibility {
+			explanations = append(explanations, types.Explanation{
+				Type:      "mangle-post",
+				Rule:      "visibility_filter",
+				Action:    "dropped",
+				Reason:    fmt.Sprintf("requires visibility=%s but chunk visibility=%s", constraints.Visibility, visibility),
+				Timestamp: now,
+			})
+			continue
+		}
+
+		chunkTenant := strings.ToLower(asString(chunk.Metadata["tenant"]))
+		if chunkTenant == "" {
+			chunkTenant = "*"
+		}
+
+		if userTenant != "" && chunkTenant != "*" && chunkTenant != userTenant {
+			explanations = append(explanations, types.Explanation{
+				Type:      "mangle-post",
+				Rule:      "tenant_filter",
+				Action:    "dropped",
+				Reason:    fmt.Sprintf("chunk tenant=%s does not match user tenant=%s", chunkTenant, userTenant),
+				Timestamp: now,
+			})
+			continue
+		}
+
+		metadataRejected := false
+		for _, c := range constraints.Metadata {
+			if c.Field == "" {
+				continue
+			}
+			chunkVal := strings.ToLower(asString(chunk.Metadata[c.Field]))
+			if chunkVal == "" {
+				metadataRejected = true
+				explanations = append(explanations, types.Explanation{
+					Type:      "mangle-post",
+					Rule:      "metadata_filter",
+					Action:    "dropped",
+					Reason:    fmt.Sprintf("missing required metadata field %s", c.Field),
+					Timestamp: now,
+				})
+				break
+			}
+			match := false
+			for _, v := range c.Values {
+				if strings.EqualFold(chunkVal, v) || v == "*" {
+					match = true
+					break
+				}
+			}
+			if !match {
+				metadataRejected = true
+				explanations = append(explanations, types.Explanation{
+					Type:      "mangle-post",
+					Rule:      "metadata_filter",
+					Action:    "dropped",
+					Reason:    fmt.Sprintf("metadata %s=%s rejected", c.Field, chunkVal),
+					Timestamp: now,
+				})
+				break
+			}
+		}
+		if metadataRejected {
+			continue
+		}
+
+		if redact, ok := chunk.Metadata["redact"].(bool); ok && redact {
+			redacted := redactChunk(chunk.Text)
+			if redacted != chunk.Text {
+				explanations = append(explanations, types.Explanation{
+					Type:      "mangle-post",
+					Rule:      "redaction",
+					Action:    "modified",
+					Reason:    fmt.Sprintf("sensitive content redacted from chunk %s", chunk.ID),
+					Timestamp: now,
+				})
+				chunk.Text = redacted
+			}
+		}
+
+		filtered = append(filtered, chunk)
+	}
+
+	if len(explanations) == 0 {
+		return filtered, nil
+	}
+	return filtered, &explanations
 }
 
 func loadProgram(path string) (*analysis.ProgramInfo, []analysis.Nodeset, map[ast.PredicateSym]int, error) {
@@ -351,6 +527,263 @@ func collectKeyValue(store factstore.ReadOnlyFactStore, predicate string) (map[s
 		return nil, err
 	}
 	return filters, nil
+}
+
+func collectTermBuckets(store factstore.ReadOnlyFactStore, predicate string) (must []string, should []string, err error) {
+	pred := ast.PredicateSym{Symbol: predicate, Arity: 2}
+	err = store.GetFacts(ast.NewQuery(pred), func(atom ast.Atom) error {
+		if len(atom.Args) != 2 {
+			return nil
+		}
+		bucketConst, ok := atom.Args[0].(ast.Constant)
+		if !ok {
+			return nil
+		}
+		termConst, ok := atom.Args[1].(ast.Constant)
+		if !ok {
+			return nil
+		}
+		bucket, err := constantToString(bucketConst)
+		if err != nil {
+			return nil
+		}
+		term, err := constantToString(termConst)
+		if err != nil {
+			return nil
+		}
+		switch strings.ToLower(bucket) {
+		case "must":
+			must = append(must, term)
+		case "should":
+			should = append(should, term)
+		}
+		return nil
+	})
+	return must, should, err
+}
+
+func collectEntities(store factstore.ReadOnlyFactStore, predicate string) (map[string][]string, error) {
+	pred := ast.PredicateSym{Symbol: predicate, Arity: 2}
+	entities := make(map[string]map[string]struct{})
+	err := store.GetFacts(ast.NewQuery(pred), func(atom ast.Atom) error {
+		if len(atom.Args) != 2 {
+			return nil
+		}
+		keyConst, ok := atom.Args[0].(ast.Constant)
+		if !ok {
+			return nil
+		}
+		valConst, ok := atom.Args[1].(ast.Constant)
+		if !ok {
+			return nil
+		}
+		key, err := constantToString(keyConst)
+		if err != nil {
+			return nil
+		}
+		value, err := constantToString(valConst)
+		if err != nil {
+			return nil
+		}
+		bucket, ok := entities[key]
+		if !ok {
+			bucket = make(map[string]struct{})
+			entities[key] = bucket
+		}
+		bucket[value] = struct{}{}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]string, len(entities))
+	for key, vals := range entities {
+		var list []string
+		for v := range vals {
+			list = append(list, v)
+		}
+		sort.Strings(list)
+		result[key] = list
+	}
+	return result, nil
+}
+
+func collectConstraints(store factstore.ReadOnlyFactStore, predicate string) ([]types.MetadataConstraint, error) {
+	pred := ast.PredicateSym{Symbol: predicate, Arity: 3}
+	constraints := make(map[string]*types.MetadataConstraint)
+	err := store.GetFacts(ast.NewQuery(pred), func(atom ast.Atom) error {
+		if len(atom.Args) != 3 {
+			return nil
+		}
+		typeConst, ok := atom.Args[0].(ast.Constant)
+		if !ok {
+			return nil
+		}
+		fieldConst, ok := atom.Args[1].(ast.Constant)
+		if !ok {
+			return nil
+		}
+		valueConst, ok := atom.Args[2].(ast.Constant)
+		if !ok {
+			return nil
+		}
+		constraintType, err := constantToString(typeConst)
+		if err != nil {
+			return nil
+		}
+		if strings.ToLower(constraintType) != "metadata" {
+			return nil
+		}
+		field, err := constantToString(fieldConst)
+		if err != nil {
+			return nil
+		}
+		value, err := constantToString(valueConst)
+		if err != nil {
+			return nil
+		}
+		key := strings.ToLower(field)
+		constraint, ok := constraints[key]
+		if !ok {
+			constraint = &types.MetadataConstraint{
+				Field:    key,
+				Operator: "eq",
+				Source:   "mangle",
+			}
+			constraints[key] = constraint
+		}
+		constraint.Values = append(constraint.Values, strings.ToLower(value))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]types.MetadataConstraint, 0, len(constraints))
+	for _, c := range constraints {
+		c.Values = dedupeStrings(c.Values)
+		out = append(out, *c)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Field < out[j].Field
+	})
+	return out, nil
+}
+
+func collectStopwords(store factstore.ReadOnlyFactStore, predicate string) (map[string]struct{}, error) {
+	pred := ast.PredicateSym{Symbol: predicate, Arity: 1}
+	stopwords := make(map[string]struct{})
+	err := store.GetFacts(ast.NewQuery(pred), func(atom ast.Atom) error {
+		if len(atom.Args) != 1 {
+			return nil
+		}
+		constVal, ok := atom.Args[0].(ast.Constant)
+		if !ok {
+			return nil
+		}
+		value, err := constantToString(constVal)
+		if err != nil {
+			return nil
+		}
+		stopwords[strings.ToLower(value)] = struct{}{}
+		return nil
+	})
+	return stopwords, err
+}
+
+func filterStopwords(values []string, stopwords map[string]struct{}) []string {
+	if len(values) == 0 || len(stopwords) == 0 {
+		return values
+	}
+	filtered := values[:0]
+	for _, v := range values {
+		key := strings.ToLower(strings.TrimSpace(v))
+		if key == "" {
+			continue
+		}
+		if _, ok := stopwords[key]; ok {
+			continue
+		}
+		filtered = append(filtered, v)
+	}
+	return filtered
+}
+
+func dedupeStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	var result []string
+	for _, v := range values {
+		vv := strings.TrimSpace(v)
+		if vv == "" {
+			continue
+		}
+		key := strings.ToLower(vv)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, vv)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return strings.ToLower(result[i]) < strings.ToLower(result[j])
+	})
+	return result
+}
+
+func differenceStrings(values []string, exclusions []string) []string {
+	if len(values) == 0 || len(exclusions) == 0 {
+		return values
+	}
+	exclude := make(map[string]struct{}, len(exclusions))
+	for _, v := range exclusions {
+		exclude[strings.ToLower(strings.TrimSpace(v))] = struct{}{}
+	}
+	out := values[:0]
+	for _, v := range values {
+		key := strings.ToLower(strings.TrimSpace(v))
+		if key == "" {
+			continue
+		}
+		if _, ok := exclude[key]; ok {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+func asString(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case fmt.Stringer:
+		return v.String()
+	case []byte:
+		return string(v)
+	case nil:
+		return ""
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func redactChunk(text string) string {
+	if text == "" {
+		return text
+	}
+	var b strings.Builder
+	for _, r := range text {
+		if unicode.IsDigit(r) {
+			b.WriteRune('#')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func constantToString(c ast.Constant) (string, error) {
