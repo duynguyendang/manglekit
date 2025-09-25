@@ -6,42 +6,35 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/compat_oai"
 	"github.com/firebase/genkit/go/plugins/ollama"
-	"github.com/yukinagae/genkit-go-plugins/plugins/openai"
+	"github.com/openai/openai-go/option"
 	"ndduy.dev/manglekit/internal/types"
 )
 
-
 // gateway implements the types.Gateway interface.
 type gateway struct {
-	model *genkit.Model
+	model ai.Model
 }
 
 // New creates a new LLM Gateway based on the provided configuration.
 func New(ctx context.Context, cfg types.LLMConfig) (types.Gateway, error) {
-	var model *genkit.Model
-	var err error
+	var model ai.Model
 
 	switch cfg.Provider {
 	case "openai":
-		if err = openai.Init(ctx, &openai.Config{
-			APIKey: cfg.APIKey,
-		}); err != nil {
-			return nil, fmt.Errorf("failed to initialize openai plugin: %w", err)
+		plugin := &compat_oai.OpenAICompatible{
+			Opts:     []option.RequestOption{option.WithAPIKey(cfg.APIKey)},
+			Provider: "openai",
 		}
-		model = openai.Model(cfg.Model)
+		plugin.Init(ctx)
+		model = plugin.DefineModel("openai", cfg.Model, ai.ModelOptions{Supports: &compat_oai.BasicText})
 	case "ollama":
-		if err := ollama.Init(ctx, &ollama.Config{}); err != nil {
-			return nil, fmt.Errorf("failed to initialize ollama plugin: %w", err)
-		}
-		model, err = ollama.DefineModel(ctx, &ollama.ModelDefinition{
-			Name:  cfg.Model,
-			Model: cfg.Model,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to define ollama model: %w", err)
-		}
+		plugin := &ollama.Ollama{}
+		g := genkit.Init(ctx, genkit.WithPlugins(plugin))
+		model = ollama.Model(g, cfg.Model)
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %s", cfg.Provider)
 	}
@@ -58,12 +51,14 @@ func (g *gateway) Generate(ctx context.Context, prompt string, chunks []*types.C
 	finalPrompt := buildPrompt(prompt, chunks)
 	var finalAnswer strings.Builder
 
-	_, err := g.model.Generate(ctx, genkit.NewPart(finalPrompt), genkit.WithStreaming(func(chunk *genkit.GenerateResponseChunk) error {
-		if len(chunk.Candidates) > 0 && len(chunk.Candidates[0].Message.Content) > 0 {
-			finalAnswer.WriteString(chunk.Candidates[0].Message.Content[0].Text)
+	req := ai.NewModelRequest(nil, ai.NewUserMessage(ai.NewTextPart(finalPrompt)))
+
+	_, err := g.model.Generate(ctx, req, func(ctx context.Context, chunk *ai.ModelResponseChunk) error {
+		if len(chunk.Content) > 0 {
+			finalAnswer.WriteString(chunk.Content[0].Text)
 		}
 		return nil
-	}))
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate response: %w", err)
 	}
