@@ -15,6 +15,12 @@ retrieval:
     analyzer: "english"
   fusion: "rrf"
 
+rag:
+  embedder:
+    model: "embedding-001"
+  retriever:
+    path: "docs"
+
 mangle:
   rulesFile: "rules.dlog"
   factsFile: "facts.db"
