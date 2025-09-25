@@ -29,7 +29,7 @@
 ## 3) Setup Commands
 
 ```bash
-# Initialize module (if not already)
+# Initialize module (only if you're creating a brand-new fork without go.mod)
 go mod init github.com/yourorg/manglekit
 
 # Dependencies (adjust as needed)
@@ -75,10 +75,19 @@ curl -s -X POST localhost:8080/answer \
 
 **Expected behavior:**
 
-1. Agent normalizes & scopes query with **Mangle‑Pre**.
-2. Performs retrieval (stub or vector DB).
-3. Applies **Mangle‑Post** policy/compat filters.
-4. Calls LLM to synthesize final answer (with citations).
+1. Agent normalizes & scopes query with **Mangle‑Pre** (see `internal/agent/processor.go`).
+2. Performs retrieval (stub or vector DB) via `internal/agent/retrieval.go`.
+3. Applies **Mangle‑Post** policy/compat filters (`internal/agent/postprocessor.go`).
+4. Calls LLM to synthesize final answer (with citations) using `internal/llm`.
+
+**Configuration knobs:**
+
+`config.yaml` controls retrieval depth and safety thresholds. Wire new code to the following keys whenever possible:
+
+* `retrieval.hybrid.bm25.must` / `should` — keyword filters emitted by Mangle‑Pre.
+* `retrieval.hybrid.dense.topK` — ANN candidate pool for the fine reranker.
+* `retrieval.rerank.mrl.topK` — number of chunks that survive the re‑rank stage.
+* `llm.fallbackThreshold` — confidence score that triggers deterministic fallback text.
 
 ---
 
@@ -142,100 +151,70 @@ curl -s -X POST localhost:8080/answer \
 package main
 
 import (
-  "encoding/json"
   "log"
   "net/http"
+
+  agent "github.com/yourorg/manglekit/internal/agent"
 )
-
-type Req struct { User string `json:"user"`; Query string `json:"query"` }
-
-type Agent interface { Answer(user, query string) (string, error) }
 
 func main() {
-  ag := NewDemoAgent() // defined below
-  http.HandleFunc("/answer", func(w http.ResponseWriter, r *http.Request) {
-    var req Req
-    _ = json.NewDecoder(r.Body).Decode(&req)
-    ans, err := ag.Answer(req.User, req.Query)
-    if err != nil { http.Error(w, err.Error(), 500); return }
-    _ = json.NewEncoder(w).Encode(map[string]string{"answer": ans})
-  })
-  log.Println("listening on :8080")
-  log.Fatal(http.ListenAndServe(":8080", nil))
-}
-```
-
-```go
-// internal/agent/agent.go
-package main
-
-import (
-  "context"
-  "strings"
-)
-
-type DemoAgent struct{ llm LLM }
-
-func NewDemoAgent() *DemoAgent { return &DemoAgent{ llm: NewLLMFromEnv() } }
-
-func (a *DemoAgent) Answer(user, query string) (string, error) {
-  // Mangle‑Pre (stub): normalize + filters
-  norm := strings.ToLower(query)
-  filters := map[string]string{"visibility": "public_or_tenant"}
-
-  // Retrieval (stub)
-  docs := retrieve(norm, filters)
-
-  // Mangle‑Post (stub): drop disallowed docs
-  vetted := []string{}
-  for _, d := range docs { if allowDoc(user, d) { vetted = append(vetted, d.Text) } }
-
-  // LLM synthesis
-  return a.llm.Answer(context.Background(), query, vetted)
-}
-
-type doc struct{ ID, Tenant, Visibility, Title, Text string }
-
-func retrieve(q string, filters map[string]string) []doc {
-  corpus := []doc{{ID:"d1",Tenant:"t42",Visibility:"tenant",Title:"Fix PDF export crash",Text:"Workaround for PDF export crash on Ubuntu 22.04"},
-                  {ID:"d2",Tenant:"public",Visibility:"public",Title:"General export guide",Text:"How export works"}}
-  out := []doc{}
-  for _, d := range corpus {
-    if strings.Contains(strings.ToLower(d.Title+" "+d.Text), q) { out = append(out, d) }
+  svc := agent.NewServer()
+  if err := http.ListenAndServe(":8080", svc); err != nil {
+    log.Fatalf("server exited: %v", err)
   }
-  return out
 }
-
-func allowDoc(user string, d doc) bool { return d.Visibility == "public" || d.Tenant == "t42" }
 ```
 
 ```go
-// internal/llm/llm.go
-package main
+// internal/agent/server.go
+package agent
 
 import (
-  "context"
-  "os"
-  openai "github.com/sashabaranov/go-openai"
+  "net/http"
+
+  "github.com/yourorg/manglekit/internal/agent/orchestrator"
 )
 
-type LLM interface { Answer(ctx context.Context, question string, contextDocs []string) (string, error) }
-
-type OpenAIClient struct{ api *openai.Client }
-
-func NewLLMFromEnv() *OpenAIClient { return &OpenAIClient{ api: openai.NewClient(os.Getenv("OPENAI_API_KEY")) } }
-
-func (c *OpenAIClient) Answer(ctx context.Context, question string, contextDocs []string) (string, error) {
-  // Keep prompt compact
-  prompt := "Use only the provided context to answer. If uncertain, say so.\n\nContext:\n" + strings.Join(contextDocs, "\n---\n") + "\n\nQuestion: " + question
-  resp, err := c.api.CreateChatCompletion(ctx, openai.ChatCompletionRequest{ Model: openai.GPT4oMini, Messages: []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleUser, Content: prompt}}, })
-  if err != nil { return "", err }
-  if len(resp.Choices) == 0 { return "", nil }
-  return resp.Choices[0].Message.Content, nil
+func NewServer() http.Handler {
+  orch := orchestrator.New()
+  return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    // sandwich flow: PreProcess → Retrieve → PostProcess → LLM
+    answer, err := orch.Answer(r.Context(), r.Body)
+    if err != nil {
+      http.Error(w, err.Error(), http.StatusInternalServerError)
+      return
+    }
+    w.Write(answer)
+  })
 }
 ```
 
-> Replace stubs with real **Mangle** rule evaluation and **Genkit** flows.
+```go
+// internal/agent/orchestrator/orchestrator.go
+package orchestrator
+
+import "github.com/yourorg/manglekit/internal/llm"
+
+type Orchestrator struct {
+  pre  *PreProcessor
+  retr *Retriever
+  post *PostProcessor
+  llm  llm.Client
+}
+
+func New() *Orchestrator {
+  return &Orchestrator{
+    pre:  NewPreProcessor(),
+    retr: NewRetrieverFromConfig(),
+    post: NewPostProcessor(),
+    llm:  llm.NewFromEnv(),
+  }
+}
+
+// Answer wires the sandwich together; see internal/agent for the real implementation.
+```
+
+> Replace stubs with real **Mangle** rule evaluation, retrieval, and Genkit flows using the actual `internal/agent` packages.
 
 ---
 
