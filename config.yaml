@@ -1,6 +1,8 @@
 orchestrator:
   maxContextTokens: 4000
   fallbackThreshold: 0.5
+  intentParser:
+    flowName: "parse_intent_ner"
 
 llm:
   provider: "openai"

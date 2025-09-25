@@ -11,6 +11,7 @@ import (
 type QueryInput struct {
 	Query       string                 `json:"query"`
 	UserContext map[string]interface{} `json:"user_context,omitempty"`
+	Intent      *IntentResult          `json:"intent,omitempty"`
 }
 
 // ExpandedQuery represents the processed query after Mangle-Pre processing.
@@ -54,6 +55,14 @@ type Response struct {
 	Metadata     interface{}   `json:"metadata,omitempty"`
 }
 
+// IntentResult captures the output of the Genkit intent and NER parser stage.
+type IntentResult struct {
+	Intent      string              `json:"intent"`
+	Confidence  float64             `json:"confidence,omitempty"`
+	Entities    map[string][]string `json:"entities,omitempty"`
+	Explanation string              `json:"explanation,omitempty"`
+}
+
 // Processor interface defines the Mangle rule engine operations.
 type Processor interface {
 	// PreProcess normalizes, validates, and expands the query
@@ -86,4 +95,10 @@ type Gateway interface {
 type Orchestrator interface {
 	// RunFlow executes the complete Sandwich pattern workflow
 	RunFlow(ctx context.Context, input *QueryInput) (*Response, error)
+}
+
+// IntentParser defines the Genkit-based intent and entity extraction stage.
+type IntentParser interface {
+	// Parse analyses a user query and returns detected intent and entities.
+	Parse(ctx context.Context, input *QueryInput) (*IntentResult, error)
 }

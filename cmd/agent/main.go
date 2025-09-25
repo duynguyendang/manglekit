@@ -44,7 +44,7 @@ func main() {
 
 	retriever := retrieval.NewMock()
 
-	orch, err := orchestrator.New(ctx, orchConfig, retriever, rag)
+	orch, err := orchestrator.New(ctx, g, orchConfig, retriever, rag)
 	if err != nil {
 		log.Fatalf("failed to create orchestrator: %v", err)
 	}
