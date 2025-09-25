@@ -4,8 +4,6 @@ import (
 	"context"
 	"path/filepath"
 	"slices"
-	"sort"
-	"strings"
 	"testing"
 
 	"ndduy.dev/manglekit/internal/mangle"
@@ -25,12 +23,54 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 		t.Fatalf("create mangle processor: %v", err)
 	}
 
-	mockRAG := &mockRAGRetriever{results: []string{
-		"parse_intent_ner: Genkit normalizes the query and extracts entities.",
-		"hybrid_retrieval: BM25 must/should filters combine with MRL ANN top-k.",
+	mockLLM := &mockGateway{answer: "Mock answer with citations."}
+
+	mockRetriever := &mockRetriever{chunks: []*types.Chunk{
+		{
+			ID:    "chunk-1",
+			DocID: "doc-1",
+			Title: "Hybrid retrieval",
+			Text:  "parse_intent_ner: Genkit normalizes the query and extracts entities.",
+			Score: 0.72,
+			Metadata: map[string]any{
+				"visibility": "public",
+				"tenant":     "*",
+			},
+		},
+		{
+			ID:    "chunk-2",
+			DocID: "doc-1",
+			Title: "Hybrid retrieval",
+			Text:  "hybrid_retrieval: BM25 must/should filters combine with MRL ANN top-k.",
+			Score: 0.65,
+			Metadata: map[string]any{
+				"visibility": "public",
+				"tenant":     "*",
+			},
+		},
 	}}
 
-	mockLLM := &mockGateway{answer: "Mock answer with citations."}
+	mockReranker := &mockReranker{
+		results: []*types.Chunk{
+			{
+				ID:    "chunk-1",
+				DocID: "doc-1",
+				Title: "Hybrid retrieval",
+				Text:  "parse_intent_ner: Genkit normalizes the query and extracts entities.",
+				Score: 0.91,
+				Metadata: map[string]any{
+					"visibility": "public",
+					"tenant":     "*",
+				},
+			},
+		},
+		explanations: []types.Explanation{{
+			Type:   "rerank",
+			Rule:   "mrl",
+			Action: "retained",
+			Reason: "chunk-1 reranked",
+		}},
+	}
 
 	mockIntent := &types.IntentResult{
 		Intent:     "question",
@@ -45,13 +85,18 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 	orch := &orchestrator{
 		processor:  processor,
 		llmGateway: mockLLM,
-		rag:        mockRAG,
+		retriever:  mockRetriever,
+		reranker:   mockReranker,
 		intent:     &mockIntentParser{result: mockIntent},
+		config: Config{
+			MaxContextTokens:  4000,
+			FallbackThreshold: 0.1,
+		},
 	}
 
 	input := &types.QueryInput{Query: "Explain bm25 ann pipeline"}
 
-	expanded, err := processor.PreProcess(input)
+	expanded, err := processor.PreProcess(&types.QueryInput{Query: input.Query, Intent: mockIntent})
 	if err != nil {
 		t.Fatalf("preprocess input: %v", err)
 	}
@@ -63,8 +108,8 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 		}
 	}
 
-	if got := expanded.Filters["visibility"]; got != "public" {
-		t.Fatalf("expected default visibility filter 'public', got %q", got)
+	if expanded.Constraints.Visibility != "public" {
+		t.Fatalf("expected default visibility filter 'public', got %q", expanded.Constraints.Visibility)
 	}
 
 	response, err := orch.RunFlow(ctx, input)
@@ -72,41 +117,39 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 		t.Fatalf("RunFlow error: %v", err)
 	}
 
-	expectedParts := []string{expanded.NormalizedQuery}
-	if len(expanded.ExpansionTerms) > 0 {
-		expectedParts = append(expectedParts, expanded.ExpansionTerms...)
-	}
-	keys := make([]string, 0, len(mockIntent.Entities))
-	for key := range mockIntent.Entities {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		expectedParts = append(expectedParts, mockIntent.Entities[key]...)
-	}
-	expectedQuery := strings.Join(expectedParts, " ")
-
-	if mockRAG.lastQuery != expectedQuery {
-		t.Fatalf("unexpected rag query. got %q want %q", mockRAG.lastQuery, expectedQuery)
+	if mockRetriever.lastQuery == nil {
+		t.Fatalf("retriever did not receive expanded query")
 	}
 
-	if len(mockLLM.chunks) == 0 || mockLLM.chunks[0].Text != mockRAG.results[0] {
-		t.Fatalf("expected first chunk to match RAG context %q, got %+v", mockRAG.results[0], mockLLM.chunks)
+	if mockRetriever.lastQuery.NormalizedQuery != expanded.NormalizedQuery {
+		t.Fatalf("retriever query mismatch: got %q want %q", mockRetriever.lastQuery.NormalizedQuery, expanded.NormalizedQuery)
+	}
+
+	if mockRetriever.lastFilters == nil || mockRetriever.lastFilters["visibility"] != "public" {
+		t.Fatalf("expected retriever visibility filter to be public, got %q", mockRetriever.lastFilters["visibility"])
+	}
+
+	if len(mockReranker.lastCandidates) == 0 {
+		t.Fatalf("reranker did not receive candidates")
+	}
+
+	if len(mockLLM.chunks) == 0 || mockLLM.chunks[0].ID != mockReranker.results[0].ID {
+		t.Fatalf("expected reranked chunk to be passed to LLM, got %+v", mockLLM.chunks)
 	}
 
 	if response.Answer != mockLLM.answer {
 		t.Fatalf("unexpected answer: got %q want %q", response.Answer, mockLLM.answer)
 	}
 
-	if len(response.Explanations) < 2 {
-		t.Fatalf("expected intent and mangle explanations to be included")
+	if len(response.Explanations) < 3 {
+		t.Fatalf("expected rerank, intent, and mangle explanations to be included")
 	}
 
-	if response.Explanations[0].Type != "intent" {
-		t.Fatalf("expected intent explanation first, got %+v", response.Explanations[0])
+	if response.Explanations[0].Type != "rerank" {
+		t.Fatalf("expected rerank explanation first, got %+v", response.Explanations[0])
 	}
 
-	explanation := response.Explanations[1]
+	explanation := response.Explanations[len(response.Explanations)-1]
 	if explanation.Type != "mangle-pre" || explanation.Rule != "expanded_query" {
 		t.Fatalf("unexpected explanation metadata: %+v", explanation)
 	}
@@ -118,16 +161,9 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 	if _, ok := meta["intent"]; !ok {
 		t.Fatalf("intent metadata missing: %+v", meta)
 	}
-}
-
-type mockRAGRetriever struct {
-	results   []string
-	lastQuery string
-}
-
-func (m *mockRAGRetriever) Retrieve(_ context.Context, query string) ([]string, error) {
-	m.lastQuery = query
-	return m.results, nil
+	if _, ok := meta["expandedQuery"]; !ok {
+		t.Fatalf("expanded query metadata missing: %+v", meta)
+	}
 }
 
 type mockGateway struct {
@@ -146,6 +182,58 @@ func (m *mockGateway) Generate(_ context.Context, prompt string, chunks []*types
 			"chunkCount": len(chunks),
 		},
 	}, nil
+}
+
+type mockRetriever struct {
+	chunks      []*types.Chunk
+	lastQuery   *types.ExpandedQuery
+	lastFilters map[string]string
+}
+
+func (m *mockRetriever) Search(_ context.Context, query *types.ExpandedQuery, filters map[string]string) ([]*types.Chunk, error) {
+	m.lastQuery = query
+	if filters != nil {
+		m.lastFilters = make(map[string]string, len(filters))
+		for k, v := range filters {
+			m.lastFilters[k] = v
+		}
+	}
+	out := make([]*types.Chunk, 0, len(m.chunks))
+	for _, chunk := range m.chunks {
+		clone := *chunk
+		if chunk.Metadata != nil {
+			clone.Metadata = make(map[string]any, len(chunk.Metadata))
+			for k, v := range chunk.Metadata {
+				clone.Metadata[k] = v
+			}
+		}
+		out = append(out, &clone)
+	}
+	return out, nil
+}
+
+type mockReranker struct {
+	results        []*types.Chunk
+	explanations   []types.Explanation
+	lastQuery      *types.ExpandedQuery
+	lastCandidates []*types.Chunk
+}
+
+func (m *mockReranker) Rerank(_ context.Context, query *types.ExpandedQuery, candidates []*types.Chunk) ([]*types.Chunk, []types.Explanation, error) {
+	m.lastQuery = query
+	m.lastCandidates = append([]*types.Chunk(nil), candidates...)
+	out := make([]*types.Chunk, 0, len(m.results))
+	for _, chunk := range m.results {
+		clone := *chunk
+		if chunk.Metadata != nil {
+			clone.Metadata = make(map[string]any, len(chunk.Metadata))
+			for k, v := range chunk.Metadata {
+				clone.Metadata[k] = v
+			}
+		}
+		out = append(out, &clone)
+	}
+	return out, append([]types.Explanation(nil), m.explanations...), nil
 }
 
 type mockIntentParser struct {

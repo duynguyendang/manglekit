@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -28,20 +27,23 @@ type Config struct {
 // orchestrator implements the types.Orchestrator interface.
 type orchestrator struct {
 	retriever  types.Retriever
+	reranker   types.Reranker
 	llmGateway types.Gateway
-	rag        ragRetriever
 	processor  types.Processor
 	intent     types.IntentParser
-}
-
-type ragRetriever interface {
-	Retrieve(ctx context.Context, query string) ([]string, error)
+	config     Config
 }
 
 // New creates a new Orchestrator.
-func New(ctx context.Context, g *genkit.Genkit, cfg Config, retriever types.Retriever, rag ragRetriever) (types.Orchestrator, error) {
+func New(ctx context.Context, g *genkit.Genkit, cfg Config, retriever types.Retriever, reranker types.Reranker) (types.Orchestrator, error) {
 	if g == nil {
 		return nil, errors.New("genkit runtime is required")
+	}
+	if retriever == nil {
+		return nil, errors.New("retriever is required")
+	}
+	if reranker == nil {
+		return nil, errors.New("reranker is required")
 	}
 
 	llmGateway, err := llm.New(ctx, cfg.LLM)
@@ -61,10 +63,11 @@ func New(ctx context.Context, g *genkit.Genkit, cfg Config, retriever types.Retr
 
 	return &orchestrator{
 		retriever:  retriever,
+		reranker:   reranker,
 		llmGateway: llmGateway,
-		rag:        rag,
 		processor:  processor,
 		intent:     intentParser,
+		config:     cfg,
 	}, nil
 }
 
@@ -81,58 +84,83 @@ func (o *orchestrator) RunFlow(ctx context.Context, input *types.QueryInput) (*t
 		return nil, err
 	}
 
-	ragQueryParts := []string{expanded.NormalizedQuery}
-	if len(expanded.ExpansionTerms) > 0 {
-		ragQueryParts = append(ragQueryParts, expanded.ExpansionTerms...)
+	retrievedChunks, err := o.retriever.Search(ctx, expanded, expanded.Filters)
+	if err != nil {
+		return nil, fmt.Errorf("hybrid search: %w", err)
 	}
-	if intentResult != nil {
-		keys := make([]string, 0, len(intentResult.Entities))
-		for key := range intentResult.Entities {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			ragQueryParts = append(ragQueryParts, intentResult.Entities[key]...)
-		}
-	}
-	ragQuery := strings.Join(ragQueryParts, " ")
 
-	results, err := o.rag.Retrieve(ctx, ragQuery)
+	rerankedChunks, rerankExplanations, err := o.reranker.Rerank(ctx, expanded, retrievedChunks)
+	if err != nil {
+		return nil, fmt.Errorf("rerank results: %w", err)
+	}
+
+	postContext, postExplanations := o.processor.PostProcess(rerankedChunks, &types.Context{
+		UserContext: input.UserContext,
+		Constraints: expanded.Constraints,
+	})
+
+	var stageExplanations []types.Explanation
+	if rerankExplanations != nil {
+		stageExplanations = append(stageExplanations, rerankExplanations...)
+	}
+	if postExplanations != nil {
+		stageExplanations = append(stageExplanations, (*postExplanations)...)
+	}
+
+	fallbackTriggered := len(postContext) == 0
+	if !fallbackTriggered && o.config.FallbackThreshold > 0 {
+		fallbackTriggered = postContext[0].Score < o.config.FallbackThreshold
+	}
+
+	if fallbackTriggered {
+		response := &types.Response{
+			Answer:       "No policy-compliant context met the confidence threshold. Please refine your query or provide more detail.",
+			Explanations: append([]types.Explanation(nil), stageExplanations...),
+		}
+		o.attachIntentMetadata(response, intentResult)
+		o.attachMangleExplanation(response, expanded)
+		return response, nil
+	}
+
+	limitedChunks := o.limitChunks(postContext)
+	response, err := o.llmGateway.Generate(ctx, input.Query, limitedChunks)
 	if err != nil {
 		return nil, err
 	}
 
-	var chunks []*types.Chunk
-	for _, r := range results {
-		chunks = append(chunks, &types.Chunk{
-			Text: r,
-		})
-	}
+	response.Explanations = append(response.Explanations, stageExplanations...)
 
-	postChunks, _ := o.processor.PostProcess(chunks, &types.Context{UserContext: input.UserContext})
-	response, err := o.llmGateway.Generate(ctx, input.Query, postChunks)
-	if err != nil {
-		return nil, err
-	}
+	o.attachIntentMetadata(response, intentResult)
+	o.attachMangleExplanation(response, expanded)
 
-	if intentResult != nil {
-		exp := types.Explanation{
-			Type:      "intent",
-			Rule:      "genkit-intent",
-			Action:    intentResult.Intent,
-			Reason:    intentResult.Explanation,
-			Timestamp: time.Now(),
-		}
-		response.Explanations = append(response.Explanations, exp)
-		if response.Metadata == nil {
-			response.Metadata = map[string]any{}
-		}
-		if meta, ok := response.Metadata.(map[string]any); ok {
-			meta["intent"] = intentResult
-		}
-	}
+	return response, nil
+}
 
-	if expanded != nil && expanded.Explanation != "" {
+func (o *orchestrator) attachIntentMetadata(response *types.Response, intentResult *types.IntentResult) {
+	if intentResult == nil || response == nil {
+		return
+	}
+	exp := types.Explanation{
+		Type:      "intent",
+		Rule:      "genkit-intent",
+		Action:    intentResult.Intent,
+		Reason:    intentResult.Explanation,
+		Timestamp: time.Now(),
+	}
+	response.Explanations = append(response.Explanations, exp)
+	if response.Metadata == nil {
+		response.Metadata = map[string]any{}
+	}
+	if meta, ok := response.Metadata.(map[string]any); ok {
+		meta["intent"] = intentResult
+	}
+}
+
+func (o *orchestrator) attachMangleExplanation(response *types.Response, expanded *types.ExpandedQuery) {
+	if response == nil || expanded == nil {
+		return
+	}
+	if expanded.Explanation != "" {
 		response.Explanations = append(response.Explanations, types.Explanation{
 			Type:   "mangle-pre",
 			Rule:   "expanded_query",
@@ -140,6 +168,39 @@ func (o *orchestrator) RunFlow(ctx context.Context, input *types.QueryInput) (*t
 			Reason: expanded.Explanation,
 		})
 	}
+	if response.Metadata == nil {
+		response.Metadata = map[string]any{}
+	}
+	if meta, ok := response.Metadata.(map[string]any); ok {
+		meta["expandedQuery"] = expanded
+	}
+}
 
-	return response, nil
+func (o *orchestrator) limitChunks(chunks []*types.Chunk) []*types.Chunk {
+	maxTokens := o.config.MaxContextTokens
+	if maxTokens <= 0 {
+		return chunks
+	}
+	var (
+		totalTokens int
+		limited     []*types.Chunk
+	)
+	for _, chunk := range chunks {
+		if chunk == nil {
+			continue
+		}
+		tokenCount := len(strings.Fields(chunk.Text))
+		if len(limited) > 0 && totalTokens+tokenCount > maxTokens {
+			break
+		}
+		totalTokens += tokenCount
+		limited = append(limited, chunk)
+		if totalTokens >= maxTokens {
+			break
+		}
+	}
+	if len(limited) == 0 {
+		return chunks
+	}
+	return limited
 }

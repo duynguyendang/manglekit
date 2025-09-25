@@ -11,7 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 	"ndduy.dev/manglekit/internal/mangle"
 	"ndduy.dev/manglekit/internal/orchestrator"
-	"ndduy.dev/manglekit/internal/rag"
 	"ndduy.dev/manglekit/internal/retrieval"
 	"ndduy.dev/manglekit/internal/types"
 )
@@ -19,7 +18,7 @@ import (
 type AppConfig struct {
 	Orchestrator orchestrator.Config `yaml:"orchestrator"`
 	LLM          types.LLMConfig     `yaml:"llm"`
-	RAG          rag.Config          `yaml:"rag"`
+	Retrieval    retrieval.Config    `yaml:"retrieval"`
 	Mangle       mangle.Config       `yaml:"mangle"`
 }
 
@@ -37,14 +36,14 @@ func main() {
 	orchConfig.LLM = cfg.LLM
 	orchConfig.Mangle = cfg.Mangle
 
-	rag, err := rag.New(ctx, g, &cfg.RAG)
+	retriever, err := retrieval.NewHybrid(cfg.Retrieval)
 	if err != nil {
-		log.Fatalf("failed to create rag: %v", err)
+		log.Fatalf("failed to create hybrid retriever: %v", err)
 	}
 
-	retriever := retrieval.NewMock()
+	reranker := retrieval.NewMRLReranker(cfg.Retrieval.Rerank)
 
-	orch, err := orchestrator.New(ctx, g, orchConfig, retriever, rag)
+	orch, err := orchestrator.New(ctx, g, orchConfig, retriever, reranker)
 	if err != nil {
 		log.Fatalf("failed to create orchestrator: %v", err)
 	}
