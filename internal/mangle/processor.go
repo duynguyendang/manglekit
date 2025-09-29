@@ -108,10 +108,60 @@ func (p *processor) PreProcess(input *types.QueryInput) (*types.ExpandedQuery, e
 	}, nil
 }
 
-// PostProcess currently returns the chunks unchanged. It could be extended to
-// leverage Mangle rules for policy enforcement or redaction.
+// PostProcess filters chunks based on Mangle rules for policy enforcement.
 func (p *processor) PostProcess(chunks []*types.Chunk, ctx *types.Context) ([]*types.Chunk, *[]types.Explanation) {
-	return chunks, nil
+	workingStore := factstore.NewSimpleInMemoryStore()
+	workingStore.Merge(p.baseFactStore)
+
+	// Add facts about the user context.
+	for key, value := range ctx.UserContext {
+		workingStore.Add(ast.NewAtom("user_attribute", ast.String(key), ast.String(fmt.Sprintf("%v", value))))
+	}
+
+	// Add facts about the chunks.
+	for _, chunk := range chunks {
+		workingStore.Add(ast.NewAtom("doc_id", ast.String(chunk.DocID)))
+		workingStore.Add(ast.NewAtom("doc_content", ast.String(chunk.DocID), ast.String(chunk.Text)))
+		for key, value := range chunk.Metadata {
+			if valueStr, ok := value.(string); ok {
+				workingStore.Add(ast.NewAtom("doc_metadata", ast.String(chunk.DocID), ast.String(key), ast.String(valueStr)))
+			}
+		}
+	}
+
+	if err := evaluate(p.programInfo, p.strata, p.predToStratum, workingStore); err != nil {
+		// In case of an error, we should probably deny all chunks.
+		return nil, &[]types.Explanation{{
+			Type:   "mangle-post",
+			Action: "deny",
+			Reason: fmt.Sprintf("Mangle evaluation error: %v", err),
+		}}
+	}
+
+	denied, err := collectKeyValue(workingStore, "deny")
+	if err != nil {
+		// Log the error but don't fail the request.
+		fmt.Fprintf(os.Stderr, "could not collect 'deny' facts: %v", err)
+	}
+
+	var allowedChunks []*types.Chunk
+	var explanations []types.Explanation
+
+	for _, chunk := range chunks {
+		if reason, ok := denied[chunk.DocID]; ok {
+			explanations = append(explanations, types.Explanation{
+				Type:   "mangle-post",
+				Rule:   "deny",
+				Action: "deny",
+				Reason: reason,
+				DocID:  chunk.DocID,
+			})
+		} else {
+			allowedChunks = append(allowedChunks, chunk)
+		}
+	}
+
+	return allowedChunks, &explanations
 }
 
 func loadProgram(path string) (*analysis.ProgramInfo, []analysis.Nodeset, map[ast.PredicateSym]int, error) {

@@ -45,6 +45,7 @@ type Explanation struct {
 	Action    string    `json:"action"` // "retained", "discarded", "modified"
 	Reason    string    `json:"reason,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
+	DocID     string    `json:"doc_id,omitempty"`
 }
 
 // Response represents the final response from the system.
@@ -104,9 +105,11 @@ type RetrievalConfig struct {
 
 // LLMConfig holds the configuration for the LLM Gateway.
 type LLMConfig struct {
-	Provider string `json:"provider"` // "openai" or "ollama"
-	Model    string `json:"model"`
-	APIKey   string `json:"apiKey,omitempty"`
+	Provider         string `json:"provider" yaml:"provider"` // "openai" or "ollama"
+	Model            string `json:"model" yaml:"model"`
+	APIKey           string `json:"apiKey,omitempty" yaml:"apiKey,omitempty"`
+	PromptTemplate   string `json:"promptTemplate,omitempty" yaml:"promptTemplate,omitempty"`
+	MaxContextTokens int    `json:"maxContextTokens,omitempty" yaml:"maxContextTokens,omitempty"`
 }
 
 // Gateway interface defines the LLM operations.

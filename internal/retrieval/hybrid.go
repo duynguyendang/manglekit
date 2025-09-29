@@ -30,19 +30,19 @@ func NewHybridRetriever(bm25 BM25Retriever, dense DenseRetriever) (*HybridRetrie
 }
 
 // Retrieve performs a hybrid search.
-func (h *HybridRetriever) Retrieve(ctx context.Context, query string, bm25Cfg types.BM25Config, denseCfg types.DenseConfig) ([]string, error) {
+func (h *HybridRetriever) Retrieve(ctx context.Context, query string, filters map[string]string, bm25Cfg types.BM25Config, denseCfg types.DenseConfig) ([]string, error) {
 	var g errgroup.Group
 	var bm25Results, denseResults []string
 
 	g.Go(func() error {
 		var err error
-		bm25Results, err = h.bm25.Retrieve(ctx, query, bm25Cfg)
+		bm25Results, err = h.bm25.Retrieve(ctx, query, filters, bm25Cfg)
 		return err
 	})
 
 	g.Go(func() error {
 		var err error
-		denseResults, err = h.dense.Retrieve(ctx, query, denseCfg)
+		denseResults, err = h.dense.Retrieve(ctx, query, filters, denseCfg)
 		return err
 	})
 

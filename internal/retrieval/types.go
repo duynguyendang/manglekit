@@ -9,10 +9,10 @@ import (
 
 // BM25Retriever defines the interface for a BM25 retriever.
 type BM25Retriever interface {
-	Retrieve(ctx context.Context, query string, cfg types.BM25Config) ([]string, error)
+	Retrieve(ctx context.Context, query string, filters map[string]string, cfg types.BM25Config) ([]string, error)
 }
 
 // DenseRetriever defines the interface for a dense retriever.
 type DenseRetriever interface {
-	Retrieve(ctx context.Context, query string, cfg types.DenseConfig) ([]string, error)
+	Retrieve(ctx context.Context, query string, filters map[string]string, cfg types.DenseConfig) ([]string, error)
 }

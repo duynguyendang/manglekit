@@ -1,24 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 
-	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/googlegenai"
-	"github.com/firebase/genkit/go/plugins/localvec"
 	"github.com/firebase/genkit/go/plugins/server"
 	"gopkg.in/yaml.v3"
 	"ndduy.dev/manglekit/internal/mangle"
 	"ndduy.dev/manglekit/internal/orchestrator"
-	"ndduy.dev/manglekit/internal/reranker"
-	"ndduy.dev/manglekit/internal/retrieval"
 	"ndduy.dev/manglekit/internal/types"
 )
 
@@ -37,58 +31,17 @@ func main() {
 	ctx := context.Background()
 	g := genkit.Init(ctx)
 
-	cfg, err := loadConfig("config.yaml")
+	builder, err := NewBuilder(ctx, g, "config.yaml")
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		log.Fatalf("failed to create builder: %v", err)
 	}
 
-	// Manually wire the configs together
-	orchConfig := cfg.Orchestrator
-	orchConfig.LLM = cfg.LLM
-	orchConfig.Mangle = cfg.Mangle
-
-	// Initialize components
-	embedder := googlegenai.GoogleAIEmbedder(g, cfg.Embedder.Model)
-	if embedder == nil {
-		log.Fatalf("failed to create embedder with model %s", cfg.Embedder.Model)
-	}
-
-	if err := localvec.Init(); err != nil {
-		log.Fatalf("failed to initialize localvec: %v", err)
-	}
-
-	docs, err := loadDocuments(orchConfig.Retrieval.Path)
+	orch, err := builder.Build()
 	if err != nil {
-		log.Fatalf("failed to load documents: %v", err)
-	}
-
-	bm25Retriever, err := retrieval.NewBM25(ctx, orchConfig.Retrieval.Path)
-	if err != nil {
-		log.Fatalf("failed to create BM25 retriever: %v", err)
-	}
-
-	denseRetriever, err := retrieval.NewDense(ctx, g, embedder, docs)
-	if err != nil {
-		log.Fatalf("failed to create Dense retriever: %v", err)
-	}
-
-	hybridRetriever, err := retrieval.NewHybridRetriever(bm25Retriever, denseRetriever)
-	if err != nil {
-		log.Fatalf("failed to create Hybrid retriever: %v", err)
-	}
-
-	reranker, err := reranker.New(embedder)
-	if err != nil {
-		log.Fatalf("failed to create reranker: %v", err)
-	}
-
-	orch, err := orchestrator.New(ctx, g, orchConfig, hybridRetriever, reranker)
-	if err != nil {
-		log.Fatalf("failed to create orchestrator: %v", err)
+		log.Fatalf("failed to build application: %v", err)
 	}
 
 	answerFlow := genkit.DefineFlow(g, "answer", orch.RunFlow)
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /"+answerFlow.Name(), genkit.Handler(answerFlow))
 	fmt.Println("Server listening on 127.0.0.1:8082")
@@ -109,23 +62,22 @@ func loadConfig(path string) (*AppConfig, error) {
 	return &cfg, nil
 }
 
-func loadDocuments(path string) ([]*ai.Document, error) {
-	var documents []*ai.Document
-	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && strings.HasSuffix(info.Name(), ".md") {
-			content, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			documents = append(documents, ai.DocumentFromText(string(content), nil))
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
+func parseFrontMatter(fileContent []byte) (map[string]any, string) {
+	const separator = "---\n"
+
+	if !bytes.HasPrefix(fileContent, []byte(separator)) {
+		return nil, string(fileContent)
 	}
-	return documents, nil
+
+	parts := bytes.SplitN(fileContent, []byte(separator), 3)
+	if len(parts) < 3 {
+		return nil, string(fileContent)
+	}
+
+	var metadata map[string]any
+	if err := yaml.Unmarshal(parts[1], &metadata); err != nil {
+		fmt.Fprintf(os.Stderr, "could not parse front matter: %v, file content will be used as is", err)
+		return nil, string(fileContent)
+	}
+	return metadata, string(parts[2])
 }

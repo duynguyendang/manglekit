@@ -46,22 +46,25 @@ func (r *Reranker) Rerank(ctx context.Context, query string, docs []string, cfg 
 	}
 	queryEmbedding := queryResponse.Embeddings[0]
 
-	var scoredDocs []scoredDoc
+	var docInputs []*ai.Document
 	for _, doc := range docs {
-		docRequest := &ai.EmbedRequest{
-			Input: []*ai.Document{ai.DocumentFromText(doc, nil)},
-		}
-		docResponse, err := r.embedder.Embed(ctx, docRequest)
-		if err != nil {
-			log.Printf("failed to embed document, skipping: %v", err)
-			continue
-		}
-		if len(docResponse.Embeddings) == 0 {
-			log.Printf("no embedding returned for doc, skipping: %s", doc)
-			continue
-		}
-		docEmbedding := docResponse.Embeddings[0]
+		docInputs = append(docInputs, ai.DocumentFromText(doc, nil))
+	}
 
+	docRequest := &ai.EmbedRequest{
+		Input: docInputs,
+	}
+	docResponse, err := r.embedder.Embed(ctx, docRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to embed documents: %w", err)
+	}
+	if len(docResponse.Embeddings) != len(docs) {
+		return nil, fmt.Errorf("number of document embeddings does not match number of documents")
+	}
+
+	var scoredDocs []scoredDoc
+	for i, doc := range docs {
+		docEmbedding := docResponse.Embeddings[i]
 		score, err := cosineSimilarity(queryEmbedding.Embedding, docEmbedding.Embedding)
 		if err != nil {
 			log.Printf("failed to calculate similarity, skipping doc: %v", err)
