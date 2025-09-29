@@ -130,10 +130,27 @@ func (o *orchestrator) RunFlow(ctx context.Context, input *types.QueryInput) (*t
 		})
 	}
 
-	postChunks, _ := o.processor.PostProcess(chunks, &types.Context{UserContext: input.UserContext})
-	response, err := o.llmGateway.Generate(ctx, input.Query, postChunks)
-	if err != nil {
-		return nil, err
+	postChunks, postExplanations := o.processor.PostProcess(chunks, &types.Context{UserContext: input.UserContext})
+
+	var response *types.Response
+	if len(postChunks) == 0 {
+		response = &types.Response{
+			Answer: "I could not find a relevant answer based on the information I have. Please try rephrasing your question.",
+			Metadata: map[string]any{
+				"fallback": "no_context_after_postprocessing",
+			},
+			Explanations: []types.Explanation{},
+		}
+	} else {
+		llmResponse, err := o.llmGateway.Generate(ctx, input.Query, postChunks)
+		if err != nil {
+			return nil, err
+		}
+		response = llmResponse
+	}
+
+	if postExplanations != nil {
+		response.Explanations = append(response.Explanations, *postExplanations...)
 	}
 
 	if intentResult != nil {
