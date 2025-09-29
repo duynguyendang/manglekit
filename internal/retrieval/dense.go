@@ -42,19 +42,29 @@ func NewDense(ctx context.Context, g *genkit.Genkit, embedder ai.Embedder, docs 
 }
 
 // Retrieve performs a search using dense vectors.
-func (d *Dense) Retrieve(ctx context.Context, query string, cfg types.DenseConfig) ([]string, error) {
+func (d *Dense) Retrieve(ctx context.Context, query string, filters map[string]string, cfg types.DenseConfig) ([]string, error) {
 	dRequest := ai.DocumentFromText(query, nil)
+	retrieverOptions := &localvec.RetrieverOptions{
+		K: cfg.TopK,
+	}
 	response, err := genkit.Retrieve(ctx, d.generator,
 		ai.WithRetriever(d.retriever),
 		ai.WithDocs(dRequest),
-		ai.WithConfig(&localvec.RetrieverOptions{K: cfg.TopK}))
+		ai.WithConfig(retrieverOptions),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve documents: %w", err)
 	}
 
 	var results []string
-	for _, doc := range response.Documents {
-		results = append(results, doc.Content[0].Text)
+	if response != nil {
+		for _, doc := range response.Documents {
+			if matches(doc, filters) {
+				if len(doc.Content) > 0 {
+					results = append(results, doc.Content[0].Text)
+				}
+			}
+		}
 	}
 	return results, nil
 }

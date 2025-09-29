@@ -75,9 +75,9 @@ curl -s -X POST localhost:8080/answer \
 
 **Expected behavior:**
 
-1. Agent normalizes & scopes query with **Mangle‑Pre** (see `internal/agent/processor.go`).
-2. Performs retrieval (stub or vector DB) via `internal/agent/retrieval.go`.
-3. Applies **Mangle‑Post** policy/compat filters (`internal/agent/postprocessor.go`).
+1. Agent normalizes & scopes query with **Mangle‑Pre** (see `internal/mangle/processor.go`).
+2. Performs retrieval (stub or vector DB) via `internal/retrieval/hybrid.go`.
+3. Applies **Mangle‑Post** policy/compat filters (`internal/mangle/processor.go`).
 4. Calls LLM to synthesize final answer (with citations) using `internal/llm`.
 
 **Configuration knobs:**
@@ -95,13 +95,15 @@ curl -s -X POST localhost:8080/answer \
 
 ```
 ./
-├─ cmd/agent/main.go            # HTTP entrypoint
-├─ internal/agent/agent.go      # Sandwich orchestration
-├─ internal/agent/retrieval.go  # Hybrid search (stub/real)
-├─ internal/llm/llm.go          # LLM wrapper
-├─ internal/mangle/rules.mng    # Mangle rules (Datalog-like)
-├─ internal/mangle/facts.json   # Seed facts for local dev
-├─ docs/                        # HLD, diagrams, etc.
+├─ cmd/agent/main.go                # HTTP entrypoint
+├─ internal/orchestrator/orchestrator.go # Sandwich orchestration
+├─ internal/retrieval/hybrid.go     # Hybrid search
+├─ internal/reranker/reranker.go    # Reranking logic
+├─ internal/llm/gateway.go          # LLM wrapper
+├─ internal/mangle/processor.go     # Mangle pre/post-processing
+├─ rules.dlog                       # Mangle rules
+├─ data/                            # Seed facts for local dev
+├─ docs/                            # HLD, diagrams, etc.
 └─ go.mod
 ```
 
@@ -151,70 +153,56 @@ curl -s -X POST localhost:8080/answer \
 package main
 
 import (
-  "log"
-  "net/http"
+	"context"
+	"log"
+	"net/http"
 
-  agent "github.com/yourorg/manglekit/internal/agent"
+	"github.com/firebase/genkit/go/genkit"
+	"ndduy.dev/manglekit/internal/orchestrator"
 )
 
 func main() {
-  svc := agent.NewServer()
-  if err := http.ListenAndServe(":8080", svc); err != nil {
-    log.Fatalf("server exited: %v", err)
-  }
+	// Simplified initialization for example purposes.
+	// See the actual main.go for how to wire up dependencies.
+	g := genkit.Init(context.Background())
+	orch, err := orchestrator.New(
+		context.Background(),
+		g,
+		orchestrator.Config{}, // In a real app, load this from config.yaml
+		nil,                   // Provide a real retriever
+		nil,                   // Provide a real reranker
+	)
+	if err != nil {
+		log.Fatalf("failed to create orchestrator: %v", err)
+	}
+
+	answerFlow := genkit.DefineFlow(g, "answer", orch.RunFlow)
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /"+answerFlow.Name(), genkit.Handler(answerFlow))
+	if err := http.ListenAndServe(":8080", mux); err != nil {
+		log.Fatalf("server exited: %v", err)
+	}
 }
 ```
 
 ```go
-// internal/agent/server.go
-package agent
-
-import (
-  "net/http"
-
-  "github.com/yourorg/manglekit/internal/agent/orchestrator"
-)
-
-func NewServer() http.Handler {
-  orch := orchestrator.New()
-  return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-    // sandwich flow: PreProcess → Retrieve → PostProcess → LLM
-    answer, err := orch.Answer(r.Context(), r.Body)
-    if err != nil {
-      http.Error(w, err.Error(), http.StatusInternalServerError)
-      return
-    }
-    w.Write(answer)
-  })
-}
-```
-
-```go
-// internal/agent/orchestrator/orchestrator.go
+// internal/orchestrator/orchestrator.go
 package orchestrator
 
-import "github.com/yourorg/manglekit/internal/llm"
+import "ndduy.dev/manglekit/internal/llm"
 
 type Orchestrator struct {
-  pre  *PreProcessor
-  retr *Retriever
-  post *PostProcessor
-  llm  llm.Client
+	// ... fields for retriever, reranker, llm, etc.
 }
 
-func New() *Orchestrator {
-  return &Orchestrator{
-    pre:  NewPreProcessor(),
-    retr: NewRetrieverFromConfig(),
-    post: NewPostProcessor(),
-    llm:  llm.NewFromEnv(),
-  }
+func New(...) (*Orchestrator, error) {
+	// ... constructor logic
 }
 
-// Answer wires the sandwich together; see internal/agent for the real implementation.
+// RunFlow wires the sandwich together; see internal/orchestrator for the real implementation.
 ```
 
-> Replace stubs with real **Mangle** rule evaluation, retrieval, and Genkit flows using the actual `internal/agent` packages.
+> Replace stubs with real **Mangle** rule evaluation, retrieval, and Genkit flows using the actual `internal` packages.
 
 ---
 

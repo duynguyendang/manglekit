@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"go.uber.org/zap"
 	"ndduy.dev/manglekit/internal/mangle"
 	"ndduy.dev/manglekit/internal/types"
 )
@@ -42,6 +43,7 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 		Explanation: "detected informational question",
 	}
 
+	logger, _ := zap.NewDevelopment()
 	orch := &orchestrator{
 		processor:  processor,
 		llmGateway: mockLLM,
@@ -49,6 +51,7 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 		reranker:   &mockReranker{},
 		intent:     &mockIntentParser{result: mockIntent},
 		cfg:        Config{}, // Use default config for test
+		log:        logger,
 	}
 
 	input := &types.QueryInput{Query: "Explain bm25 ann pipeline"}
@@ -92,6 +95,10 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 		t.Fatalf("unexpected rag query. got %q want %q", mockRetriever.lastQuery, expectedQuery)
 	}
 
+	if mockRetriever.lastFilter["visibility"] != "public" {
+		t.Fatalf("expected visibility filter to be 'public', got %q", mockRetriever.lastFilter["visibility"])
+	}
+
 	if len(mockLLM.chunks) == 0 || mockLLM.chunks[0].Text != mockRetriever.results[0] {
 		t.Fatalf("expected first chunk to match RAG context %q, got %+v", mockRetriever.results[0], mockLLM.chunks)
 	}
@@ -123,12 +130,14 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 }
 
 type mockHybridRetriever struct {
-	results   []string
-	lastQuery string
+	results    []string
+	lastQuery  string
+	lastFilter map[string]string
 }
 
-func (m *mockHybridRetriever) Retrieve(_ context.Context, query string, _ types.BM25Config, _ types.DenseConfig) ([]string, error) {
+func (m *mockHybridRetriever) Retrieve(_ context.Context, query string, filters map[string]string, _ types.BM25Config, _ types.DenseConfig) ([]string, error) {
 	m.lastQuery = query
+	m.lastFilter = filters
 	return m.results, nil
 }
 

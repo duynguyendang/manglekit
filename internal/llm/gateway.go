@@ -14,9 +14,18 @@ import (
 	"ndduy.dev/manglekit/internal/types"
 )
 
+const (
+	// defaultPromptTemplate is used if no template is provided in the config.
+	defaultPromptTemplate = "Answer the following question based on the provided context:\n\n" +
+		"Context:\n%s\n\n" +
+		"Question: %s\n\n" +
+		"Answer:"
+)
+
 // gateway implements the types.Gateway interface.
 type gateway struct {
 	model ai.Model
+	cfg   types.LLMConfig
 }
 
 // New creates a new LLM Gateway based on the provided configuration.
@@ -43,12 +52,12 @@ func New(ctx context.Context, cfg types.LLMConfig) (types.Gateway, error) {
 		return nil, fmt.Errorf("failed to load model: %s", cfg.Model)
 	}
 
-	return &gateway{model: model}, nil
+	return &gateway{model: model, cfg: cfg}, nil
 }
 
 // Generate creates a response using the provided context.
 func (g *gateway) Generate(ctx context.Context, prompt string, chunks []*types.Chunk) (*types.Response, error) {
-	finalPrompt := buildPrompt(prompt, chunks)
+	finalPrompt, finalChunks := g.buildPrompt(prompt, chunks)
 	var finalAnswer strings.Builder
 
 	req := ai.NewModelRequest(nil, ai.NewUserMessage(ai.NewTextPart(finalPrompt)))
@@ -65,26 +74,48 @@ func (g *gateway) Generate(ctx context.Context, prompt string, chunks []*types.C
 
 	return &types.Response{
 		Answer:    finalAnswer.String(),
-		Citations: extractCitations(chunks),
+		Citations: extractCitations(finalChunks),
 	}, nil
 }
 
 // buildPrompt constructs the final prompt from a template, user query, and context chunks.
-func buildPrompt(userPrompt string, chunks []*types.Chunk) string {
-	var contextBuilder strings.Builder
-	for _, chunk := range chunks {
-		contextBuilder.WriteString(fmt.Sprintf("- %s\n", chunk.Text))
+// It also truncates the chunks to respect the token limit.
+func (g *gateway) buildPrompt(userPrompt string, chunks []*types.Chunk) (string, []*types.Chunk) {
+	template := g.cfg.PromptTemplate
+	if template == "" {
+		template = defaultPromptTemplate
 	}
 
-	// Simple prompt template
-	return fmt.Sprintf(
-		"Answer the following question based on the provided context:\n\n"+
-			"Context:\n%s\n\n"+
-			"Question: %s\n\n"+
-			"Answer:",
+	// Estimate tokens used by the template and the user prompt.
+	// The '%s' for context and question are placeholders.
+	templateTokens := countWords(fmt.Sprintf(template, "", userPrompt))
+
+	var contextBuilder strings.Builder
+	var finalChunks []*types.Chunk
+	remainingTokens := g.cfg.MaxContextTokens - templateTokens
+
+	for _, chunk := range chunks {
+		chunkTokens := countWords(chunk.Text)
+		if remainingTokens-chunkTokens < 0 {
+			break // Not enough tokens left for this chunk
+		}
+		contextBuilder.WriteString(fmt.Sprintf("- %s\n", chunk.Text))
+		finalChunks = append(finalChunks, chunk)
+		remainingTokens -= chunkTokens
+	}
+
+	// Final prompt
+	finalPrompt := fmt.Sprintf(
+		template,
 		contextBuilder.String(),
 		userPrompt,
 	)
+	return finalPrompt, finalChunks
+}
+
+// countWords provides a simple estimation of token count.
+func countWords(text string) int {
+	return len(strings.Fields(text))
 }
 
 // extractCitations extracts document IDs from chunks to be used as citations.
