@@ -1,191 +1,191 @@
-# Low-Level Design (LLD)
+# Manglekit — Low Level Design (LLD)
 
-This document provides a detailed, low-level view of the Manglekit application's architecture and components.
+**Version:** 3.0 (2025-09-30)  
+**Audience:** Backend engineers implementing / extending the current Go codebase  
+**Status:** Updated draft reflecting recent refactoring: Builder pattern for dependency injection, split retrieval (BM25 lexical + Dense vector + Hybrid combiner), embedding-based reranker, Zap logging, simplified Mangle (rules-only, no separate facts), configurable LLM prompts/token limits, and rule-based post-processing via 'deny' facts.
 
-## 1. High-Level Architecture
+---
 
-Manglekit is a modular RAG (Retrieval-Augmented Generation) application designed to answer queries using a combination of retrieved documents and a large language model (LLM). The architecture is built around a central **Orchestrator** that coordinates the flow of data through a series of specialized components.
+## 1. Runtime Overview
 
-The main components are:
-- **Application Entrypoint (`main.go`)**: Initializes all components, loads the configuration, and starts the web server.
-- **Orchestrator**: The core component that manages the entire query processing workflow.
-- **Hybrid Retrieval**: A two-pronged retrieval system that combines sparse (BM25) and dense (vector-based) search to fetch relevant documents.
-- **Reranker**: A component that re-scores and sorts the retrieved documents based on their semantic relevance to the query.
-- **Mangle Processor**: A rule-based engine that preprocesses the user query and post-processes the retrieved context before sending it to the LLM.
-- **Intent Parser**: A module that uses Genkit's tooling to identify the user's intent and extract relevant entities from the query.
-- **LLM Gateway**: An abstraction layer for communicating with the underlying large language model.
+The binary starts via [`cmd/agent/main.go`](cmd/agent/main.go:30-49), initializing Genkit, loading `config/config.yaml` (env-expanded), creating a `Builder` for wiring, building the orchestrator, defining the `answer` flow, and serving at `POST /answer` on `127.0.0.1:8082`. Front-matter parsing extracts metadata from Markdown docs during indexing. [`cmd/agent/main.go`](cmd/agent/main.go:1-83) [`cmd/agent/builder.go`](cmd/agent/builder.go:1-118)
 
-The system follows a "Sandwich" pattern, where the `Mangle` processor wraps the core RAG pipeline:
-1.  **Pre-processing (Bottom Bread Slice)**: The user query is first processed by `Mangle` to expand and normalize it.
-2.  **Retrieval & Reranking (The Filling)**: The processed query is used to retrieve and rerank documents.
-3.  **Post-processing (Top Bread Slice)**: The reranked documents are then processed again by `Mangle` to format and condense the context.
-4.  **Generation**: The final context is passed to the LLM to generate an answer.
+The orchestrator executes the "Sandwich" pipeline with logging:
 
-## 2. Component Details
+1. **Intent Parsing:** Genkit flow detects intent (e.g., "troubleshoot", "question") and extracts entities (versions, tickets, products, platforms, artifacts) via regex/NER. [`internal/genintent/parser.go`](internal/genintent/parser.go:33-71) [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:92-98)
 
-This section dives into the implementation of each major component.
+2. **Mangle PreProcess:** Normalizes query, tokenizes/asserts facts, evaluates Datalog rules (from `config/mangle/*.dlog`) for expansions (`expanded_query`), filters (`query_filter`). No separate facts file; base facts derived from rules. Generates explanation. [`internal/mangle/processor.go`](internal/mangle/processor.go:62-101) [`internal/mangle/processor.go`](internal/mangle/processor.go:159-257)
 
-### 2.1. Orchestrator (`internal/orchestrator`)
+3. **Hybrid Retrieval:** Parallel BM25 (lexical, tf-idf via go-nlp) + Dense (LocalVec with GoogleAI embeddings); combines/deduplicates results up to topK, applying filters. Loads/chunks Markdown corpus with front-matter metadata. [`internal/retrieval/bm25.go`](internal/retrieval/bm25.go:39-115) [`internal/retrieval/dense.go`](internal/retrieval/dense.go:25-70) [`internal/retrieval/hybrid.go`](internal/retrieval/hybrid.go:33-65) [`cmd/agent/builder.go`](cmd/agent/builder.go:65-118)
 
-- **Purpose**: The `orchestrator` is the brain of the application. It manages the end-to-end workflow of processing a user query.
-- **File**: `orchestrator.go`
-- **Key Functions**:
-    - `New(...)`: Initializes the orchestrator with all its dependencies, including the retriever, reranker, LLM gateway, Mangle processor, and intent parser.
-    - `RunFlow(...)`: The main entry point for processing a query. It executes the following steps in sequence:
-        1.  Parses the user's intent using the `Intent Parser`.
-        2.  Pre-processes the query using the `Mangle` processor to get an expanded query.
-        3.  Constructs a `ragQuery` by combining the normalized query, expansion terms, and any extracted intent entities.
-        4.  Executes the `Hybrid Retriever` to fetch relevant documents.
-        5.  Passes the results to the `Reranker` to sort them by relevance.
-        6.  Post-processes the reranked documents using the `Mangle` processor.
-        7.  Sends the final context to the `LLM Gateway` to generate a response.
-        8.  Augments the response with explanations from the intent parsing and Mangle processing steps.
-- **Configuration**: The `Config` struct in this package aggregates configuration for all its child components.
+4. **Reranking:** Embeds query/docs via GoogleAI, computes cosine similarities, sorts/retains topK. [`internal/reranker/reranker.go`](internal/reranker/reranker.go:36-89)
 
-### 2.2. Retrieval (`internal/retrieval`)
+5. **Mangle PostProcess:** Asserts user/chunk facts, evaluates rules for `deny` (doc_id → reason); filters out denied chunks, generates explanations. [`internal/mangle/processor.go`](internal/mangle/processor.go:103-157)
 
-The retrieval system is responsible for finding relevant documents from the knowledge base. It uses a hybrid approach to maximize recall.
+6. **Fallback:** If no chunks post-process, returns fixed policy message. No threshold check yet. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:137-146)
 
-#### 2.2.1. Hybrid Retriever (`hybrid.go`)
+7. **LLM Gateway:** Builds configurable prompt (default template, word-based token estimate), streams via OpenAI/Ollama, extracts DocID citations. Limits context by estimated tokens. [`internal/llm/gateway.go`](internal/llm/gateway.go:58-114)
 
-- **Purpose**: Combines the results from the sparse and dense retrievers into a single, deduplicated list of documents.
-- **Implementation**: It runs the BM25 and Dense retrievers in parallel using an `errgroup` for efficiency. The results are then merged, and duplicates are removed.
+Aggregates explanations (intent, Mangle pre/post); logs via Zap at stages. Constructs RAG query from normalized + expansions + entities. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:89-158) [`internal/logger/logger.go`](internal/logger/logger.go)
 
-#### 2.2.2. BM25 Retriever (`bm25.go`)
+---
 
-- **Purpose**: Implements the sparse retrieval algorithm BM25 (Best Matching 25). This method is effective at matching keywords.
-- **Dependencies**: Uses the `go-bm25` library.
-- **Implementation**: It indexes the documents from the specified path and provides a `Retrieve` method that returns the top N documents based on the BM25 score.
+## 2. Detailed Component Design
 
-#### 2.2.3. Dense Retriever (`dense.go`)
+### 2.1 Builder & Configuration Loader
 
-- **Purpose**: Implements dense retrieval using vector embeddings. This method is effective at matching semantic meaning rather than just keywords.
-- **Dependencies**: `genkit`, `localvec`.
-- **Implementation**: It uses a `localvec` store, which is populated with embeddings generated by the configured Google AI embedder. The `Retrieve` method finds the nearest neighbors to the query's vector embedding.
+* **Location:** [`cmd/agent/builder.go`](cmd/agent/builder.go) [`cmd/agent/main.go`](cmd/agent/main.go)
+* **Responsibilities:**
+  * `NewBuilder`: Loads `config/config.yaml` (env-expanded), initializes Zap logger. [`cmd/agent/builder.go`](cmd/agent/builder.go:31-47)
+  * `Build`: Wires configs (LLM/Mangle into orchestrator), creates GoogleAI embedder, LocalVec retriever/indexes Markdown (front-matter YAML metadata), BM25 (tf-idf corpus), Dense (embedded index), Hybrid combiner, reranker; builds orchestrator. [`cmd/agent/builder.go`](cmd/agent/builder.go:49-96)
+  * Front-matter: Parses `---\nYAML\n---\ncontent` for doc metadata during indexing. [`cmd/agent/builder.go`](cmd/agent/builder.go:98-118) [`cmd/agent/main.go`](cmd/agent/main.go:65-83) [`internal/retrieval/bm25.go`](internal/retrieval/bm25.go:156-177)
 
-### 2.3. Reranker (`internal/reranker`)
+Configs: `orchestrator` (tokens/threshold), `llm` (provider/model/key/prompt/maxTokens), `embedder.model`, `mangle.rulesFile` (globbing `config/mangle/*.dlog`), `retrieval.path` (Markdown corpus), `retrieval.hybrid.bm25/dense.topK`. [`config/config.yaml`](config/config.yaml)
 
-- **Purpose**: To re-score the initial set of retrieved documents for better relevance. The hybrid retriever's results are broad, and the reranker refines this list.
-- **File**: `reranker.go`
-- **Implementation**:
-    1.  It takes the query and the list of documents from the retriever.
-    2.  It generates a vector embedding for the query and for each document using the configured `ai.Embedder`.
-    3.  It calculates the cosine similarity between the query embedding and each document embedding.
-    4.  It sorts the documents in descending order of their similarity score.
-    5.  It returns the top `K` documents as specified in the configuration (`reranker.topK`).
+### 2.2 Orchestrator Core
 
-### 2.4. Mangle Processor (`internal/mangle`)
+* **Location:** [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go)
+* **Structs / Interfaces:**
+  * `Config`: Tokens/threshold, nested LLM/Mangle/Intent/Retrieval (path/hybrid bm25/dense topK)/Rerank (topK). [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:21-29)
+  * `orchestrator`: Holds hybrid retriever, doc reranker, LLM gateway, processor, intent parser, config, Zap logger. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:31-40)
+* **Creation Path:** Validates Genkit; inits LLM (OpenAI/Ollama), Mangle (rules only), intent (Genkit flow); via Builder. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:51-87) [`cmd/agent/builder.go`](cmd/agent/builder.go:90)
+* **Execution (`RunFlow`):**
+  1. Log start; parse intent/entities. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:91-98)
+  2. PreProcess for expansions/filters. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:100-105)
+  3. Construct RAG query (normalized + expansions + entities). [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:107-109) [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:161-177)
+  4. Parallel hybrid retrieve (BM25 + Dense) with filters/configs. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:111-117)
+  5. Rerank docs. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:119-124)
+  6. Convert to chunks; post-process with user context. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:126-135)
+  7. Fallback if empty; else LLM generate. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:137-154)
+  8. Add explanations (post, intent, Mangle pre); log end. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:156-158) [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:179-214)
 
-- **Purpose**: To modify the query and the context using a set of declarative rules. It implements the "Sandwich" pattern around the RAG pipeline.
-- **Implementation**: The `Processor` applies a series of rules defined in the `config.yaml`.
-    - **`PreProcess`**: Modifies the incoming `QueryInput`. This is typically used for query expansion, normalization, or synonym replacement.
-    - **`PostProcess`**: Modifies the list of `Chunk`s after reranking. This can be used to extract specific information, condense content, or reformat the context before it's sent to the LLM.
+### 2.3 Rule Processor (Mangle)
 
-### 2.5. Intent Parser (`internal/genintent`)
+* **Location:** [`internal/mangle/processor.go`](internal/mangle/processor.go)
+* **Initialization:** Validates rules path (globbing/directories for `.dlog`); parses/stratifies units, evaluates base for derived facts (no separate facts). [`internal/mangle/processor.go`](internal/mangle/processor.go:35-60) [`internal/mangle/processor.go`](internal/mangle/processor.go:159-257)
+* **PreProcess:** Normalizes/tokenizes query, asserts facts, evaluates for expansions/filters; collects via `collectStrings`/`collectKeyValue`. Explanation for expansions. [`internal/mangle/processor.go`](internal/mangle/processor.go:62-101) [`internal/mangle/processor.go`](internal/mangle/processor.go:268-368)
+* **PostProcess:** Asserts user/chunk facts (doc_id/content/metadata), evaluates for `deny` (doc_id → reason); filters/explains denies. [`internal/mangle/processor.go`](internal/mangle/processor.go:103-157)
 
-- **Purpose**: To understand the user's underlying intent and extract structured information (entities) from the query.
-- **Dependencies**: `genkit`.
-- **Implementation**: It uses Genkit's `DefineTool` functionality to create a tool that the LLM can call to parse the intent. The tool's definition (schema, description) is configured in `config.yaml`. The `Parse` method invokes the tool with the user's query and returns the structured `IntentResult`.
+Rules in `config/mangle/` (main/knowledge/aliases/stopwords, pipelines/retrieval, policies/access); stratified Datalog. [`config/mangle/`](config/mangle/)
 
-### 2.6. LLM Gateway (`internal/llm`)
+### 2.4 Retrieval Layers
 
-- **Purpose**: Provides a standardized interface for generating text with a large language model.
-- **File**: `gateway.go`
-- **Implementation**: It wraps a Genkit `llm.Model` and provides a `Generate` method. This method constructs a prompt from the user query and the processed context, sends it to the LLM, and returns the generated `Response`. This abstraction allows the underlying LLM to be swapped out with minimal changes to the orchestrator.
+#### 2.4.1 BM25 (Lexical)
+* **Location:** [`internal/retrieval/bm25.go`](internal/retrieval/bm25.go)
+* **Behavior:** Loads/chunks Markdown (front-matter), builds vocab/tf-idf (go-nlp/tfidf), BM25 scores (k1=2.0, b=0.75) query tokens; filters metadata, topK. [`internal/retrieval/bm25.go`](internal/retrieval/bm25.go:39-115) [`internal/retrieval/bm25.go`](internal/retrieval/bm25.go:156-177)
 
-## 3. Data Flow
+#### 2.4.2 Dense (Vector)
+* **Location:** [`internal/retrieval/dense.go`](internal/retrieval/dense.go)
+* **Behavior:** GoogleAI embedder + LocalVec; indexes docs, retrieves topK via ANN, filters metadata. [`internal/retrieval/dense.go`](internal/retrieval/dense.go:25-70)
 
-This section outlines the sequential flow of data and control when a query is made to the `/answer` endpoint.
+#### 2.4.3 Hybrid Combiner
+* **Location:** [`internal/retrieval/hybrid.go`](internal/retrieval/hybrid.go)
+* **Behavior:** Parallel BM25 + Dense (errgroup), dedupes/combines results. Interfaces: BM25Retriever/DenseRetriever. [`internal/retrieval/hybrid.go`](internal/retrieval/hybrid.go:19-65) [`internal/retrieval/types.go`](internal/retrieval/types.go)
 
-1.  **HTTP Request**: The `main` function in `cmd/agent/main.go` sets up an HTTP server. A `POST` request to `/answer` with a JSON body like `{"query": "user's question"}` triggers the `answerFlow`.
+### 2.5 Reranker
 
-2.  **`genkit.Handler`**: The Genkit framework receives the request and invokes the `orchestrator.RunFlow` method, passing the parsed `QueryInput`.
+* **Location:** [`internal/reranker/reranker.go`](internal/reranker/reranker.go)
+* **Behavior:** Embeds query/docs (GoogleAI), cosine similarities, sorts topK. [`internal/reranker/reranker.go`](internal/reranker/reranker.go:20-107)
 
-3.  **Intent Parsing**: `RunFlow` first calls `intent.Parse()`. This sends the query to the LLM to determine if it matches a predefined tool for intent recognition. The result (or `nil` if no intent is found) is stored in `input.Intent`.
+### 2.6 LLM Gateway
 
-4.  **Query Pre-processing**: `RunFlow` then calls `processor.PreProcess(input)`. The `Mangle` processor applies its pre-processing rules (e.g., query expansion) to the `QueryInput`. The result is an `ExpandedQuery` struct containing the normalized query and any expansion terms.
+* **Location:** [`internal/llm/gateway.go`](internal/llm/gateway.go)
+* **Initialization:** OpenAI (compat) or Ollama; supports promptTemplate/maxContextTokens. [`internal/llm/gateway.go`](internal/llm/gateway.go:32-56)
+* **Generation:** Word-estimated tokens for context limit; configurable template; streams, extracts unique DocIDs. [`internal/llm/gateway.go`](internal/llm/gateway.go:58-133)
 
-5.  **RAG Query Construction**: A single `ragQuery` string is created by joining the `NormalizedQuery`, `ExpansionTerms`, and any `Entities` extracted from the intent. This consolidated query is used for retrieval to ensure all available information is leveraged.
+### 2.7 Intent Parser
 
-6.  **Hybrid Retrieval**: `retriever.Retrieve(ragQuery, ...)` is called.
-    -   Internally, this triggers both `bm25.Retrieve()` and `dense.Retrieve()` to run in parallel.
-    -   `bm25.Retrieve()` performs a keyword-based search.
-    -   `dense.Retrieve()` performs a semantic vector search.
-    -   The `HybridRetriever` merges the two lists of document strings and removes duplicates.
+* **Location:** [`internal/genintent/parser.go`](internal/genintent/parser.go)
+* **Behavior:** Genkit flow: keyword/regex intent (troubleshoot/question/etc.), entities (version/ticket/product/platform/artifact). Dedupes/sorts. [`internal/genintent/parser.go`](internal/genintent/parser.go:33-187)
 
-7.  **Reranking**: `reranker.Rerank(ragQuery, results, ...)` is called.
-    -   The `Reranker` calculates the cosine similarity between the `ragQuery` and each document from the retrieval step.
-    -   It sorts the documents by this score and returns the top `K` results.
+### 2.8 Logging
 
-8.  **Context Post-processing**: `processor.PostProcess(rerankedDocs, ...)` is called. The `Mangle` processor applies its post-processing rules to the final list of document chunks, potentially reformatting or condensing them.
+* **Location:** [`internal/logger/logger.go`](internal/logger/logger.go)
+* **Behavior:** Zap production logger; injected via Builder. Used in orchestrator for stages/errors. [`internal/logger/logger.go`](internal/logger/logger.go:8-12) [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:91-158)
 
-9.  **LLM Generation**: `llmGateway.Generate(query, postChunks)` is called.
-    -   A final prompt is constructed containing the original user query and the processed context chunks.
-    -   This prompt is sent to the configured LLM (e.g., Google's Gemini).
-    -   The LLM generates the final answer.
+### 2.9 Shared Types
 
-10. **Response Augmentation**: The `Response` from the LLM is augmented with `Explanation` objects from the intent parsing and Mangle processing steps. This provides traceability for how the final answer was generated.
+`internal/types`: `QueryInput`, `ExpandedQuery` (simplified: normalized/expansions/filters/explanation), `Chunk` (no constraints), `Context` (user only), `Explanation` (added DocID), `Response`, `IntentResult`, interfaces (`Processor`, `Retriever` unused, `BM25Retriever`/`DenseRetriever`, `Gateway`, `Orchestrator`, `IntentParser`), configs (`BM25Config`/`DenseConfig`/`RerankConfig`/`RetrievalConfig`/`LLMConfig` with prompt/tokens). [`internal/types/types.go`](internal/types/types.go:1-131)
 
-11. **HTTP Response**: The final, augmented `Response` object is serialized to JSON and returned to the client with a `200 OK` status.
+---
 
-## 4. Configuration (`config.yaml`)
+## 3. Sequence Diagram (Textual)
 
-The application's behavior is controlled by the `config.yaml` file. This file allows tuning the components without changing the code.
-
-```yaml
-orchestrator:
-  maxContextTokens: 4000
-  fallbackThreshold: 0.5
-  intentParser:
-    flowName: "parse_intent_ner"
-  retrieval:
-    path: "docs"
-    hybrid:
-      bm25:
-        topK: 10
-      dense:
-        topK: 10
-  reranker:
-    topK: 5
-
-llm:
-  provider: "openai"
-  model: "gpt-4o-mini"
-  apiKey: "${OPENAI_API_KEY}"
-
-embedder:
-  model: "embedding-001"
-
-mangle:
-  rulesFile: "rules.dlog"
-  factsFile: "data"
+```
+Client → HTTP Handler : POST /answer {query, user_context}
+Handler → Builder.Build : config/genkit
+Builder → Orchestrator.New : wired deps (retrievers/reranker/llm/processor/intent/logger)
+Orchestrator.RunFlow → IntentParser.Parse : input
+IntentParser → RunFlow : IntentResult (intent/entities)
+RunFlow → Mangle.PreProcess : input + intent
+Mangle → RunFlow : ExpandedQuery (normalized/expansions/filters)
+RunFlow → constructRAGQuery : normalized + expansions + entities
+RunFlow → HybridRetriever.Retrieve (parallel) : ragQuery + filters + configs
+BM25 → Hybrid : lexical topK (tf-idf/BM25)
+Dense → Hybrid : vector topK (LocalVec/ANN)
+Hybrid → RunFlow : combined/deduped docs
+RunFlow → Reranker.Rerank : ragQuery + docs + topK
+Reranker → RunFlow : cosine-sorted topK docs
+RunFlow → Chunk conversion : docs → Chunks
+RunFlow → Mangle.PostProcess : chunks + userContext
+Mangle → RunFlow : allowed chunks + deny explanations
+(if empty) → Client : fallback response + explanations
+else
+RunFlow → LLMGateway.Generate : query + chunks (token-limited prompt)
+LLM → RunFlow : Response (answer + citations)
+RunFlow → addExplanations : post/intent/mangle-pre
+RunFlow → Client : final response + metadata
 ```
 
-### 4.1. `orchestrator`
+---
 
-- `maxContextTokens`: The maximum number of tokens to be included in the context sent to the LLM.
-- `fallbackThreshold`: A threshold used for fallback strategies (currently not implemented in the main flow).
-- `intentParser`:
-    - `flowName`: The name of the Genkit flow responsible for parsing user intent.
-- `retrieval`:
-    - `path`: The directory containing the markdown documents to be indexed.
-    - `hybrid`: Configures the two retrievers.
-        - `bm25.topK`: The number of documents the BM25 retriever should return.
-        - `dense.topK`: The number of documents the dense retriever should return.
-- `reranker`:
-    - `topK`: The final number of documents to keep after the reranking process. This is the list that will be sent to the LLM.
+## 4. Configuration Surface
 
-### 4.2. `llm`
+`config/config.yaml`:
 
-- `provider`: Specifies the LLM provider (e.g., `openai`, `google`).
-- `model`: The specific model to use for generation (e.g., `gpt-4o-mini`).
-- `apiKey`: The API key for the selected provider. It supports environment variable expansion (e.g., `${OPENAI_API_KEY}`).
+* `orchestrator.maxContextTokens` / `fallbackThreshold`: Prompt/fallback (threshold unused). 
+* `llm.provider` / `model` / `apiKey` / `promptTemplate` / `maxContextTokens`: LLM + prompt/tokens (env-expanded key).
+* `embedder.model`: GoogleAI embedder.
+* `mangle.rulesFile`: Globbing for `config/mangle/*.dlog` (main/knowledge/aliases/stopwords/pipelines/retrieval/policies/access).
+* `retrieval.path`: Markdown corpus (front-matter metadata).
+* `retrieval.hybrid.bm25.topK` / `dense.topK`: Per-retriever limits.
+* `reranker.topK`: Rerank limit.
 
-### 4.3. `embedder`
+Datalog in `config/mangle/` organizes rules (knowledge/policies/pipelines). 
 
-- `model`: The model to use for generating vector embeddings for both dense retrieval and reranking. This is typically a specialized model like `embedding-001`.
+---
 
-### 4.4. `mangle`
+## 5. Error Handling & Observability Hooks
 
-- `rulesFile`: Path to the Datalog (`.dlog`) file that contains the rules for the Mangle pre- and post-processing engine.
-- `factsFile`: Path to the directory containing data files (facts) that the Mangle engine can use in its rules.
+* Startup: Wrapped errors via Builder (config/load/index/retrievers/reranker/orchestrator). [`cmd/agent/builder.go`](cmd/agent/builder.go:49-96)
+* Flow: Logs (Zap Info/Warn/Error) at stages; propagates intent/retrieval/rerank/post/LLM errors. Fallback on empty post-chunks. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:91-158)
+* Mangle: Errors on parse/eval (deny all on post error). [`internal/mangle/processor.go`](internal/mangle/processor.go:124-131)
+* Explanations: Post (deny reasons), intent, Mangle pre; metadata (intent). No rerank explanations yet.
+
+Zap production logging; extend for traces/metrics.
+
+---
+
+## 6. Testing
+
+* `internal/orchestrator/orchestrator_test.go`: End-to-end with mocks (not updated for new retrieval/reranker).
+* `internal/mangle/processor_test.go`: Rules loading/parsing (globbing/units).
+* `internal/reranker/reranker_test.go`: Cosine rerank (embeddings/scores).
+* `internal/retrieval/retrieval_test.go`: BM25/Dense/Hybrid (testdata Markdown).
+
+Recommend: Integration (full flow with corpus), error resilience (empty results), logging assertions.
+
+---
+
+## 7. Extension Points & Open Items
+
+* **Real Embeddings Integration:** Already GoogleAI/LocalVec; add Qdrant for persistent vectors.
+* **Advanced Mangle:** Reintroduce facts; dynamic rules reload; more predicates (e.g., redaction).
+* **Rerank Enhancements:** Add explanations; cross-encoder (LLM judge); config weights.
+* **Fallback/Threshold:** Implement score-based fallback; configurable messages.
+* **Observability:** Zap levels/config; Genkit tracers; metrics (retrieval latency/hit rate).
+* **Corpus:** Watcher for reloads; non-Markdown support; chunking strategies.
+* **Intent:** LLM NER over regex; confidence calibration.
+* **Prompts:** Dynamic templates; token counting (tiktoken).
+
+This LLD aligns with the refactored implementation as of 2025-09-30.
