@@ -16,6 +16,8 @@ import (
 	"gopkg.in/yaml.v3"
 	"ndduy.dev/manglekit/internal/logger"
 	"ndduy.dev/manglekit/internal/mangle"
+
+	"github.com/joho/godotenv"
 	"ndduy.dev/manglekit/internal/orchestrator"
 	"ndduy.dev/manglekit/internal/reranker"
 	"ndduy.dev/manglekit/internal/retrieval"
@@ -23,6 +25,10 @@ import (
 )
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Printf("Error loading .env file, using environment variables: %v", err)
+	}
 	ctx := context.Background()
 
 	// 1. Initialize Genkit and a logger

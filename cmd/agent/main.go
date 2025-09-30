@@ -14,6 +14,8 @@ import (
 	"ndduy.dev/manglekit/internal/mangle"
 	"ndduy.dev/manglekit/internal/orchestrator"
 	"ndduy.dev/manglekit/internal/types"
+
+	"github.com/joho/godotenv"
 )
 
 type EmbedderConfig struct {
@@ -28,6 +30,10 @@ type AppConfig struct {
 }
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Printf("Error loading .env file, using environment variables: %v", err)
+	}
 	ctx := context.Background()
 	g := genkit.Init(ctx)
 
