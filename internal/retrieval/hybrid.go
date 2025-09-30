@@ -13,15 +13,20 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/localvec"
+
 	"ndduy.dev/manglekit/internal/types"
 )
 
 type hybridRetriever struct {
 	cfg          Config
-	denseDim     int
 	chunks       []*chunkIndex
 	idf          map[string]float64
 	avgDocLength float64
+	denseStore   *localvec.DocStore
+	docIndex     map[string]*chunkIndex
 }
 
 type chunkIndex struct {
@@ -29,7 +34,6 @@ type chunkIndex struct {
 	tokens   []string
 	termFreq map[string]float64
 	length   float64
-	denseVec []float64
 }
 
 type candidateScore struct {
@@ -40,12 +44,9 @@ type candidateScore struct {
 }
 
 // NewHybrid constructs a hybrid retriever that performs lexical and dense search.
-func NewHybrid(cfg Config) (types.Retriever, error) {
+func NewHybrid(ctx context.Context, g *genkit.Genkit, embedder ai.Embedder, cfg Config) (types.Retriever, error) {
 	if cfg.Corpus.Path == "" {
 		return nil, errors.New("retrieval corpus path is required")
-	}
-	if cfg.Hybrid.Dense.Dimensions <= 0 {
-		cfg.Hybrid.Dense.Dimensions = 128
 	}
 	if cfg.Hybrid.Dense.TopK <= 0 {
 		cfg.Hybrid.Dense.TopK = 20
@@ -63,6 +64,27 @@ func NewHybrid(cfg Config) (types.Retriever, error) {
 		cfg.Corpus.ChunkOverlap = 0
 	}
 
+	if g == nil {
+		return nil, errors.New("genkit instance is required for dense retrieval")
+	}
+
+	if embedder == nil {
+		return nil, errors.New("embedder is required for dense retrieval")
+	}
+
+	if err := localvec.Init(); err != nil {
+		return nil, fmt.Errorf("init localvec: %w", err)
+	}
+
+	collectionName := "hybrid-dense"
+	docStore, _, err := localvec.DefineRetriever(g, collectionName, localvec.Config{
+		Dir:      cfg.Hybrid.Dense.StoreDir,
+		Embedder: embedder,
+	}, &ai.RetrieverOptions{Label: collectionName})
+	if err != nil {
+		return nil, fmt.Errorf("define localvec retriever: %w", err)
+	}
+
 	chunks, err := loadCorpus(cfg)
 	if err != nil {
 		return nil, err
@@ -71,14 +93,33 @@ func NewHybrid(cfg Config) (types.Retriever, error) {
 		return nil, fmt.Errorf("no chunks were indexed from %s", cfg.Corpus.Path)
 	}
 
+	docs := make([]*ai.Document, 0, len(chunks))
+	docIndex := make(map[string]*chunkIndex, len(chunks))
+	for _, idx := range chunks {
+		meta := map[string]any{
+			"chunkID": idx.chunk.ID,
+		}
+		doc := ai.DocumentFromText(idx.chunk.Text, meta)
+		docs = append(docs, doc)
+		docID, err := localVecDocID(doc)
+		if err != nil {
+			return nil, fmt.Errorf("compute document id for chunk %s: %w", idx.chunk.ID, err)
+		}
+		docIndex[docID] = idx
+	}
+	if err := localvec.Index(ctx, docs, docStore); err != nil {
+		return nil, fmt.Errorf("index corpus with localvec: %w", err)
+	}
+
 	idf, avgLen := computeIDF(chunks)
 
 	return &hybridRetriever{
 		cfg:          cfg,
-		denseDim:     cfg.Hybrid.Dense.Dimensions,
 		chunks:       chunks,
 		idf:          idf,
 		avgDocLength: avgLen,
+		denseStore:   docStore,
+		docIndex:     docIndex,
 	}, nil
 }
 
@@ -86,7 +127,6 @@ func (r *hybridRetriever) Search(ctx context.Context, query *types.ExpandedQuery
 	if query == nil {
 		return nil, errors.New("expanded query is required")
 	}
-	_ = ctx
 
 	mustTerms := projectTerms(query.Constraints.Terms.Must, r.cfg.Hybrid.BM25.Must)
 	if len(mustTerms) == 0 {
@@ -101,7 +141,14 @@ func (r *hybridRetriever) Search(ctx context.Context, query *types.ExpandedQuery
 	metadataFilters := mergeFilters(filters, query)
 
 	queryText := strings.Join(append([]string{query.NormalizedQuery}, append(mustTerms, shouldTerms...)...), " ")
-	queryVec := embedText(queryText, r.denseDim)
+	denseScores := map[string]float64{}
+	if r.denseStore != nil {
+		scores, err := r.computeDenseScores(ctx, queryText)
+		if err != nil {
+			return nil, fmt.Errorf("compute dense scores: %w", err)
+		}
+		denseScores = scores
+	}
 
 	var candidates []candidateScore
 	for _, idx := range r.chunks {
@@ -112,7 +159,7 @@ func (r *hybridRetriever) Search(ctx context.Context, query *types.ExpandedQuery
 			continue
 		}
 		lexicalScore := r.scoreBM25(idx, append(mustTerms, shouldTerms...))
-		denseScore := cosineSimilarity(queryVec, idx.denseVec)
+		denseScore := denseScores[idx.chunk.ID]
 		if lexicalScore == 0 && denseScore == 0 {
 			continue
 		}
@@ -215,6 +262,39 @@ func (r *hybridRetriever) scoreBM25(idx *chunkIndex, terms []string) float64 {
 		score += idf * (tf * (k1 + 1) / denom)
 	}
 	return score
+}
+
+func (r *hybridRetriever) computeDenseScores(ctx context.Context, queryText string) (map[string]float64, error) {
+	if r.denseStore == nil || r.denseStore.Embedder == nil {
+		return map[string]float64{}, nil
+	}
+	if len(r.denseStore.Data) == 0 {
+		return map[string]float64{}, nil
+	}
+
+	queryDoc := ai.DocumentFromText(queryText, nil)
+	embedReq := &ai.EmbedRequest{
+		Input:   []*ai.Document{queryDoc},
+		Options: r.denseStore.EmbedderOptions,
+	}
+	embedResp, err := r.denseStore.Embedder.Embed(ctx, embedReq)
+	if err != nil {
+		return nil, fmt.Errorf("embed query with google ai: %w", err)
+	}
+	if len(embedResp.Embeddings) == 0 {
+		return map[string]float64{}, nil
+	}
+	queryVec := embedResp.Embeddings[0].Embedding
+
+	scores := make(map[string]float64, len(r.denseStore.Data))
+	for docID, stored := range r.denseStore.Data {
+		idx := r.docIndex[docID]
+		if idx == nil {
+			continue
+		}
+		scores[idx.chunk.ID] = cosineSimilarity32(queryVec, stored.Embedding)
+	}
+	return scores, nil
 }
 
 func rankCandidates(candidates []candidateScore, less func(a, b candidateScore) bool) []*candidateScore {
@@ -376,7 +456,6 @@ func loadCorpus(cfg Config) ([]*chunkIndex, error) {
 				idx.termFreq[token]++
 			}
 			idx.length = float64(len(idx.tokens))
-			idx.denseVec = embedText(chunk.Text, cfg.Hybrid.Dense.Dimensions)
 			chunks = append(chunks, idx)
 		}
 	}

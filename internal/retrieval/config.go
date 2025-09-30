@@ -21,8 +21,9 @@ type HybridConfig struct {
 		Should int `yaml:"should"`
 	} `yaml:"bm25"`
 	Dense struct {
-		TopK       int `yaml:"topK"`
-		Dimensions int `yaml:"dimensions"`
+		TopK     int    `yaml:"topK"`
+		Model    string `yaml:"model"`
+		StoreDir string `yaml:"storeDir"`
 	} `yaml:"dense"`
 }
 

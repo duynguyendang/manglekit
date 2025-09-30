@@ -20,7 +20,7 @@ retrieval:
       should: 6
     dense:
       topK: 20
-      dimensions: 128
+      model: "text-embedding-004"
   rerank:
     mrl:
       topK: 8

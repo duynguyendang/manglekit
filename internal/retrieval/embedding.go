@@ -1,54 +1,37 @@
 package retrieval
 
 import (
-	"hash/fnv"
+	"crypto/md5"
+	"encoding/json"
+	"fmt"
 	"math"
-	"strings"
+
+	"github.com/firebase/genkit/go/ai"
 )
 
-func embedText(text string, dims int) []float64 {
-	if dims <= 0 {
-		return nil
-	}
-	vec := make([]float64, dims)
-	tokens := strings.Fields(strings.ToLower(text))
-	if len(tokens) == 0 {
-		return vec
-	}
-	for _, token := range tokens {
-		h := fnv.New32a()
-		_, _ = h.Write([]byte(token))
-		idx := int(h.Sum32()) % dims
-		if idx < 0 {
-			idx = -idx
-		}
-		vec[idx] += 1
-	}
-	normalize(vec)
-	return vec
-}
-
-func cosineSimilarity(a, b []float64) float64 {
+func cosineSimilarity32(a, b []float32) float64 {
 	if len(a) == 0 || len(a) != len(b) {
 		return 0
 	}
-	var dot float64
+	var dot, normA, normB float64
 	for i := range a {
-		dot += a[i] * b[i]
+		va := float64(a[i])
+		vb := float64(b[i])
+		dot += va * vb
+		normA += va * va
+		normB += vb * vb
 	}
-	return dot
+	if normA == 0 || normB == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
 }
 
-func normalize(vec []float64) {
-	var norm float64
-	for _, v := range vec {
-		norm += v * v
+func localVecDocID(doc *ai.Document) (string, error) {
+	data, err := json.Marshal(doc)
+	if err != nil {
+		return "", fmt.Errorf("marshal document: %w", err)
 	}
-	if norm == 0 {
-		return
-	}
-	inv := 1 / math.Sqrt(norm)
-	for i := range vec {
-		vec[i] *= inv
-	}
+	sum := md5.Sum(data)
+	return fmt.Sprintf("%02x", sum), nil
 }

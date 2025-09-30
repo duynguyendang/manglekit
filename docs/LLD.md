@@ -16,7 +16,7 @@ At runtime, the orchestrator executes the enhanced "Sandwich" pipeline:
 
 2. **Mangle PreProcess** normalizes the query, tokenizes it, asserts intent entities as facts, and derives expansions (aliases like "bm25" → "best matching 25"), normalized terms, stopwords, term constraints (must/should), entities, and metadata constraints using Datalog rules and facts. Explanations are generated for expansions. [`internal/mangle/processor.go`](internal/mangle/processor.go:74-164)
 
-3. **Hybrid Retrieval** performs lexical (BM25 with must/should terms) and dense (hash-based embeddings) search over a chunked Markdown corpus, applying metadata filters (visibility, tenant) from Mangle. Returns scored candidates up to `topK`. [`internal/retrieval/hybrid.go`](internal/retrieval/hybrid.go:85-188) [`internal/retrieval/config.go`](internal/retrieval/config.go)
+3. **Hybrid Retrieval** performs lexical (BM25 with must/should terms) and dense (localvec + Google AI embeddings) search over a chunked Markdown corpus, applying metadata filters (visibility, tenant) from Mangle. Returns scored candidates up to `topK`. [`internal/retrieval/hybrid.go`](internal/retrieval/hybrid.go:85-218) [`internal/retrieval/config.go`](internal/retrieval/config.go)
 
 4. **Reranking** applies multi-dimensional reranking (MRL) using cosine similarity on multiple embedding dimensions, re-scoring and limiting candidates to `topK`, with explanations for retained/dropped chunks. [`internal/retrieval/reranker.go`](internal/retrieval/reranker.go:31-127)
 
@@ -80,9 +80,9 @@ Rules in `config/mangle/main.dlog` define aliases, stopwords, constraints; facts
 #### 2.4.1 Custom Hybrid Retrieval
 * **Location:** [`internal/retrieval/hybrid.go`](internal/retrieval/hybrid.go)
 * **Behavior:**
-  * Loads/chunks Markdown corpus (sliding window with overlap), tokenizes, computes term freq/IDF, generates hash-based dense vectors. [`internal/retrieval/hybrid.go`](internal/retrieval/hybrid.go:341-384) [`internal/retrieval/embedding.go`](internal/retrieval/embedding.go)
-  * `Search`: Projects must/should terms from Mangle, embeds query, scores BM25 (k1=1.6, b=0.75) + cosine dense; normalizes/combines (0.6 lexical + 0.4 dense); filters metadata early. Limits candidates via topK union. [`internal/retrieval/hybrid.go`](internal/retrieval/hybrid.go:85-188) [`internal/retrieval/hybrid.go`](internal/retrieval/hybrid.go:190-218)
-  * Config: Corpus path/chunking, BM25 must/should, dense topK/dims. [`internal/retrieval/config.go`](internal/retrieval/config.go)
+  * Loads/chunks Markdown corpus (sliding window with overlap), tokenizes, computes term freq/IDF, and indexes Genkit localvec documents using the Google AI embedder. [`internal/retrieval/hybrid.go`](internal/retrieval/hybrid.go:341-390) [`internal/retrieval/embedding.go`](internal/retrieval/embedding.go)
+  * `Search`: Projects must/should terms from Mangle, embeds query via Google AI, scores BM25 (k1=1.6, b=0.75) + cosine dense from localvec store; normalizes/combines (0.6 lexical + 0.4 dense); filters metadata early. Limits candidates via topK union. [`internal/retrieval/hybrid.go`](internal/retrieval/hybrid.go:85-218)
+  * Config: Corpus path/chunking, BM25 must/should, dense topK/model/storeDir. [`internal/retrieval/config.go`](internal/retrieval/config.go)
 
 #### 2.4.2 Mock Retriever
 * **Location:** [`internal/retrieval/mock.go`](internal/retrieval/mock.go)
@@ -90,12 +90,12 @@ Rules in `config/mangle/main.dlog` define aliases, stopwords, constraints; facts
 
 #### 2.4.3 Legacy LocalVec RAG (Unused)
 * **Location:** [`internal/rag/rag.go`](internal/rag/rag.go)
-* **Note:** Defines Genkit localvec retriever with GoogleAI embedder and Markdown indexing, but not wired into production flow. Retained for potential future use. [`internal/rag/rag.go`](internal/rag/rag.go:37-88)
+* **Note:** Older demo showing direct Genkit localvec retriever wiring remains for reference; primary hybrid path now shares the same embedder/store primitives. [`internal/rag/rag.go`](internal/rag/rag.go:37-88)
 
 ### 2.5 Reranker (MRL)
 
 * **Location:** [`internal/retrieval/reranker.go`](internal/retrieval/reranker.go)
-* **Behavior:** Embeds query/chunks in multiple dimensions, computes cosine similarities, averages scores (weighted with hybrid score), limits to topK. Adds rerank metadata/explanations. Config: dims, topK. [`internal/retrieval/reranker.go`](internal/retrieval/reranker.go:19-127) [`internal/retrieval/config.go`](internal/retrieval/config.go)
+* **Behavior:** Embeds query/chunks with the Google AI embedder, computes cosine similarities (reported with configured `dims` labels), averages scores (weighted with hybrid score), limits to topK. Adds rerank metadata/explanations. Config: dims, topK. [`internal/retrieval/reranker.go`](internal/retrieval/reranker.go:19-143) [`internal/retrieval/config.go`](internal/retrieval/config.go)
 
 ### 2.6 LLM Gateway
 
@@ -147,7 +147,7 @@ Orchestrator → Client : response + aggregated explanations + metadata
 * `llm.provider` / `model` / `apiKey`: OpenAI/Ollama selection (key expanded). [`config/config.yaml`](config/config.yaml:5-8)
 * `retrieval.corpus.path` / `chunkSize` / `chunkOverlap`: Markdown ingestion/chunking. [`config/config.yaml`](config/config.yaml:10-12)
 * `retrieval.hybrid.bm25.must` / `should`: Lexical term buckets. [`config/config.yaml`](config/config.yaml:14-15)
-* `retrieval.hybrid.dense.topK` / `dimensions`: Dense candidate pool (default 128). [`config/config.yaml`](config/config.yaml:17-19)
+* `retrieval.hybrid.dense.topK` / `model`: Dense candidate pool + Google AI embedder model. [`config/config.yaml`](config/config.yaml:17-19)
 * `retrieval.rerank.mrl.topK` / `dimensions`: Rerank limit/multi-dim (default [512,768]). [`config/config.yaml`](config/config.yaml:21-23)
 * `mangle.rulesFile` / `factsFile`: Datalog program/facts (globbing supported). [`config/config.yaml`](config/config.yaml:25-26)
 * `intentParser.flowName`: Genkit flow ID (default "parse_intent_ner"). [`config/config.yaml`](config/config.yaml)

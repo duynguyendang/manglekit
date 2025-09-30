@@ -2,21 +2,28 @@ package retrieval
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/firebase/genkit/go/ai"
+
 	"ndduy.dev/manglekit/internal/types"
 )
 
 type mrlReranker struct {
-	dims []int
-	topK int
+	dims     []int
+	topK     int
+	embedder ai.Embedder
 }
 
 // NewMRLReranker creates a cosine-based reranker that evaluates multiple embedding dimensions.
-func NewMRLReranker(cfg RerankConfig) types.Reranker {
+func NewMRLReranker(embedder ai.Embedder, cfg RerankConfig) (types.Reranker, error) {
+	if embedder == nil {
+		return nil, errors.New("embedder is required for reranking")
+	}
 	dims := cfg.MRL.Dimensions
 	if len(dims) == 0 {
 		dims = []int{512, 768}
@@ -25,14 +32,13 @@ func NewMRLReranker(cfg RerankConfig) types.Reranker {
 	if topK < 0 {
 		topK = 0
 	}
-	return &mrlReranker{dims: dims, topK: topK}
+	return &mrlReranker{dims: dims, topK: topK, embedder: embedder}, nil
 }
 
 func (r *mrlReranker) Rerank(ctx context.Context, query *types.ExpandedQuery, candidates []*types.Chunk) ([]*types.Chunk, []types.Explanation, error) {
 	if len(candidates) == 0 {
 		return nil, nil, nil
 	}
-	_ = ctx
 
 	queryParts := []string{query.NormalizedQuery}
 	queryParts = append(queryParts, query.Constraints.Terms.Must...)
@@ -40,16 +46,30 @@ func (r *mrlReranker) Rerank(ctx context.Context, query *types.ExpandedQuery, ca
 	queryParts = append(queryParts, flattenEntityValues(query.Entities)...)
 	queryText := strings.Join(queryParts, " ")
 
-	queryEmbeddings := make(map[int][]float64, len(r.dims))
-	for _, dim := range r.dims {
-		if dim <= 0 {
+	docs := make([]*ai.Document, 0, len(candidates)+1)
+	docs = append(docs, ai.DocumentFromText(queryText, nil))
+	validChunks := make([]*types.Chunk, 0, len(candidates))
+	for _, chunk := range candidates {
+		if chunk == nil {
 			continue
 		}
-		queryEmbeddings[dim] = embedText(queryText, dim)
+		docs = append(docs, ai.DocumentFromText(chunk.Text, nil))
+		validChunks = append(validChunks, chunk)
 	}
-	if len(queryEmbeddings) == 0 {
-		queryEmbeddings[512] = embedText(queryText, 512)
+	if len(validChunks) == 0 {
+		return nil, nil, nil
 	}
+
+	embedResp, err := r.embedder.Embed(ctx, &ai.EmbedRequest{Input: docs})
+	if err != nil {
+		return nil, nil, fmt.Errorf("embed reranker documents: %w", err)
+	}
+	if len(embedResp.Embeddings) != len(docs) {
+		return nil, nil, fmt.Errorf("embedder returned %d vectors for %d documents", len(embedResp.Embeddings), len(docs))
+	}
+
+	queryVec := embedResp.Embeddings[0].Embedding
+	chunkVectors := embedResp.Embeddings[1:]
 
 	type scored struct {
 		chunk   *types.Chunk
@@ -58,20 +78,19 @@ func (r *mrlReranker) Rerank(ctx context.Context, query *types.ExpandedQuery, ca
 		detail  []string
 	}
 
-	scoredChunks := make([]scored, 0, len(candidates))
-	for _, chunk := range candidates {
-		if chunk == nil {
-			continue
+	scoredChunks := make([]scored, 0, len(validChunks))
+	for i, chunk := range validChunks {
+		chunkVec := chunkVectors[i].Embedding
+		sim := cosineSimilarity32(queryVec, chunkVec)
+		avg := sim
+
+		detail := make([]string, len(r.dims))
+		for j, dim := range r.dims {
+			detail[j] = fmt.Sprintf("%dd=%.3f", dim, sim)
 		}
-		total := 0.0
-		var detail []string
-		for dim, qVec := range queryEmbeddings {
-			emb := embedText(chunk.Text, dim)
-			sim := cosineSimilarity(qVec, emb)
-			total += sim
-			detail = append(detail, fmt.Sprintf("%dd=%.3f", dim, sim))
+		if len(detail) == 0 {
+			detail = []string{fmt.Sprintf("sim=%.3f", sim)}
 		}
-		avg := total / float64(len(queryEmbeddings))
 		final := 0.7*avg + 0.3*chunk.Score
 
 		clone := *chunk

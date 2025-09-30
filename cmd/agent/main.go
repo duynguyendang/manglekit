@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/firebase/genkit/go/plugins/server"
 	"gopkg.in/yaml.v3"
 	"ndduy.dev/manglekit/internal/mangle"
@@ -36,12 +37,24 @@ func main() {
 	orchConfig.LLM = cfg.LLM
 	orchConfig.Mangle = cfg.Mangle
 
-	retriever, err := retrieval.NewHybrid(cfg.Retrieval)
+	embedderModel := cfg.Retrieval.Hybrid.Dense.Model
+	if embedderModel == "" {
+		embedderModel = "text-embedding-004"
+	}
+	embedder := googlegenai.GoogleAIEmbedder(g, embedderModel)
+	if embedder == nil {
+		log.Fatalf("failed to create google ai embedder: %s", embedderModel)
+	}
+
+	retriever, err := retrieval.NewHybrid(ctx, g, embedder, cfg.Retrieval)
 	if err != nil {
 		log.Fatalf("failed to create hybrid retriever: %v", err)
 	}
 
-	reranker := retrieval.NewMRLReranker(cfg.Retrieval.Rerank)
+	reranker, err := retrieval.NewMRLReranker(embedder, cfg.Retrieval.Rerank)
+	if err != nil {
+		log.Fatalf("failed to create reranker: %v", err)
+	}
 
 	orch, err := orchestrator.New(ctx, g, orchConfig, retriever, reranker)
 	if err != nil {
