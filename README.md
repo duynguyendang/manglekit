@@ -24,7 +24,7 @@ Key goals include low latency (<300ms E2E), modularity for easy integration, and
 1. **Install**:
    ```
    go mod init your-project
-   go get github.com/yourorg/manglekit
+   go get ndduy.dev/manglekit
    ```
 
 2. **Basic Usage** (Library Mode):
@@ -34,7 +34,7 @@ Key goals include low latency (<300ms E2E), modularity for easy integration, and
    import (
        "context"
        "fmt"
-       mkit "github.com/yourorg/manglekit"
+       mkit "ndduy.dev/manglekit"
    )
 
    func main() {
@@ -55,7 +55,7 @@ Key goals include low latency (<300ms E2E), modularity for easy integration, and
    ```
 
 3. **Run as Service**:
-   - Build: `go build -o manglekit ./cmd/server`
+   - Build: `go build -o manglekit ./cmd/agent`
    - Serve: `./manglekit serve --config config.yaml`
    - Query: `curl -X POST http://localhost:8080/v1/answer -d '{"query": "example"}'`
 
