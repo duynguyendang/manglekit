@@ -1,118 +1,121 @@
 package mangle
 
 import (
-	"fmt"
+	"context"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"testing"
 
-	"github.com/google/mangle/ast"
-	"github.com/google/mangle/factstore"
+	"ndduy.dev/manglekit/internal/types"
 )
 
-func TestLoadFactsFromDirectory(t *testing.T) {
+func TestProcessor(t *testing.T) {
 	dir := t.TempDir()
 
-	files := map[string]string{
-		"aliases.facts":      "alias(\"foo\", \"bar\").\n",
-		"filters.data":       "# comment\n// another comment\ndefault_filter(\"visibility\", \"tenant\").\n",
-		"nested/more.dlog":   "alias(\"bar\", \"baz\").\n",
-		"nested/ignored.log": "alias(\"this\", \"should\").", // extension ignored
+	rules := `
+		Decl query_token(Token).
+		Decl expanded_query(Token, Expansion).
+		Decl alias(Source, Target).
+		expanded_query(Token, Token) :- query_token(Token).
+		expanded_query(Token, Expansion) :- query_token(Token), alias(Token, Expansion).
+	`
+	facts := `
+		alias("foo", "bar").
+		alias("multi", "word expansion").
+	`
+	nestedFacts := `
+		alias("baz", "qux").
+	`
+
+	if err := os.WriteFile(filepath.Join(dir, "rules.dlog"), []byte(rules), 0o600); err != nil {
+		t.Fatalf("write rules.dlog: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "facts.dlog"), []byte(facts), 0o600); err != nil {
+		t.Fatalf("write facts.dlog: %v", err)
 	}
 
-	for name, contents := range files {
-		full := filepath.Join(dir, name)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", filepath.Dir(full), err)
-		}
-		if err := os.WriteFile(full, []byte(contents), 0o600); err != nil {
-			t.Fatalf("write %s: %v", full, err)
-		}
+	nestedDir := filepath.Join(dir, "nested")
+	if err := os.Mkdir(nestedDir, 0o755); err != nil {
+		t.Fatalf("mkdir nested: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(nestedDir, "more.dlog"), []byte(nestedFacts), 0o600); err != nil {
+		t.Fatalf("write nested/more.dlog: %v", err)
+	}
+	// This file should be ignored.
+	if err := os.WriteFile(filepath.Join(nestedDir, "ignored.txt"), []byte("alias(\"a\", \"b\")."), 0o600); err != nil {
+		t.Fatalf("write nested/ignored.txt: %v", err)
 	}
 
-	store, err := loadFacts(dir)
+	cfg := Config{
+		RulesFile: dir,
+	}
+
+	proc, err := New(context.Background(), cfg)
 	if err != nil {
-		t.Fatalf("loadFacts: %v", err)
+		t.Fatalf("New() error = %v, want nil", err)
 	}
 
-	assertHasFacts(t, store,
-		[][2]string{{"foo", "bar"}, {"bar", "baz"}},
-		[][2]string{{"visibility", "tenant"}},
-	)
-}
-
-func TestLoadFactsFromGlob(t *testing.T) {
-	dir := t.TempDir()
-	paths := []string{
-		filepath.Join(dir, "a.facts"),
-		filepath.Join(dir, "b.facts"),
+	testCases := []struct {
+		name  string
+		query string
+		want  *types.ExpandedQuery
+	}{
+		{
+			name:  "simple expansion",
+			query: "foo",
+			want: &types.ExpandedQuery{
+				NormalizedQuery: "foo",
+				ExpansionTerms:  []string{"bar", "foo"},
+				Filters:         map[string]string{},
+				Explanation:     "mangle expansions applied",
+			},
+		},
+		{
+			name:  "nested expansion",
+			query: "baz",
+			want: &types.ExpandedQuery{
+				NormalizedQuery: "baz",
+				ExpansionTerms:  []string{"baz", "qux"},
+				Filters:         map[string]string{},
+				Explanation:     "mangle expansions applied",
+			},
+		},
+		{
+			name:  "no expansion",
+			query: "unknown",
+			want: &types.ExpandedQuery{
+				NormalizedQuery: "unknown",
+				ExpansionTerms:  []string{"unknown"},
+				Filters:         map[string]string{},
+				Explanation:     "mangle expansions applied",
+			},
+		},
+		{
+			name:  "multi-word expansion",
+			query: "multi",
+			want: &types.ExpandedQuery{
+				NormalizedQuery: "multi",
+				ExpansionTerms:  []string{"multi", "word expansion"},
+				Filters:         map[string]string{},
+				Explanation:     "mangle expansions applied",
+			},
+		},
 	}
 
-	for i, p := range paths {
-		content := fmt.Sprintf("alias(\"glob%c\", \"value%c\").\n", 'a'+i, 'a'+i)
-		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
-			t.Fatalf("write %s: %v", p, err)
-		}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := proc.PreProcess(&types.QueryInput{Query: tc.query})
+			if err != nil {
+				t.Fatalf("PreProcess() error = %v, want nil", err)
+			}
+			sort.Strings(got.ExpansionTerms)
+			sort.Strings(tc.want.ExpansionTerms)
+
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("PreProcess() = %+v, want %+v", got, tc.want)
+			}
+		})
 	}
-
-	store, err := loadFacts(filepath.Join(dir, "*.facts"))
-	if err != nil {
-		t.Fatalf("loadFacts glob: %v", err)
-	}
-
-	assertHasFacts(t, store,
-		[][2]string{{"globa", "valuea"}, {"globb", "valueb"}},
-		nil,
-	)
-}
-
-func assertHasFacts(t *testing.T, store factstore.SimpleInMemoryStore, aliases [][2]string, filters [][2]string) {
-	t.Helper()
-
-	aliasFacts := gatherFacts(t, store, "alias")
-	for _, pair := range aliases {
-		if !aliasFacts[[2]string{pair[0], pair[1]}] {
-			t.Fatalf("missing alias fact %q -> %q", pair[0], pair[1])
-		}
-	}
-
-	filterFacts := gatherFacts(t, store, "default_filter")
-	for _, pair := range filters {
-		if !filterFacts[[2]string{pair[0], pair[1]}] {
-			t.Fatalf("missing filter fact %q -> %q", pair[0], pair[1])
-		}
-	}
-}
-
-func gatherFacts(t *testing.T, store factstore.SimpleInMemoryStore, predicate string) map[[2]string]bool {
-	t.Helper()
-	results := make(map[[2]string]bool)
-	query := ast.NewQuery(ast.PredicateSym{Symbol: predicate, Arity: 2})
-	err := store.GetFacts(query, func(atom ast.Atom) error {
-		if len(atom.Args) != 2 {
-			return nil
-		}
-		left, ok := atom.Args[0].(ast.Constant)
-		if !ok {
-			return nil
-		}
-		right, ok := atom.Args[1].(ast.Constant)
-		if !ok {
-			return nil
-		}
-		lval, err := left.StringValue()
-		if err != nil {
-			return err
-		}
-		rval, err := right.StringValue()
-		if err != nil {
-			return err
-		}
-		results[[2]string{lval, rval}] = true
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("GetFacts(%s): %v", predicate, err)
-	}
-	return results
 }

@@ -2,8 +2,9 @@ package orchestrator
 
 import (
 	"context"
+	"os"
 	"path/filepath"
-	"slices"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -18,10 +19,31 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 
 	ctx := context.Background()
 
-	rulesPath := filepath.Join("..", "..", "rules.dlog")
-	factsPath := filepath.Join("..", "..", "data")
+	// Create temporary rules and facts for a self-contained test.
+	rulesDir := t.TempDir()
+	rulesContent := `
+		Decl query_token(Token).
+		Decl expanded_query(Token, Expansion).
+		Decl alias(Source, Target).
+		Decl query_filter(Key, Value).
+		Decl default_filter(Key, Value).
+		expanded_query(Token, Token) :- query_token(Token).
+		expanded_query(Token, Expansion) :- query_token(Token), alias(Token, Expansion).
+		query_filter(Key, Value) :- default_filter(Key, Value).
+	`
+	factsContent := `
+		alias("ann", "approximate nearest neighbor").
+		alias("bm25", "best matching 25").
+		default_filter("visibility", "public").
+	`
+	if err := os.WriteFile(filepath.Join(rulesDir, "rules.dlog"), []byte(rulesContent), 0o600); err != nil {
+		t.Fatalf("write rules.dlog: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(rulesDir, "facts.dlog"), []byte(factsContent), 0o600); err != nil {
+		t.Fatalf("write facts.dlog: %v", err)
+	}
 
-	processor, err := mangle.New(ctx, mangle.Config{RulesFile: rulesPath, FactsFile: factsPath})
+	processor, err := mangle.New(ctx, mangle.Config{RulesFile: rulesDir})
 	if err != nil {
 		t.Fatalf("create mangle processor: %v", err)
 	}
@@ -61,11 +83,10 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 		t.Fatalf("preprocess input: %v", err)
 	}
 
-	wantTerms := []string{"ann", "approximate nearest neighbor", "best matching 25", "bm25"}
-	for _, term := range wantTerms {
-		if !slices.Contains(expanded.ExpansionTerms, term) {
-			t.Fatalf("expected expansion term %q to be present, got %v", term, expanded.ExpansionTerms)
-		}
+	wantTerms := []string{"ann", "approximate nearest neighbor", "best matching 25", "bm25", "explain", "pipeline"}
+	sort.Strings(expanded.ExpansionTerms)
+	if !reflect.DeepEqual(expanded.ExpansionTerms, wantTerms) {
+		t.Fatalf("unexpected expansion terms. got %v, want %v", expanded.ExpansionTerms, wantTerms)
 	}
 
 	if got := expanded.Filters["visibility"]; got != "public" {

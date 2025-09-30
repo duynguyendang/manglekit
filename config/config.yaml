@@ -22,5 +22,4 @@ embedder:
   model: "embedding-001"
 
 mangle:
-  rulesFile: "rules.dlog"
-  factsFile: "data"
+  rulesFile: "config/mangle"
