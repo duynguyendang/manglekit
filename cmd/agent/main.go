@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/firebase/genkit/go/plugins/server"
 	"gopkg.in/yaml.v3"
 	"ndduy.dev/manglekit/internal/mangle"
@@ -18,28 +19,32 @@ import (
 	"github.com/joho/godotenv"
 )
 
-type EmbedderConfig struct {
-	Model    string `yaml:"model"`
-	Provider string `yaml:"provider"`
-	APIKey   string `yaml:"apiKey"`
-}
-
 type AppConfig struct {
 	Orchestrator orchestrator.Config `yaml:"orchestrator"`
 	LLM          types.LLMConfig     `yaml:"llm"`
-	Embedder     EmbedderConfig      `yaml:"embedder"`
+	Embedder     types.EmbedderConfig      `yaml:"embedder"`
 	Mangle       mangle.Config       `yaml:"mangle"`
 }
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
+	if err := godotenv.Load(); err != nil {
 		log.Printf("Error loading .env file, using environment variables: %v", err)
 	}
 	ctx := context.Background()
-	g := genkit.Init(ctx)
 
-	builder, err := NewBuilder(ctx, g, "config/config.yaml")
+	cfg, err := loadConfig("config/config.yaml")
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
+
+	var g *genkit.Genkit
+	if cfg.LLM.Provider == "google" || cfg.Embedder.Provider == "google" {
+		g = genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: cfg.LLM.APIKey}))
+	} else {
+		g = genkit.Init(ctx)
+	}
+
+	builder, err := NewBuilder(ctx, g, cfg)
 	if err != nil {
 		log.Fatalf("failed to create builder: %v", err)
 	}
