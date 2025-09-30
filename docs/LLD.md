@@ -8,7 +8,7 @@
 
 ## 1. Runtime Overview
 
-The binary is started via [`cmd/agent/main.go`](cmd/agent/main.go:26-56). It initializes a Genkit instance, loads and expands `config.yaml` (injecting environment variables like API keys), wires the orchestrator with LLM, Mangle, retrieval, and reranker configurations, and exposes a Genkit HTTP flow at `POST /answer` on `127.0.0.1:8082` using the server plugin.
+The binary is started via [`cmd/agent/main.go`](cmd/agent/main.go:26-56). It initializes a Genkit instance, loads and expands `config/config.yaml` (injecting environment variables like API keys), wires the orchestrator with LLM, Mangle, retrieval, and reranker configurations, and exposes a Genkit HTTP flow at `POST /answer` on `127.0.0.1:8082` using the server plugin.
 
 At runtime, the orchestrator executes the enhanced "Sandwich" pipeline:
 
@@ -37,7 +37,7 @@ The orchestrator aggregates explanations from all stages (intent, Mangle pre/pos
 * **Location:** [`cmd/agent/main.go`](cmd/agent/main.go)
 * **Responsibilities:**
   * Initialize Genkit runtime and HTTP mux. [`cmd/agent/main.go`](cmd/agent/main.go:26-28)
-  * Load `config.yaml`, expand env vars (e.g., `${OPENAI_API_KEY}`), unmarshal into `AppConfig` with orchestrator, LLM, retrieval (corpus/hybrid/rerank), and Mangle sub-structs. [`cmd/agent/main.go`](cmd/agent/main.go:29-32) [`cmd/agent/main.go`](cmd/agent/main.go:58-70)
+  * Load `config/config.yaml`, expand env vars (e.g., `${OPENAI_API_KEY}`), unmarshal into `AppConfig` with orchestrator, LLM, retrieval (corpus/hybrid/rerank), and Mangle sub-structs. [`cmd/agent/main.go`](cmd/agent/main.go:29-32) [`cmd/agent/main.go`](cmd/agent/main.go:58-70)
   * Wire global LLM/Mangle configs into orchestrator config for unified injection. [`cmd/agent/main.go`](cmd/agent/main.go:35-37)
   * Instantiate hybrid retriever (BM25+dense) and MRL reranker from retrieval config. [`cmd/agent/main.go`](cmd/agent/main.go:39-45)
   * Create orchestrator with Genkit, config, retriever, and reranker; define and serve the `answer` flow. [`cmd/agent/main.go`](cmd/agent/main.go:46-56)
@@ -73,7 +73,7 @@ The orchestrator aggregates explanations from all stages (intent, Mangle pre/pos
 * **PostProcess:**
   * Filters chunks by visibility/tenant/metadata; redacts text if flagged (simple placeholder replacement). Generates explanations for drops/modifications. Defaults visibility to "public", tenant to "*". [`internal/mangle/processor.go`](internal/mangle/processor.go:167-291) [`internal/mangle/processor.go`](internal/mangle/processor.go:774-787)
 
-Rules in `rules.dlog` define aliases, stopwords, constraints; facts in `data/*.facts` seed aliases, policies, etc. [`rules.dlog`](rules.dlog) [`data/`](data/)
+Rules in `config/mangle/main.dlog` define aliases, stopwords, constraints; facts in `config/mangle/*/*.dlog` seed aliases, policies, pipelines, and retrieval metadata. [`config/mangle/main.dlog`](config/mangle/main.dlog) [`config/mangle/`](config/mangle)
 
 ### 2.4 Retrieval Layers
 
@@ -141,16 +141,16 @@ Orchestrator → Client : response + aggregated explanations + metadata
 
 ## 4. Configuration Surface
 
-`config.yaml`:
+`config/config.yaml`:
 
-* `orchestrator.maxContextTokens` / `fallbackThreshold`: Prompt limiting, fallback trigger. [`config.yaml`](config.yaml:1-3)
-* `llm.provider` / `model` / `apiKey`: OpenAI/Ollama selection (key expanded). [`config.yaml`](config.yaml:5-8)
-* `retrieval.corpus.path` / `chunkSize` / `chunkOverlap`: Markdown ingestion/chunking. [`config.yaml`](config.yaml:10-12)
-* `retrieval.hybrid.bm25.must` / `should`: Lexical term buckets. [`config.yaml`](config.yaml:14-15)
-* `retrieval.hybrid.dense.topK` / `dimensions`: Dense candidate pool (default 128). [`config.yaml`](config.yaml:17-19)
-* `retrieval.rerank.mrl.topK` / `dimensions`: Rerank limit/multi-dim (default [512,768]). [`config.yaml`](config.yaml:21-23)
-* `mangle.rulesFile` / `factsFile`: Datalog program/facts (globbing supported). [`config.yaml`](config.yaml:25-26)
-* `intentParser.flowName`: Genkit flow ID (default "parse_intent_ner"). [`config.yaml`](config.yaml)
+* `orchestrator.maxContextTokens` / `fallbackThreshold`: Prompt limiting, fallback trigger. [`config/config.yaml`](config/config.yaml:1-3)
+* `llm.provider` / `model` / `apiKey`: OpenAI/Ollama selection (key expanded). [`config/config.yaml`](config/config.yaml:5-8)
+* `retrieval.corpus.path` / `chunkSize` / `chunkOverlap`: Markdown ingestion/chunking. [`config/config.yaml`](config/config.yaml:10-12)
+* `retrieval.hybrid.bm25.must` / `should`: Lexical term buckets. [`config/config.yaml`](config/config.yaml:14-15)
+* `retrieval.hybrid.dense.topK` / `dimensions`: Dense candidate pool (default 128). [`config/config.yaml`](config/config.yaml:17-19)
+* `retrieval.rerank.mrl.topK` / `dimensions`: Rerank limit/multi-dim (default [512,768]). [`config/config.yaml`](config/config.yaml:21-23)
+* `mangle.rulesFile` / `factsFile`: Datalog program/facts (globbing supported). [`config/config.yaml`](config/config.yaml:25-26)
+* `intentParser.flowName`: Genkit flow ID (default "parse_intent_ner"). [`config/config.yaml`](config/config.yaml)
 
 ---
 

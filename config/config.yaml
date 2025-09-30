@@ -27,5 +27,5 @@ retrieval:
       dimensions: [512, 768]
 
 mangle:
-  rulesFile: "rules.dlog"
-  factsFile: "data"
+  rulesFile: "config/mangle/main.dlog"
+  factsFile: "config/mangle/*/*.dlog"

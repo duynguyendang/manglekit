@@ -82,7 +82,7 @@ curl -s -X POST localhost:8080/answer \
 
 **Configuration knobs:**
 
-`config.yaml` controls retrieval depth and safety thresholds. Wire new code to the following keys whenever possible:
+`config/config.yaml` controls retrieval depth and safety thresholds. Wire new code to the following keys whenever possible:
 
 * `retrieval.hybrid.bm25.must` / `should` — keyword filters emitted by Mangle‑Pre.
 * `retrieval.hybrid.dense.topK` — ANN candidate pool for the fine reranker.

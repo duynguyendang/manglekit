@@ -56,7 +56,7 @@ Key goals include low latency (<300ms E2E), modularity for easy integration, and
 
 3. **Run as Service**:
    - Build: `go build -o manglekit ./cmd/server`
-   - Serve: `./manglekit serve --config config.yaml`
+   - Serve: `./manglekit serve --config config/config.yaml`
    - Query: `curl -X POST http://localhost:8080/v1/answer -d '{"query": "example"}'`
 
 For ingestion, use the `/v1/ingest` endpoint or SDK methods.

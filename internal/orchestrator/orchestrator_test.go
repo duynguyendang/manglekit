@@ -15,8 +15,8 @@ func TestRunFlowWithMockLLMAndFacts(t *testing.T) {
 
 	ctx := context.Background()
 
-	rulesPath := filepath.Join("..", "..", "rules.dlog")
-	factsPath := filepath.Join("..", "..", "data")
+	rulesPath := filepath.Join("..", "..", "config", "mangle", "main.dlog")
+	factsPath := filepath.Join("..", "..", "config", "mangle", "*", "*.dlog")
 
 	processor, err := mangle.New(ctx, mangle.Config{RulesFile: rulesPath, FactsFile: factsPath})
 	if err != nil {
