@@ -19,7 +19,8 @@ llm:
   apiKey: "${OPENAI_API_KEY}"
 
 embedder:
-  model: "embedding-001"
+  provider: "openai"
+  model: "text-embedding-3-small"
 
 mangle:
   rulesFile: "config/mangle"
