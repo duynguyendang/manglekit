@@ -1,0 +1,11 @@
+# Mangle-Pre rule to detect the "version" entity in a query.
+pre_mangle("detect_version", Query, Version) :-
+  match("v[0-9]+\.[0-9]+", Query, Version).
+
+# Mangle-Post rule to ensure only documents with the "golang" tag are shown.
+post_mangle("filter_by_tag", Doc, "drop") :-
+  !has_tag("golang", Doc).
+
+# Helper predicate to check for a tag.
+has_tag(Tag, Doc) :-
+  Doc.metadata.tags[Tag].
