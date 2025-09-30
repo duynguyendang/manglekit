@@ -26,7 +26,7 @@ func main() {
 	ctx := context.Background()
 	g := genkit.Init(ctx)
 
-	cfg, err := loadConfig("config.yaml")
+	cfg, err := loadConfig("config/config.yaml")
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
