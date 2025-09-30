@@ -12,6 +12,7 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/firebase/genkit/go/plugins/localvec"
 	"go.uber.org/zap"
+	"ndduy.dev/manglekit/internal/embedder"
 	"ndduy.dev/manglekit/internal/logger"
 	"ndduy.dev/manglekit/internal/orchestrator"
 	"ndduy.dev/manglekit/internal/reranker"
@@ -53,9 +54,9 @@ func (b *Builder) Build() (types.Orchestrator, error) {
 	orchConfig.LLM = b.cfg.LLM
 	orchConfig.Mangle = b.cfg.Mangle
 
-	embedder := googlegenai.GoogleAIEmbedder(b.g, b.cfg.Embedder.Model)
-	if embedder == nil {
-		return nil, fmt.Errorf("failed to create embedder with model %s", b.cfg.Embedder.Model)
+	embedder, err := b.createEmbedder()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create embedder: %w", err)
 	}
 
 	if err := localvec.Init(); err != nil {
@@ -93,6 +94,23 @@ func (b *Builder) Build() (types.Orchestrator, error) {
 	}
 
 	return orch, nil
+}
+
+func (b *Builder) createEmbedder() (ai.Embedder, error) {
+	var e ai.Embedder
+	switch b.cfg.Embedder.Provider {
+	case "google":
+		e = googlegenai.GoogleAIEmbedder(b.g, b.cfg.Embedder.Model)
+	case "openai":
+		e = embedder.NewOpenAIEmbedder(os.Getenv("OPENAI_API_KEY"), b.cfg.Embedder.Model)
+	default:
+		return nil, fmt.Errorf("unknown embedder provider: %s", b.cfg.Embedder.Provider)
+	}
+
+	if e == nil {
+		return nil, fmt.Errorf("failed to create embedder with model %s", b.cfg.Embedder.Model)
+	}
+	return e, nil
 }
 
 func (b *Builder) loadDocuments(path string) ([]*ai.Document, error) {

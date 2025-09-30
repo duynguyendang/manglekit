@@ -19,7 +19,8 @@ import (
 )
 
 type EmbedderConfig struct {
-	Model string `yaml:"model"`
+	Model    string `yaml:"model"`
+	Provider string `yaml:"provider"`
 }
 
 type AppConfig struct {
@@ -37,7 +38,7 @@ func main() {
 	ctx := context.Background()
 	g := genkit.Init(ctx)
 
-	builder, err := NewBuilder(ctx, g, "config.yaml")
+	builder, err := NewBuilder(ctx, g, "config/config.yaml")
 	if err != nil {
 		log.Fatalf("failed to create builder: %v", err)
 	}

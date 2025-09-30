@@ -7,7 +7,9 @@ require (
 	github.com/go-nlp/bm25 v1.0.0
 	github.com/go-nlp/tfidf v1.1.0
 	github.com/google/mangle v0.3.0
+	github.com/joho/godotenv v1.5.1
 	github.com/openai/openai-go v1.8.2
+	github.com/sashabaranov/go-openai v1.41.2
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/sync v0.16.0
@@ -35,7 +37,6 @@ require (
 	github.com/googleapis/gax-go/v2 v2.14.2 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
-	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mbleigh/raymond v0.0.0-20250414171441-6b3a58ab9e0a // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
