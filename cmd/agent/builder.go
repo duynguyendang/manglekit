@@ -100,7 +100,9 @@ func (b *Builder) createEmbedder() (ai.Embedder, error) {
 	var e ai.Embedder
 	switch b.cfg.Embedder.Provider {
 	case "google":
-		e = googlegenai.GoogleAIEmbedder(b.g, b.cfg.Embedder.Model)
+		plugin := &googlegenai.GoogleAI{APIKey: b.cfg.Embedder.APIKey}
+		g := genkit.Init(b.ctx, genkit.WithPlugins(plugin))
+		e = googlegenai.GoogleAIEmbedder(g, b.cfg.Embedder.Model)
 	case "openai":
 		e = embedder.NewOpenAIEmbedder(os.Getenv("OPENAI_API_KEY"), b.cfg.Embedder.Model)
 	default:

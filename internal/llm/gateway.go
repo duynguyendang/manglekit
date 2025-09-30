@@ -9,6 +9,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/compat_oai"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/firebase/genkit/go/plugins/ollama"
 	"github.com/openai/openai-go/option"
 	"ndduy.dev/manglekit/internal/types"
@@ -40,6 +41,10 @@ func New(ctx context.Context, cfg types.LLMConfig) (types.Gateway, error) {
 		}
 		plugin.Init(ctx)
 		model = plugin.DefineModel("openai", cfg.Model, ai.ModelOptions{Supports: &compat_oai.BasicText})
+	case "google":
+		plugin := &googlegenai.GoogleAI{APIKey: cfg.APIKey}
+		g := genkit.Init(ctx, genkit.WithPlugins(plugin))
+		model = googlegenai.GoogleAIModel(g, cfg.Model)
 	case "ollama":
 		plugin := &ollama.Ollama{}
 		g := genkit.Init(ctx, genkit.WithPlugins(plugin))

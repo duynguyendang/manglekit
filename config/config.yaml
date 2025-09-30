@@ -14,13 +14,14 @@ orchestrator:
     topK: 5
 
 llm:
-  provider: "openai"
-  model: "gpt-4o-mini"
-  apiKey: "${OPENAI_API_KEY}"
+  provider: "google"
+  model: "gemini-1.5-flash-latest"
+  apiKey: "${GOOGLE_API_KEY}"
 
 embedder:
-  provider: "openai"
-  model: "text-embedding-3-small"
+  provider: "google"
+  model: "text-embedding-004"
+  apiKey: "${GOOGLE_API_KEY}"
 
 mangle:
   rulesFile: "config/mangle"
