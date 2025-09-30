@@ -1,7 +1,6 @@
 package mangle
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -22,7 +21,6 @@ import (
 // Config configures the Mangle processor.
 type Config struct {
 	RulesFile string `yaml:"rulesFile"`
-	FactsFile string `yaml:"factsFile"`
 }
 
 type processor struct {
@@ -39,19 +37,13 @@ func New(ctx context.Context, cfg Config) (types.Processor, error) {
 	if cfg.RulesFile == "" {
 		return nil, fmt.Errorf("mangle rules file must be provided")
 	}
-	if cfg.FactsFile == "" {
-		return nil, fmt.Errorf("mangle facts file must be provided")
-	}
 
 	programInfo, strata, predToStratum, err := loadProgram(cfg.RulesFile)
 	if err != nil {
 		return nil, fmt.Errorf("load mangle program: %w", err)
 	}
 
-	baseStore, err := loadFacts(cfg.FactsFile)
-	if err != nil {
-		return nil, fmt.Errorf("load mangle facts: %w", err)
-	}
+	baseStore := factstore.NewSimpleInMemoryStore()
 
 	// Evaluate the program once to derive any static facts.
 	if err := evaluate(programInfo, strata, predToStratum, baseStore); err != nil {
@@ -165,18 +157,30 @@ func (p *processor) PostProcess(chunks []*types.Chunk, ctx *types.Context) ([]*t
 }
 
 func loadProgram(path string) (*analysis.ProgramInfo, []analysis.Nodeset, map[ast.PredicateSym]int, error) {
-	file, err := os.Open(path)
+	files, err := resolveDlogFiles(path)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	defer file.Close()
-
-	unit, err := parse.Unit(file)
-	if err != nil {
-		return nil, nil, nil, err
+	if len(files) == 0 {
+		return nil, nil, nil, fmt.Errorf("no .dlog files found in %q", path)
 	}
 
-	programInfo, err := analysis.Analyze([]parse.SourceUnit{unit}, nil)
+	var units []parse.SourceUnit
+	for _, file := range files {
+		f, err := os.Open(file)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("could not open rule file %s: %w", file, err)
+		}
+		defer f.Close()
+
+		unit, err := parse.Unit(f)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("could not parse rule file %s: %w", file, err)
+		}
+		units = append(units, unit)
+	}
+
+	programInfo, err := analysis.Analyze(units, nil)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -193,32 +197,15 @@ func loadProgram(path string) (*analysis.ProgramInfo, []analysis.Nodeset, map[as
 	return programInfo, strata, predToStratum, nil
 }
 
-func loadFacts(path string) (factstore.SimpleInMemoryStore, error) {
-	store := factstore.NewSimpleInMemoryStore()
-
-	files, err := resolveFactFiles(path)
-	if err != nil {
-		return store, err
-	}
-	if len(files) == 0 {
-		return store, fmt.Errorf("no fact files found in %q", path)
-	}
-
-	for _, file := range files {
-		if err := loadFactsFromFile(store, file); err != nil {
-			return store, err
-		}
-	}
-
-	return store, nil
-}
-
-func resolveFactFiles(path string) ([]string, error) {
+func resolveDlogFiles(path string) ([]string, error) {
 	info, err := os.Stat(path)
 	switch {
 	case err == nil:
 		if info.IsDir() {
-			return collectFactFiles(path)
+			return collectDlogFiles(path)
+		}
+		if !strings.HasSuffix(info.Name(), ".dlog") {
+			return nil, fmt.Errorf("rule file %q must have .dlog extension", path)
 		}
 		return []string{path}, nil
 	case errors.Is(err, fs.ErrNotExist):
@@ -228,11 +215,11 @@ func resolveFactFiles(path string) ([]string, error) {
 				return nil, globErr
 			}
 			if len(matches) == 0 {
-				return nil, fmt.Errorf("no fact files matched %q", path)
+				return nil, fmt.Errorf("no rule files matched %q", path)
 			}
 			var files []string
 			for _, match := range matches {
-				resolved, err := resolveFactFiles(match)
+				resolved, err := resolveDlogFiles(match)
 				if err != nil {
 					return nil, err
 				}
@@ -247,7 +234,7 @@ func resolveFactFiles(path string) ([]string, error) {
 	}
 }
 
-func collectFactFiles(root string) ([]string, error) {
+func collectDlogFiles(root string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -256,7 +243,7 @@ func collectFactFiles(root string) ([]string, error) {
 		if d.IsDir() {
 			return nil
 		}
-		if !isFactFile(d.Name()) {
+		if !strings.HasSuffix(d.Name(), ".dlog") {
 			return nil
 		}
 		files = append(files, path)
@@ -271,62 +258,6 @@ func collectFactFiles(root string) ([]string, error) {
 
 func hasMeta(path string) bool {
 	return strings.ContainsAny(path, "*?[")
-}
-
-var factFileExtensions = map[string]struct{}{
-	".db":    {},
-	".data":  {},
-	".dlog":  {},
-	".dl":    {},
-	".edb":   {},
-	".fact":  {},
-	".facts": {},
-	".txt":   {},
-}
-
-func isFactFile(name string) bool {
-	if strings.HasPrefix(name, ".") {
-		return false
-	}
-	ext := strings.ToLower(filepath.Ext(name))
-	if _, ok := factFileExtensions[ext]; ok {
-		return true
-	}
-	if ext == "" && strings.Contains(strings.ToLower(name), "fact") {
-		return true
-	}
-	return false
-}
-
-func loadFactsFromFile(store factstore.SimpleInMemoryStore, path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Split(bufio.ScanLines)
-	lineNum := 0
-	for scanner.Scan() {
-		lineNum++
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
-			continue
-		}
-		atom, err := parse.Atom(line)
-		if err != nil {
-			return fmt.Errorf("parse fact %q (line %d in %s): %w", line, lineNum, path, err)
-		}
-		store.Add(atom)
-	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("read facts file %s: %w", path, err)
-	}
-	return nil
 }
 
 func evaluate(programInfo *analysis.ProgramInfo, strata []analysis.Nodeset, predToStratum map[ast.PredicateSym]int, store factstore.FactStore) error {

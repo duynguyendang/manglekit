@@ -73,8 +73,7 @@ func main() {
 	// 7. Configure and create the orchestrator
 	orchConfig := orchestrator.Config{
 		Mangle: mangle.Config{
-			RulesFile: "examples/simple/rules.dlog",
-			FactsFile: "examples/simple/facts.dlog",
+			RulesFile: "examples/simple/mangle",
 		},
 		LLM: types.LLMConfig{
 			Provider: "googlegenai",
@@ -103,7 +102,7 @@ func main() {
 	for _, citation := range result.Citations {
 		fmt.Printf("- %s\n", citation)
 	}
-	fmt.Println("\n---\n")
+	fmt.Println("\n---")
 }
 
 // loadDocuments scans a directory for markdown files and loads them into memory.
