@@ -21,6 +21,7 @@ import (
 type EmbedderConfig struct {
 	Model    string `yaml:"model"`
 	Provider string `yaml:"provider"`
+	APIKey   string `yaml:"apiKey"`
 }
 
 type AppConfig struct {
