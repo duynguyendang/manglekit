@@ -31,32 +31,38 @@ func main() {
 	}
 	ctx := context.Background()
 
-	// 1. Initialize Genkit and a logger
-	g := genkit.Init(ctx)
+	// 1. Initialize logger
 	appLogger, err := logger.New()
 	if err != nil {
 		log.Fatalf("Failed to create logger: %v", err)
 	}
 	defer appLogger.Sync()
 
-	// 2. Configure and initialize the embedder
+	// 2. Initialize Genkit with the Google GenAI plugin
+	apiKey := os.Getenv("GOOGLE_API_KEY")
+	if apiKey == "" {
+		log.Fatal("GOOGLE_API_KEY environment variable not set")
+	}
+	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: apiKey}))
+
+	// 3. Create the embedder
 	embedder := googlegenai.GoogleAIEmbedder(g, "text-embedding-004")
 	if embedder == nil {
 		log.Fatal("Failed to create embedder")
 	}
 
-	// 3. Set up the vector store
+	// 4. Set up the vector store
 	if err := localvec.Init(); err != nil {
 		log.Fatalf("Failed to initialize localvec: %v", err)
 	}
 
-	// 4. Load documents from the data directory
+	// 5. Load documents from the data directory
 	docs, err := loadDocuments("examples/simple/data")
 	if err != nil {
 		log.Fatalf("Failed to load documents: %v", err)
 	}
 
-	// 5. Create retrievers (BM25 for keywords, Dense for semantics)
+	// 6. Create retrievers (BM25 for keywords, Dense for semantics)
 	bm25Retriever, err := retrieval.NewBM25(ctx, "examples/simple/data")
 	if err != nil {
 		log.Fatalf("Failed to create BM25 retriever: %v", err)
@@ -70,20 +76,21 @@ func main() {
 		log.Fatalf("Failed to create Hybrid retriever: %v", err)
 	}
 
-	// 6. Create the reranker
+	// 7. Create the reranker
 	docReranker, err := reranker.New(embedder)
 	if err != nil {
 		log.Fatalf("Failed to create reranker: %v", err)
 	}
 
-	// 7. Configure and create the orchestrator
+	// 8. Configure and create the orchestrator
 	orchConfig := orchestrator.Config{
 		Mangle: mangle.Config{
 			RulesFile: "examples/simple/mangle",
 		},
 		LLM: types.LLMConfig{
-			Provider: "googlegenai",
+			Provider: "google",
 			Model:    "gemini-1.5-flash-latest",
+			APIKey:   apiKey,
 		},
 	}
 	orch, err := orchestrator.New(ctx, g, orchConfig, hybridRetriever, docReranker, appLogger)
@@ -91,7 +98,7 @@ func main() {
 		log.Fatalf("Failed to create orchestrator: %v", err)
 	}
 
-	// 8. Define a query and run the flow
+	// 9. Define a query and run the flow
 	query := &types.QueryInput{
 		Query: "What is manglekit v1.0?",
 	}
@@ -101,7 +108,7 @@ func main() {
 		log.Fatalf("Flow failed: %v", err)
 	}
 
-	// 9. Print the result
+	// 10. Print the result
 	fmt.Println("\n---\nAnswer:")
 	fmt.Println(result.Answer)
 	fmt.Println("\nCitations:")

@@ -9,7 +9,6 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/firebase/genkit/go/plugins/localvec"
 	"go.uber.org/zap"
 	"ndduy.dev/manglekit/internal/embedder"
@@ -29,15 +28,10 @@ type Builder struct {
 }
 
 // NewBuilder creates a new application builder.
-func NewBuilder(ctx context.Context, g *genkit.Genkit, configPath string) (*Builder, error) {
+func NewBuilder(ctx context.Context, g *genkit.Genkit, cfg *AppConfig) (*Builder, error) {
 	log, err := logger.New()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create logger: %w", err)
-	}
-
-	cfg, err := loadConfig(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 	return &Builder{
 		cfg: cfg,
@@ -54,7 +48,7 @@ func (b *Builder) Build() (types.Orchestrator, error) {
 	orchConfig.LLM = b.cfg.LLM
 	orchConfig.Mangle = b.cfg.Mangle
 
-	embedder, err := b.createEmbedder()
+	embedder, err := embedder.New(b.cfg.Embedder, b.g)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create embedder: %w", err)
 	}
@@ -94,25 +88,6 @@ func (b *Builder) Build() (types.Orchestrator, error) {
 	}
 
 	return orch, nil
-}
-
-func (b *Builder) createEmbedder() (ai.Embedder, error) {
-	var e ai.Embedder
-	switch b.cfg.Embedder.Provider {
-	case "google":
-		plugin := &googlegenai.GoogleAI{APIKey: b.cfg.Embedder.APIKey}
-		g := genkit.Init(b.ctx, genkit.WithPlugins(plugin))
-		e = googlegenai.GoogleAIEmbedder(g, b.cfg.Embedder.Model)
-	case "openai":
-		e = embedder.NewOpenAIEmbedder(os.Getenv("OPENAI_API_KEY"), b.cfg.Embedder.Model)
-	default:
-		return nil, fmt.Errorf("unknown embedder provider: %s", b.cfg.Embedder.Provider)
-	}
-
-	if e == nil {
-		return nil, fmt.Errorf("failed to create embedder with model %s", b.cfg.Embedder.Model)
-	}
-	return e, nil
 }
 
 func (b *Builder) loadDocuments(path string) ([]*ai.Document, error) {

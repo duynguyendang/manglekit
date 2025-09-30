@@ -156,29 +156,50 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"go.uber.org/zap"
 	"ndduy.dev/manglekit/internal/orchestrator"
 )
 
 func main() {
 	// Simplified initialization for example purposes.
 	// See the actual main.go for how to wire up dependencies.
-	g := genkit.Init(context.Background())
+	ctx := context.Background()
+
+	// 1. Initialize Genkit with the desired plugins.
+	// An API key can be passed directly or through the GOOGLE_API_KEY env var.
+	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{
+		APIKey: os.Getenv("GOOGLE_API_KEY"),
+	}))
+
+	// 2. Create a logger.
+	logger, err := zap.NewDevelopment()
+	if err != nil {
+		log.Fatalf("failed to create logger: %v", err)
+	}
+
+	// 3. In a real app, you would build a real retriever and reranker.
+	// For this example, we pass nil to demonstrate the wiring.
 	orch, err := orchestrator.New(
-		context.Background(),
+		ctx,
 		g,
 		orchestrator.Config{}, // In a real app, load this from config.yaml
 		nil,                   // Provide a real retriever
 		nil,                   // Provide a real reranker
+		logger,                // Provide a logger
 	)
 	if err != nil {
 		log.Fatalf("failed to create orchestrator: %v", err)
 	}
 
+	// 4. Define and start the server.
 	answerFlow := genkit.DefineFlow(g, "answer", orch.RunFlow)
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /"+answerFlow.Name(), genkit.Handler(answerFlow))
+	log.Println("Server listening on :8080")
 	if err := http.ListenAndServe(":8080", mux); err != nil {
 		log.Fatalf("server exited: %v", err)
 	}

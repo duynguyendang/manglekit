@@ -103,6 +103,13 @@ type RetrievalConfig struct {
 	} `yaml:"hybrid"`
 }
 
+// EmbedderConfig holds the configuration for the embedder.
+type EmbedderConfig struct {
+	Model    string `yaml:"model"`
+	Provider string `yaml:"provider"`
+	APIKey   string `yaml:"apiKey"`
+}
+
 // LLMConfig holds the configuration for the LLM Gateway.
 type LLMConfig struct {
 	Provider         string `json:"provider" yaml:"provider"` // "openai" or "ollama"
