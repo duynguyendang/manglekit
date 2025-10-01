@@ -8,25 +8,25 @@
 
 ## 1. Runtime Overview
 
-The binary starts via [`cmd/agent/main.go`](cmd/agent/main.go:30-49), initializing Genkit, loading `config/config.yaml` (env-expanded), creating a `Builder` for wiring, building the orchestrator, defining the `answer` flow, and serving at `POST /answer` on `127.0.0.1:8082`. Front-matter parsing extracts metadata from Markdown docs during indexing. [`cmd/agent/main.go`](cmd/agent/main.go:1-83) [`cmd/agent/builder.go`](cmd/agent/builder.go:1-118)
+The binary starts via [`cmd/agent/main.go`](cmd/agent/main.go), loading environment variables from `.env` via `godotenv`. It conditionally initializes Genkit, loading the `googlegenai` plugin only if the LLM or Embedder provider is set to `google`. It then loads `config/config.yaml` (with environment variable expansion), creates a `Builder` for dependency injection, builds the orchestrator, defines the `answer` flow, and serves it at `POST /answer` on `127.0.0.1:8082`. [`cmd/agent/main.go`](cmd/agent/main.go) [`cmd/agent/builder.go`](cmd/agent/builder.go)
 
 The orchestrator executes the "Sandwich" pipeline with logging:
 
-1. **Intent Parsing:** Genkit flow detects intent (e.g., "troubleshoot", "question") and extracts entities (versions, tickets, products, platforms, artifacts) via regex/NER. [`internal/genintent/parser.go`](internal/genintent/parser.go:33-71) [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:92-98)
+1. **Intent Parsing:** Genkit flow detects intent (e.g., "troubleshoot", "question") and extracts entities (versions, tickets, products, platforms, artifacts) via regex/NER. [`internal/genintent/parser.go`](internal/genintent/parser.go) [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go)
 
-2. **Mangle PreProcess:** Normalizes query, tokenizes/asserts facts, evaluates Datalog rules (from `config/mangle/*.dlog`) for expansions (`expanded_query`), filters (`query_filter`). No separate facts file; base facts derived from rules. Generates explanation. [`internal/mangle/processor.go`](internal/mangle/processor.go:62-101) [`internal/mangle/processor.go`](internal/mangle/processor.go:159-257)
+2. **Mangle PreProcess:** Normalizes the query, tokenizes and asserts facts, and evaluates Datalog rules (from `config/mangle/*.dlog`) to generate expansions (`expanded_query`) and filters (`query_filter`). No separate facts file is used; base facts are derived directly from rules. Generates an explanation for the expansion. [`internal/mangle/processor.go`](internal/mangle/processor.go)
 
-3. **Hybrid Retrieval:** Parallel BM25 (lexical, tf-idf via go-nlp) + Dense (LocalVec with GoogleAI embeddings); combines/deduplicates results up to topK, applying filters. Loads/chunks Markdown corpus with front-matter metadata. [`internal/retrieval/bm25.go`](internal/retrieval/bm25.go:39-115) [`internal/retrieval/dense.go`](internal/retrieval/dense.go:25-70) [`internal/retrieval/hybrid.go`](internal/retrieval/hybrid.go:33-65) [`cmd/agent/builder.go`](cmd/agent/builder.go:65-118)
+3. **Hybrid Retrieval:** In parallel, retrieves documents using BM25 (lexical search) and Dense (vector search with GoogleAI embeddings via LocalVec). The results are combined and deduplicated up to a `topK` limit, applying any filters from the pre-processing stage. [`internal/retrieval/bm25.go`](internal/retrieval/bm25.go) [`internal/retrieval/dense.go`](internal/retrieval/dense.go) [`internal/retrieval/hybrid.go`](internal/retrieval/hybrid.go)
 
-4. **Reranking:** Embeds query/docs via GoogleAI, computes cosine similarities, sorts/retains topK. [`internal/reranker/reranker.go`](internal/reranker/reranker.go:36-89)
+4. **Reranking:** Embeds the query and the retrieved documents using GoogleAI, computes cosine similarities, and sorts the documents to retain the `topK` most relevant ones. [`internal/reranker/reranker.go`](internal/reranker/reranker.go)
 
-5. **Mangle PostProcess:** Asserts user/chunk facts, evaluates rules for `deny` (doc_id → reason); filters out denied chunks, generates explanations. [`internal/mangle/processor.go`](internal/mangle/processor.go:103-157)
+5. **Mangle PostProcess:** Converts the reranked documents into `Chunk` objects. It then asserts facts about the user context and each chunk, evaluating rules to identify any chunks that should be denied (`deny`). It filters out denied chunks and generates explanations for the denials. [`internal/mangle/processor.go`](internal/mangle/processor.go)
 
-6. **Fallback:** If no chunks post-process, returns fixed policy message. No threshold check yet. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:137-146)
+6. **Fallback:** If no chunks remain after post-processing, the orchestrator returns a fixed policy message. The score-based threshold check is not yet implemented. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go)
 
-7. **LLM Gateway:** Builds configurable prompt (default template, word-based token estimate), streams via OpenAI/Ollama, extracts DocID citations. Limits context by estimated tokens. [`internal/llm/gateway.go`](internal/llm/gateway.go:58-114)
+7. **LLM Gateway:** Constructs a prompt using a configurable template and the remaining chunks, respecting token limits. It streams the response from the configured LLM (OpenAI or Ollama) and extracts document ID citations from the answer. [`internal/llm/gateway.go`](internal/llm/gateway.go)
 
-Aggregates explanations (intent, Mangle pre/post); logs via Zap at stages. Constructs RAG query from normalized + expansions + entities. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:89-158) [`internal/logger/logger.go`](internal/logger/logger.go)
+Finally, it aggregates explanations from the intent, Mangle pre-processing, and Mangle post-processing stages. Each stage is logged via Zap. The RAG query is constructed from the normalized query, expansion terms, and extracted entities. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go) [`internal/logger/logger.go`](internal/logger/logger.go)
 
 ---
 
@@ -34,11 +34,18 @@ Aggregates explanations (intent, Mangle pre/post); logs via Zap at stages. Const
 
 ### 2.1 Builder & Configuration Loader
 
-* **Location:** [`cmd/agent/builder.go`](cmd/agent/builder.go) [`cmd/agent/main.go`](cmd/agent/main.go)
+* **Location:** [`cmd/agent/builder.go`](cmd/agent/builder.go), [`cmd/agent/main.go`](cmd/agent/main.go)
 * **Responsibilities:**
-  * `NewBuilder`: Loads `config/config.yaml` (env-expanded), initializes Zap logger. [`cmd/agent/builder.go`](cmd/agent/builder.go:31-47)
-  * `Build`: Wires configs (LLM/Mangle into orchestrator), creates GoogleAI embedder, LocalVec retriever/indexes Markdown (front-matter YAML metadata), BM25 (tf-idf corpus), Dense (embedded index), Hybrid combiner, reranker; builds orchestrator. [`cmd/agent/builder.go`](cmd/agent/builder.go:49-96)
-  * Front-matter: Parses `---\nYAML\n---\ncontent` for doc metadata during indexing. [`cmd/agent/builder.go`](cmd/agent/builder.go:98-118) [`cmd/agent/main.go`](cmd/agent/main.go:65-83) [`internal/retrieval/bm25.go`](internal/retrieval/bm25.go:156-177)
+  * `NewBuilder`: Creates and returns a new `Builder`, initializing the Zap logger. [`cmd/agent/builder.go`](cmd/agent/builder.go)
+  * `Build`: Constructs the application components in the correct order:
+    1. Manually wires the `LLM` and `Mangle` configs into the main `Orchestrator` config.
+    2. Creates the `embedder`.
+    3. Initializes `localvec`.
+    4. Loads documents from the specified corpus path.
+    5. Creates the `bm25Retriever`, `denseRetriever`, and `hybridRetriever`.
+    6. Creates the `reranker`.
+    7. Finally, creates and returns the `orchestrator` with all dependencies injected. [`cmd/agent/builder.go`](cmd/agent/builder.go)
+  * `loadDocuments`: A helper function that walks the document path, reads `.md` files, parses YAML front-matter for metadata, and returns a slice of `ai.Document` objects. [`cmd/agent/builder.go`](cmd/agent/builder.go)
 
 Configs: `orchestrator` (tokens/threshold), `llm` (provider/model/key/prompt/maxTokens), `embedder.model`, `mangle.rulesFile` (globbing `config/mangle/*.dlog`), `retrieval.path` (Markdown corpus), `retrieval.hybrid.bm25/dense.topK`. [`config/config.yaml`](config/config.yaml)
 
@@ -46,9 +53,10 @@ Configs: `orchestrator` (tokens/threshold), `llm` (provider/model/key/prompt/max
 
 * **Location:** [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go)
 * **Structs / Interfaces:**
-  * `Config`: Tokens/threshold, nested LLM/Mangle/Intent/Retrieval (path/hybrid bm25/dense topK)/Rerank (topK). [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:21-29)
-  * `orchestrator`: Holds hybrid retriever, doc reranker, LLM gateway, processor, intent parser, config, Zap logger. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:31-40)
-* **Creation Path:** Validates Genkit; inits LLM (OpenAI/Ollama), Mangle (rules only), intent (Genkit flow); via Builder. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:51-87) [`cmd/agent/builder.go`](cmd/agent/builder.go:90)
+  * `Config`: Holds configuration for `MaxContextTokens`, `FallbackThreshold`, and nested configs for `LLM`, `Mangle`, `IntentParser`, `Retrieval`, and `Reranker`. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go)
+  * `orchestrator`: The main struct holding the injected dependencies: a hybrid retriever, a document reranker, an LLM gateway, a Mangle processor, an intent parser, the application config, and a Zap logger.
+  * Internal Interfaces: The orchestrator defines its own internal (un-exported) interfaces for the `hybridRetriever` and `docReranker`, specifying the exact methods it requires. This decouples it from the concrete implementations. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go)
+* **Creation Path:** The `New` function initializes and returns an orchestrator. It requires a Genkit runtime, configuration, and instances of a retriever, reranker, and logger. It is responsible for creating the `LLMGateway`, `Mangle Processor`, and `IntentParser`. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go)
 * **Execution (`RunFlow`):**
   1. Log start; parse intent/entities. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:91-98)
   2. PreProcess for expansions/filters. [`internal/orchestrator/orchestrator.go`](internal/orchestrator/orchestrator.go:100-105)
@@ -105,34 +113,50 @@ Rules in `config/mangle/` (main/knowledge/aliases/stopwords, pipelines/retrieval
 
 ### 2.9 Shared Types
 
-`internal/types`: `QueryInput`, `ExpandedQuery` (simplified: normalized/expansions/filters/explanation), `Chunk` (no constraints), `Context` (user only), `Explanation` (added DocID), `Response`, `IntentResult`, interfaces (`Processor`, `Retriever` unused, `BM25Retriever`/`DenseRetriever`, `Gateway`, `Orchestrator`, `IntentParser`), configs (`BM25Config`/`DenseConfig`/`RerankConfig`/`RetrievalConfig`/`LLMConfig` with prompt/tokens). [`internal/types/types.go`](internal/types/types.go:1-131)
+* **Location:** [`internal/types/types.go`](internal/types/types.go)
+* **Core Structs:**
+  * `QueryInput`: Represents the initial user query and user context.
+  * `ExpandedQuery`: Captures the output of the Mangle pre-processing stage, including the normalized query, expansion terms, and filters.
+  * `Chunk`: Represents a document chunk. While the struct defines fields like `ID`, `DocID`, `Snippet`, `Embedding`, and `Score`, the current orchestrator implementation only populates the `Text` field when converting documents to chunks.
+  * `Context`: Holds user context for Mangle post-processing.
+  * `Explanation`: A structured record explaining why a decision was made (e.g., a document was denied).
+  * `Response`: The final response object containing the answer, citations, explanations, and metadata.
+  * `IntentResult`: The output from the intent parsing stage.
+* **Interfaces:**
+  * `Processor`: Defines the Mangle pre- and post-processing steps.
+  * `Retriever`: A generic interface for retrieval that is **currently unused**. The orchestrator uses its own internal interface.
+  * `Gateway`: Defines the LLM generation step.
+  * `Orchestrator`: Defines the main `RunFlow` method.
+  * `IntentParser`: Defines the intent parsing step.
+* **Configuration Structs:** Defines various `...Config` structs (`BM25Config`, `DenseConfig`, `RerankConfig`, `RetrievalConfig`, `EmbedderConfig`, `LLMConfig`) used for loading settings from `config.yaml`. [`internal/types/types.go`](internal/types/types.go)
 
 ---
 
 ## 3. Sequence Diagram (Textual)
 
 ```
+(Note: The Orchestrator and its dependencies are built and wired once at application startup.)
+
 Client → HTTP Handler : POST /answer {query, user_context}
-Handler → Builder.Build : config/genkit
-Builder → Orchestrator.New : wired deps (retrievers/reranker/llm/processor/intent/logger)
+Handler → Orchestrator.RunFlow : input
 Orchestrator.RunFlow → IntentParser.Parse : input
 IntentParser → RunFlow : IntentResult (intent/entities)
 RunFlow → Mangle.PreProcess : input + intent
 Mangle → RunFlow : ExpandedQuery (normalized/expansions/filters)
 RunFlow → constructRAGQuery : normalized + expansions + entities
 RunFlow → HybridRetriever.Retrieve (parallel) : ragQuery + filters + configs
-BM25 → Hybrid : lexical topK (tf-idf/BM25)
-Dense → Hybrid : vector topK (LocalVec/ANN)
-Hybrid → RunFlow : combined/deduped docs
+  BM25 → Hybrid : lexical topK docs
+  Dense → Hybrid : vector topK docs
+Hybrid → RunFlow : combined/deduped docs ([]string)
 RunFlow → Reranker.Rerank : ragQuery + docs + topK
-Reranker → RunFlow : cosine-sorted topK docs
-RunFlow → Chunk conversion : docs → Chunks
+Reranker → RunFlow : cosine-sorted topK docs ([]string)
+RunFlow → Convert docs to Chunks
 RunFlow → Mangle.PostProcess : chunks + userContext
 Mangle → RunFlow : allowed chunks + deny explanations
 (if empty) → Client : fallback response + explanations
 else
-RunFlow → LLMGateway.Generate : query + chunks (token-limited prompt)
-LLM → RunFlow : Response (answer + citations)
+  RunFlow → LLMGateway.Generate : query + chunks (token-limited prompt)
+  LLM → RunFlow : Response (answer + citations)
 RunFlow → addExplanations : post/intent/mangle-pre
 RunFlow → Client : final response + metadata
 ```
@@ -143,10 +167,10 @@ RunFlow → Client : final response + metadata
 
 `config/config.yaml`:
 
-* `orchestrator.maxContextTokens` / `fallbackThreshold`: Prompt/fallback (threshold unused). 
-* `llm.provider` / `model` / `apiKey` / `promptTemplate` / `maxContextTokens`: LLM + prompt/tokens (env-expanded key).
-* `embedder.model`: GoogleAI embedder.
-* `mangle.rulesFile`: Globbing for `config/mangle/*.dlog` (main/knowledge/aliases/stopwords/pipelines/retrieval/policies/access).
+* `orchestrator.maxContextTokens` / `fallbackThreshold`: Prompt/fallback (threshold unused).
+* `llm.provider` / `model` / `apiKey` / `promptTemplate` / `maxContextTokens`: LLM provider (`google`, `ollama`, `openai`), model name, API key (env-expanded), and prompt settings.
+* `embedder.provider` / `model`: Embedder provider (`google`) and model name.
+* `mangle.rulesFile`: Glob pattern for Datalog rule files (e.g., `config/mangle/*.dlog`).
 * `retrieval.path`: Markdown corpus (front-matter metadata).
 * `retrieval.hybrid.bm25.topK` / `dense.topK`: Per-retriever limits.
 * `reranker.topK`: Rerank limit.
