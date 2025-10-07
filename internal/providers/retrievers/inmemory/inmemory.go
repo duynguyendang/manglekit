@@ -97,5 +97,5 @@ func (r *InMemoryRetriever) Replace(docs []core.Doc) error {
 }
 
 func init() {
-	manglekit.RegisterRetriever("inmemory", New)
+	manglekit.RegisterRetriever("in-memory", New)
 }

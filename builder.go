@@ -744,7 +744,7 @@ func (b *builder) buildRetriever() error {
 		retriever, err = b.buildDenseRetriever()
 	case "hybrid":
 		retriever, err = b.buildHybridRetriever()
-	case "bm25", "inmemory":
+	case "bm25", "in-memory":
 		retriever, err = b.buildMapBasedRetriever(b.retrieverName)
 	default:
 		return fmt.Errorf("unsupported retriever type in builder: %s", b.retrieverName)
@@ -836,7 +836,7 @@ func (b *builder) buildMapBasedRetriever(name string) (retrieve.Retriever, error
 		}
 		retriever, err = newFn(opts)
 
-	case "inmemory":
+	case "in-memory":
 		newFn, ok := constructor.(func(retrieve.InMemoryOptions) (retrieve.Retriever, error))
 		if !ok {
 			return nil, fmt.Errorf("invalid constructor type for retriever '%s'", name)

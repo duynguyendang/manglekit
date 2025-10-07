@@ -1,5 +1,5 @@
 retriever:
-  name: "inmemory"
+  name: "in-memory"
   # The documents are provided programmatically in main.go for this example.
 
 llm:
