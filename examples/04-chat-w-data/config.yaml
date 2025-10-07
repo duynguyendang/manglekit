@@ -1,0 +1,15 @@
+rules:
+  - name: "mangle"
+    params:
+      facts:
+        - "mangle_facts.mg"
+      rules:
+        - "mangle_rules.mg"
+
+retriever:
+  name: "in-memory"
+
+llm:
+  name: "openai"
+  params:
+    model: "gpt-4o"

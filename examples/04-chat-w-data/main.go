@@ -10,16 +10,17 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	_ "github.com/duynguyendang/manglekit/providers/all"
+	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/joho/godotenv"
 )
 
-// This example demonstrates how to use the logic layer mode.
+// This example demonstrates how to use Mangle to enforce row- and column-level
+// security policies when chatting with structured data.
 //
-// The logic layer mode allows you to provide additional context to the RAG pipeline
-// in the form of Datalog facts.
-//
-// In this example, we'll create an in-memory retriever and then use a Mangle
-// rule to specify which documents to retrieve based on runtime context.
+// We define a set of documents and user attributes as Datalog facts. Then, we
+// use Mangle rules to decide:
+// 1. Which documents a user can retrieve (row-level security).
+// 2. Which columns are visible or masked (column-level security).
 func main() {
 	_ = godotenv.Load()
 
@@ -37,13 +38,51 @@ func main() {
 		log.Fatalf("failed to create builder from yaml: %v", err)
 	}
 
-	// 3. Build the pipeline.
+	// 2. Build the pipeline.
 	pipeline, err := builder.Build()
 	if err != nil {
 		log.Fatalf("failed to build pipeline: %v", err)
 	}
 
-	query := core.Query{Text: "What is the capital of France?"}
+	// 3. Add documents programmatically to the in-memory retriever.
+	// In a real application, this data would come from a database or data warehouse.
+	docs := []core.Doc{
+		{
+			ID:   "A123",
+			Text: "customer_name: Acme Corp, email: contact@acme.com, revenue: 100000, notes: Initial deal",
+		},
+		{
+			ID:   "B456",
+			Text: "lead_name: Globex Inc, email: sales@globex.inc, score: 95",
+		},
+		{
+			ID:   "S777",
+			Text: "account: Initech, deal_size: 250000, owner: bsmith, notes: Q3 expansion plan",
+		},
+	}
+	updatableRetriever, ok := pipeline.Retriever().(retrieve.Updatable)
+	if !ok {
+		log.Fatalf("retriever does not support updates")
+	}
+	if err := updatableRetriever.Upsert(docs); err != nil {
+		log.Fatalf("failed to upsert documents: %v", err)
+	}
+
+	// 4. Define the user context and query.
+	// The user attributes are used by the Mangle rules to make access control decisions.
+	query := core.Query{
+		Text: "Summarize the documents about sales and marketing",
+		Meta: map[string]any{
+			"user_attribute": []map[string]string{
+				{"key": "user_id", "value": "alice"},
+				{"key": "role", "value": "analyst"},
+				{"key": "department", "value": "sales"},
+				{"key": "doc_id", "value": "A123"},
+				{"key": "purpose", "value": "analytics"},
+			},
+		},
+	}
+
 	resp, err := pipeline.Run(context.Background(), query)
 	if err != nil {
 		log.Fatalf("failed to run pipeline: %v", err)
