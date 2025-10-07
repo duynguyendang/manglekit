@@ -1,68 +1,67 @@
-# --- Predicate Declarations ---
-Decl user_attribute(Key, Value).
-Decl doc(ID).
-Decl doc_id(Doc, ID).
-Decl doc_department(Doc, Dept).
-Decl doc_confidentiality(Doc, Level).
-Decl doc_owner(Doc, Owner).
-Decl doc_tag(Doc, Tag).
-Decl column(Doc, Col).
-Decl sensitive_column(Doc, Col).
-Decl allowed_agg(Func).
-Decl joinable(DocA, ColA, DocB, ColB).
+privileged_user :- user_attribute("role", "admin") .
+privileged_user :- user_attribute("role", "security") .
 
-# --- Session / user attributes (example runtime values) ---
-user_attribute("user_id", "alice").
-user_attribute("role", "analyst").
-user_attribute("department", "sales").
-user_attribute("doc_id", "A123").
-user_attribute("purpose", "analytics").
+same_department(Doc) :-
+    user_attribute("department", Dept),
+    doc_department(Doc, Dept).
 
-# --- Documents present in the data lake / warehouse ---
-doc("doc1").
-doc_id("doc1", "A123").
-doc_department("doc1", "sales").
-doc_confidentiality("doc1", "normal").
-doc_owner("doc1", "data-team").
-doc_tag("doc1", "customers").
+pre_retrieve(Doc) :-
+    user_attribute("doc_id", ID),
+    doc_id(Doc, ID).
 
-doc("doc2").
-doc_id("doc2", "B456").
-doc_department("doc2", "marketing").
-doc_confidentiality("doc2", "high").
-doc_owner("doc2", "marketing-team").
-doc_tag("doc2", "leads").
+pre_retrieve(Doc) :-
+    same_department(Doc),
+    doc_confidentiality(Doc, "normal").
 
-doc("doc3").
-doc_id("doc3", "S777").
-doc_department("doc3", "sales").
-doc_confidentiality("doc3", "restricted").
-doc_owner("doc3", "sales-ops").
-doc_tag("doc3", "pipeline").
+pre_retrieve(Doc) :-
+    privileged_user,
+    doc(Doc).
 
-# --- Columns (schema) & sensitivity flags ---
-column("doc1", "customer_name").
-column("doc1", "email").
-column("doc1", "revenue").
-column("doc1", "notes").
-sensitive_column("doc1", "email").
-sensitive_column("doc1", "notes").
+deny_retrieve(Doc) :-
+    doc_confidentiality(Doc, "restricted"),
+    not privileged_user.
 
-column("doc2", "lead_name").
-column("doc2", "email").
-column("doc2", "score").
-sensitive_column("doc2", "email").
+can_retrieve(Doc) :-
+    pre_retrieve(Doc),
+    not deny_retrieve(Doc).
 
-column("doc3", "account").
-column("doc3", "deal_size").
-column("doc3", "owner").
-column("doc3", "notes").
-sensitive_column("doc3", "notes").
+visible_column(Doc, Col) :-
+    column(Doc, Col),
+    not sensitive_column(Doc, Col),
+    can_retrieve(Doc).
 
-# --- Optional: function-level or action-level allowlists ---
-allowed_agg("sum").
-allowed_agg("avg").
-allowed_agg("count").
+visible_column(Doc, Col) :-
+    column(Doc, Col),
+    sensitive_column(Doc, Col),
+    privileged_user,
+    can_retrieve(Doc).
 
-# --- Optional: join relationships (for cross-doc chat) ---
-joinable("doc1", "customer_name", "doc3", "account").
+mask_strategy("hash") :-
+    user_attribute("purpose", "analytics"),
+    not privileged_user.
+mask_strategy("redact") :-
+    not privileged_user,
+    not user_attribute("purpose", "analytics").
+
+masked_column(Doc, Col, Mode) :-
+    column(Doc, Col),
+    sensitive_column(Doc, Col),
+    can_retrieve(Doc),
+    mask_strategy(Mode).
+
+allow_function(Func) :-
+    privileged_user.
+allow_function(Func) :-
+    allowed_agg(Func).
+
+has_visible_column(Doc) :-
+    visible_column(Doc, Col).
+
+can_chat_with_data(Doc) :-
+    can_retrieve(Doc),
+    has_visible_column(Doc).
+
+allow_join(DocA, ColA, DocB, ColB) :-
+    can_chat_with_data(DocA),
+    can_chat_with_data(DocB),
+    joinable(DocA, ColA, DocB, ColB).

@@ -9,6 +9,7 @@ retriever:
   name: "in-memory"
 
 llm:
-  name: "openai"
+  name: "google"
   params:
-    model: "gpt-4o"
+    model: "gemini-2.5-flash"
+    apiKey: "${GOOGLE_API_KEY}"
