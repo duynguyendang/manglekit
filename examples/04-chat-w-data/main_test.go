@@ -1,21 +1,16 @@
 package main
 
 import (
-	"fmt"
-	"log"
+	"testing"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/examples/04-chat-w-data/policy"
-	"github.com/joho/godotenv"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// This example demonstrates how to use a Go-based policy to enforce row- and
-// column-level security when chatting with structured data.
-func main() {
-	_ = godotenv.Load()
-
-	// 1. Define the documents. In a real app, this would come from a database.
-	// We've added department and confidentiality to the text for parsing.
+func TestGoPolicy(t *testing.T) {
+	// 1. Define the documents, matching the new main.go.
 	docs := []core.Doc{
 		{
 			ID:   "A123",
@@ -31,7 +26,7 @@ func main() {
 		},
 	}
 
-	// 2. Define the user context and query.
+	// 2. Define the user context, matching main.go.
 	query := core.Query{
 		Text: "Summarize the documents about sales and marketing",
 		Meta: map[string]any{
@@ -47,9 +42,8 @@ func main() {
 
 	// 3. Create a User struct from the query metadata.
 	userMeta, ok := query.Meta["user_attribute"].([]map[string]string)
-	if !ok {
-		log.Fatalf("invalid user_attribute format in query metadata")
-	}
+	require.True(t, ok, "invalid user_attribute format in query metadata")
+
 	user := policy.User{}
 	for _, attr := range userMeta {
 		switch attr["key"] {
@@ -65,31 +59,18 @@ func main() {
 	}
 
 	// 4. Process documents using the Go policy.
-	var retrievedDocs []core.Citation
+	var retrievedDocs []core.Doc
 	for _, doc := range docs {
-		// Parse the raw doc text into a structured policy.Doc
 		parsedDoc := policy.ParseDoc(doc.ID, doc.Text)
-
-		// Check if the user can retrieve this document.
 		if policy.CanRetrieve(user, parsedDoc) {
-			// If so, create a citation.
-			retrievedDocs = append(retrievedDocs, core.Citation{
-				ID:      doc.ID,
-				Snippet: doc.Text, // Using full text as snippet for this example.
-			})
+			retrievedDocs = append(retrievedDocs, doc)
 		}
 	}
 
-	// 5. Create the final response.
-	resp := core.Answer{
-		Text:      fmt.Sprintf("Found %d documents based on your policy.", len(retrievedDocs)),
-		Citations: retrievedDocs,
-	}
-
-	// 6. Print the response.
-	fmt.Println(resp.Text)
-	fmt.Println("\nCitations:")
-	for _, citation := range resp.Citations {
-		fmt.Printf("- ID: %s, Snippet: %s\n", citation.ID, citation.Snippet)
+	// 5. Assert that the correct document was retrieved.
+	// The policy should only allow user "alice" to retrieve doc "A123".
+	assert.Len(t, retrievedDocs, 1, "expected exactly one document to be retrieved")
+	if len(retrievedDocs) == 1 {
+		assert.Equal(t, "A123", retrievedDocs[0].ID, "expected to retrieve document A123")
 	}
 }
