@@ -1,0 +1,99 @@
+# --- Predicate Declarations ---
+Decl privileged_user().
+Decl same_department(Doc).
+Decl pre_retrieve(Doc).
+Decl deny_retrieve(Doc).
+Decl can_retrieve(Doc).
+Decl visible_column(Doc, Col).
+Decl masked_column(Doc, Col, Mask).
+Decl allow_function(Func).
+Decl can_chat_with_data(Doc).
+Decl allow_join(DocA, ColA, DocB, ColB).
+
+# ---------- Helpers ----------
+# A user is privileged if they have the 'admin' or 'security' role.
+# This is an example of disjunction (OR), expressed as two separate rules.
+privileged_user() :- user_attribute("role", "admin").
+privileged_user() :- user_attribute("role", "security").
+
+# A user is in the same department as the document's department.
+same_department(Doc) :-
+    user_attribute("department", Dept),
+    doc_department(Doc, Dept).
+
+# ---------- Row / object access (pre-retrieve) ----------
+# Rule 1: Direct entitlement by exact doc_id match.
+pre_retrieve(Doc) :-
+    user_attribute("doc_id", ID),
+    doc_id(Doc, ID).
+
+# Rule 2: Departmental access for documents with 'normal' confidentiality.
+pre_retrieve(Doc) :-
+    same_department(Doc),
+    doc_confidentiality(Doc, "normal").
+
+# Rule 3: Privileged roles can see everything.
+pre_retrieve(Doc) :-
+    privileged_user(),
+    doc(Doc).
+
+# Deny access to restricted documents unless the user is privileged.
+deny_retrieve(Doc) :-
+    doc_confidentiality(Doc, "restricted"),
+    not(privileged_user()).
+
+# The final decision: a document can be retrieved if it's in the pre_retrieve set
+# and not explicitly denied.
+can_retrieve(Doc) :-
+    pre_retrieve(Doc),
+    not(deny_retrieve(Doc)).
+
+# ---------- Column-level controls (post-retrieve masking) ----------
+# A column is visible if it's not sensitive.
+visible_column(Doc, Col) :-
+    column(Doc, Col),
+    not(sensitive_column(Doc, Col)),
+    can_retrieve(Doc).
+
+# A column is also visible if it IS sensitive, but the user is privileged.
+visible_column(Doc, Col) :-
+    column(Doc, Col),
+    sensitive_column(Doc, Col),
+    privileged_user(),
+    can_retrieve(Doc).
+
+# Mask any sensitive column for non-privileged users.
+masked_column(Doc, Col, "redact") :-
+    column(Doc, Col),
+    sensitive_column(Doc, Col),
+    not(privileged_user()),
+    can_retrieve(Doc).
+
+# Example of dynamic masking: hash PII for analytics purposes.
+masked_column(Doc, Col, "hash") :-
+    column(Doc, Col),
+    sensitive_column(Doc, Col),
+    user_attribute("purpose", "analytics"),
+    not(privileged_user()),
+    can_retrieve(Doc).
+
+# ---------- Function-level (query-shaping) controls ----------
+allow_function(Func) :- privileged_user().
+allow_function(Func) :- allowed_agg(Func).
+
+# ---------- Top-level permission for "chat with data" ----------
+can_chat_with_data(Doc) :-
+    can_retrieve(Doc),
+    visible_column(Doc, _).
+
+# ---------- Optional: cross-document constraints for joins ----------
+allow_join(DocA, ColA, DocB, ColB) :-
+    can_chat_with_data(DocA),
+    can_chat_with_data(DocB),
+    joinable(DocA, ColA, DocB, ColB).
+
+# ---------- Defaults ----------
+# If nothing matches, deny by default (closed world posture).
+deny_retrieve(Doc) :-
+    doc(Doc),
+    not(can_retrieve(Doc)).
