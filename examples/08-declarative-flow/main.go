@@ -4,26 +4,34 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
+	"path/filepath"
+	"runtime"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	_ "github.com/duynguyendang/manglekit/providers/all"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	if os.Getenv("OPENAI_API_KEY") == "" {
-		log.Fatal("OPENAI_API_KEY environment variable not set")
-	}
-
+	_ = godotenv.Load() // Load .env file if present.
 	ctx := context.Background()
-
-	// The builder reads the config.yaml file, which specifies the "declarative"
-	// orchestrator, defines all the tools, and points to the flow.dlog file.
-	builder, err := manglekit.NewBuilderFromYAML("./config.yaml")
-	if err != nil {
-		log.Fatalf("Failed to create builder from YAML: %v", err)
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		log.Fatalf("failed to get current file path")
 	}
+	dir := filepath.Dir(currentFile)
+	configPath := filepath.Join(dir, "config.yaml")
+
+	// 1. Load the base configuration from YAML.
+	// This will set up the Mangle rules and the LLM.
+	builder, err := manglekit.NewBuilderFromYAML(configPath)
+	if err != nil {
+		log.Fatalf("Failed to create builder from yaml: %v", err)
+	}
+	log.Println("Successfully created builder from YAML.")
+
+	// 2. Build the orchestrator.
 
 	// The Build() method now reads the orchestrator type from the config.
 	// It sees "declarative", builds the dependency graph of tools, and then
