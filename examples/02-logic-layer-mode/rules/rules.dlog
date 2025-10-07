@@ -1,4 +1,1 @@
-// This rule allows retrieval of a document if its ID is specified in the user context.
-// The userContextConverter generates `user_attribute/2` facts from the `query.Meta["user_context"]` map.
-// The documentConverter generates `doc_id/2` facts from the documents in the retriever.
-pre_retrieve(doc) :- user_attribute("doc_id", ID), doc_id(doc, ID).
+pre_retrieve(Doc) :- user_attribute("doc_id", ID), doc_id(Doc, ID).

@@ -38,7 +38,7 @@ func main() {
 	}
 
 	// Run the pipeline.
-	resp, err := pipeline.Run(context.Background(), core.Query{Text: "what is a mangle?"})
+	resp, err := pipeline.Run(context.Background(), core.Query{Text: "what is the features of mangle?"})
 	if err != nil {
 		log.Fatalf("failed to run pipeline: %v", err)
 	}
