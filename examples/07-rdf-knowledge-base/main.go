@@ -5,17 +5,28 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
+	"runtime"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
-	_ "github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf" // register the new rdf parser
-	_ "github.com/duynguyendang/manglekit/providers/all"                     // register all standard providers
+	_ "github.com/duynguyendang/manglekit/providers/all" // register all standard providers
 )
 
 func main() {
 	ctx := context.Background()
 
-	builder, err := manglekit.NewBuilderFromYAML("./config.yaml")
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		log.Fatalf("failed to get current file path")
+	}
+	dir := filepath.Dir(currentFile)
+	configPath := filepath.Join(dir, "config.yaml")
+
+	// 1. Load the base configuration from YAML.
+	// This will set up the Mangle rules and the LLM.
+	builder, err := manglekit.NewBuilderFromYAML(configPath)
+
 	if err != nil {
 		log.Fatalf("Failed to create builder from yaml: %v", err)
 	}
@@ -31,9 +42,9 @@ func main() {
 		Text: "Can I access this document?",
 		Meta: map[string]any{
 			"user_context": map[string]any{
-				"name":              "<http://example.org/ontology#alice>",
-				"document":          "<http://example.org/ontology#doc123>",
-				"permission_pred":   "<http://example.org/ontology#hasPermission>",
+				"name":            "<http://example.org/ontology#alice>",
+				"document":        "<http://example.org/ontology#doc123>",
+				"permission_pred": "<http://example.org/ontology#hasPermission>",
 			},
 		},
 	}
@@ -45,9 +56,9 @@ func main() {
 		Text: "Can I access this document?",
 		Meta: map[string]any{
 			"user_context": map[string]any{
-				"name":              "<http://example.org/ontology#bob>",
-				"document":          "<http://example.org/ontology#doc123>",
-				"permission_pred":   "<http://example.org/ontology#hasPermission>",
+				"name":            "<http://example.org/ontology#bob>",
+				"document":        "<http://example.org/ontology#doc123>",
+				"permission_pred": "<http://example.org/ontology#hasPermission>",
 			},
 		},
 	}

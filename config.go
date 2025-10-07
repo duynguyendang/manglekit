@@ -145,20 +145,53 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 	// Get the directory where the config file is located.
 	configDir := filepath.Dir(path)
 
-	// Now, walk through the config and resolve any relative paths.
-	// This is a simplified example for the retriever. You would do this
-	// for any component that takes a path.
-	if cfg.Retriever.Params != nil {
-		if path, ok := cfg.Retriever.Params["path"].(string); ok {
-			// Check if the path is relative.
-			if !filepath.IsAbs(path) {
-				// If it is, join it with the config file's directory to make it absolute.
-				absolutePath := filepath.Join(configDir, path)
-				// Update the parameter map before it's passed to the builder.
-				cfg.Retriever.Params["path"] = absolutePath
+	// Generic helper to resolve relative paths for any component.
+	resolvePaths := func(params map[string]any) {
+		if params == nil {
+			return
+		}
+		pathValue, ok := params["path"]
+		if !ok {
+			return // No "path" key.
+		}
+
+		switch p := pathValue.(type) {
+		case string:
+			// Handle single path string.
+			if !filepath.IsAbs(p) {
+				params["path"] = filepath.Join(configDir, p)
 			}
+		case []any:
+			// Handle slice of path strings.
+			resolvedPaths := make([]string, len(p))
+			for i, v := range p {
+				if pathStr, ok := v.(string); ok {
+					if !filepath.IsAbs(pathStr) {
+						resolvedPaths[i] = filepath.Join(configDir, pathStr)
+					} else {
+						resolvedPaths[i] = pathStr
+					}
+				}
+			}
+			params["path"] = resolvedPaths
+		case []string:
+			// Handle slice of path strings (already typed).
+			resolvedPaths := make([]string, len(p))
+			for i, pathStr := range p {
+				if !filepath.IsAbs(pathStr) {
+					resolvedPaths[i] = filepath.Join(configDir, pathStr)
+				} else {
+					resolvedPaths[i] = pathStr
+				}
+			}
+			params["path"] = resolvedPaths
 		}
 	}
+
+	// Apply path resolution to all components that might have one.
+	resolvePaths(cfg.Retriever.Params)
+	resolvePaths(cfg.Rules.Params)
+	resolvePaths(cfg.VectorStore.Params)
 
 	builder := NewBuilder().
 		WithConfig(&cfg). // Pass the full config to the builder

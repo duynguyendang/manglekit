@@ -24,4 +24,5 @@ import (
 
 	// Schema Parser Providers
 	_ "github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
+	_ "github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
 )

@@ -1,11 +1,11 @@
 retriever:
-  name: "in-memory"
+  name: "inmemory"
   # The documents are provided programmatically in main.go for this example.
 
 llm:
   name: "google"
   params:
-    model: "gemini-1.5-flash"
+    model: "gemini-2.5-flash"
     apiKey: "${GOOGLE_API_KEY}"
     promptTemplate: |
       Ahoy, matey! Here's the treasure map to the answer you seek.

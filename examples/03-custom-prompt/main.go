@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
+	"runtime"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
@@ -18,10 +20,16 @@ import (
 // prompt to generate the answer.
 func main() {
 	_ = godotenv.Load()
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		log.Fatalf("failed to get current file path")
+	}
+	dir := filepath.Dir(currentFile)
+	configPath := filepath.Join(dir, "config.yaml")
 
 	// 1. Load the base configuration from YAML.
-	// This will set up the retriever and the LLM with the custom prompt.
-	builder, err := manglekit.NewBuilderFromYAML("./config.yaml")
+	// This will set up the Mangle rules and the LLM.
+	builder, err := manglekit.NewBuilderFromYAML(configPath)
 	if err != nil {
 		log.Fatalf("failed to create builder from yaml: %v", err)
 	}

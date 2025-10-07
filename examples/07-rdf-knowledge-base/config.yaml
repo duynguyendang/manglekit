@@ -15,7 +15,7 @@ rules:
 
 # Minimal retriever and LLM to satisfy the orchestrator's requirements.
 retriever:
-  name: "in-memory"
+  name: "inmemory"
 
 llm:
   name: "openai"
