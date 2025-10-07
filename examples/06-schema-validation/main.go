@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"path/filepath"
+	"runtime"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
@@ -49,10 +52,16 @@ func (c *requestConverter) ToFacts(input any) ([]ast.Atom, error) {
 
 func main() {
 	ctx := context.Background()
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		log.Fatalf("failed to get current file path")
+	}
+	dir := filepath.Dir(currentFile)
+	configPath := filepath.Join(dir, "config.yaml")
 
-	// 1. Build the Mangle orchestrator from the local config file.
-	// The config defines the rules, schema, and custom converter.
-	builder, err := manglekit.NewBuilderFromYAML("./config.yaml")
+	// 1. Load the base configuration from YAML.
+	// This will set up the Mangle rules and the LLM.
+	builder, err := manglekit.NewBuilderFromYAML(configPath)
 	if err != nil {
 		panic(fmt.Errorf("failed to create builder from yaml: %w", err))
 	}
