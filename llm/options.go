@@ -14,8 +14,8 @@ type OpenAIOptions struct {
 // GoogleOptions provides typed configuration for Google language models.
 type GoogleOptions struct {
 	// Model is the identifier for the specific Google model to be used (e.g., "gemini-1.5-flash").
-	Model string
+	Model string `json:"model"`
 	// PromptTemplate is an optional custom Go template string for formatting the
 	// final prompt. If empty, a default template will be used.
-	PromptTemplate string
+	PromptTemplate string `json:"promptTemplate"`
 }
