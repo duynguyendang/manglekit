@@ -11,9 +11,11 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	_ "github.com/duynguyendang/manglekit/providers/all" // register all standard providers
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	_ = godotenv.Load() // load .env file if exists
 	ctx := context.Background()
 
 	_, currentFile, _, ok := runtime.Caller(0)

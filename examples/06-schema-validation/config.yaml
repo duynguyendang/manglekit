@@ -1,8 +1,8 @@
 providers:
   # A dummy API key is required to satisfy the builder's validation,
   # even though the LLM is not used in this example.
-  openai:
-    apiKey: "dummy"
+  google:
+    apiKey: "${GOOGLE_API_KEY}"
 
 rules:
   name: "mangle"
@@ -21,6 +21,7 @@ retriever:
   name: "in-memory"
 
 llm:
-  name: "openai"
+  name: "google"
   params:
-    model: "gpt-3.5-turbo"
+    model: "gemini-2.5-flash"
+    apiKey: "${GOOGLE_API_KEY}"
