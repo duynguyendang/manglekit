@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core"
 	_ "github.com/duynguyendang/manglekit/providers/all"
 	"github.com/joho/godotenv"
 )
@@ -42,6 +43,7 @@ func main() {
 		log.Fatalf("failed to build pipeline: %v", err)
 	}
 
+	query := core.Query{Text: "What is the capital of France?"}
 	resp, err := pipeline.Run(context.Background(), query)
 	if err != nil {
 		log.Fatalf("failed to run pipeline: %v", err)
