@@ -126,6 +126,9 @@ type OpenAICompatibleConfig struct {
 // The function supports environment variable expansion within the YAML file using
 // standard shell syntax (e.g., `$VAR` or `${VAR}`).
 //
+// It uses a generic, reflection-based system to find and resolve all file paths
+// within the configuration that are tagged with `path:"resolve"`.
+//
 // path is the file path to the YAML configuration file.
 // It returns a pre-configured BuilderAPI instance or an error if the file
 // cannot be read or parsed.
@@ -142,70 +145,10 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 		return nil, fmt.Errorf("failed to unmarshal yaml: %w", err)
 	}
 
-	// Get the directory where the config file is located.
+	// Resolve all tagged paths in the config struct relative to the config file's directory.
 	configDir := filepath.Dir(path)
-
-	// Generic helper to resolve relative paths for any component.
-	resolvePaths := func(params map[string]any) {
-		if params == nil {
-			return
-		}
-		pathValue, ok := params["path"]
-		if !ok {
-			return // No "path" key.
-		}
-
-		switch p := pathValue.(type) {
-		case string:
-			// Handle single path string.
-			if !filepath.IsAbs(p) {
-				params["path"] = filepath.Join(configDir, p)
-			}
-		case []any:
-			// Handle slice of path strings.
-			resolvedPaths := make([]string, len(p))
-			for i, v := range p {
-				if pathStr, ok := v.(string); ok {
-					if !filepath.IsAbs(pathStr) {
-						resolvedPaths[i] = filepath.Join(configDir, pathStr)
-					} else {
-						resolvedPaths[i] = pathStr
-					}
-				}
-			}
-			params["path"] = resolvedPaths
-		case []string:
-			// Handle slice of path strings (already typed).
-			resolvedPaths := make([]string, len(p))
-			for i, pathStr := range p {
-				if !filepath.IsAbs(pathStr) {
-					resolvedPaths[i] = filepath.Join(configDir, pathStr)
-				} else {
-					resolvedPaths[i] = pathStr
-				}
-			}
-			params["path"] = resolvedPaths
-		}
-	}
-
-	// Apply path resolution to all components that might have one.
-	resolvePaths(cfg.Retriever.Params)
-	resolvePaths(cfg.Rules.Params)
-	resolvePaths(cfg.VectorStore.Params)
-
-	// Special handling for schemaSources paths within the rules params.
-	if cfg.Rules.Params != nil {
-		if schemaSources, ok := cfg.Rules.Params["schemaSources"].([]any); ok {
-			for _, source := range schemaSources {
-				if sourceMap, ok := source.(map[string]any); ok {
-					if pathValue, ok := sourceMap["path"].(string); ok {
-						if !filepath.IsAbs(pathValue) {
-							sourceMap["path"] = filepath.Join(configDir, pathValue)
-						}
-					}
-				}
-			}
-		}
+	if err := resolvePathsInStruct(&cfg, configDir); err != nil {
+		return nil, fmt.Errorf("failed to resolve paths in config: %w", err)
 	}
 
 	builder := NewBuilder().
@@ -263,4 +206,68 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 	}
 
 	return builder, nil
+}
+
+// resolvePathsInStruct recursively traverses a struct, slice, or pointer and
+// resolves any string or []string fields tagged with `path:"resolve"`.
+//
+// The path is resolved relative to the provided baseDir. The function modifies
+// the fields in place using reflection. It's designed to work on the unmarshaled
+// YAML config struct.
+func resolvePathsInStruct(data any, baseDir string) error {
+	v := reflect.ValueOf(data)
+
+	// Dereference pointers and interfaces to get the underlying value.
+	if v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+
+	switch v.Kind() {
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			fieldVal := v.Field(i)
+			if !fieldVal.CanSet() {
+				continue
+			}
+
+			// Check for the `path:"resolve"` tag on the struct field.
+			if v.Type().Field(i).Tag.Get("path") == "resolve" {
+				switch fieldVal.Kind() {
+				case reflect.String:
+					// Resolve a single string path.
+					path := fieldVal.String()
+					if path != "" && !filepath.IsAbs(path) {
+						fieldVal.SetString(filepath.Join(baseDir, path))
+					}
+				case reflect.Slice:
+					// Resolve a slice of string paths.
+					if fieldVal.Type().Elem().Kind() == reflect.String {
+						for j := 0; j < fieldVal.Len(); j++ {
+							path := fieldVal.Index(j).String()
+							if path != "" && !filepath.IsAbs(path) {
+								fieldVal.Index(j).SetString(filepath.Join(baseDir, path))
+							}
+						}
+					}
+				}
+			}
+
+			// Recursively call on the field to handle nested structs, pointers, or slices.
+			if err := resolvePathsInStruct(fieldVal.Addr().Interface(), baseDir); err != nil {
+				return err
+			}
+		}
+	case reflect.Slice:
+		// If the top-level item is a slice, iterate over its elements.
+		for i := 0; i < v.Len(); i++ {
+			if err := resolvePathsInStruct(v.Index(i).Addr().Interface(), baseDir); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }

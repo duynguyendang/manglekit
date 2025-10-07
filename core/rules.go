@@ -25,21 +25,21 @@ type SchemaSource struct {
 	// Type specifies the parser to use for the schema (e.g., "jsonschema").
 	Type string `yaml:"type"`
 	// Path is the file path to the schema definition.
-	Path string `yaml:"path"`
+	Path string `yaml:"path" path:"resolve"`
 }
 
 // MangleOptions provides configuration for initializing the Mangle rule engine provider.
 type MangleOptions struct {
 	// Path is a slice of file paths or glob patterns pointing to Mangle Datalog (.dlog) rule files.
-	Path []string `yaml:"path"`
+	Path []string `yaml:"path" path:"resolve"`
 	// SchemaSources is a slice of schemas to be loaded.
 	SchemaSources []SchemaSource `yaml:"schemaSources"`
 	// PreProcess is a slice of Mangle transformer names to run in the "pre" stage.
-	PreProcess []string
+	PreProcess []string `yaml:"preProcess"`
 	// PostProcess is a slice of Mangle transformer names to run in the "post" stage.
-	PostProcess []string
+	PostProcess []string `yaml:"postProcess"`
 	// DefaultConverters specifies whether to include the default set of fact converters.
-	DefaultConverters bool
+	DefaultConverters bool `yaml:"defaultConverters"`
 }
 
 // RuleSet defines the interface for a rules engine that can evaluate rules

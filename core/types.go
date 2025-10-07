@@ -25,7 +25,7 @@ type Doc struct {
 // It is kept here for backward compatibility but will be removed in a future version.
 type LocalvecOptions struct {
 	// Path to the directory containing markdown files to be indexed.
-	Path string
+	Path string `yaml:"path" path:"resolve"`
 }
 
 // VectorStore is an interface for vector database operations, allowing for

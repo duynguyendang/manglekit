@@ -12,9 +12,9 @@ type InMemoryOptions struct {
 // BM25Options provides a type-safe way to configure the BM25 (keyword-based) retriever.
 type BM25Options struct {
 	// Path is the file path to a directory of documents that will be indexed by the retriever.
-	Path string
+	Path string `yaml:"path" path:"resolve"`
 	// TopK specifies the default number of documents to return if not specified in the request.
-	TopK int
+	TopK int `yaml:"topK"`
 }
 
 // DenseOptions provides a type-safe way to configure a dense (vector-based) retriever.
