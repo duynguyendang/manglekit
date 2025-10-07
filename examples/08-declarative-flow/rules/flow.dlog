@@ -1,0 +1,19 @@
+# Defines the main pipeline flow.
+flow("main_flow").
+
+# Defines the stages of the main flow, their order, and the tool to use.
+# 1. Retrieve documents using a hybrid search approach.
+# 2. Use a powerful LLM to generate an answer based on the retrieved documents.
+flow_stage("main_flow", 10, "retrieval_stage").
+stage_tool("retrieval_stage", "hybrid_search").
+
+flow_stage("main_flow", 20, "llm_stage").
+stage_tool("llm_stage", "chat_llm").
+
+# Example of a conditional rule.
+# This rule says to skip the LLM stage if the query contains the text "no_llm".
+# This is a simple example; more complex conditions could be based on user
+# attributes, conversation history, or retriever confidence scores.
+skip_stage("llm_stage") :-
+  req:text(Query),
+  str:contains(Query, "no_llm").

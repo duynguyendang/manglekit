@@ -1,0 +1,21 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ex: <http://example.org/ontology#> .
+
+ex:user a rdfs:Class ;
+    rdfs:label "User" .
+
+ex:document a rdfs:Class ;
+    rdfs:label "Document" .
+
+ex:hasPermission a rdf:Property ;
+    rdfs:domain ex:user ;
+    rdfs:range ex:document ;
+    rdfs:label "has permission" .
+
+ex:alice a ex:user ;
+    ex:hasPermission ex:doc123 .
+
+ex:bob a ex:user .
+
+ex:doc123 a ex:document .

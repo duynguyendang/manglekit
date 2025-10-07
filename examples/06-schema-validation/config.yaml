@@ -1,0 +1,26 @@
+providers:
+  # A dummy API key is required to satisfy the builder's validation,
+  # even though the LLM is not used in this example.
+  openai:
+    apiKey: "dummy"
+
+rules:
+  name: "mangle"
+  params:
+    path:
+      - "./rules/validation.dlog"
+    schemaSources:
+      - type: "jsonschema"
+        path: "./user.schema.json"
+    preProcess:
+      - "requestConverter"
+    defaultConverters: false
+
+# Minimal retriever and LLM to satisfy the orchestrator's requirements.
+retriever:
+  name: "in-memory"
+
+llm:
+  name: "openai"
+  params:
+    model: "dummy-model"

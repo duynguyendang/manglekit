@@ -1,0 +1,15 @@
+rules:
+  name: "mangle"
+  params:
+    path:
+      - "./rules/rules.dlog"
+
+retriever:
+  name: "inmemory"
+  # The documents are provided programmatically in main.go for this example.
+
+llm:
+  name: "google"
+  params:
+    model: "gemini-2.5-flash"
+    apiKey: "${GOOGLE_API_KEY}"

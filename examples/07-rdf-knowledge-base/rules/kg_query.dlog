@@ -1,0 +1,12 @@
+# Helper rule: A user is considered "allowed" if a direct permission triple exists for them.
+# The permission predicate itself is now passed in as data via a user_attribute fact.
+is_allowed(User, Document) :-
+  user_attribute("permission_pred", Pred),
+  triple(User, Pred, Document).
+
+# Deny access if the user is not explicitly allowed.
+# The Mangle AST uses '!' for negation.
+deny("authorization", "access denied") :-
+  user_attribute("name", User),
+  user_attribute("document", Document),
+  !is_allowed(User, Document).

@@ -1,0 +1,9 @@
+retriever:
+  name: "in-memory"
+  # The documents are provided programmatically in main.go for this example.
+
+llm:
+  name: "google"
+  params:
+    model: "gemini-1.5-flash"
+    apiKey: "${GOOGLE_API_KEY}"

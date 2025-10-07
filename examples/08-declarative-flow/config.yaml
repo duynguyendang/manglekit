@@ -1,0 +1,54 @@
+# This file configures the 'tools' that the DLOG flow will call upon.
+orchestrator:
+  type: "declarative"
+  flowName: "main_flow"
+
+providers:
+  openai:
+    apiKey: "${OPENAI_API_KEY}" # Make sure to set this environment variable
+
+tools:
+  # Dependency tools (built first)
+  openai_embedder:
+    provider: "openai-embedder"
+    params:
+      model: "text-embedding-3-small"
+
+  local_vs:
+    provider: "localvec"
+    params:
+      path: "./testdata/vs"
+      embedder: "openai_embedder" # Depends on openai_embedder
+
+  # Retriever tools
+  bm25_search:
+    provider: "bm25"
+    params:
+      path: "./testdata/corpus"
+
+  dense_search:
+    provider: "dense"
+    params:
+      embedder: "openai_embedder" # Depends on openai_embedder
+      vectorStore: "local_vs"       # Depends on local_vs
+
+  hybrid_search:
+    provider: "hybrid"
+    params:
+      bm25: "bm25_search"
+      dense: "dense_search"
+
+  # LLM tool
+  chat_llm:
+    provider: "openai"
+    params:
+      model: "gpt-4o-mini"
+      promptTemplate: "Based on the following context, answer the user's question. Context: {{.Context}}. Question: {{.Prompt}}"
+
+# The main rules engine for the orchestrator.
+# It reads the flow definition from flow.dlog.
+rules:
+  name: "mangle"
+  params:
+    path:
+      - "./rules/flow.dlog"

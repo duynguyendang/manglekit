@@ -1,0 +1,10 @@
+retriever:
+  name: "bm25"
+  params:
+    path: "./data"
+
+llm:
+  name: "google"
+  params:
+    model: "gemini-2.5-flash"
+    apiKey: "${GOOGLE_API_KEY}"
