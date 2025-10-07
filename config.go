@@ -193,6 +193,21 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 	resolvePaths(cfg.Rules.Params)
 	resolvePaths(cfg.VectorStore.Params)
 
+	// Special handling for schemaSources paths within the rules params.
+	if cfg.Rules.Params != nil {
+		if schemaSources, ok := cfg.Rules.Params["schemaSources"].([]any); ok {
+			for _, source := range schemaSources {
+				if sourceMap, ok := source.(map[string]any); ok {
+					if pathValue, ok := sourceMap["path"].(string); ok {
+						if !filepath.IsAbs(pathValue) {
+							sourceMap["path"] = filepath.Join(configDir, pathValue)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	builder := NewBuilder().
 		WithConfig(&cfg). // Pass the full config to the builder
 		WithTopK(cfg.TopK).
