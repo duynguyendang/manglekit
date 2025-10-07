@@ -17,7 +17,7 @@ const (
 )
 
 func init() {
-	manglekit.RegisterEmbedder("google", New)
+	manglekit.RegisterEmbedder("google-embedder", New)
 }
 
 // GoogleEmbedder implements both retrieve.Embedder and ai.Embedder interfaces.

@@ -16,4 +16,4 @@ stage_tool("llm_stage", "chat_llm").
 # attributes, conversation history, or retriever confidence scores.
 skip_stage("llm_stage") :-
   raw_query(Query),
-  fn:contains(Query, "no_llm").
+  :string:contains(Query, "no_llm").

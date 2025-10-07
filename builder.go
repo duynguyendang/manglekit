@@ -406,10 +406,16 @@ func (b *builder) buildTools() error {
 		toBuild[name] = cfg
 	}
 
+	// Create a set of all tool names for efficient lookup.
+	allToolNames := make(map[string]struct{})
+	for name := range toBuild {
+		allToolNames[name] = struct{}{}
+	}
+
 	for len(toBuild) > 0 {
 		builtInThisPass := 0
 		for name, cfg := range toBuild {
-			deps := getToolDependencies(cfg)
+			deps := getToolDependencies(cfg, allToolNames)
 			allDepsMet := true
 			for _, dep := range deps {
 				if _, ok := b.tools[dep]; !ok {
@@ -444,7 +450,7 @@ func (b *builder) buildTools() error {
 // getToolDependencies inspects a tool's parameters to find its dependencies on other tools.
 // A dependency is assumed to be any string value in the first level of the params map that
 // corresponds to another tool's name.
-func getToolDependencies(cfg ToolConfig) []string {
+func getToolDependencies(cfg ToolConfig, allToolNames map[string]struct{}) []string {
 	var deps []string
 	if cfg.Params == nil {
 		return deps
@@ -453,7 +459,9 @@ func getToolDependencies(cfg ToolConfig) []string {
 	// The build loop is robust enough to ignore strings that aren't actual tool names.
 	for _, param := range cfg.Params {
 		if depName, ok := param.(string); ok {
-			deps = append(deps, depName)
+			if _, isTool := allToolNames[depName]; isTool {
+				deps = append(deps, depName)
+			}
 		}
 	}
 	return deps
@@ -466,8 +474,12 @@ func (b *builder) buildSingleTool(name string, cfg ToolConfig) (any, error) {
 	if family, ok := providerToFamily[providerFamily]; ok {
 		providerFamily = family
 	}
-	// We can ignore errors here, as not all providers (e.g., bm25) require external config.
-	_ = b.resolveProviderConfig("tool", providerFamily)
+	// The resolveProviderConfig function will only return an error if a provider
+	// that requires external configuration (e.g., an API key) is missing it.
+	// For other providers (like bm25), it will do nothing and return nil.
+	if err := b.resolveProviderConfig("tool", providerFamily); err != nil {
+		return nil, fmt.Errorf("failed to resolve provider config for %q: %w", providerFamily, err)
+	}
 
 	// 2. Unmarshal the tool's parameters into the correct options struct
 	optsType, hasOpts := nameToOptionsType[cfg.Provider]
