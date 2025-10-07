@@ -12,6 +12,7 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	_ "github.com/duynguyendang/manglekit/providers/all" // Register all standard providers
 	"github.com/google/mangle/ast"
+	"github.com/joho/godotenv"
 )
 
 // requestConverter turns a map from a core.Query into `request_field/2` facts.
@@ -51,6 +52,7 @@ func (c *requestConverter) ToFacts(input any) ([]ast.Atom, error) {
 }
 
 func main() {
+	_ = godotenv.Load() // Load .env file if present.
 	ctx := context.Background()
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
