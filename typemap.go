@@ -28,7 +28,7 @@ var optionsTypeToName = map[reflect.Type]string{
 
 	// Retrievers
 	reflect.TypeOf(&retrieve.BM25Options{}):     "bm25",
-	reflect.TypeOf(&retrieve.InMemoryOptions{}): "inmemory",
+	reflect.TypeOf(&retrieve.InMemoryOptions{}): "in-memory",
 	reflect.TypeOf(&retrieve.DenseOptions{}):    "dense",
 	reflect.TypeOf(&retrieve.HybridOptions{}):   "hybrid",
 
