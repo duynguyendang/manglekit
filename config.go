@@ -145,17 +145,13 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 		return nil, fmt.Errorf("failed to unmarshal yaml: %w", err)
 	}
 
-	// Resolve all tagged paths in the config struct relative to the config file's directory.
-	configDir := filepath.Dir(path)
-	if err := resolvePathsInStruct(&cfg, configDir); err != nil {
-		return nil, fmt.Errorf("failed to resolve paths in config: %w", err)
-	}
-
 	builder := NewBuilder().
 		WithConfig(&cfg). // Pass the full config to the builder
 		WithTopK(cfg.TopK).
 		WithMaxTokens(cfg.MaxTokens).
 		WithFallbackThreshold(cfg.FallbackThreshold)
+
+	configDir := filepath.Dir(path)
 
 	// Helper function to create and configure a component from the YAML config.
 	configureComponent := func(name string, params map[string]any, setter func(any) BuilderAPI) error {
@@ -179,6 +175,11 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 		}
 		if err := json.Unmarshal(jsonParams, optsPtr); err != nil {
 			return fmt.Errorf("failed to unmarshal params into options struct for %q: %w", name, err)
+		}
+
+		// Now that the options struct is populated, resolve any paths within it.
+		if err := resolvePathsInStruct(optsPtr, configDir); err != nil {
+			return fmt.Errorf("failed to resolve paths for component %q: %w", name, err)
 		}
 
 		// Call the appropriate With... method on the builder.
