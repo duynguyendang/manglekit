@@ -1,1 +1,1 @@
-pre_retrieve(Doc) :- user_attribute("doc_id", ID), doc_id(Doc, ID).
+query_filter("id", ID) :- user_attribute("doc_id", ID).

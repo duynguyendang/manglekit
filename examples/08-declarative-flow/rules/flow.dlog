@@ -15,5 +15,5 @@ stage_tool("llm_stage", "chat_llm").
 # This is a simple example; more complex conditions could be based on user
 # attributes, conversation history, or retriever confidence scores.
 skip_stage("llm_stage") :-
-  req:text(Query),
-  str:contains(Query, "no_llm").
+  raw_query(Query),
+  fn:contains(Query, "no_llm").
