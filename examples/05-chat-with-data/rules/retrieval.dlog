@@ -1,3 +1,11 @@
+# Declare all predicates used in the rules and facts.
+.decl requested_doc_id(id: symbol)
+.decl current_user(user: symbol)
+.decl user_attribute(user: symbol, key: symbol, value: symbol)
+.decl doc_id(doc: symbol, id: symbol)
+.decl doc_department(doc: symbol, dept: symbol)
+.decl doc_confidentiality(doc: symbol, level: symbol)
+
 requested_doc_id(DocID) :-
   current_user(U),
   user_attribute(U, "doc_id", DocID).
