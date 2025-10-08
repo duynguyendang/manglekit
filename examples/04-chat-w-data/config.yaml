@@ -7,4 +7,4 @@ rules:
     # It points to a list of Datalog files to load.
     # Facts will be generated in code and added to the pipeline.
     path:
-      - "policy/access_control.dlog"
+      - "test.dlog"
