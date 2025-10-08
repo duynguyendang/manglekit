@@ -1,0 +1,10 @@
+# Manglekit configuration for the chat-w-data example.
+# The 'rules' component configures the Mangle engine.
+rules:
+  name: "mangle"
+  params:
+    # 'path' is a parameter of the MangleOptions struct.
+    # It points to a list of Datalog files to load.
+    # Facts will be generated in code and added to the pipeline.
+    path:
+      - "policy/access_control.dlog"
