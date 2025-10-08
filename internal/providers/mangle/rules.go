@@ -109,11 +109,10 @@ func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
 		edbDecls[decl] = ast.Decl{}
 	}
 
-	programInfo, strata, predToStratum, err := loadProgram(opts.Path, edbDecls)
+	programInfo, strata, predToStratum, initialFacts, err := loadProgram(opts.Path, edbDecls)
 	if err != nil {
 		return nil, fmt.Errorf("mangle: could not load program: %w", err)
 	}
-
 	baseStore := factstore.NewSimpleInMemoryStore()
 	for _, fact := range initialFacts {
 		baseStore.Add(fact)
@@ -428,37 +427,51 @@ func (r *ruleSet) postProcess(query core.Query, answer *core.Answer) (core.RuleR
 }
 
 // --- Mangle Helper Functions ---
-func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl) (*analysis.ProgramInfo, []analysis.Nodeset, map[ast.PredicateSym]int, error) {
-	var files []string
+func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl) (*analysis.ProgramInfo, []analysis.Nodeset, map[ast.PredicateSym]int, []ast.Atom, error) {
+	var ruleFiles, factFiles []string
 	for _, path := range paths {
-		resolved, err := resolveDlogFiles(path)
+		resolved, err := resolveFiles(path)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not resolve rule path %q: %w", path, err)
+			return nil, nil, nil, nil, fmt.Errorf("could not resolve rule path %q: %w", path, err)
 		}
-		files = append(files, resolved...)
+		for _, file := range resolved {
+			if strings.HasSuffix(file, ".dlog") {
+				ruleFiles = append(ruleFiles, file)
+			} else {
+				factFiles = append(factFiles, file)
+			}
+		}
 	}
-	if len(files) == 0 {
-		return nil, nil, nil, fmt.Errorf("no .dlog files found in any of the paths")
+	if len(ruleFiles) == 0 {
+		return nil, nil, nil, nil, fmt.Errorf("no .dlog files found in any of the paths")
 	}
 
 	var units []parse.SourceUnit
-	for _, file := range files {
-		f, err := os.Open(file)
+	for _, file := range ruleFiles {
+		unit, err := parseFile(file)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not open rule file %s: %w", file, err)
-		}
-		defer f.Close()
-
-		unit, err := parse.Unit(f)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("could not parse rule file %s: %w", file, err)
+			return nil, nil, nil, nil, err
 		}
 		units = append(units, unit)
 	}
 
+	var initialFacts []ast.Atom
+	for _, file := range factFiles {
+		unit, err := parseFile(file)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		// A fact is a clause with an empty body (no premises).
+		for _, clause := range unit.Clauses {
+			if len(clause.Premises) == 0 {
+				initialFacts = append(initialFacts, clause.Head)
+			}
+		}
+	}
+
 	programInfo, err := analysis.Analyze(units, edbDeclarations)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	strata, predToStratum, err := analysis.Stratify(analysis.Program{
@@ -467,18 +480,31 @@ func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl) 
 		Rules:         programInfo.Rules,
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
-	return programInfo, strata, predToStratum, nil
+	return programInfo, strata, predToStratum, initialFacts, nil
 }
 
-func resolveDlogFiles(path string) ([]string, error) {
+func parseFile(file string) (parse.SourceUnit, error) {
+	f, err := os.Open(file)
+	if err != nil {
+		return parse.SourceUnit{}, fmt.Errorf("could not open rule file %s: %w", file, err)
+	}
+	defer f.Close()
+	unit, err := parse.Unit(f)
+	if err != nil {
+		return parse.SourceUnit{}, fmt.Errorf("could not parse rule file %s: %w", file, err)
+	}
+	return unit, nil
+}
+
+func resolveFiles(path string) ([]string, error) {
 	info, err := os.Stat(path)
 	switch {
 	case err == nil:
 		if info.IsDir() {
-			return collectDlogFiles(path)
+			return collectFiles(path)
 		}
 		return []string{path}, nil
 	case errors.Is(err, fs.ErrNotExist):
@@ -492,7 +518,7 @@ func resolveDlogFiles(path string) ([]string, error) {
 			}
 			var files []string
 			for _, match := range matches {
-				resolved, err := resolveDlogFiles(match)
+				resolved, err := resolveFiles(match)
 				if err != nil {
 					return nil, err
 				}
@@ -507,7 +533,7 @@ func resolveDlogFiles(path string) ([]string, error) {
 	}
 }
 
-func collectDlogFiles(root string) ([]string, error) {
+func collectFiles(root string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -516,9 +542,7 @@ func collectDlogFiles(root string) ([]string, error) {
 		if d.IsDir() {
 			return nil
 		}
-		if !strings.HasSuffix(d.Name(), ".dlog") {
-			return nil
-		}
+		// Collect all non-directory files.
 		files = append(files, path)
 		return nil
 	})
