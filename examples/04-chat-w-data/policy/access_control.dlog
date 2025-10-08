@@ -1,2 +1,2 @@
 something().
-deny() :- not something().
+deny() :- !something().

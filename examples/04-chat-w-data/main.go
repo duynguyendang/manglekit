@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"github.com/duynguyendang/manglekit"
@@ -9,20 +10,25 @@ import (
 )
 
 func main() {
-	// This is a minimal program to test Datalog parsing.
-	// It does not run a full pipeline, only builds the rules engine.
-	log.Println("Attempting to build pipeline with minimal policy...")
+	log.Println("Attempting to build rules engine with minimal policy...")
 
 	rulesOpts := core.MangleOptions{
 		Path: []string{"examples/04-chat-w-data/policy/access_control.dlog"},
 	}
 
-	builder := manglekit.NewBuilder().WithRules(&rulesOpts)
-
-	_, err := builder.Build()
+	constructor, err := manglekit.Get(manglekit.Registry.Rules, "mangle")
 	if err != nil {
-		log.Fatalf("failed to build pipeline: %v", err)
+		log.Fatalf("failed to look up rules provider: %v", err)
 	}
 
-	log.Println("Pipeline built successfully. The Datalog syntax appears to be valid.")
+	newFn, ok := constructor.(func(context.Context, core.MangleOptions) (core.RuleSet, error))
+	if !ok {
+		log.Fatalf("unexpected constructor signature for rules provider: %T", constructor)
+	}
+
+	if _, err := newFn(context.Background(), rulesOpts); err != nil {
+		log.Fatalf("failed to build rules engine: %v", err)
+	}
+
+	log.Println("Rules engine built successfully. The Datalog syntax appears to be valid.")
 }
