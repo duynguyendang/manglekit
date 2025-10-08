@@ -1,0 +1,21 @@
+# --- Input Predicates (Provided at query time) ---
+.input current_user(User).
+
+# --- Output Predicate (Instruction for the Retriever) ---
+.output query_filter(Key, Value).
+
+# --- LOGICAL INFERENCE RULES ---
+
+# Step 1: Find the document ID assigned to the current user.
+requested_doc_id(DocID) :-
+  current_user(U),
+  user_attribute(U, "doc_id", DocID).
+
+# Step 2: Find the internal document identifier from the public ID.
+target_doc(D) :-
+  requested_doc_id(ReqID),
+  doc_id(D, ReqID).
+
+# Step 3 (CRITICAL): Generate the filter instruction for the retriever.
+# If we have found a target document, create a filter to retrieve ONLY that document.
+query_filter("id", D) :- target_doc(D).
