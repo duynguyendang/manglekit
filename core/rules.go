@@ -40,6 +40,8 @@ type MangleOptions struct {
 	PostProcess []string `yaml:"postProcess"`
 	// DefaultConverters specifies whether to include the default set of fact converters.
 	DefaultConverters bool `yaml:"defaultConverters"`
+
+	FileFirst bool `yaml:"fileFirst"`
 }
 
 // RuleSet defines the interface for a rules engine that can evaluate rules

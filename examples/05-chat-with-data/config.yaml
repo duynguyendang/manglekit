@@ -8,6 +8,7 @@ rules:
       - "./rules/kb.facts"
       - "./rules/retrieval.dlog"
     defaultConverters: true
+    fileFirst: true
 
 # A simple retriever to fetch the document content AFTER Mangle has identified it.
 retriever:

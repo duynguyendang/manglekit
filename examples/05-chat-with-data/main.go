@@ -41,7 +41,9 @@ func main() {
 		Text: "test simple rule",
 		Meta: map[string]any{
 			"dynamic_facts": []map[string]any{
-				{"predicate": "current_user", "args": []any{"alice"}},
+				{"predicate": "user_attribute", "args": []any{"doc_id", "A123"}},
+				// {"predicate": "user_attribute", "args": []any{"role", "analyst"}},
+				// {"predicate": "user_attribute", "args": []any{"department", "sales"}},
 			},
 		},
 	}

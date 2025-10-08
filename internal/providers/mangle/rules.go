@@ -38,33 +38,24 @@ type ruleSet struct {
 }
 
 // New creates a new Mangle-based core.FlowController from the supplied options.
-// This constructor is responsible for the entire setup of the Mangle engine, including:
-//   - Parsing schema definitions to create a base set of facts.
-//   - Loading and analyzing all Datalog rule files (.dlog).
-//   - Setting up the required fact converters for pre- and post-processing stages.
-//   - Performing an initial evaluation of the base program.
-//
 // ctx is the context for initialization.
 // opts provides the configuration, including paths to rule files and schemas.
-// It returns a fully initialized core.FlowController ready for evaluation, or an error
-// if any part of the setup fails.
 func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
-	// This function actually returns a *ruleSet, which implements core.FlowController.
-	// The signature remains core.RuleSet to match the registry. The builder will
-	// perform a type assertion.
 	if len(opts.Path) == 0 {
 		return nil, fmt.Errorf("mangle: at least one path in 'path' must be provided")
 	}
 
-	initialFacts, schemaDecls, err := parseSchemas(opts.SchemaSources)
+	// 1) Parse schemas (if any). We only take schema facts here; EDB declarations
+	// come from either code (code-first) or .dlog Decl (file-first).
+	schemaFacts, schemaDecls, err := parseSchemas(opts.SchemaSources)
 	if err != nil {
 		return nil, fmt.Errorf("mangle: failed to parse schemas: %w", err)
 	}
 
+	// 2) Load converters (for ToFacts). We DO NOT rely on them for EDB if FileFirst=true.
 	var preConverters, postConverters []core.FactConverter
-	// Load default converters if explicitly requested, OR if no custom converters are specified.
-	// This provides sane defaults for new users, while allowing advanced users to override.
-	if opts.DefaultConverters || (len(opts.PreProcess) == 0 && len(opts.PostProcess) == 0) {
+	forceDefaults := opts.DefaultConverters || (len(opts.PreProcess) == 0 && len(opts.PostProcess) == 0)
+	if forceDefaults {
 		qc, err := converters.NewQueryConverter()
 		if err != nil {
 			return nil, fmt.Errorf("mangle: failed to create queryConverter: %w", err)
@@ -81,7 +72,7 @@ func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
 		postConverters = append(postConverters, dc, ucc)
 	}
 
-	// Load custom converters
+	// Custom converters
 	for _, name := range opts.PreProcess {
 		conv, err := loadConverter(name)
 		if err != nil {
@@ -97,27 +88,41 @@ func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
 		postConverters = append(postConverters, conv)
 	}
 
-	allConverters := append(preConverters, postConverters...)
+	// 3) Build EDB declarations depending on mode.
+	// In file-first mode, let .dlog Decl define EDB/IDB; do not pre-register here.
 	edbDecls := make(map[ast.PredicateSym]ast.Decl)
-	for _, conv := range allConverters {
-		for _, pred := range conv.Predicates() {
-			edbDecls[pred] = ast.Decl{}
+	if !opts.FileFirst {
+		// Code-first: collect from converters + schemaDecls
+		allConverters := append(preConverters, postConverters...)
+		for _, conv := range allConverters {
+			for _, pred := range conv.Predicates() {
+				edbDecls[pred] = ast.Decl{}
+			}
 		}
-	}
-	// Add declarations from the newly parsed schemas.
-	for _, decl := range schemaDecls {
-		edbDecls[decl] = ast.Decl{}
+		for _, decl := range schemaDecls {
+			edbDecls[decl] = ast.Decl{}
+		}
+		fmt.Println("[mangle] MODE: code-first; EDB declarations (from code):")
+		for p := range edbDecls {
+			fmt.Printf("  - %s/%d\n", p.Symbol, p.Arity)
+		}
+	} else {
+		fmt.Println("[mangle] MODE: file-first (Decl comes from .dlog); edbDecls from code: <empty>")
 	}
 
-	programInfo, strata, predToStratum, initialFacts, err := loadProgram(opts.Path, edbDecls)
+	// 4) Load program (rules + facts)
+	programInfo, strata, predToStratum, fileFacts, err := loadProgram(opts.Path, edbDecls)
 	if err != nil {
 		return nil, fmt.Errorf("mangle: could not load program: %w", err)
 	}
+
+	// 5) Seed base store with schema facts + file facts
 	baseStore := factstore.NewSimpleInMemoryStore()
-	for _, fact := range initialFacts {
-		baseStore.Add(fact)
+	for _, f := range append(schemaFacts, fileFacts...) {
+		baseStore.Add(f)
 	}
 
+	// 6) Evaluate base program
 	if err := evaluate(programInfo, strata, predToStratum, baseStore); err != nil {
 		return nil, fmt.Errorf("mangle: could not evaluate base program: %w", err)
 	}
@@ -154,8 +159,7 @@ func loadConverter(name string) (core.FactConverter, error) {
 	return converter, nil
 }
 
-// parseSchemas handles the logic of reading and parsing schema definition files.
-// This logic was moved from the builder to here.
+// parseSchemas handles reading and parsing schema definition files.
 func parseSchemas(sources []core.SchemaSource) ([]ast.Atom, []ast.PredicateSym, error) {
 	if len(sources) == 0 {
 		return nil, nil, nil
@@ -165,13 +169,13 @@ func parseSchemas(sources []core.SchemaSource) ([]ast.Atom, []ast.PredicateSym, 
 	var allDecls []ast.PredicateSym
 
 	for _, source := range sources {
-		// 1. Look up the parser constructor from the registry.
+		// 1. Lookup parser constructor
 		parserConstructor, err := manglekit.Get(manglekit.Registry.SchemaParser, source.Type)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get schema parser constructor '%s': %w", source.Type, err)
 		}
 
-		// 2. Assert the constructor type and create a parser instance.
+		// 2. Construct parser
 		constructorFn, ok := parserConstructor.(func(map[string]any) (any, error))
 		if !ok {
 			return nil, nil, fmt.Errorf("invalid constructor type for schema parser '%s'", source.Type)
@@ -206,13 +210,6 @@ func parseSchemas(sources []core.SchemaSource) ([]ast.Atom, []ast.PredicateSym, 
 }
 
 // Evaluate runs the Mangle evaluation for a specific pipeline stage (Pre or Post).
-// It dispatches to the appropriate internal processing function based on the stage.
-// This method satisfies the core.RuleSet interface.
-//
-// stage determines whether to run the pre-processing or post-processing logic.
-// q is the user query, available for inspection and mutation.
-// a is the answer object, which is primarily used in the Post-processing stage.
-// It returns a RuleResult indicating success and any mutations, or an error.
 func (r *ruleSet) Evaluate(stage core.Stage, q core.Query, a *core.Answer) (core.RuleResult, error) {
 	switch stage {
 	case core.Pre:
@@ -242,7 +239,7 @@ func (r *ruleSet) preProcess(query core.Query) (core.RuleResult, error) {
 		return core.RuleResult{Allowed: false, Reason: "Mangle pre-process failed"}, fmt.Errorf("mangle: pre-process evaluation failed: %w", err)
 	}
 
-	// Check for skipped stages first.
+	// Skipped stages
 	skipped, err := collectStrings(workingStore, "skip_stage", 1)
 	if err != nil {
 		return core.RuleResult{Allowed: false, Reason: "could not collect 'skip_stage' facts"}, err
@@ -252,30 +249,23 @@ func (r *ruleSet) preProcess(query core.Query) (core.RuleResult, error) {
 		skippedMap[s] = true
 	}
 
-	// Check for deny facts. If any exist, the request is not allowed.
+	// Deny?
 	denied, err := collectKeyValue(workingStore, "deny")
 	if err != nil {
 		return core.RuleResult{Allowed: false, Reason: "could not collect 'deny' facts"}, err
 	}
 	if len(denied) > 0 {
-		// Collect the first reason for the error message.
 		var reason string
 		for r := range denied {
 			reason = r
 			break
 		}
-
-		// Create a mutation function to attach the full denial reasons to the answer.
 		mutateFn := func(q *core.Query, a *core.Answer) {
 			if a.Meta == nil {
 				a.Meta = make(map[string]any)
 			}
 			a.Meta["mangle_denied_reasons"] = denied
 		}
-
-		// Return a result that denies access, provides a reason, and includes the
-		// mutation function to record the details. The orchestrator will convert this
-		// into a core.ErrDenied.
 		return core.RuleResult{Allowed: false, Reason: reason, Mutate: mutateFn, SkippedStages: skippedMap}, nil
 	}
 
@@ -299,9 +289,7 @@ func (r *ruleSet) preProcess(query core.Query) (core.RuleResult, error) {
 	return core.RuleResult{Allowed: true, Mutate: mutateFn, SkippedStages: skippedMap}, nil
 }
 
-// Query executes a read-only Datalog query against the base, pre-evaluated facts
-// of the program. This is used to retrieve static configuration and definitions,
-// such as the stages of a declarative flow. It implements the core.Querier interface.
+// Query executes a read-only Datalog query against the base, pre-evaluated facts.
 func (r *ruleSet) Query(ctx context.Context, query string, onSolution func(map[string]any) error) error {
 	queryAtom, err := parse.Atom(query)
 	if err != nil {
@@ -313,36 +301,33 @@ func (r *ruleSet) Query(ctx context.Context, query string, onSolution func(map[s
 		// Manual unification of the query atom against the fact atom.
 		match := true
 		if len(factAtom.Args) != len(queryAtom.Args) {
-			return nil // Should not happen if predicate is the same.
+			return nil
 		}
 		for i, queryArg := range queryAtom.Args {
 			if _, isVar := queryArg.(ast.Variable); isVar {
-				continue // Variable matches anything.
+				continue
 			}
-			// If queryArg is a constant, it must match the corresponding factArg.
 			if !queryArg.Equals(factAtom.Args[i]) {
 				match = false
 				break
 			}
 		}
 		if !match {
-			return nil // Does not match, skip to the next fact.
+			return nil
 		}
 
-		// It's a match, now extract variables to build the solution map.
+		// Build solution map
 		solution := make(map[string]any)
 		for i, arg := range queryAtom.Args {
 			if v, ok := arg.(ast.Variable); ok {
 				term := factAtom.Args[i]
 				var val string
-				var err error
 				if c, ok := term.(ast.Constant); ok {
 					val, err = constantToString(c)
 					if err != nil {
 						return fmt.Errorf("could not convert solution term '%v' to string: %w", term, err)
 					}
 				} else {
-					// This should not happen if facts are well-formed.
 					return fmt.Errorf("expected a constant in query solution, but got %T", term)
 				}
 				solution[v.Symbol] = val
@@ -427,6 +412,15 @@ func (r *ruleSet) postProcess(query core.Query, answer *core.Answer) (core.RuleR
 }
 
 // --- Mangle Helper Functions ---
+
+func isRuleFile(p string) bool { return strings.HasSuffix(p, ".dlog") }
+func isFactFile(p string) bool {
+	return strings.HasSuffix(p, ".facts") ||
+		strings.HasSuffix(p, ".fact") ||
+		strings.HasSuffix(p, ".edb") ||
+		strings.HasSuffix(p, ".data")
+}
+
 func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl) (*analysis.ProgramInfo, []analysis.Nodeset, map[ast.PredicateSym]int, []ast.Atom, error) {
 	var ruleFiles, factFiles []string
 	for _, path := range paths {
@@ -435,9 +429,10 @@ func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl) 
 			return nil, nil, nil, nil, fmt.Errorf("could not resolve rule path %q: %w", path, err)
 		}
 		for _, file := range resolved {
-			if strings.HasSuffix(file, ".dlog") {
+			switch {
+			case isRuleFile(file):
 				ruleFiles = append(ruleFiles, file)
-			} else {
+			case isFactFile(file):
 				factFiles = append(factFiles, file)
 			}
 		}
@@ -469,6 +464,9 @@ func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl) 
 		}
 	}
 
+	fmt.Println("[mangle] rule files:", ruleFiles)
+	fmt.Println("[mangle] fact  files:", factFiles)
+
 	programInfo, err := analysis.Analyze(units, edbDeclarations)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -487,12 +485,27 @@ func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl) 
 }
 
 func parseFile(file string) (parse.SourceUnit, error) {
-	f, err := os.Open(file)
+	b, err := os.ReadFile(file)
 	if err != nil {
 		return parse.SourceUnit{}, fmt.Errorf("could not open rule file %s: %w", file, err)
 	}
-	defer f.Close()
-	unit, err := parse.Unit(f)
+	// strip UTF-8 BOM if any
+	if len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
+		b = b[3:]
+	}
+	// normalize newlines and drop lines that are just "."
+	s := strings.ReplaceAll(string(b), "\r\n", "\n")
+	lines := strings.Split(s, "\n")
+	kept := lines[:0]
+	for _, ln := range lines {
+		if strings.TrimSpace(ln) == "." {
+			continue
+		}
+		kept = append(kept, ln)
+	}
+	cleaned := strings.Join(kept, "\n")
+
+	unit, err := parse.Unit(strings.NewReader(cleaned))
 	if err != nil {
 		return parse.SourceUnit{}, fmt.Errorf("could not parse rule file %s: %w", file, err)
 	}
@@ -542,7 +555,6 @@ func collectFiles(root string) ([]string, error) {
 		if d.IsDir() {
 			return nil
 		}
-		// Collect all non-directory files.
 		files = append(files, path)
 		return nil
 	})
