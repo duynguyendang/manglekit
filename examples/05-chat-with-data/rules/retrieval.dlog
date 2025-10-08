@@ -1,13 +1,12 @@
-Decl requested_doc_id(Id).
-Decl current_user(User).
-Decl user_attribute(User, Key, Value).
+Decl user_attribute(Key, Value).
 Decl doc_id(Doc, Id).
-Decl doc_department(Doc, Dept).
-Decl doc_confidentiality(Doc, Level).
+
+Decl requested_doc_id(Id).
+Decl target_doc(Doc).
+Decl query_filter(Key, Value).
 
 requested_doc_id(DocID) :-
-  current_user(U),
-  user_attribute(U, "doc_id", DocID).
+  user_attribute("doc_id", DocID).
 
 target_doc(D) :-
   requested_doc_id(ReqID),
@@ -15,3 +14,6 @@ target_doc(D) :-
 
 query_filter("id", D) :-
   target_doc(D).
+
+query_filter("doc_id", ReqID) :-
+  requested_doc_id(ReqID).

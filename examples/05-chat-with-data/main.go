@@ -38,12 +38,12 @@ func main() {
 	// The Mangle rules will use the `current_user` fact to find the document
 	// assigned to her.
 	query := core.Query{
-		Text: "test simple rule",
+		Text: "Based on the document assigned to me, what is the customer name and total revenue?",
 		Meta: map[string]any{
 			"dynamic_facts": []map[string]any{
-				{"predicate": "user_attribute", "args": []any{"doc_id", "A123"}},
+				//{"predicate": "user_attribute", "args": []any{"doc_id", "A123"}},
 				// {"predicate": "user_attribute", "args": []any{"role", "analyst"}},
-				// {"predicate": "user_attribute", "args": []any{"department", "sales"}},
+				{"predicate": "user_attribute", "args": []any{"department", "sales"}},
 			},
 		},
 	}

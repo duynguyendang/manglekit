@@ -1,18 +1,16 @@
-doc_id("doc1", "A123").
-doc_department("doc1", "sales").
-doc_confidentiality("doc1", "normal").
+doc_id("doc1").
+doc_id("doc2").
+doc_id("doc3").
 
-doc_id("doc2", "B456").
-doc_department("doc2", "marketing").
-doc_confidentiality("doc2", "high").
+doc_metadata("doc1", "id", "A123").
+doc_metadata("doc1", "department", "sales").
+doc_metadata("doc1", "confidentiality", "normal").
+doc_metadata("doc1", "data/doc1.md", "doc1").
 
-doc_id("doc3", "S777").
-doc_department("doc3", "sales").
-doc_confidentiality("doc3", "restricted").
+doc_metadata("doc2", "id", "B456").
+doc_metadata("doc2", "department", "marketing").
+doc_metadata("doc2", "confidentiality", "high").
 
-# --- User Knowledge Facts ---
-user_attribute("alice", "role", "analyst").
-user_attribute("alice", "department", "sales").
-user_attribute("alice", "doc_id", "A123").
-
-current_user("alice").
+doc_metadata("doc3", "id", "S777").
+doc_metadata("doc3", "department", "sales").
+doc_metadata("doc3", "confidentiality", "restricted").

@@ -98,6 +98,25 @@ func (o *DeclarativeOrchestrator) Run(ctx context.Context, q core.Query) (core.A
 		contextKeyAnswer: core.Answer{Meta: map[string]any{}},
 	}
 
+	// 3b. Apply mutations from pre-rules so filters/expansions are present in Query.Meta.
+	if preResult.Mutate != nil {
+		cq := execContext[contextKeyQuery].(core.Query)
+		ca := execContext[contextKeyAnswer].(core.Answer)
+		preResult.Mutate(&cq, &ca)
+		execContext[contextKeyQuery] = cq
+		execContext[contextKeyAnswer] = ca
+
+		// Optional debug logs
+		if cq.Meta != nil {
+			if f, ok := cq.Meta["filters"]; ok {
+				fmt.Printf("[declarative] filters from pre-rules: %#v\n", f)
+			}
+			if ex, ok := cq.Meta["expansion_terms"]; ok {
+				fmt.Printf("[declarative] expansions from pre-rules: %#v\n", ex)
+			}
+		}
+	}
+
 	// 4. Loop and dispatch.
 	for _, stage := range stages {
 		// a. Check for conditional skip from the pre-rule evaluation.
@@ -187,12 +206,32 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, tool any, 
 
 	switch t := tool.(type) {
 	case retrieve.Retriever:
+		// Ensure Meta is non-nil
+		if query.Meta == nil {
+			query.Meta = map[string]any{}
+		}
+
+		// Debug logs for filters/expansions before retrieving
+		fmt.Printf("[declarative] calling retriever with filters=%#v expansions=%#v\n",
+			query.Meta["filters"], query.Meta["expansion_terms"])
+
 		req := retrieve.Request{Query: query.Text, Meta: query.Meta}
 		res, err := t.Retrieve(req)
 		if err != nil {
 			return err
 		}
+		fmt.Printf("[declarative] retrieved %d docs\n", len(res.Docs))
+
+		// Store docs for next stages
 		execContext[contextKeyDocs] = res.Docs
+
+		// Save original docs into the answer meta for post-processing rules
+		ans := answer
+		if ans.Meta == nil {
+			ans.Meta = make(map[string]any)
+		}
+		ans.Meta["original_docs"] = res.Docs
+		execContext[contextKeyAnswer] = ans
 
 	case rerank.Reranker:
 		docs, ok := execContext[contextKeyDocs].([]core.Doc)
