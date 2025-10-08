@@ -1,15 +1,12 @@
 # --- Document Facts ---
-doc("doc1").
 doc_id("doc1", "A123").
 doc_department("doc1", "sales").
 doc_confidentiality("doc1", "normal").
 
-doc("doc2").
 doc_id("doc2", "B456").
 doc_department("doc2", "marketing").
 doc_confidentiality("doc2", "high").
 
-doc("doc3").
 doc_id("doc3", "S777").
 doc_department("doc3", "sales").
 doc_confidentiality("doc3", "restricted").
