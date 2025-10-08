@@ -1,10 +1,19 @@
 # Manglekit configuration for the chat-w-data example.
-# The 'rules' component configures the Mangle engine.
+
+# Explicitly select the 'declarative' orchestrator and give the flow a name.
+orchestrator:
+  type: "declarative"
+  flowName: "access-control"
+
 rules:
   name: "mangle"
   params:
-    # 'path' is a parameter of the MangleOptions struct.
-    # It points to a list of Datalog files to load.
-    # Facts will be generated in code and added to the pipeline.
+    # A list of Datalog files to load, relative to this file.
     path:
-      - "test.dlog"
+      - "policy/access_control.dlog"
+      - "policy/facts.dlog"
+    # Explicitly disable the default fact converters.
+    defaultConverters: false
+    # A list of named converters to run in the 'pre' stage.
+    preProcess:
+      - "custom-converter"  # Generates the request(...) fact.

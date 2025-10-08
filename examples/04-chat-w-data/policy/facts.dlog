@@ -1,0 +1,47 @@
+# --- Static Facts ---
+# These represent the ground truth data in our system.
+
+# User attributes for a specific user, "alice".
+# This now uses a 3-arity predicate to be consistent with the dynamic facts.
+user_attribute("alice", "user_id", "alice").
+user_attribute("alice", "role", "analyst").
+user_attribute("alice", "department", "sales").
+user_attribute("alice", "doc_id", "A123").
+user_attribute("alice", "purpose", "analytics").
+
+# Document Definitions
+doc("doc1").
+doc_id("doc1", "A123").
+doc_department("doc1", "sales").
+doc_confidentiality("doc1", "normal").
+column("doc1", "customer_name").
+column("doc1", "email").
+column("doc1", "revenue").
+column("doc1", "notes").
+sensitive_column("doc1", "email").
+sensitive_column("doc1", "notes").
+
+doc("doc2").
+doc_id("doc2", "B456").
+doc_department("doc2", "marketing").
+doc_confidentiality("doc2", "high").
+column("doc2", "lead_name").
+column("doc2", "email").
+column("doc2", "score").
+sensitive_column("doc2", "email").
+
+doc("doc3").
+doc_id("doc3", "S777").
+doc_department("doc3", "sales").
+doc_confidentiality("doc3", "restricted").
+column("doc3", "account").
+column("doc3", "deal_size").
+column("doc3", "owner").
+column("doc3", "notes").
+sensitive_column("doc3", "notes").
+
+# Other miscellaneous facts
+allowed_agg("sum").
+allowed_agg("avg").
+allowed_agg("count").
+joinable("doc1", "customer_name", "doc3", "account").
