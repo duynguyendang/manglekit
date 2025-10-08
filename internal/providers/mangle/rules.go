@@ -480,9 +480,6 @@ func resolveDlogFiles(path string) ([]string, error) {
 		if info.IsDir() {
 			return collectDlogFiles(path)
 		}
-		if !strings.HasSuffix(info.Name(), ".dlog") {
-			return nil, fmt.Errorf("rule file %q must have .dlog extension", path)
-		}
 		return []string{path}, nil
 	case errors.Is(err, fs.ErrNotExist):
 		if hasMeta(path) {

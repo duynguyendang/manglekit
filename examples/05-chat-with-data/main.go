@@ -4,18 +4,26 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
+	"runtime"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	_ "github.com/duynguyendang/manglekit/providers/all"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	// The NewBuilderFromYAML function will read the config, resolve paths,
-	// and set up the builder with the tools we defined.
-	// The path is relative to the execution directory. Since we run `go run .`
-	// from this directory, the path is simply "config.yaml".
-	builder, err := manglekit.NewBuilderFromYAML("config.yaml")
+	_ = godotenv.Load()
+
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		log.Fatalf("failed to get current file path")
+	}
+	dir := filepath.Dir(currentFile)
+	configPath := filepath.Join(dir, "config.yaml")
+	builder, err := manglekit.NewBuilderFromYAML(configPath)
+
 	if err != nil {
 		log.Fatalf("Failed to create builder from YAML: %v", err)
 	}
@@ -30,7 +38,7 @@ func main() {
 	// The Mangle rules will use the `current_user` fact to find the document
 	// assigned to her.
 	query := core.Query{
-		Text: "Based on the document assigned to me, what is the customer name?",
+		Text: "test simple rule",
 		Meta: map[string]any{
 			"dynamic_facts": []map[string]any{
 				{"predicate": "current_user", "args": []any{"alice"}},
