@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"sync"
+	"time"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/embed"
@@ -116,6 +118,7 @@ type builder struct {
 type googleClients struct {
 	genkit *genkit.Genkit
 	genai  *genai.Client
+	cancel context.CancelFunc
 }
 
 // NewBuilder returns a new, empty instance of the fluent builder, ready to be
@@ -317,14 +320,38 @@ func (b *builder) resolveProviderConfig(providerType, providerName string) error
 		if apiKey == "" {
 			return fmt.Errorf("missing apiKey for provider 'google': please provide it via config or GOOGLE_API_KEY env var")
 		}
-		g, err := genai.NewClient(context.Background(), googleapi.WithAPIKey(apiKey))
+		if existing, ok := b.clients["google"].(googleClients); ok && existing.genkit != nil && existing.genai != nil {
+			b.resolvedCfgs[key] = cfg
+			return nil
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		g, err := genai.NewClient(ctx, googleapi.WithAPIKey(apiKey))
 		if err != nil {
+			cancel()
 			return fmt.Errorf("failed to create genai client: %w", err)
 		}
-		b.clients["google"] = googleClients{
-			genkit: genkit.Init(context.Background(), genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: apiKey})),
+		gkit := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: apiKey}))
+		clients := googleClients{
+			genkit: gkit,
 			genai:  g,
+			cancel: cancel,
 		}
+		var once sync.Once
+		var closeErr error
+		b.opts.ResourceClosers = append(b.opts.ResourceClosers, func(closeCtx context.Context) error {
+			once.Do(func() {
+				if clients.cancel != nil {
+					clients.cancel()
+				}
+				if clients.genai != nil {
+					if err := clients.genai.Close(); err != nil {
+						closeErr = errors.Join(closeErr, err)
+					}
+				}
+			})
+			return closeErr
+		})
+		b.clients["google"] = clients
 		b.resolvedCfgs[key] = cfg
 
 	case "openai":
@@ -385,15 +412,18 @@ func (b *builder) Build() (core.Orchestrator, error) {
 		// Note: The main rules engine for the orchestrator is built here,
 		// separate from any "rules" tools that might be defined.
 		if err := b.buildRules(); err != nil {
-			return nil, fmt.Errorf("failed to build rules for declarative orchestrator: %w", err)
+			closeErr := b.closeResources()
+			return nil, errors.Join(fmt.Errorf("failed to build rules for declarative orchestrator: %w", err), closeErr)
 		}
 		if b.opts.Rules == nil {
-			return nil, errors.New("declarative orchestrator requires a rules engine, but none was configured")
+			closeErr := b.closeResources()
+			return nil, errors.Join(errors.New("declarative orchestrator requires a rules engine, but none was configured"), closeErr)
 		}
 
 		// Build all the tools defined in the config.
 		if err := b.buildTools(); err != nil {
-			return nil, err
+			closeErr := b.closeResources()
+			return nil, errors.Join(err, closeErr)
 		}
 
 		// Get the flow name from the builder or the config.
@@ -406,20 +436,36 @@ func (b *builder) Build() (core.Orchestrator, error) {
 		if !ok {
 			return nil, fmt.Errorf("rules engine for declarative orchestrator must be a FlowController, but got %T", b.opts.Rules)
 		}
+		if _, ok := b.tools["mangle_rules"]; !ok {
+			b.tools["mangle_rules"] = flowController
+		}
 
-		return declarative.New(flowController, b.tools, flowName)
+		orchestrator, err := declarative.New(flowController, b.tools, flowName, b.opts.Obs, b.opts.ResourceClosers)
+		if err != nil {
+			closeErr := b.closeResources()
+			return nil, errors.Join(err, closeErr)
+		}
+		return orchestrator, nil
 
 	case "sandwich":
 		if err := b.resolveDependencies(); err != nil {
-			return nil, err
+			closeErr := b.closeResources()
+			return nil, errors.Join(err, closeErr)
 		}
 		if err := b.buildComponents(); err != nil {
-			return nil, err
+			closeErr := b.closeResources()
+			return nil, errors.Join(err, closeErr)
 		}
-		return New(b.opts)
+		orchestrator, err := New(b.opts)
+		if err != nil {
+			closeErr := b.closeResources()
+			return nil, errors.Join(err, closeErr)
+		}
+		return orchestrator, nil
 
 	default:
-		return nil, fmt.Errorf("unknown orchestrator type: %q", orchestratorType)
+		closeErr := b.closeResources()
+		return nil, errors.Join(fmt.Errorf("unknown orchestrator type: %q", orchestratorType), closeErr)
 	}
 }
 
@@ -1031,4 +1077,26 @@ func (b *builder) buildLLM() error {
 		return fmt.Errorf("failed to build llm '%s': %w", b.llmName, err)
 	}
 	return nil
+}
+
+// closeResources attempts to release any provider clients that were opened during the build.
+// It is primarily used on error paths to avoid leaking background goroutines or connections
+// when the build cannot be completed.
+func (b *builder) closeResources() error {
+	if len(b.opts.ResourceClosers) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var combined error
+	for i := len(b.opts.ResourceClosers) - 1; i >= 0; i-- {
+		if b.opts.ResourceClosers[i] == nil {
+			continue
+		}
+		if err := b.opts.ResourceClosers[i](ctx); err != nil {
+			combined = errors.Join(combined, err)
+		}
+	}
+	return combined
 }

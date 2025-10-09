@@ -52,3 +52,5 @@ rules:
   params:
     path:
       - "./rules/flow.dlog"
+    defaultConverters: true
+    fileFirst: true

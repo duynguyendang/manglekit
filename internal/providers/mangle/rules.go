@@ -9,7 +9,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/duynguyendang/manglekit"
@@ -25,6 +27,11 @@ import (
 func init() {
 	// Register the constructor with the MangleKit framework.
 	manglekit.RegisterRules("mangle", New)
+}
+
+var builtinRedactions = map[string]*regexp.Regexp{
+	"phone": regexp.MustCompile(`[0-9]{3}-[0-9]{3}-[0-9]{4}`),
+	"email": regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`),
 }
 
 // ruleSet implements the `core.RuleSet` and `core.FlowController` interfaces
@@ -365,6 +372,182 @@ func (r *ruleSet) Query(ctx context.Context, query string, onSolution func(map[s
 	})
 }
 
+// Post evaluates post-retrieval rules before the LLM stage. It converts the current
+// query, user context, evidence, and execution metadata into Mangle facts and
+// returns a structured result describing any mutations requested by the rules.
+func (r *ruleSet) Post(ctx context.Context, q core.Query, evidence []core.Doc, meta map[string]any) (core.PostRuleResult, error) {
+	workingStore := factstore.NewSimpleInMemoryStore()
+	workingStore.Merge(r.baseFactStore)
+
+	for _, converter := range r.postProcessConverters {
+		if _, ok := converter.(*converters.DocumentConverter); ok {
+			continue
+		}
+		facts, err := converter.ToFacts(q)
+		if err != nil {
+			return core.PostRuleResult{}, fmt.Errorf("mangle: post-rules converter failed: %w", err)
+		}
+		for _, fact := range facts {
+			workingStore.Add(fact)
+		}
+	}
+
+	docConverter, err := converters.NewDocumentConverter()
+	if err != nil {
+		return core.PostRuleResult{}, fmt.Errorf("mangle: could not create document converter: %w", err)
+	}
+
+	for _, doc := range evidence {
+		facts, err := docConverter.ToFacts(doc)
+		if err != nil {
+			return core.PostRuleResult{}, fmt.Errorf("mangle: post-rules document converter failed for doc %s: %w", doc.ID, err)
+		}
+		for _, fact := range facts {
+			workingStore.Add(fact)
+		}
+		workingStore.Add(ast.NewAtom("retrieved_doc", ast.String(doc.ID)))
+	}
+
+	if err := addPostMetaFacts(workingStore, evidence, meta); err != nil {
+		return core.PostRuleResult{}, err
+	}
+
+	if err := evaluate(r.programInfo, r.strata, r.predToStratum, workingStore); err != nil {
+		return core.PostRuleResult{}, fmt.Errorf("mangle: post-rules evaluation failed: %w", err)
+	}
+
+	denyReasons, err := collectStrings(workingStore, "deny", 1)
+	if err != nil {
+		return core.PostRuleResult{}, fmt.Errorf("mangle: could not collect 'deny' facts: %w", err)
+	}
+	denyMap, err := collectKeyValue(workingStore, "deny")
+	if err != nil {
+		return core.PostRuleResult{}, fmt.Errorf("mangle: could not collect 'deny' keyed facts: %w", err)
+	}
+
+	dropIDs, err := collectStrings(workingStore, "drop_doc", 1)
+	if err != nil {
+		return core.PostRuleResult{}, fmt.Errorf("mangle: could not collect 'drop_doc' facts: %w", err)
+	}
+	dropReasons, err := collectKeyValue(workingStore, "drop_doc")
+	if err != nil {
+		return core.PostRuleResult{}, fmt.Errorf("mangle: could not collect 'drop_doc' keyed facts: %w", err)
+	}
+
+	dropSet := make(map[string]struct{}, len(dropIDs)+len(dropReasons))
+	for _, id := range dropIDs {
+		dropSet[id] = struct{}{}
+		if _, ok := dropReasons[id]; !ok {
+			dropReasons[id] = ""
+		}
+	}
+	for id := range dropReasons {
+		dropSet[id] = struct{}{}
+	}
+
+	globalRedacts, err := collectStrings(workingStore, "redact", 1)
+	if err != nil {
+		return core.PostRuleResult{}, fmt.Errorf("mangle: could not collect 'redact' facts: %w", err)
+	}
+	docRedacts, err := collectKeyValue(workingStore, "redact")
+	if err != nil {
+		return core.PostRuleResult{}, fmt.Errorf("mangle: could not collect 'redact' keyed facts: %w", err)
+	}
+
+	var redactionSpecs []redactionSpec
+	for _, label := range globalRedacts {
+		redactionSpecs = append(redactionSpecs, redactionSpec{Label: label})
+	}
+	for docID, label := range docRedacts {
+		redactionSpecs = append(redactionSpecs, redactionSpec{DocID: docID, Label: label})
+	}
+
+	filtered := make([]core.Doc, 0, len(evidence))
+	var appliedRedactions []map[string]any
+	for _, doc := range evidence {
+		if _, dropped := dropSet[doc.ID]; dropped {
+			continue
+		}
+		updatedDoc, applied := applyRedactionsToDoc(doc, redactionSpecs)
+		filtered = append(filtered, updatedDoc)
+		appliedRedactions = append(appliedRedactions, applied...)
+	}
+
+	ruleResults := make([]map[string]any, 0)
+	if len(denyReasons) == 0 {
+		for _, reason := range denyMap {
+			denyReasons = append(denyReasons, reason)
+		}
+	}
+	seenReasons := make(map[string]struct{})
+	for _, reason := range denyReasons {
+		if reason == "" {
+			continue
+		}
+		if _, ok := seenReasons[reason]; ok {
+			continue
+		}
+		seenReasons[reason] = struct{}{}
+		ruleResults = append(ruleResults, map[string]any{
+			"rule_id": fmt.Sprintf("deny_%s", reason),
+			"effect":  "deny",
+			"reason":  reason,
+		})
+	}
+
+	for docID, reason := range dropReasons {
+		entry := map[string]any{
+			"rule_id": fmt.Sprintf("drop_doc_%s", docID),
+			"effect":  "drop_doc",
+			"doc_id":  docID,
+		}
+		if reason != "" {
+			entry["reason"] = reason
+		}
+		ruleResults = append(ruleResults, entry)
+	}
+
+	for _, spec := range redactionSpecs {
+		entry := map[string]any{
+			"rule_id": fmt.Sprintf("redact_%s", spec.Label),
+			"effect":  "redact",
+			"pattern": spec.Label,
+		}
+		if spec.DocID != "" {
+			entry["doc_id"] = spec.DocID
+		}
+		ruleResults = append(ruleResults, entry)
+	}
+
+	resultMeta := map[string]any{
+		"fired_rules": len(ruleResults),
+	}
+	if len(dropReasons) > 0 {
+		resultMeta["dropped_docs"] = dropReasons
+	}
+	if len(appliedRedactions) > 0 {
+		resultMeta["redactions"] = appliedRedactions
+	}
+	if len(ruleResults) > 0 {
+		resultMeta["rule_results"] = ruleResults
+	}
+
+	var denyReason string
+	if len(denyReasons) > 0 {
+		denyReason = denyReasons[0]
+	}
+	if denyReason != "" {
+		resultMeta["denied_reason"] = denyReason
+	}
+
+	return core.PostRuleResult{
+		Filtered: filtered,
+		Denied:   denyReason != "",
+		Reason:   denyReason,
+		Meta:     resultMeta,
+	}, nil
+}
+
 // postProcess filters an answer based on Mangle rules.
 func (r *ruleSet) postProcess(query core.Query, answer *core.Answer) (core.RuleResult, error) {
 	workingStore := factstore.NewSimpleInMemoryStore()
@@ -437,6 +620,104 @@ func (r *ruleSet) postProcess(query core.Query, answer *core.Answer) (core.RuleR
 	}
 
 	return core.RuleResult{Allowed: true}, nil
+}
+
+type redactionSpec struct {
+	DocID string
+	Label string
+}
+
+func applyRedactionsToDoc(doc core.Doc, specs []redactionSpec) (core.Doc, []map[string]any) {
+	updated := doc
+	var applied []map[string]any
+	for _, spec := range specs {
+		if spec.DocID != "" && spec.DocID != doc.ID {
+			continue
+		}
+		newText, matched := applySingleRedaction(updated.Text, spec.Label)
+		if matched {
+			applied = append(applied, map[string]any{
+				"doc_id":  doc.ID,
+				"pattern": spec.Label,
+			})
+			updated.Text = newText
+		}
+	}
+	return updated, applied
+}
+
+func applySingleRedaction(text, label string) (string, bool) {
+	if label == "" {
+		return text, false
+	}
+	if strings.HasPrefix(label, "regex:") {
+		pattern := strings.TrimPrefix(label, "regex:")
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return text, false
+		}
+		replaced := re.ReplaceAllString(text, "[REDACTED]")
+		return replaced, replaced != text
+	}
+	if re, ok := builtinRedactions[label]; ok {
+		replaced := re.ReplaceAllString(text, "[REDACTED]")
+		return replaced, replaced != text
+	}
+	if strings.Contains(text, label) {
+		return strings.ReplaceAll(text, label, "[REDACTED]"), true
+	}
+	return text, false
+}
+
+func addPostMetaFacts(store factstore.FactStore, evidence []core.Doc, meta map[string]any) error {
+	store.Add(ast.NewAtom("retrieved_count", ast.Number(int64(len(evidence)))))
+
+	if meta == nil {
+		meta = map[string]any{}
+	}
+	if _, ok := meta["retrieved_count"]; !ok {
+		meta["retrieved_count"] = len(evidence)
+	}
+
+	if best, ok := meta["best_score"]; ok {
+		if term := numericTerm(best); term != nil {
+			store.Add(ast.NewAtom("best_score", term))
+		}
+	}
+	if countTerm := numericTerm(meta["retrieved_count"]); countTerm != nil {
+		store.Add(ast.NewAtom("retrieved_count_value", countTerm))
+	}
+
+	for key, value := range meta {
+		if key == "best_score" || key == "retrieved_count" {
+			continue
+		}
+		store.Add(ast.NewAtom("pipeline_meta", ast.String(key), ast.String(fmt.Sprintf("%v", value))))
+	}
+	return nil
+}
+
+func numericTerm(value any) ast.BaseTerm {
+	switch v := value.(type) {
+	case int:
+		return ast.Number(int64(v))
+	case int32:
+		return ast.Number(int64(v))
+	case int64:
+		return ast.Number(v)
+	case float32:
+		return ast.Float64(float64(v))
+	case float64:
+		return ast.Float64(v)
+	case string:
+		if i, err := strconv.Atoi(v); err == nil {
+			return ast.Number(int64(i))
+		}
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return ast.Float64(f)
+		}
+	}
+	return nil
 }
 
 // --- Mangle Helper Functions ---

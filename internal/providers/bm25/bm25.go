@@ -135,9 +135,14 @@ func (b *BM25) Retrieve(req retrieve.Request) (retrieve.Result, error) {
 	docScores := bm25.BM25(b.tf, tfidfDoc{tokenIDs: queryIDs}, b.tfDocs, k1, b_param)
 	sort.Sort(sort.Reverse(docScores))
 
+	limit := req.TopK
+	if limit <= 0 {
+		limit = b.topK
+	}
+
 	var results []core.Doc
 	for _, score := range docScores {
-		if len(results) >= req.TopK {
+		if limit > 0 && len(results) >= limit {
 			break
 		}
 		doc := b.docs[score.ID]

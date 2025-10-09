@@ -58,10 +58,12 @@ func main() {
 	})
 
 	// 3. Build the pipeline.
+	ctx := context.Background()
 	pipeline, err := builder.Build()
 	if err != nil {
 		log.Fatalf("failed to build pipeline: %v", err)
 	}
+	defer pipeline.Close(ctx)
 
 	// 5. Run the pipeline with additional context.
 	// We'll pass the 'doc_id' we want to retrieve in the query's Meta field.
@@ -77,7 +79,7 @@ func main() {
 		},
 	}
 
-	resp, err := pipeline.Run(context.Background(), query)
+	resp, err := pipeline.Run(ctx, query)
 	if err != nil {
 		log.Fatalf("failed to run pipeline: %v", err)
 	}

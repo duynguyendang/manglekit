@@ -16,10 +16,12 @@ func main() {
 		log.Fatalf("Failed to create builder from YAML: %v", err)
 	}
 
+	ctx := context.Background()
 	orch, err := builder.Build()
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}
+	defer orch.Close(ctx)
 
 	// The developer asks a natural language question.
 	query := core.Query{
@@ -27,7 +29,7 @@ func main() {
 	}
 
 	// Run the pipeline.
-	answer, err := orch.Run(context.Background(), query)
+	answer, err := orch.Run(ctx, query)
 	if err != nil {
 		log.Fatalf("Pipeline run failed: %v", err)
 	}

@@ -49,13 +49,15 @@ func main() {
 	})
 
 	// 3. Build the pipeline.
+	ctx := context.Background()
 	pipeline, err := builder.Build()
 	if err != nil {
 		log.Fatalf("failed to build pipeline: %v", err)
 	}
+	defer pipeline.Close(ctx)
 
 	// 4. Run the pipeline.
-	resp, err := pipeline.Run(context.Background(), core.Query{Text: "what is mangle?"})
+	resp, err := pipeline.Run(ctx, core.Query{Text: "what is mangle?"})
 	if err != nil {
 		log.Fatalf("failed to run pipeline: %v", err)
 	}

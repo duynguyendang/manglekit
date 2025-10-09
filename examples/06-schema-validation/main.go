@@ -72,6 +72,7 @@ func main() {
 	if err != nil {
 		panic(fmt.Errorf("failed to build orchestrator: %w", err))
 	}
+	defer orch.Close(ctx)
 
 	// 2. Define test cases for the simplified string-based rule.
 	testCases := []struct {

@@ -37,6 +37,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}
+	defer orch.Close(ctx)
 
 	// === Test Case 1: Alice requests access to doc123 (should be allowed) ===
 	fmt.Println("--- Running Test Case 1: Alice requests doc123 ---")

@@ -29,10 +29,12 @@ func main() {
 	}
 
 	// Build the orchestrator from the configured builder.
+	ctx := context.Background()
 	orch, err := builder.Build()
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}
+	defer orch.Close(ctx)
 
 	// Simulate a query from user "alice".
 	// The Mangle rules will use the `current_user` fact to find the document
@@ -49,7 +51,7 @@ func main() {
 	}
 
 	// Run the pipeline.
-	answer, err := orch.Run(context.Background(), query)
+	answer, err := orch.Run(ctx, query)
 	if err != nil {
 		log.Fatalf("Pipeline run failed: %v", err)
 	}

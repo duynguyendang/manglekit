@@ -2,9 +2,11 @@ package declarative
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/llm"
@@ -14,9 +16,12 @@ import (
 
 const (
 	// Standard keys for the execution context map.
-	contextKeyQuery  = "query"
-	contextKeyDocs   = "docs"
-	contextKeyAnswer = "answer"
+	contextKeyQuery        = "query"
+	contextKeyDocs         = "docs"
+	contextKeyAnswer       = "answer"
+	contextKeyMeta         = "meta"
+	contextKeyDenialFlag   = "denied"
+	contextKeyDenialReason = "denial_reason"
 )
 
 // DeclarativeOrchestrator implements the `core.Orchestrator` interface with a
@@ -44,6 +49,10 @@ type DeclarativeOrchestrator struct {
 	// flowName is the name of the specific flow to execute, corresponding to the
 	// first argument in the `flow_stage/3` Datalog facts.
 	flowName string
+	// obs holds the observability configuration (logger, meter, tracer).
+	obs core.Observability
+	// closers holds cleanup callbacks for external resources.
+	closers []core.ResourceCloser
 }
 
 // flowStage holds the information about a single stage in a declarative flow.
@@ -65,7 +74,7 @@ type flowStage struct {
 //
 // It returns a configured `core.Orchestrator` or an error if any of the
 // required parameters are invalid.
-func New(fc core.FlowController, tools map[string]any, flowName string) (core.Orchestrator, error) {
+func New(fc core.FlowController, tools map[string]any, flowName string, obs core.Observability, closers []core.ResourceCloser) (core.Orchestrator, error) {
 	if fc == nil {
 		return nil, fmt.Errorf("DeclarativeOrchestrator requires a non-nil FlowController")
 	}
@@ -79,6 +88,8 @@ func New(fc core.FlowController, tools map[string]any, flowName string) (core.Or
 		flowController: fc,
 		tools:          tools,
 		flowName:       flowName,
+		obs:            obs,
+		closers:        closers,
 	}, nil
 }
 
@@ -96,6 +107,20 @@ func (o *DeclarativeOrchestrator) Retriever() any {
 		}
 	}
 	return nil
+}
+
+// Close releases any external resources held by the orchestrator.
+func (o *DeclarativeOrchestrator) Close(ctx context.Context) error {
+	var combined error
+	for i := len(o.closers) - 1; i >= 0; i-- {
+		if o.closers[i] == nil {
+			continue
+		}
+		if err := o.closers[i](ctx); err != nil {
+			combined = errors.Join(combined, err)
+		}
+	}
+	return combined
 }
 
 // Run executes the declarative workflow. This method is the core interpreter for
@@ -142,6 +167,7 @@ func (o *DeclarativeOrchestrator) Run(ctx context.Context, q core.Query) (core.A
 	execContext := map[string]any{
 		contextKeyQuery:  q,
 		contextKeyAnswer: core.Answer{Meta: map[string]any{}},
+		contextKeyMeta:   map[string]any{},
 	}
 
 	// 3b. Apply mutations from pre-rules so filters/expansions are present in Query.Meta.
@@ -177,7 +203,17 @@ func (o *DeclarativeOrchestrator) Run(ctx context.Context, q core.Query) (core.A
 		}
 
 		// c. Execute the tool.
-		if err := o.dispatchToTool(ctx, tool, execContext); err != nil {
+		if err := o.dispatchToTool(ctx, stage, tool, execContext); err != nil {
+			finalAnswer, _ := execContext[contextKeyAnswer].(core.Answer)
+			if errors.Is(err, core.ErrDenied) {
+				if reason, ok := execContext[contextKeyDenialReason].(string); ok && reason != "" {
+					if finalAnswer.Meta == nil {
+						finalAnswer.Meta = map[string]any{}
+					}
+					finalAnswer.Meta["denial_reason"] = reason
+				}
+				return finalAnswer, err
+			}
 			return core.Answer{}, fmt.Errorf("execution of tool '%s' for stage '%s' failed: %w", stage.Tool, stage.Name, err)
 		}
 	}
@@ -240,7 +276,7 @@ func (o *DeclarativeOrchestrator) getFlowStages(ctx context.Context) ([]flowStag
 }
 
 // dispatchToTool executes the appropriate method on a tool based on its type.
-func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, tool any, execContext map[string]any) error {
+func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, stage flowStage, tool any, execContext map[string]any) error {
 	query, ok := execContext[contextKeyQuery].(core.Query)
 	if !ok {
 		return fmt.Errorf("query not found in execution context")
@@ -248,6 +284,12 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, tool any, 
 	answer, ok := execContext[contextKeyAnswer].(core.Answer)
 	if !ok {
 		return fmt.Errorf("answer not found in execution context")
+	}
+
+	meta, _ := execContext[contextKeyMeta].(map[string]any)
+	if meta == nil {
+		meta = map[string]any{}
+		execContext[contextKeyMeta] = meta
 	}
 
 	switch t := tool.(type) {
@@ -270,6 +312,10 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, tool any, 
 
 		// Store docs for next stages
 		execContext[contextKeyDocs] = res.Docs
+		meta["retrieved_count"] = len(res.Docs)
+		if res.Meta != nil {
+			meta["retriever_meta"] = res.Meta
+		}
 
 		// Save original docs into the answer meta for post-processing rules
 		ans := answer
@@ -305,8 +351,14 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, tool any, 
 		execContext[contextKeyDocs] = docs
 		answer.Citations = citations
 		execContext[contextKeyAnswer] = answer
+		if len(rerankedDocs) > 0 {
+			meta["best_score"] = rerankedDocs[0].Score
+		}
 
 	case llm.Client:
+		if denied, _ := execContext[contextKeyDenialFlag].(bool); denied {
+			return nil
+		}
 		docs, _ := execContext[contextKeyDocs].([]core.Doc) // It's ok if there are no docs.
 		passages := make([]string, len(docs))
 		for i, d := range docs {
@@ -323,6 +375,80 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, tool any, 
 		}
 		answer.Meta["token_usage"] = res.Usage
 		execContext[contextKeyAnswer] = answer
+
+	case core.PostRuleEvaluator:
+		docs, _ := execContext[contextKeyDocs].([]core.Doc)
+		start := time.Now()
+		result, err := t.Post(ctx, query, docs, meta)
+		duration := time.Since(start)
+		if meter := o.obs.Meter; meter != nil {
+			meter.Record("manglekit.rules_post_ms", float64(duration.Milliseconds()))
+		}
+
+		if err != nil {
+			return err
+		}
+
+		if logger := o.obs.Logger; logger != nil {
+			fired := 0
+			if v, ok := result.Meta["fired_rules"].(int); ok {
+				fired = v
+			}
+			logger.Info("post-rules executed",
+				"stage", stage.Name,
+				"duration_ms", duration.Milliseconds(),
+				"fired_rules", fired,
+				"denied", result.Denied,
+				"reason", result.Reason,
+			)
+		} else {
+			fmt.Printf("[declarative] post-rules stage=%s ms=%d denied=%t reason=%q\n",
+				stage.Name, duration.Milliseconds(), result.Denied, result.Reason)
+		}
+
+		execContext[contextKeyDocs] = result.Filtered
+
+		ans := answer
+		if ans.Meta == nil {
+			ans.Meta = make(map[string]any)
+		}
+		ans.Meta["rules_post_ms"] = duration.Milliseconds()
+		meta["rules_post_ms"] = duration.Milliseconds()
+		for k, v := range result.Meta {
+			ans.Meta[k] = v
+			meta[k] = v
+		}
+
+		if len(ans.Citations) > 0 {
+			allowed := make(map[string]struct{}, len(result.Filtered))
+			for _, doc := range result.Filtered {
+				allowed[doc.ID] = struct{}{}
+			}
+			filteredCitations := make([]core.Citation, 0, len(ans.Citations))
+			for _, citation := range ans.Citations {
+				if _, ok := allowed[citation.ID]; ok {
+					filteredCitations = append(filteredCitations, citation)
+				}
+			}
+			ans.Citations = filteredCitations
+		}
+
+		if result.Denied {
+			ans.Text = result.Reason
+			ans.Meta["denied"] = true
+			ans.Meta["denial_reason"] = result.Reason
+			execContext[contextKeyDenialFlag] = true
+			execContext[contextKeyDenialReason] = result.Reason
+			execContext[contextKeyAnswer] = ans
+			return fmt.Errorf("%w: %s", core.ErrDenied, result.Reason)
+		}
+
+		execContext[contextKeyAnswer] = ans
+
+	case core.RuleSet:
+		// Rule sets are invoked explicitly via pre/post stages outside the dispatch loop.
+		// Treat declarative invocations that reference the rules engine directly as no-ops.
+		return nil
 
 	default:
 		return fmt.Errorf("unsupported tool type: %T", tool)

@@ -75,6 +75,11 @@ type Orchestrator interface {
 	// circular dependency with the `retrieve` package; the caller is expected to
 	// perform a type assertion to `retrieve.Retriever`.
 	Retriever() any
+
+	// Close releases any resources (such as API clients) associated with the
+	// orchestrator. It should be invoked when the orchestrator is no longer needed.
+	// Implementations should be idempotent.
+	Close(ctx context.Context) error
 }
 
 // Query represents a user's request to the orchestrator. It contains the query
@@ -146,6 +151,10 @@ type Options struct {
 	FallbackThreshold float64
 	// Obs provides hooks for observability, including logging, tracing, and metrics.
 	Obs Observability
+	// ResourceClosers contains cleanup callbacks that should be invoked when the
+	// orchestrator is shut down. The builder populates this with provider-specific
+	// shutdown hooks (e.g., API clients) that need explicit closure.
+	ResourceClosers []ResourceCloser
 }
 
 // Observability provides a set of interfaces for integrating logging, tracing,
@@ -190,6 +199,11 @@ type Meter interface {
 	// attrs is a sequence of key-value pairs for labeling the metric.
 	Record(metric string, value float64, attrs ...any)
 }
+
+// ResourceCloser defines a cleanup callback that releases external resources.
+// The provided context can be used by the closer to respect deadlines or propagate
+// cancellation signals while shutting down the resource.
+type ResourceCloser func(ctx context.Context) error
 
 var (
 	// ErrInvalidOptions is returned when the SDK is initialized with missing

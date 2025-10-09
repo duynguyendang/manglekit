@@ -32,13 +32,15 @@ func main() {
 		log.Fatalf("failed to create builder from yaml: %v", err)
 	}
 
+	ctx := context.Background()
 	pipeline, err := builder.Build()
 	if err != nil {
 		log.Fatalf("failed to build pipeline: %v", err)
 	}
+	defer pipeline.Close(ctx)
 
 	// Run the pipeline.
-	resp, err := pipeline.Run(context.Background(), core.Query{Text: "what is the features of mangle?"})
+	resp, err := pipeline.Run(ctx, core.Query{Text: "what is the features of mangle?"})
 	if err != nil {
 		log.Fatalf("failed to run pipeline: %v", err)
 	}

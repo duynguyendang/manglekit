@@ -2,7 +2,10 @@
 
 # Manglekit
 
-**MangleKit** is a lightweight, embeddable **Go** framework for building robust and controllable **Retrieval-Augmented Generation (RAG)** applications. It integrates a declarative rules engine (**Mangle**) with modern RAG components, orchestrated using a "Sandwich Pattern" (`Rules → RAG → Rules`) to ensure every response is verifiable, policy-compliant, and grounded in evidence.
+**Manglekit** is a lightweight, embeddable Go framework for building **neuro-symbolic AI applications**.
+It integrates Genkit’s neural components — retrievers, rerankers, and LLMs — with Mangle’s symbolic reasoning engine of declarative rules and ontology.
+
+Through both declarative and programmable orchestration, Manglekit lets developers define and control AI pipelines as logical flows. From simple “Sandwich Patterns” (Rules → RAG → Rules → LLM) to fully rule-driven workflows, every response remains grounded, explainable, and policy-compliant.
 
 It is designed for high-performance AI applications where correctness, safety, and explainability are critical.
 

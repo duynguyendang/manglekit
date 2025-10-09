@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -40,32 +41,62 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}
+	defer orchestrator.Close(ctx)
 
 	log.Println("Successfully built declarative orchestrator.")
 
-	// Run a query through the pipeline defined in flow.dlog.
-	query := core.Query{Text: "What is the capital of France?"}
-	log.Printf("Executing query: %q\n", query.Text)
+	runQuery := func(label string, q core.Query) {
+		log.Printf("Executing %s: %q\n", label, q.Text)
+		answer, err := orchestrator.Run(ctx, q)
 
-	answer, err := orchestrator.Run(ctx, query)
-	if err != nil {
-		log.Fatalf("Orchestrator run failed: %v", err)
+		switch {
+		case errors.Is(err, core.ErrDenied):
+			fmt.Println("--------------------")
+			fmt.Printf("%s denied: %v\n", label, answer.Meta["denial_reason"])
+			if ruleResults, ok := answer.Meta["rule_results"]; ok {
+				fmt.Printf("Rule results: %#v\n", ruleResults)
+			}
+			fmt.Println("--------------------")
+			return
+		case err != nil:
+			log.Fatalf("Orchestrator run failed: %v", err)
+		}
+
+		fmt.Println("--------------------")
+		fmt.Printf("%s Answer: %s\n", label, answer.Text)
+		if len(answer.Citations) > 0 {
+			fmt.Println("Citations:")
+			for _, c := range answer.Citations {
+				fmt.Printf(" - %s (%s)\n", c.ID, c.Source)
+			}
+		}
+		if ruleResults, ok := answer.Meta["rule_results"]; ok {
+			fmt.Printf("Rule results: %#v\n", ruleResults)
+		}
+		if redactions, ok := answer.Meta["redactions"]; ok {
+			fmt.Printf("Redactions applied: %#v\n", redactions)
+		}
+		fmt.Println("--------------------")
 	}
 
-	fmt.Println("--------------------")
-	fmt.Printf("Final Answer: %s\n", answer.Text)
-	fmt.Println("--------------------")
+	runQuery("Employee", core.Query{
+		Text: "What is the capital of France?",
+		Meta: map[string]any{
+			"user_context": map[string]any{"role": "employee"},
+		},
+	})
 
-	// Demonstrate the conditional skip logic defined in flow.dlog.
-	querySkip := core.Query{Text: "What is the capital of France? (no_llm)"}
-	log.Printf("\nExecuting query that should skip the LLM stage: %q\n", querySkip.Text)
+	runQuery("Guest", core.Query{
+		Text: "What is the capital of France?",
+		Meta: map[string]any{
+			"user_context": map[string]any{"role": "guest"},
+		},
+	})
 
-	answerSkip, err := orchestrator.Run(ctx, querySkip)
-	if err != nil {
-		log.Fatalf("Orchestrator run failed: %v", err)
-	}
-
-	fmt.Println("--------------------")
-	fmt.Printf("Final Answer (should be empty): '%s'\n", answerSkip.Text)
-	fmt.Println("--------------------")
+	runQuery("No LLM", core.Query{
+		Text: "What is the capital of France? (no_llm)",
+		Meta: map[string]any{
+			"user_context": map[string]any{"role": "guest"},
+		},
+	})
 }

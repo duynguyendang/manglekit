@@ -111,3 +111,104 @@ func TestRuleSet_Evaluate_PostProcess_WithConverters(t *testing.T) {
 	assert.Equal(t, "sensitive content", deniedReasons["doc2"])
 	assert.Equal(t, "user not allowed", deniedReasons["doc3"])
 }
+
+func TestRuleSet_PostRules_DropsDocuments(t *testing.T) {
+	dir := t.TempDir()
+	rules := `
+		drop_doc(DocID, "internal_only") :- doc_metadata(DocID, "tag", "internal").
+	`
+	rulePath := filepath.Join(dir, "policy.dlog")
+	require.NoError(t, os.WriteFile(rulePath, []byte(rules), 0o600))
+
+	opts := core.MangleOptions{
+		Path:              []string{rulePath},
+		DefaultConverters: true,
+	}
+	ruleSet, err := mangle.New(context.Background(), opts)
+	require.NoError(t, err)
+
+	postEval, ok := ruleSet.(core.PostRuleEvaluator)
+	require.True(t, ok)
+
+	docs := []core.Doc{
+		{ID: "public", Text: "hello", Meta: map[string]any{"tag": "public"}},
+		{ID: "internal", Text: "secret", Meta: map[string]any{"tag": "internal"}},
+	}
+
+	result, err := postEval.Post(context.Background(), core.Query{}, docs, nil)
+	require.NoError(t, err)
+	require.False(t, result.Denied)
+	require.Len(t, result.Filtered, 1)
+	assert.Equal(t, "public", result.Filtered[0].ID)
+
+	dropped, ok := result.Meta["dropped_docs"].(map[string]string)
+	require.True(t, ok)
+	assert.Equal(t, "internal_only", dropped["internal"])
+}
+
+func TestRuleSet_PostRules_DenyOnLowConfidence(t *testing.T) {
+	dir := t.TempDir()
+	rules := `
+		threshold(0.45).
+		deny("low_confidence") :-
+			best_score(S),
+			threshold(T),
+			S < T.
+	`
+	rulePath := filepath.Join(dir, "policy.dlog")
+	require.NoError(t, os.WriteFile(rulePath, []byte(rules), 0o600))
+
+	opts := core.MangleOptions{
+		Path:              []string{rulePath},
+		DefaultConverters: true,
+	}
+	ruleSet, err := mangle.New(context.Background(), opts)
+	require.NoError(t, err)
+
+	postEval, ok := ruleSet.(core.PostRuleEvaluator)
+	require.True(t, ok)
+
+	result, err := postEval.Post(context.Background(), core.Query{}, nil, map[string]any{"best_score": 0.2})
+	require.NoError(t, err)
+	require.True(t, result.Denied)
+	assert.Equal(t, "low_confidence", result.Reason)
+	assert.Equal(t, "low_confidence", result.Meta["denied_reason"])
+}
+
+func TestRuleSet_PostRules_RedactsSensitiveText(t *testing.T) {
+	dir := t.TempDir()
+	rules := `
+		redact("phone") :-
+			doc_text(T),
+			:regex:match(T, "[0-9]{3}-[0-9]{3}-[0-9]{4}").
+	`
+	rulePath := filepath.Join(dir, "policy.dlog")
+	require.NoError(t, os.WriteFile(rulePath, []byte(rules), 0o600))
+
+	opts := core.MangleOptions{
+		Path:              []string{rulePath},
+		DefaultConverters: true,
+	}
+	ruleSet, err := mangle.New(context.Background(), opts)
+	require.NoError(t, err)
+
+	postEval, ok := ruleSet.(core.PostRuleEvaluator)
+	require.True(t, ok)
+
+	docs := []core.Doc{
+		{ID: "doc1", Text: "Call me at 123-456-7890"},
+	}
+
+	result, err := postEval.Post(context.Background(), core.Query{}, docs, nil)
+	require.NoError(t, err)
+	require.False(t, result.Denied)
+	require.Len(t, result.Filtered, 1)
+	assert.NotContains(t, result.Filtered[0].Text, "123-456-7890")
+	assert.Contains(t, result.Filtered[0].Text, "[REDACTED]")
+
+	redactions, ok := result.Meta["redactions"].([]map[string]any)
+	require.True(t, ok)
+	require.Len(t, redactions, 1)
+	assert.Equal(t, "doc1", redactions[0]["doc_id"])
+	assert.Equal(t, "phone", redactions[0]["pattern"])
+}

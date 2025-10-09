@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -25,6 +26,7 @@ type Sandwich struct {
 	retriever retrieve.Retriever
 	reranker  rerank.Reranker
 	llm       llm.Client
+	closers   []core.ResourceCloser
 }
 
 // NewSandwich creates a new Sandwich orchestrator from a set of options.
@@ -37,7 +39,10 @@ type Sandwich struct {
 // It returns a configured `core.Orchestrator` or an error if any required
 // component is missing or has an invalid type.
 func NewSandwich(o core.Options) (core.Orchestrator, error) {
-	s := &Sandwich{opts: o}
+	s := &Sandwich{
+		opts:    o,
+		closers: o.ResourceClosers,
+	}
 	var ok bool
 
 	if o.Retriever != nil {
@@ -71,6 +76,20 @@ func NewSandwich(o core.Options) (core.Orchestrator, error) {
 // expected to perform a type assertion to `retrieve.Retriever` or `retrieve.Updatable`.
 func (s *Sandwich) Retriever() any {
 	return s.retriever
+}
+
+// Close releases any external resources held by the orchestrator (e.g., API clients).
+func (s *Sandwich) Close(ctx context.Context) error {
+	var combined error
+	for i := len(s.closers) - 1; i >= 0; i-- {
+		if s.closers[i] == nil {
+			continue
+		}
+		if err := s.closers[i](ctx); err != nil {
+			combined = errors.Join(combined, err)
+		}
+	}
+	return combined
 }
 
 // Run executes the full, sequential orchestration pipeline for a given query.

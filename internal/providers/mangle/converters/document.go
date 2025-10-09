@@ -34,6 +34,8 @@ func (c *DocumentConverter) ToFacts(input any) ([]ast.Atom, error) {
 	var facts []ast.Atom
 	facts = append(facts, ast.NewAtom("doc_id", ast.String(doc.ID)))
 	facts = append(facts, ast.NewAtom("doc_content", ast.String(doc.ID), ast.String(doc.Text)))
+	// Provide a doc_text alias to simplify rules that expect a single-argument predicate.
+	facts = append(facts, ast.NewAtom("doc_text", ast.String(doc.Text)))
 	for key, value := range doc.Meta {
 		switch v := value.(type) {
 		case string:
@@ -57,6 +59,7 @@ func (c *DocumentConverter) Predicates() []ast.PredicateSym {
 	return []ast.PredicateSym{
 		{Symbol: "doc_id", Arity: 1},
 		{Symbol: "doc_content", Arity: 2},
+		{Symbol: "doc_text", Arity: 1},
 		{Symbol: "doc_metadata", Arity: 3},
 	}
 }

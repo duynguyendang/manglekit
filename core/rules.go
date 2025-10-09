@@ -110,6 +110,34 @@ type FlowController interface {
 	Querier
 }
 
+// PostRuleEvaluator defines the optional extension interface for rule engines
+// that can evaluate post-retrieval logic prior to the LLM stage. Declarative
+// orchestrations rely on this hook to enforce policy before generation.
+type PostRuleEvaluator interface {
+	// Post evaluates post-retrieval rules and returns a PostRuleResult describing
+	// any mutations, denials, or metadata emitted by the rule engine.
+	//
+	// ctx is the evaluation context.
+	// q is the normalized query.
+	// evidence contains the documents that will be passed to the LLM if allowed.
+	// meta carries additional execution metadata such as retrieval scores.
+	Post(ctx context.Context, q Query, evidence []Doc, meta map[string]any) (PostRuleResult, error)
+}
+
+// PostRuleResult captures the outcome of a PostRuleEvaluator run.
+type PostRuleResult struct {
+	// Filtered contains the evidence that survived rule evaluation. This slice
+	// may be shorter than the input if documents were dropped or redacted.
+	Filtered []Doc
+	// Denied indicates the pipeline must stop before calling the LLM.
+	Denied bool
+	// Reason provides the human-readable denial explanation when Denied is true.
+	Reason string
+	// Meta contains any additional data generated during evaluation, for example
+	// audit records or lists of rules that fired.
+	Meta map[string]any
+}
+
 // FactConverter defines the interface for components that convert Go objects
 // into Mangle Datalog facts (ast.Atom). This is a powerful mechanism for
 // injecting runtime data—such as the incoming query, user information, or
