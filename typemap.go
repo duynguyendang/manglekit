@@ -10,9 +10,13 @@ import (
 	"github.com/duynguyendang/manglekit/retrieve"
 )
 
-// optionsTypeToName is the internal, central mapping of an Options struct's reflect.Type
-// to its registered provider name. The builder uses this map to infer the
-// provider name, enabling a simpler and more type-safe API.
+// optionsTypeToName is the internal, central mapping from a provider's Go Options
+// struct `reflect.Type` to its registered string name. This is a key part of the
+// builder's "magic," allowing it to infer the provider name automatically when a
+// user calls a `With...` method, which enables a simpler and more type-safe API.
+// For example, when `builder.WithRetriever(&retrieve.BM25Options{})` is called,
+// the builder looks up the type of `*retrieve.BM25Options` in this map to
+// discover the provider name "bm25".
 var optionsTypeToName = map[reflect.Type]string{
 	// Embedders
 	reflect.TypeOf(&embed.GoogleEmbedderOptions{}): "google",
@@ -39,19 +43,23 @@ var optionsTypeToName = map[reflect.Type]string{
 	reflect.TypeOf(&core.LocalvecOptions{}): "localvec",
 }
 
-// nameToOptionsType is the inverse of optionsTypeToName, mapping a string name
-// to the reflect.Type of the corresponding Options struct. It's used for
-// dynamically constructing components from a string-based configuration (e.g., YAML).
+// nameToOptionsType is the inverse of optionsTypeToName, mapping a provider's
+// string name back to the `reflect.Type` of its corresponding Options struct.
+// This map is essential for the YAML-based configuration, as it allows the
+// `NewBuilderFromYAML` function to dynamically create the correct options struct
+// instance based on the `name` field in the YAML configuration.
 var nameToOptionsType = make(map[string]reflect.Type)
 
-// init populates the nameToOptionsType map by inverting the optionsTypeToName map.
+// init populates the nameToOptionsType map by inverting the optionsTypeToName map
+// at program startup.
 func init() {
 	for t, name := range optionsTypeToName {
-		// For names shared by multiple components (e.g., "google" for LLM and Embedder),
-		// this will overwrite. This is acceptable because the builder's With... methods
-		// provide the necessary context. When looking up by name, we primarily need
-		// a representative type to instantiate, and the specific fields will be
-		// populated from the config map.
+		// Note: For provider names shared by multiple components (e.g., "google"
+		// is used for both LLM and Embedder), this loop will cause the last entry
+		// in the map to overwrite previous ones. This is acceptable because the
+		// primary use of `nameToOptionsType` is to create a struct of the correct
+		// *kind* of options, which is then populated from a generic `map[string]any`.
+		// The builder's `configureComponent` function handles this dynamic assignment.
 		nameToOptionsType[name] = t
 	}
 }

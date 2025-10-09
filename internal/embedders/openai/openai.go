@@ -1,3 +1,5 @@
+// Package openai provides a MangleKit embedder implementation for OpenAI and
+// other services that offer an OpenAI-compatible API (like Groq).
 package openai
 
 import (
@@ -13,25 +15,31 @@ import (
 )
 
 func init() {
+	// Register the same constructor for multiple provider names.
 	manglekit.RegisterEmbedder("openai", New)
 	manglekit.RegisterEmbedder("groq", New)
 }
 
-// openAIEmbedder implements the retrieve.Embedder interface for OpenAI.
+// openAIEmbedder implements the `ai.Embedder` interface for OpenAI and compatible services.
 type openAIEmbedder struct {
 	client     *openai.Client
 	modelName  string
 	dimensions int
 }
 
-// New creates a new OpenAI embedder with explicit, typed dependencies.
+// New is the constructor for the OpenAI-compatible embedder. It is registered
+// with the MangleKit framework for both "openai" and "groq" providers.
+//
+// opts provides configuration such as the model name and optional embedding dimensions.
+// client is the pre-configured `openai.Client` instance, injected by the builder.
+// It returns an `ai.Embedder` or an error if the configuration is invalid.
 func New(opts embed.OpenAIEmbedderOptions, client *openai.Client) (ai.Embedder, error) {
 	if client == nil {
 		return nil, fmt.Errorf("openai client is required")
 	}
 	modelName := opts.Model
 	if modelName == "" {
-		modelName = "text-embedding-ada-002" // default model
+		modelName = "text-embedding-ada-002" // A sensible default.
 	}
 
 	return &openAIEmbedder{
@@ -41,11 +49,21 @@ func New(opts embed.OpenAIEmbedderOptions, client *openai.Client) (ai.Embedder, 
 	}, nil
 }
 
+// Name returns the identifier of the underlying OpenAI-compatible embedding model.
+// This method satisfies the `ai.Embedder` interface.
 func (e *openAIEmbedder) Name() string {
 	return e.modelName
 }
 
-// Embed generates embeddings for the given request (for ai.Embedder).
+// Embed generates embeddings for a batch of documents using the OpenAI API.
+// It converts the Genkit `EmbedRequest` into an `openai` request, calls the API,
+// and then converts the response back to the Genkit format, including casting
+// the embedding values from float64 to float32.
+// This method satisfies the `ai.Embedder` interface.
+//
+// ctx is the context for the API call.
+// req is the embedding request from Genkit.
+// It returns the embedding response or an error if the API call fails.
 func (e *openAIEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.EmbedResponse, error) {
 	if len(req.Input) == 0 {
 		return &ai.EmbedResponse{}, nil
@@ -64,6 +82,7 @@ func (e *openAIEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.E
 		Model: openai.EmbeddingModel(e.modelName),
 	}
 
+	// Add dimensions parameter only if it's specified, as not all models support it.
 	if e.dimensions > 0 {
 		paramReq.Dimensions = param.NewOpt(int64(e.dimensions))
 	}
@@ -73,7 +92,7 @@ func (e *openAIEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.E
 		return nil, fmt.Errorf("failed to create embeddings with openai: %w", err)
 	}
 
-	// Convert to genkit's format.
+	// Convert the response back to genkit's format.
 	genkitEmbeddings := make([]*ai.Embedding, len(resp.Data))
 	for i, data := range resp.Data {
 		// The openai-go library returns float64, but genkit expects float32.
@@ -89,6 +108,8 @@ func (e *openAIEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.E
 	}, nil
 }
 
+// Register is part of the `ai.Embedder` interface for use in Genkit flows,
+// but is not used by the MangleKit builder.
 func (e *openAIEmbedder) Register(r api.Registry) {
 	//TODO: implement me
 	panic("implement me")

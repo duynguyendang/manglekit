@@ -19,14 +19,31 @@ const (
 	contextKeyAnswer = "answer"
 )
 
-// DeclarativeOrchestrator implements the core.Orchestrator interface. It executes
-// workflows defined declaratively as Mangle Datalog facts. This separates the
-// pipeline's logic (the "how" and "when") from the configuration of its
-// components (the "what with").
+// DeclarativeOrchestrator implements the `core.Orchestrator` interface with a
+// dynamic, rule-driven execution model. Unlike the linear `Sandwich` orchestrator,
+// this implementation's workflow is not hardcoded in Go. Instead, it is defined
+// declaratively as Mangle Datalog facts.
+//
+// The orchestrator queries a `FlowController` at runtime to determine which
+// "tools" (configured components like retrievers or LLMs) to run and in what
+// order. This separates the pipeline's execution logic (the "how" and "when")
+// from the configuration of its components (the "what with"), allowing for
+// highly flexible and dynamically configurable workflows without recompiling the code.
+//
+// A typical flow is defined with facts like:
+//
+//	flow_stage("my_flow", "1", "retrieval_stage").
+//	stage_tool("retrieval_stage", "my_hybrid_retriever").
 type DeclarativeOrchestrator struct {
+	// flowController is the Mangle engine instance used to query for the workflow
+	// definition and to evaluate pre/post rules.
 	flowController core.FlowController
-	tools          map[string]any // Maps ToolName (e.g., "hybrid_search") to its provider instance.
-	flowName       string
+	// tools is a map of fully constructed component instances, where the key is
+	// the tool's name as used in the Datalog facts (e.g., "my_hybrid_retriever").
+	tools map[string]any
+	// flowName is the name of the specific flow to execute, corresponding to the
+	// first argument in the `flow_stage/3` Datalog facts.
+	flowName string
 }
 
 // flowStage holds the information about a single stage in a declarative flow.
@@ -37,9 +54,17 @@ type flowStage struct {
 }
 
 // New creates a new DeclarativeOrchestrator.
-// It requires a Mangle FlowController to query for the workflow definition and
-// evaluate runtime rules, a map of fully constructed "tool" instances, and the
-// name of the flow to execute.
+// This constructor is typically called by the main MangleKit builder.
+//
+// fc is the `core.FlowController` (typically a Mangle engine) that will be
+// queried to determine the execution plan. It must not be nil.
+// tools is a map of pre-configured and fully constructed tool instances (e.g.,
+// retrievers, rerankers, LLMs). The map key is the name used to reference the
+// tool in the Datalog rules. It must not be nil.
+// flowName is the name of the specific flow to execute. It must not be empty.
+//
+// It returns a configured `core.Orchestrator` or an error if any of the
+// required parameters are invalid.
 func New(fc core.FlowController, tools map[string]any, flowName string) (core.Orchestrator, error) {
 	if fc == nil {
 		return nil, fmt.Errorf("DeclarativeOrchestrator requires a non-nil FlowController")
@@ -57,9 +82,13 @@ func New(fc core.FlowController, tools map[string]any, flowName string) (core.Or
 	}, nil
 }
 
-// Retriever returns the first tool that implements the retrieve.Retriever interface.
-// This is useful for runtime operations like updating an in-memory vector store.
-// It returns nil if no retriever tool is found in the orchestrator's configuration.
+// Retriever satisfies the `core.Orchestrator` interface. It returns the first
+// tool found in its configuration that implements the `retrieve.Retriever`
+// interface. This provides a convenience method for runtime operations, such as
+// updating documents in an updatable retriever.
+//
+// It returns the retriever instance as `any` (which can be type-asserted by the
+// caller) or `nil` if no retriever tool is found in the orchestrator's configuration.
 func (o *DeclarativeOrchestrator) Retriever() any {
 	for _, tool := range o.tools {
 		if r, ok := tool.(retrieve.Retriever); ok {
@@ -69,10 +98,27 @@ func (o *DeclarativeOrchestrator) Retriever() any {
 	return nil
 }
 
-// Run executes the declarative workflow.
-// This method is the core interpreter of the declarative pipeline. It queries the
-// Mangle engine for the stages of the specified flow, sorts them, and executes
-// them sequentially. It passes a context map between stages to share state.
+// Run executes the declarative workflow. This method is the core interpreter for
+// the rule-driven pipeline.
+//
+// The execution process involves several steps:
+//  1. It queries the Mangle `FlowController` to fetch the stages of the specified
+//     flow, defined by `flow_stage/3` and `stage_tool/2` facts.
+//  2. It evaluates `pre-retrieval` rules, which can deny the request or provide
+//     runtime information, such as a list of stages to skip dynamically.
+//  3. It creates an execution context map to pass state (like the query, retrieved
+//     documents, and the evolving answer) between stages.
+//  4. It iterates through the flow's stages in their specified order, skipping any
+//     stages flagged by the pre-rules.
+//  5. For each stage, it dispatches to the configured tool, which modifies the
+//     execution context.
+//  6. After all stages are complete, it returns the final `core.Answer` from the
+//     execution context.
+//
+// ctx is the context for the entire operation.
+// q is the user's incoming query.
+// It returns the final `core.Answer` or an error if the flow is undefined, a
+// tool is missing, or a tool fails during execution.
 func (o *DeclarativeOrchestrator) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 	// 1. Query the static execution plan.
 	stages, err := o.getFlowStages(ctx)

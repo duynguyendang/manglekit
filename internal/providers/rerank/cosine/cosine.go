@@ -1,3 +1,5 @@
+// Package cosine provides an implementation of a reranker that scores documents
+// based on their cosine similarity to the query.
 package cosine
 
 import (
@@ -12,24 +14,26 @@ import (
 )
 
 func init() {
-	// Register the type-safe constructor directly.
+	// Register the type-safe constructor with the MangleKit framework.
 	manglekit.RegisterReranker("cosine", New)
 }
 
-// Reranker implements the rerank.Reranker interface by calculating the cosine
-// similarity between a query embedding and the embeddings of a set of documents.
+// Reranker implements the `rerank.Reranker` interface. It re-scores documents
+// by calculating the cosine similarity between a query's vector embedding and
+// the vector embedding of each document. This is a common and effective method
+// for refining search results based on semantic relevance.
 type Reranker struct {
 	embedder ai.Embedder
 	topK     int
 }
 
-// New creates a new cosine similarity-based reranker. It is the constructor
-// function registered with the MangleKit registry for the "cosine" reranker.
-// It requires an embedder, which is injected by the builder.
+// New is the constructor for the cosine similarity reranker. It is registered
+// with the MangleKit registry for the "cosine" provider name.
 //
-// opts provides configuration such as the default TopK value.
-// embedder is the component used to generate vector embeddings for the query and documents.
-// It returns a configured reranker or an error if the embedder is missing.
+// opts provides configuration, primarily the default `TopK` value.
+// embedder is the embedding model component used to generate vector embeddings
+// for both the query and the documents. This dependency is injected by the builder.
+// It returns a configured `rerank.Reranker` or an error if the embedder is missing.
 func New(opts rerank.CosineOptions, embedder ai.Embedder) (rerank.Reranker, error) {
 	if embedder == nil {
 		return nil, fmt.Errorf("cosine reranker requires an embedder")
@@ -41,13 +45,14 @@ func New(opts rerank.CosineOptions, embedder ai.Embedder) (rerank.Reranker, erro
 }
 
 // Rerank re-scores a list of documents based on their cosine similarity to the
-// query. It embeds the query and all documents, calculates the similarity score
-// for each, and returns a new list sorted by this score in descending order.
-// This method satisfies the rerank.Reranker interface.
+// query. The process involves embedding the query and all documents in parallel,
+// calculating the similarity score for each document, and then returning a new
+// list sorted by this score in descending order.
+// This method satisfies the `rerank.Reranker` interface.
 //
-// req contains the query and the list of documents to be reranked.
-// It returns a sorted slice of rerank.ScoredDoc or an error if any of the
-// embedding operations fail.
+// req contains the query and the initial list of documents to be reranked.
+// It returns a sorted slice of `rerank.ScoredDoc`, trimmed to the configured
+// `TopK` value, or an error if any of the embedding operations fail.
 func (r *Reranker) Rerank(req rerank.Request) ([]rerank.ScoredDoc, error) {
 	if len(req.Docs) == 0 {
 		return nil, nil // Nothing to rerank.

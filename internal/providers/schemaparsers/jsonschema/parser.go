@@ -1,3 +1,5 @@
+// Package jsonschema provides a schema parser that can read a JSON Schema
+// definition and convert it into a set of Mangle Datalog facts.
 package jsonschema
 
 import (
@@ -13,17 +15,19 @@ func init() {
 	manglekit.RegisterSchemaParser("jsonschema", New)
 }
 
-// JSONSchemaParser implements the core.SchemaParser interface for parsing
-// JSON Schema files into Mangle Datalog facts.
+// JSONSchemaParser implements the `core.SchemaParser` interface for parsing
+// JSON Schema files into Mangle Datalog facts. This allows the rules engine to
+// reason about the structure and constraints of a JSON data model.
 type JSONSchemaParser struct{}
 
-// New is the constructor function for the JSONSchemaParser, registered with the
+// New is the constructor for the JSONSchemaParser. It is registered with the
 // MangleKit registry for the "jsonschema" parser type.
 func New(params map[string]any) (any, error) {
 	return &JSONSchemaParser{}, nil
 }
 
-// schema represents the structure of a JSON Schema file.
+// schema represents a simplified view of a JSON Schema file, focusing on the
+// properties needed to generate relevant Datalog facts.
 type schema struct {
 	ID         string              `json:"$id"`
 	Type       string              `json:"type"`
@@ -31,11 +35,19 @@ type schema struct {
 	Required   []string            `json:"required"`
 }
 
+// property is a generic map representing the attributes of a single property
+// within a JSON schema.
 type property map[string]any
 
 // Predicates returns the Mangle Datalog predicate declarations for the facts
-// that this parser can generate. This is required for the Mangle engine to
-// validate the program. It declares facts about schemas, fields, and constraints.
+// that this parser can generate. This is required by the `core.SchemaParser`
+// interface for Mangle's static analysis. The generated predicates are:
+//
+//   - `schema(SchemaID)`: Declares the existence of a schema.
+//   - `field(SchemaID, FieldName, FieldType)`: Declares a field within a schema.
+//   - `field_required(SchemaID, FieldName)`: Marks a field as required.
+//   - `field_format(SchemaID, FieldName, Format)`: Specifies a format constraint (e.g., "date-time").
+//   - `field_constraint(SchemaID, FieldName, Constraint, Value)`: Specifies other constraints like "minimum" or "maxLength".
 func (p *JSONSchemaParser) Predicates() []ast.PredicateSym {
 	return []ast.PredicateSym{
 		{Symbol: "schema", Arity: 1},
@@ -46,12 +58,13 @@ func (p *JSONSchemaParser) Predicates() []ast.PredicateSym {
 	}
 }
 
-// Parse reads a JSON Schema definition from an io.Reader and converts it into
-// a slice of Mangle Datalog facts. This allows the rules engine to reason about
-// the data model defined in the schema.
-// It generates facts for the schema's ID, its fields, types, and constraints
-// like 'required', 'format', 'minimum', 'maximum', etc.
-// This method satisfies the core.SchemaParser interface.
+// Parse reads a JSON Schema definition from an `io.Reader`, unmarshals it, and
+// converts its structure into a slice of Mangle Datalog facts. This allows the
+// rules engine to query the data model defined in the schema.
+//
+// It generates facts for the schema's ID, its fields, their types, and common
+// constraints like 'required', 'format', 'minimum', 'maximum', etc.
+// This method satisfies the `core.SchemaParser` interface.
 func (p *JSONSchemaParser) Parse(source io.Reader) ([]ast.Atom, error) {
 	data, err := io.ReadAll(source)
 	if err != nil {

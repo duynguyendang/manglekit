@@ -16,7 +16,7 @@ import (
 
 type mockEmbedder struct{}
 
-func (m *mockEmbedder) Name() string          { return "mockEmbedder" }
+func (m *mockEmbedder) Name() string            { return "mockEmbedder" }
 func (m *mockEmbedder) Register(r api.Registry) {}
 func (m *mockEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.EmbedResponse, error) {
 	var embeddings []*ai.Embedding

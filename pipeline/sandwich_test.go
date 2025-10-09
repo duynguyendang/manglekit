@@ -121,9 +121,9 @@ func TestSandwichRun(t *testing.T) {
 
 	t.Run("fallback threshold not met", func(t *testing.T) {
 		opts := core.Options{
-			Retriever: &mockRetriever{Result: retrieve.Result{Docs: []core.Doc{{ID: "1", Text: "doc1"}}}},
-			Reranker:  &mockReranker{Result: []rerank.ScoredDoc{{Doc: core.Doc{ID: "1"}, Score: 0.4}}},
-			LLM:       &mockLLM{},
+			Retriever:         &mockRetriever{Result: retrieve.Result{Docs: []core.Doc{{ID: "1", Text: "doc1"}}}},
+			Reranker:          &mockReranker{Result: []rerank.ScoredDoc{{Doc: core.Doc{ID: "1"}, Score: 0.4}}},
+			LLM:               &mockLLM{},
 			FallbackThreshold: 0.5,
 		}
 		orchestrator, err := pipeline.NewSandwich(opts)
