@@ -1,3 +1,5 @@
+// Package hybrid provides an implementation of a hybrid retriever that combines
+// results from sparse (keyword) and dense (vector) search to improve relevance.
 package hybrid
 
 import (
@@ -11,27 +13,28 @@ import (
 )
 
 func init() {
-	// Register the type-safe constructor directly.
-	// The builder is responsible for creating the HybridOptions struct.
+	// Register the type-safe constructor with the MangleKit framework.
 	manglekit.RegisterRetriever("hybrid", New)
 }
 
-// Retriever implements the retrieve.Retriever interface by combining results
-// from multiple underlying retrievers, typically a sparse (bm25) and a dense
-// (vector-based) retriever.
+// Retriever implements the `retrieve.Retriever` interface by combining results
+// from multiple underlying retrievers, typically a sparse (BM25) and a dense
+// (vector-based) retriever. This approach leverages the strengths of both
+// keyword matching and semantic understanding.
 type Retriever struct {
 	bm25  retrieve.Retriever
 	dense retrieve.Retriever
 }
 
-// New creates a new hybrid retriever. It is the constructor function registered
-// with the MangleKit registry for the "hybrid" retriever. It requires its
-// child retrievers (BM25 and an optional Dense) to be pre-configured and
-// passed in via the options struct, which is handled by the builder.
+// New is the constructor for the hybrid retriever. It is registered with the
+// MangleKit registry for the "hybrid" provider name. The builder is responsible
+// for constructing the child retrievers and injecting them via the options struct.
 //
-// opts contains the pre-built child retrievers. A BM25Retriever is required,
-// while the DenseRetriever is optional.
-// It returns an initialized hybrid retriever or an error if the BM25 retriever is missing.
+// opts contains the pre-built child retrievers. A `BM25Retriever` is required,
+// while the `DenseRetriever` is optional. If the dense retriever is nil, the
+// hybrid retriever will fall back to using only the BM25 retriever.
+// It returns an initialized `retrieve.Retriever` or an error if the BM25
+// retriever dependency is missing.
 func New(opts retrieve.HybridOptions) (retrieve.Retriever, error) {
 	if opts.BM25Retriever == nil {
 		return nil, fmt.Errorf("hybrid: BM25Retriever is required")
@@ -43,18 +46,20 @@ func New(opts retrieve.HybridOptions) (retrieve.Retriever, error) {
 	}, nil
 }
 
-// Retrieve concurrently executes searches on its underlying retrievers (BM25 and
-// dense) and then merges the results using Reciprocal Rank Fusion (RRF). RRF
-// creates a new score for each document based on its rank in each result set,
-// providing a robust, combined ranking.
-// This method satisfies the core.Retriever interface.
+// Retrieve concurrently executes searches on its underlying sparse (BM25) and dense
+// retrievers. It then merges the two result sets using a Reciprocal Rank Fusion
+// (RRF) algorithm. RRF creates a new score for each unique document based on its
+// rank in each result set, providing a robust, combined ranking that does not
+// depend on the absolute scores of the underlying systems.
+// This method satisfies the `retrieve.Retriever` interface.
 //
 // If the dense retriever is not configured, this method will fall back to
 // returning only the results from the BM25 retriever.
 //
-// req contains the query string and TopK value for the search.
-// It returns a single, fused, and re-ranked retrieve.Result or an error if
-// either of the underlying retrievers fail.
+// req contains the query string and `TopK` value, which are passed to the
+// underlying retrievers and used to trim the final fused result set.
+// It returns a single, fused, and re-ranked `retrieve.Result` or an error if
+// either of the underlying retrieval operations fail.
 func (h *Retriever) Retrieve(req retrieve.Request) (retrieve.Result, error) {
 	if h.dense == nil {
 		// If dense retriever is not configured, just use BM25.

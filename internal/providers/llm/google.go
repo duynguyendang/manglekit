@@ -1,3 +1,6 @@
+// Package llm provides the concrete implementations of the llm.Client interface
+// for various providers, such as Google and OpenAI. These packages are internal
+// and are registered with the framework using init() functions.
 package llm
 
 import (
@@ -24,13 +27,17 @@ type googleClient struct {
 	promptBuilder  *llm.PromptBuilder
 }
 
-// NewGoogle creates a new Google llm.Client. It is the constructor function
-// registered with the MangleKit registry for the "google" LLM provider. It
-// requires a configured Genkit instance, which is handled by the builder.
+// NewGoogle is the constructor for the Google LLM client. It is the function
+// that gets registered with the MangleKit registry for the "google" LLM provider.
+// It initializes a client that uses the Genkit framework to interact with Google's
+// generative models.
 //
-// opts provides configuration such as the model name and an optional prompt template.
-// g is the initialized Genkit instance that provides access to the model.
-// It returns a configured llm.Client or an error if dependencies are missing.
+// opts provides configuration such as the model name (e.g., "gemini-1.5-flash")
+// and an optional custom prompt template.
+// g is the initialized Genkit instance that provides access to the underlying model.
+// This dependency is injected by the MangleKit builder.
+// It returns a configured llm.Client or an error if dependencies are missing or
+// invalid.
 func NewGoogle(opts llm.GoogleOptions, g *genkit.Genkit) (llm.Client, error) {
 	if g == nil {
 		return nil, fmt.Errorf("genkit client is required for google llm")
@@ -47,13 +54,14 @@ func NewGoogle(opts llm.GoogleOptions, g *genkit.Genkit) (llm.Client, error) {
 }
 
 // Complete generates a response from the configured Google model. It first uses
-// the PromptBuilder to construct the final prompt from the request's context and
-// data, then calls the model via the Genkit framework.
-// This method satisfies the llm.Client interface.
+// the PromptBuilder to construct the final prompt by merging the request's context,
+// query, and any other dynamic data into a template. It then calls the model
+// via the Genkit framework and formats the result into a standard `llm.Response`.
+// This method satisfies the `llm.Client` interface.
 //
 // req is the request containing the prompt, context, and other parameters.
-// It returns an llm.Response with the generated text and token usage, or an
-// error if prompt building or model generation fails.
+// It returns an `llm.Response` with the generated text and token usage data, or
+// an error if prompt building or the model generation call fails.
 func (c *googleClient) Complete(req llm.Request) (llm.Response, error) {
 	// Prepare the data for the template.
 	data := map[string]any{

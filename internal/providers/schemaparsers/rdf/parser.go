@@ -1,3 +1,5 @@
+// Package rdf provides a schema parser that can read RDF data (in Turtle format)
+// and convert it into a set of Mangle Datalog facts.
 package rdf
 
 import (
@@ -14,22 +16,31 @@ func init() {
 	manglekit.RegisterSchemaParser("rdf", New)
 }
 
-// RDFParser is a schema parser for RDF files.
+// RDFParser implements the `core.SchemaParser` interface for RDF files. It uses
+// the `knakk/rdf` library to decode RDF triples and represents each one as a
+// Mangle `triple/3` fact.
 type RDFParser struct{}
 
-// New creates a new RDFParser. This constructor is compatible with the Manglekit registry.
+// New is the constructor for the RDFParser. It is registered with the MangleKit
+// registry for the "rdf" parser type.
 func New(params map[string]any) (any, error) {
 	return &RDFParser{}, nil
 }
 
-// Predicates returns the predicate symbols for the facts that this parser can generate.
+// Predicates returns the Mangle Datalog predicate declarations for the facts
+// that this parser can generate. It declares a single predicate:
+//
+//   - `triple(Subject, Predicate, Object)`: Represents a single RDF triple.
 func (p *RDFParser) Predicates() []ast.PredicateSym {
 	return []ast.PredicateSym{
 		{Symbol: "triple", Arity: 3},
 	}
 }
 
-// Parse reads RDF data from the source and converts it into Mangle facts.
+// Parse reads RDF data from an `io.Reader` (assuming Turtle format), decodes
+// each triple, and converts it into a Mangle `triple(Subject, Predicate, Object)`
+// fact. This allows the rules engine to query graph-structured data.
+// This method satisfies the `core.SchemaParser` interface.
 func (p *RDFParser) Parse(source io.Reader) ([]ast.Atom, error) {
 	var facts []ast.Atom
 	decoder := rdf.NewTripleDecoder(source, rdf.Turtle)

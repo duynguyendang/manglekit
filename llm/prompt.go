@@ -9,9 +9,11 @@ import (
 	"text/template"
 )
 
-// DefaultRAGTemplate provides a standard prompt structure for Retrieval-Augmented
-// Generation (RAG). It instructs the model to answer a user's question based
-// solely on the provided context.
+// DefaultRAGTemplate provides a standard, robust prompt structure for
+// Retrieval-Augmented Generation (RAG). It explicitly instructs the model to
+// answer a user's question based solely on the provided context documents.
+// This template is designed to reduce hallucinations by forcing the model to
+// admit when the answer is not present in the context.
 const DefaultRAGTemplate = `System: You are a helpful AI assistant. Your task is to answer the user's question based ONLY on the provided context. If the context does not contain the answer, say "I do not have enough information to answer this question."
 
 Context:
@@ -25,19 +27,21 @@ User Question: {{ .Query }}
 
 Answer:`
 
-// PromptBuilder is a thread-safe utility responsible for compiling and executing
-// Go templates to generate final prompt strings. It improves performance by
-// caching compiled templates in memory.
+// PromptBuilder is a thread-safe, high-performance utility responsible for
+// compiling and executing Go templates to generate final prompt strings. It
+// significantly improves performance by caching compiled templates in memory,
+// avoiding the need for repeated parsing of the same template string.
 type PromptBuilder struct {
 	templateCache      map[string]*template.Template
 	mu                 sync.RWMutex
 	defaultTemplateStr string
 }
 
-// NewPromptBuilder creates and returns a new PromptBuilder.
+// NewPromptBuilder creates and returns a new, initialized PromptBuilder.
 //
-// defaultTemplate is the template string to be used as a fallback when a specific
-// user template is not provided to the Build method.
+// defaultTemplate is the template string to be used as a fallback when a
+// specific user-provided template is not supplied to the Build method. This
+// ensures that the builder always has a valid template to execute.
 func NewPromptBuilder(defaultTemplate string) *PromptBuilder {
 	return &PromptBuilder{
 		templateCache:      make(map[string]*template.Template),
@@ -46,20 +50,23 @@ func NewPromptBuilder(defaultTemplate string) *PromptBuilder {
 }
 
 // Build generates a final prompt string by executing a Go template with the
-// provided data. It uses the userTemplate if one is given; otherwise, it falls
-// back to the default template configured on the PromptBuilder.
+// provided data. It uses the user-provided template if one is given; otherwise,
+// it falls back to the default template configured on the PromptBuilder.
 //
 // For efficiency, successfully compiled templates are cached in a thread-safe
 // manner to avoid repeated parsing. The builder also injects several useful
-// functions into the template:
-//   - `toJSON`: Marshals a value to a JSON string.
-//   - `join`: Joins a string slice with a separator.
-//   - `truncate`: Truncates a string to a maximum length.
+// helper functions into the template's context:
+//   - `toJSON`: Marshals a given value into a JSON string. Useful for structured data.
+//   - `join`: Joins a string slice with a specified separator.
+//   - `truncate`: Truncates a string to a maximum character length.
 //
-// userTemplate is the template string to execute. If empty, the default is used.
-// data is a map of data to be made available within the template.
-// It returns the executed prompt as a string, or an error if template parsing
-// or execution fails.
+// userTemplate is the specific Go template string to execute for this build.
+// If this string is empty or just whitespace, the builder's default template is used.
+// data is a map of data to be made available as variables within the template
+// (e.g., accessed via `{{.Query}}` or `{{.Context}}`).
+//
+// It returns the fully executed prompt as a string, or an error if template
+// parsing or execution fails.
 func (pb *PromptBuilder) Build(userTemplate string, data map[string]any) (string, error) {
 	templateToUse := userTemplate
 	if strings.TrimSpace(templateToUse) == "" {

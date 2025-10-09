@@ -1,3 +1,5 @@
+// Package mangle provides the primary implementation of the `core.RuleSet` and
+// `core.FlowController` interfaces, using the Google Mangle Datalog engine.
 package mangle
 
 import (
@@ -21,13 +23,15 @@ import (
 )
 
 func init() {
-	// Register the new, type-safe constructor.
+	// Register the constructor with the MangleKit framework.
 	manglekit.RegisterRules("mangle", New)
 }
 
-// ruleSet implements the core.RuleSet interface using the Mangle Datalog engine.
-// It loads rule files, parses schema definitions, and uses fact converters to
-// bridge the gap between Go objects and Datalog facts for evaluation.
+// ruleSet implements the `core.RuleSet` and `core.FlowController` interfaces
+// using the Mangle Datalog engine. It manages the lifecycle of a Datalog
+// program, including loading rule files, parsing external schema definitions,
+// and using `FactConverter` components to bridge the gap between Go objects
+// (like the query and answer) and the Datalog facts needed for evaluation.
 type ruleSet struct {
 	programInfo           *analysis.ProgramInfo
 	strata                []analysis.Nodeset
@@ -37,9 +41,23 @@ type ruleSet struct {
 	postProcessConverters []core.FactConverter
 }
 
-// New creates a new Mangle-based core.FlowController from the supplied options.
+// New is the constructor for the Mangle `ruleSet`. It is registered with the
+// MangleKit registry and is responsible for the complex process of initializing
+// the Mangle engine.
+//
+// The initialization process involves:
+//  1. Parsing external schema definitions (e.g., JSON schemas) into Datalog facts.
+//  2. Loading and constructing all configured `FactConverter` components.
+//  3. Determining the set of all possible facts (the EDB) based on the configuration mode.
+//  4. Loading and parsing all Datalog rule files (`.dlog`).
+//  5. Performing static analysis and stratification of the Datalog program.
+//  6. Seeding a base fact store with facts from files and schemas.
+//  7. Performing an initial evaluation of the base program.
+//
 // ctx is the context for initialization.
-// opts provides the configuration, including paths to rule files and schemas.
+// opts provides the configuration, including paths to rule files, schemas, and converters.
+// It returns a fully initialized `core.RuleSet` (which also satisfies `core.FlowController`)
+// or an error if any part of the initialization fails.
 func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
 	if len(opts.Path) == 0 {
 		return nil, fmt.Errorf("mangle: at least one path in 'path' must be provided")
@@ -210,6 +228,11 @@ func parseSchemas(sources []core.SchemaSource) ([]ast.Atom, []ast.PredicateSym, 
 }
 
 // Evaluate runs the Mangle evaluation for a specific pipeline stage (Pre or Post).
+// It creates a temporary fact store, adds the base facts, converts the current
+// query and answer state into new facts using the appropriate converters, runs
+// the Datalog engine, and then collects the results (like denials or mutations)
+// to return to the orchestrator.
+// This method satisfies the `core.RuleSet` interface.
 func (r *ruleSet) Evaluate(stage core.Stage, q core.Query, a *core.Answer) (core.RuleResult, error) {
 	switch stage {
 	case core.Pre:
@@ -290,6 +313,11 @@ func (r *ruleSet) preProcess(query core.Query) (core.RuleResult, error) {
 }
 
 // Query executes a read-only Datalog query against the base, pre-evaluated facts.
+// It is used by the declarative orchestrator to fetch its execution plan by
+// querying for `flow_stage` and `stage_tool` facts. The query is a simple atom
+// string (e.g., `foo(X, "bar")`), and the results are streamed to the `onSolution`
+// callback.
+// This method satisfies the `core.Querier` interface, making `ruleSet` a `core.FlowController`.
 func (r *ruleSet) Query(ctx context.Context, query string, onSolution func(map[string]any) error) error {
 	queryAtom, err := parse.Atom(query)
 	if err != nil {

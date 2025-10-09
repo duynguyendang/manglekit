@@ -16,122 +16,142 @@ type componentCfg struct {
 	Params map[string]any `yaml:"params"`
 }
 
-// ToolConfig defines the configuration for a single tool in the declarative workflow.
-// A tool is a configured instance of a provider (e.g., a specific retriever or LLM).
+// ToolConfig defines the configuration for a single, named tool that can be
+// used within the declarative workflow. A tool is a configured instance of a
+// provider (e.g., a specific retriever or LLM with its own settings).
 type ToolConfig struct {
-	Provider string         `yaml:"provider"`
-	Params   map[string]any `yaml:"params"`
+	// Provider is the registered name of the component provider (e.g., "openai", "bm25").
+	Provider string `yaml:"provider"`
+	// Params is a map of parameters used to configure the tool instance.
+	Params map[string]any `yaml:"params"`
 }
 
-// OrchestratorConfig defines which orchestrator to use and its specific settings.
+// OrchestratorConfig defines which orchestrator to use (e.g., "sandwich" or
+// "declarative") and its specific settings.
 type OrchestratorConfig struct {
-	// Type specifies the orchestrator to use, e.g., "sandwich" or "declarative".
-	// Defaults to "sandwich" if not provided.
+	// Type specifies the orchestrator to use. If omitted, it defaults to "sandwich".
 	Type string `yaml:"type"`
-	// FlowName is the name of the flow to execute, required for the "declarative" orchestrator.
+	// FlowName is the name of the flow to execute. This is required for the
+	// "declarative" orchestrator, as it specifies the entry point for the Datalog query.
 	FlowName string `yaml:"flowName,omitempty"`
 }
 
 // Config is the top-level struct for loading a MangleKit orchestrator's
 // configuration from a YAML file. It defines the components to be used for each
-// stage of the pipeline and their parameters.
+// stage of the pipeline ("sandwich" mode) or the set of available tools
+// ("declarative" mode), along with their parameters.
 type Config struct {
 	// Orchestrator selects and configures the workflow engine.
 	Orchestrator OrchestratorConfig `yaml:"orchestrator"`
-	// Tools defines a map of named components that can be referenced in declarative flows.
+	// Tools defines a map of named components that can be referenced as dependencies
+	// in declarative flows. The map key is the tool's name.
 	Tools map[string]ToolConfig `yaml:"tools"`
-	// Providers holds global configurations for provider families, like API keys.
+	// Providers holds global configurations for provider families, such as API keys,
+	// which can be shared across multiple components.
 	Providers ProviderConfigs `yaml:"providers"`
-	// Embedder specifies the text embedding component.
+	// Embedder specifies the text embedding component for the "sandwich" orchestrator.
 	Embedder componentCfg `yaml:"embedder"`
-	// Retriever specifies the document retrieval component.
+	// Retriever specifies the document retrieval component for the "sandwich" orchestrator.
 	Retriever componentCfg `yaml:"retriever"`
-	// VectorStore specifies the vector database component.
+	// VectorStore specifies the vector database component for the "sandwich" orchestrator.
 	VectorStore componentCfg `yaml:"vectorStore"`
-	// Reranker specifies the document reranking component.
+	// Reranker specifies the document reranking component for the "sandwich" orchestrator.
 	Reranker componentCfg `yaml:"reranker"`
-	// Rules specifies the rules engine component.
+	// Rules specifies the rules engine component for the "sandwich" orchestrator.
 	Rules componentCfg `yaml:"rules"`
-	// LLM specifies the language model component.
+	// LLM specifies the language model component for the "sandwich" orchestrator.
 	LLM componentCfg `yaml:"llm"`
-	// TopK is the default number of documents to retrieve.
+	// TopK is the default number of documents to retrieve in the "sandwich" orchestrator.
 	TopK int `yaml:"topK"`
-	// MaxTokens is the default maximum number of tokens for the LLM response.
+	// MaxTokens is the default maximum number of tokens for the LLM response in the
+	// "sandwich" orchestrator.
 	MaxTokens int `yaml:"maxTokens"`
-	// FallbackThreshold is the confidence score below which a fallback is triggered.
+	// FallbackThreshold is the confidence score below which a fallback is triggered
+	// in the "sandwich" orchestrator.
 	FallbackThreshold float64 `yaml:"fallbackThreshold"`
 }
 
-// ProviderConfigs holds the global configurations for different provider families,
-// such as API keys or default models. These can be referenced by the components.
+// ProviderConfigs holds the global configurations for different provider families.
+// These settings, such as API keys or default models, can be shared across
+// multiple components that belong to the same family.
 type ProviderConfigs struct {
-	Google           *GoogleConfig           `yaml:"google,omitempty"`
-	OpenAI           *OpenAIConfig           `yaml:"openai,omitempty"`
-	Groq             *OpenAICompatibleConfig `yaml:"groq,omitempty"`
+	// Google holds global settings for all Google-based providers (Gemini, Google Embedders).
+	Google *GoogleConfig `yaml:"google,omitempty"`
+	// OpenAI holds global settings for all OpenAI-based providers.
+	OpenAI *OpenAIConfig `yaml:"openai,omitempty"`
+	// Groq holds global settings for Groq, which uses an OpenAI-compatible API.
+	Groq *OpenAICompatibleConfig `yaml:"groq,omitempty"`
+	// OpenAICompatible holds global settings for other providers with OpenAI-like APIs.
 	OpenAICompatible *OpenAICompatibleConfig `yaml:"openaiCompatible,omitempty"`
-	Mangle           *MangleConfig           `yaml:"mangle,omitempty"`
+	// Mangle holds global settings for the Mangle rules engine.
+	Mangle *MangleConfig `yaml:"mangle,omitempty"`
 }
 
-// MangleConfig holds configuration specific to the Mangle rules engine provider.
+// MangleConfig holds global or default configuration for the Mangle rules engine provider.
 type MangleConfig struct {
 	// RulePaths is a list of file paths or glob patterns for Mangle rule files (.dlog).
 	RulePaths []string `yaml:"path"`
-	// PreProcess is a list of transformer names to run in the 'pre' stage.
+	// PreProcess is a list of Mangle transformer names to run in the 'pre' stage.
 	PreProcess []string `yaml:"preProcess"`
-	// PostProcess is a list of transformer names to run in the 'post' stage.
+	// PostProcess is a list of Mangle transformer names to run in the 'post' stage.
 	PostProcess []string `yaml:"postProcess"`
 	// DefaultConverters specifies whether to include the built-in fact converters.
 	DefaultConverters bool `yaml:"defaultConverters"`
 }
 
-// GoogleConfig holds global configuration for Google providers (Genkit, Gemini).
+// GoogleConfig holds global configuration for Google providers (e.g., Genkit, Gemini).
 type GoogleConfig struct {
-	// APIKey is the API key for Google AI services.
+	// APIKey is the API key for Google AI services. If not provided, the builder
+	// will check the `GOOGLE_API_KEY` environment variable.
 	APIKey string `yaml:"apiKey,omitempty"`
-	// Model is the default model identifier to use.
+	// Model is the default model identifier to use if a component does not specify one.
 	Model string `yaml:"model,omitempty"`
-	// PromptTemplate is a default prompt template string.
+	// PromptTemplate is a default prompt template string to use for LLM components.
 	PromptTemplate string `yaml:"promptTemplate,omitempty"`
 }
 
 // OpenAIConfig holds global configuration specific to OpenAI providers.
 type OpenAIConfig struct {
-	// APIKey is the API key for OpenAI services.
+	// APIKey is the API key for OpenAI services. If not provided, the builder
+	// will check the `OPENAI_API_KEY` environment variable.
 	APIKey string `yaml:"apiKey,omitempty"`
-	// Model is the default model identifier to use.
+	// Model is the default model identifier to use if a component does not specify one.
 	Model string `yaml:"model,omitempty"`
-	// Dimensions is the desired embedding vector dimension (for supported models).
+	// Dimensions is the default embedding vector dimension for supported models.
 	Dimensions int `yaml:"dimensions,omitempty"`
-	// PromptTemplate is a default prompt template string.
+	// PromptTemplate is a default prompt template string to use for LLM components.
 	PromptTemplate string `yaml:"promptTemplate,omitempty"`
 }
 
 // OpenAICompatibleConfig holds configuration for providers that use an
-// OpenAI-compatible API, such as Groq.
+// OpenAI-compatible API, such as Groq or local models served via a similar interface.
 type OpenAICompatibleConfig struct {
-	// APIKey is the API key for the service.
+	// APIKey is the API key for the service. If not provided, the builder may
+	// check a provider-specific environment variable (e.g., `GROQ_API_KEY`).
 	APIKey string `yaml:"apiKey,omitempty"`
-	// BaseURL is the base URL of the API endpoint.
+	// BaseURL is the base URL of the API endpoint (e.g., "https://api.groq.com/openai/v1").
 	BaseURL string `yaml:"baseURL,omitempty"`
-	// Model is the model identifier to use.
+	// Model is the default model identifier to use for this provider.
 	Model string `yaml:"model,omitempty"`
-	// Dimensions is the desired embedding vector dimension.
+	// Dimensions is the default embedding vector dimension for this provider.
 	Dimensions int `yaml:"dimensions,omitempty"`
 }
 
 // NewBuilderFromYAML reads a YAML configuration file, parses it, and returns a
-// pre-configured Builder instance. This is the recommended way to initialize
-// MangleKit from a static configuration.
+// pre-configured Builder instance. This is the recommended and most powerful way
+// to initialize MangleKit from a static configuration.
 //
-// The function supports environment variable expansion within the YAML file using
-// standard shell syntax (e.g., `$VAR` or `${VAR}`).
+// The function automatically handles several important details:
+//   - It expands environment variables within the YAML file using standard shell
+//     syntax (e.g., `$VAR` or `${VAR}`), which is useful for injecting secrets like API keys.
+//   - It uses a generic, reflection-based system to find and resolve all file paths
+//     within the configuration that are tagged with `path:"resolve"`. This allows you
+//     to use relative paths in your config file, which are resolved relative to the
+//     config file's location.
 //
-// It uses a generic, reflection-based system to find and resolve all file paths
-// within the configuration that are tagged with `path:"resolve"`.
-//
-// path is the file path to the YAML configuration file.
-// It returns a pre-configured BuilderAPI instance or an error if the file
-// cannot be read or parsed.
+// path is the file system path to the YAML configuration file.
+// It returns a pre-configured, ready-to-use BuilderAPI instance, or an error
+// if the file cannot be read, parsed, or if the configuration is invalid.
 func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {

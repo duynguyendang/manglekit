@@ -23,14 +23,16 @@ type openAIClient struct {
 	promptBuilder  *llm.PromptBuilder
 }
 
-// NewOpenAI creates a new OpenAI-compatible llm.Client. It is the constructor
-// function registered with the MangleKit registry for the "openai" and "groq"
-// LLM providers. It requires a pre-configured OpenAI client, which is handled
-// by the builder.
+// NewOpenAI is the constructor for an `llm.Client` that is compatible with
+// the OpenAI API. It is registered for multiple providers (e.g., "openai", "groq")
+// as they share the same interface. It relies on a pre-configured `openai.Client`
+// which is injected by the MangleKit builder.
 //
-// opts provides configuration such as the model name and an optional prompt template.
-// client is the initialized OpenAI Go client.
-// It returns a configured llm.Client or an error if dependencies are missing.
+// opts provides configuration such as the model name (e.g., "gpt-4-turbo") and
+// an optional custom prompt template.
+// client is the initialized `openai-go` client instance, which should already
+// be configured with the correct API key and base URL by the builder.
+// It returns a configured `llm.Client` or an error if dependencies are missing.
 func NewOpenAI(opts llm.OpenAIOptions, client *openai.Client) (llm.Client, error) {
 	if client == nil {
 		return nil, fmt.Errorf("openai client is required")
@@ -49,11 +51,10 @@ func NewOpenAI(opts llm.OpenAIOptions, client *openai.Client) (llm.Client, error
 
 // Complete generates a response from the configured OpenAI-compatible model.
 // It uses the PromptBuilder to construct the final prompt and then calls the
-// chat completions API.
-// This method satisfies the llm.Client interface.
+// standard Chat Completions API. This method satisfies the `llm.Client` interface.
 //
 // req is the request containing the prompt, context, and other parameters.
-// It returns an llm.Response with the generated text and token usage, or an
+// It returns an `llm.Response` with the generated text and token usage, or an
 // error if prompt building or the API call fails.
 func (c *openAIClient) Complete(req llm.Request) (llm.Response, error) {
 	// Prepare the data for the template.
