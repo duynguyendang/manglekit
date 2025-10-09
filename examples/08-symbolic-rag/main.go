@@ -4,14 +4,25 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
+	"runtime"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	_ "github.com/duynguyendang/manglekit/providers/all"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	builder, err := manglekit.NewBuilderFromYAML("./config.yaml")
+	_ = godotenv.Load() // load .env file if exists
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		log.Fatalf("failed to get current file path")
+	}
+	dir := filepath.Dir(currentFile)
+	configPath := filepath.Join(dir, "config.yaml")
+
+	builder, err := manglekit.NewBuilderFromYAML(configPath)
 	if err != nil {
 		log.Fatalf("Failed to create builder from YAML: %v", err)
 	}

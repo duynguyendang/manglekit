@@ -33,3 +33,6 @@ manglekit
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# custom apps
+apps/
