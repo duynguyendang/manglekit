@@ -62,4 +62,12 @@ func init() {
 		// The builder's `configureComponent` function handles this dynamic assignment.
 		nameToOptionsType[name] = t
 	}
+
+	// Manually register aliases to disambiguate provider families that share the
+	// same root name between different component types (e.g., embedder vs LLM).
+	nameToOptionsType["google"] = reflect.TypeOf(&llm.GoogleOptions{})
+	nameToOptionsType["openai"] = reflect.TypeOf(&llm.OpenAIOptions{})
+	nameToOptionsType["groq"] = reflect.TypeOf(&llm.OpenAIOptions{})
+	nameToOptionsType["google-embedder"] = reflect.TypeOf(&embed.GoogleEmbedderOptions{})
+	nameToOptionsType["openai-embedder"] = reflect.TypeOf(&embed.OpenAIEmbedderOptions{})
 }

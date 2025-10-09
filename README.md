@@ -1,4 +1,4 @@
-[![Go](https://img.shields.io/badge/Go-1.21%2B-blue?logo=go)](https://golang.org) [![License](https://img.shields.io/badge/License-Apache_2.0-yellow)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.24%2B-blue?logo=go)](https://golang.org) [![License](https://img.shields.io/badge/License-Apache_2.0-yellow)](LICENSE)
 
 # Manglekit
 
@@ -93,7 +93,7 @@ You can configure MangleKit either programmatically using the fluent Builder API
 
 ### Example 1: Programmatic Setup with the Builder API
 
-This is the most common and type-safe way to build a MangleKit pipeline.
+This is the most common and type-safe way to build a MangleKit pipeline. The example below wires the Sandwich flow with Mangle pre/post rules, a BM25 retriever, and an OpenAI LLM.
 
 ```go
 package main
@@ -120,9 +120,13 @@ func main() {
 	// Use the fluent builder to construct the orchestrator.
 	// Components are configured with simple, type-safe options structs.
 	orch, err := manglekit.NewBuilder().
-		WithRetriever(&retrieve.BM25Options{Path: "./path/to/your/docs"}).
+		WithRules(&core.MangleOptions{
+			Path:              []string{"./rules/pre.dlog", "./rules/post.dlog"},
+			DefaultConverters: true,
+		}).
+		WithRetriever(&retrieve.BM25Options{Path: "./data"}).
 		WithLLM(&llm.OpenAIOptions{Model: "gpt-4o-mini"}).
-		WithTopK(5).
+		WithTopK(6). // Global default; individual retrievers can override this.
 		Build()
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
@@ -143,41 +147,42 @@ func main() {
 
 ### Example 2: Declarative Setup with YAML
 
-For maximum flexibility, you can define your entire pipeline in a `config.yaml` file. This is ideal for applications where you want to change the pipeline without recompiling code.
+For maximum flexibility, you can define your entire pipeline in a `config.yaml` file (see `examples/05-chat-with-data`). This is ideal for applications where you want to change the pipeline without recompiling code.
 
 **`config.yaml`:**
 
 ```yaml
-# Set default pipeline parameters for the "sandwich" orchestrator
-topK: 8
-maxTokens: 512
+# Set default pipeline parameters for the "sandwich" orchestrator.
+topK: 6
+fallbackThreshold: 0.35
 
-# Configure API keys and other provider-specific settings.
-# The ${VAR} syntax supports environment variable expansion.
+# Configure API keys and other provider-specific settings. The ${VAR} syntax
+# expands environment variables at load time.
 providers:
-  openai:
-    apiKey: "${OPENAI_API_KEY}"
   google:
     apiKey: "${GOOGLE_API_KEY}"
+  openai:
+    apiKey: "${OPENAI_API_KEY}"
+
+rules:
+  name: "mangle"
+  params:
+    path:
+      - "./rules/kb.facts"
+      - "./rules/policy.dlog"
+    defaultConverters: true
+    fileFirst: true
 
 # Define the components for each stage of the pipeline
-embedder:
-  name: "google"
-  params:
-    model: "text-embedding-004"
-
 retriever:
-  name: "hybrid" # Use the hybrid retriever
-
-reranker:
-  name: "cosine"
+  name: "bm25"
   params:
-    topK: 5
+    path: "./data"
 
 llm:
-  name: "openai"
+  name: "google"
   params:
-    model: "gpt-4o-mini"
+    model: "gemini-2.5-flash"
 ```
 
 **Go code to load the YAML:**
@@ -236,6 +241,10 @@ The true power of MangleKit comes from its integrated rules engine. You can defi
 // Deny any query that contains the word "secret".
 deny("Query contains forbidden term") :-
   request_query_contains("secret").
+
+// Allow listing the documents that were cited.
+allow("Citations may be returned") :-
+  answer_contains("doc_id").
 ```
 
 **Go code to load the rules:**
@@ -245,11 +254,14 @@ deny("Query contains forbidden term") :-
 
 // Add the Mangle rules engine to the builder.
 orch, err := manglekit.NewBuilder().
-    WithRetriever(&retrieve.BM25Options{Path: "./path/to/your/docs"}).
-    WithLLM(&llm.OpenAIOptions{Model: "gpt-4o-mini"}).
     WithRules(&core.MangleOptions{
-        Path: []string{"rules.dlog"}, // Point to your Datalog file
+        Path:              []string{"rules.dlog"}, // Point to your Datalog file
+        DefaultConverters: true,
+        FileFirst:         true,
     }).
+    WithRetriever(&retrieve.BM25Options{Path: "./data"}).
+    WithLLM(&llm.OpenAIOptions{Model: "gpt-4o-mini"}).
+    WithTopK(6).
     Build()
 if err != nil {
     log.Fatalf("Failed to build orchestrator: %v", err)
@@ -292,21 +304,27 @@ This is a high-level overview of the most important directories in the MangleKit
 
 ```
 .
-├── core/               # Core interfaces and types (Doc, Query, Answer, Retriever, etc.).
-├── providers/          # The registration point for all standard provider implementations.
-├── internal/           # Contains the concrete implementations of all providers.
+├── builder.go              # Fluent Builder API
+├── config.go               # YAML/environment loading helpers
+├── registry.go             # Provider registry + Must* helpers
+├── sdk.go                  # New(), Options, orchestrator wiring
+│
+├── core/                   # Core contracts (Doc, Query, Answer, Options, rules)
+├── embed/                  # Embedder option types
+├── llm/                    # LLM client options and prompts
+├── retrieve/               # Public retriever option types
+├── rerank/                 # Reranker interfaces and options
+├── pipeline/               # Sandwich orchestrator + declarative engine
+│   └── declarative/
+├── internal/               # Concrete providers (bm25, hybrid, llm, vectorstores, etc.)
+│   ├── embedders/
+│   ├── logger/
 │   ├── providers/
-│   └── embedders/
-├── pipeline/           # Implementations of the main orchestration logic (Sandwich, Declarative).
-├── examples/           # Standalone, runnable examples demonstrating key features.
-│
-├── sdk.go              # The main `New()` entry point.
-├── builder.go          # The fluent `NewBuilder()` API for programmatic setup.
-├── config.go           # Logic for loading pipelines from YAML files.
-├── registry.go         # The central registry for all component providers.
-│
-├── go.mod              # Go module definition.
-└── README.md           # This file.
+│   └── vectorstores/
+├── providers/              # Public registration helpers (e.g., providers/all)
+├── cmd/agent/              # Demo HTTP server
+├── examples/               # Runnable guides (01-basic-rag … 08-symbolic-rag)
+└── docs/                   # CONTEXT.md, HLD/LLD/CSD, reviews
 ```
 
 ## 🤝 Contributing

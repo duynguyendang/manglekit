@@ -18,7 +18,7 @@
 
 ## 2) Tech Stack
 
-* **Language:** Go 1.21+
+* **Language:** Go 1.24+
 * **Rules:** `github.com/google/mangle`
 * **Orchestration:** Genkit (Go SDK or HTTP endpoints)
 * **LLM:** Google (or provider of your choice)
@@ -30,7 +30,7 @@
 
 ```bash
 # Initialize module (only if you're creating a brand-new fork without go.mod)
-go mod init github.com/duynguyend/manglekit
+go mod init github.com/duynguyendang/manglekit
 
 # Dependencies (adjust as needed)
 go get github.com/google/mangle
@@ -94,46 +94,52 @@ curl -s -X POST localhost:8080/answer \
 ## 5) Repo Layout (expected)
 
 ```
-github.com/duynguyend/manglekit
+github.com/duynguyendang/manglekit
 ├── go.mod
-├── sdk.go                  # New(), Options, Orchestrator interface
-├── query.go                # Query, Answer, Citation types
-├── observability.go        # Logger/Tracer/Meter hooks
-├── registry.go             # Provider registry + Must* helpers
-├── builder.go              # Optional Builder() fluent API
-├── config.go               # FromYAML(), FromEnv()
+├── builder.go               # Fluent Builder API
+├── config.go                # YAML/environment loading helpers
+├── registry.go              # Provider registry + Must* helpers
+├── sdk.go                   # New(), Options, orchestrator wiring
 │
-├── retrieve/               # Public interfaces
+├── core/
+│   ├── rules.go             # Rule contracts and helpers
+│   ├── schema.go
+│   └── types.go             # Doc/Query/Answer, Options, Observability
+├── embed/
+│   └── options.go
+├── llm/
+│   ├── google.go
+│   ├── openai.go
+│   ├── options.go
+│   └── prompt.go
+├── retrieve/
+│   ├── bm25.go
+│   ├── embed.go
+│   ├── hybrid.go
 │   └── retrieve.go
 ├── rerank/
+│   ├── options.go
 │   └── rerank.go
-├── rules/
-│   └── rules.go
-├── llm/
-│   └── llm.go
-├── pipeline/               # Default orchestrator (Sandwich pattern)
-│   └── sandwich.go
+├── pipeline/
+│   ├── sandwich.go
+│   └── declarative/
+│       └── orchestrator.go
 │
-├── internal/               # Hidden provider implementations
-│   └── providers/
-│       ├── bm25/bm25.go
-│       ├── dense/dense.go
-│       ├── hybrid/hybrid.go
-│       ├── rerank/cosine/cosine.go
-│       └── llm/openai/openai.go
-│
-├── providers/              # Optional public typed helpers
-│   └── std/
-│       ├── hybrid.go
-│       ├── cosine.go
-│       └── openai.go
-│
-├── examples/               # Mini-apps (runnable docs + integration fixtures)
-│   ├── chatwd-min/main.go
-│   ├── http-min/main.go
-│   └── README.md
-└── (cmd/)?                 # Optional binary
-    └── manglekitd/main.go
+├── internal/
+│   ├── embedders/           # Google/OpenAI embedders
+│   ├── logger/              # Logging adapters
+│   ├── providers/           # BM25, dense, hybrid, rerank, LLM, mangle, etc.
+│   └── vectorstores/        # LocalVec implementation
+├── providers/
+│   └── all/all.go           # Registers every bundled provider
+├── cmd/
+│   └── agent/main.go        # Demo HTTP server
+├── examples/                # Runnable guides & fixtures
+│   ├── 01-basic-rag/
+│   ├── 02-logic-layer-mode/
+│   ├── ...
+│   └── 08-symbolic-rag/
+└── docs/                    # HLD/LLD/CSD, CONTEXT snapshot, reviews
 ```
 
 ---
@@ -176,7 +182,7 @@ github.com/duynguyend/manglekit
 
 * Use Go's standard `testing` package for unit and integration tests.
 * Write table-driven tests for rule evaluations in Mangle-Pre/Post, retrieval, and reranking logic.
-* Test the full Sandwich pipeline end-to-end using examples/simple/main.go and fixtures with mocked LLM and vector DB via interfaces.
+* Test the full Sandwich pipeline end-to-end using `examples/05-chat-with-data/main.go` (mock the LLM/vector DB via interfaces when running in CI).
 * Cover edge cases: invalid queries, policy violations, empty retrievals, and token limits.
 * Run tests with `make test` or `go test ./... -v`.
 * Generate coverage: `go test ./... -coverprofile=coverage.out` then `go tool cover -html=coverage.out`.

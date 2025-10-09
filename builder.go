@@ -81,6 +81,10 @@ type builder struct {
 	opts   core.Options
 	config *Config
 	errs   []error
+	// configDir captures the directory where a YAML configuration file was loaded
+	// from. It allows relative paths in tool params to be resolved lazily during
+	// buildSingleTool.
+	configDir string
 
 	// Declarative flow fields
 	flowName string
@@ -513,6 +517,9 @@ func (b *builder) buildSingleTool(name string, cfg ToolConfig) (any, error) {
 		}
 		if err := json.Unmarshal(jsonParams, optsPtr); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal params for %q: %w", name, err)
+		}
+		if err := resolvePathsInStruct(optsPtr, b.configDir); err != nil {
+			return nil, fmt.Errorf("failed to resolve paths for tool %q: %w", name, err)
 		}
 	}
 

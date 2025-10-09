@@ -165,13 +165,18 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 		return nil, fmt.Errorf("failed to unmarshal yaml: %w", err)
 	}
 
-	builder := NewBuilder().
+	configDir := filepath.Dir(path)
+
+	baseBuilder := NewBuilder()
+	if impl, ok := baseBuilder.(*builder); ok {
+		impl.configDir = configDir
+	}
+
+	builder := baseBuilder.
 		WithConfig(&cfg). // Pass the full config to the builder
 		WithTopK(cfg.TopK).
 		WithMaxTokens(cfg.MaxTokens).
 		WithFallbackThreshold(cfg.FallbackThreshold)
-
-	configDir := filepath.Dir(path)
 
 	// Helper function to create and configure a component from the YAML config.
 	configureComponent := func(name string, params map[string]any, setter func(any) BuilderAPI) error {
