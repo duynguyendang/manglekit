@@ -9,11 +9,11 @@ import (
 	"runtime"
 
 	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
 	"github.com/joho/godotenv"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
-	genkit "github.com/duynguyendang/manglekit/genkitshim"
 	_ "github.com/duynguyendang/manglekit/internal/providers/orchestrators/declarative"
 	_ "github.com/duynguyendang/manglekit/providers/all"
 	"github.com/duynguyendang/manglekit/retrieve"
@@ -57,7 +57,7 @@ func main() {
 
 	g := genkit.Init(ctx)
 
-	knowledgeTool := genkit.DefineTool[string, string](g,
+	knowledgeTool := genkit.DefineTool(g,
 		"manglekitKnowledgeBase",
 		"Queries the internal knowledge base to answer complex questions.",
 		func(toolCtx *ai.ToolContext, query string) (string, error) {
@@ -75,12 +75,24 @@ func main() {
 		},
 	)
 
-	chatFlow := genkit.DefineFlow[string, string](g,
+	chatFlow := genkit.DefineFlow(g,
 		"mainChatFlow",
 		func(flowCtx context.Context, userQuestion string) (string, error) {
 			log.Printf("[Flow] mainChatFlow received question: %q", userQuestion)
 
-			answer, err := genkit.RunTool[string, string](flowCtx, "call-manglekitKnowledgeBase", knowledgeTool, userQuestion)
+			// The original genkitshim provided a helper for this; we now use
+			// the underlying genkit.Run helper directly.
+			answer, err := genkit.Run(flowCtx, "call-manglekitKnowledgeBase", func() (string, error) {
+				raw, err := knowledgeTool.RunRaw(flowCtx, userQuestion)
+				if err != nil {
+					return "", err
+				}
+				typed, ok := raw.(string)
+				if !ok {
+					return "", fmt.Errorf("genkit: tool %q returned %T, expected string", knowledgeTool.Name(), raw)
+				}
+				return typed, nil
+			})
 			if err != nil {
 				return "", fmt.Errorf("tool invocation failed: %w", err)
 			}
