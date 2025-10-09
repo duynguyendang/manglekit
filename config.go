@@ -234,6 +234,113 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 	return builder, nil
 }
 
+// NewBuilderFromEnv creates a new Builder instance configured entirely from
+// environment variables. This is useful for containerized or CI/CD environments
+// where file-based configuration is inconvenient.
+//
+// The function looks for variables following the pattern:
+//   - `MKT_LLM_NAME`: The name of the LLM provider (e.g., "google").
+//   - `MKT_LLM_PARAMS`: A JSON string of parameters for the LLM.
+//   - `MKT_RETRIEVER_NAME`: The name of the retriever provider.
+//   - `MKT_RETRIEVER_PARAMS`: A JSON string of parameters for the retriever.
+//
+// ...and so on for "EMBEDDER", "RERANKER", "RULES", and "VECTORSTORE".
+// It also reads `MKT_TOPK`, `MKT_MAX_TOKENS`, and `MKT_FALLBACK_THRESHOLD`.
+func NewBuilderFromEnv() (BuilderAPI, error) {
+	baseBuilder := NewBuilder()
+
+	// Since there's no file, the config dir is the current working directory.
+	// This is important for resolving any relative paths in the JSON params.
+	configDir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get working directory: %w", err)
+	}
+	if impl, ok := baseBuilder.(*builder); ok {
+		impl.configDir = configDir
+	}
+
+	// Helper to read an env var and configure a component
+	configureComponentFromEnv := func(
+		componentName string,
+		setter func(any) BuilderAPI,
+	) error {
+		name := os.Getenv(fmt.Sprintf("MKT_%s_NAME", componentName))
+		if name == "" {
+			return nil
+		}
+
+		paramsJSON := os.Getenv(fmt.Sprintf("MKT_%s_PARAMS", componentName))
+		var params map[string]any
+		if paramsJSON != "" {
+			if err := json.Unmarshal([]byte(paramsJSON), &params); err != nil {
+				return fmt.Errorf("invalid JSON for %s params: %w", componentName, err)
+			}
+		}
+
+		optsType, ok := nameToOptionsType[name]
+		if !ok {
+			return fmt.Errorf("no options type registered for component name %q", name)
+		}
+		optsPtr := reflect.New(optsType.Elem()).Interface()
+
+		jsonParams, err := json.Marshal(params)
+		if err != nil {
+			return fmt.Errorf("failed to marshal params for %q: %w", name, err)
+		}
+		if err := json.Unmarshal(jsonParams, optsPtr); err != nil {
+			return fmt.Errorf("failed to unmarshal params for %q: %w", name, err)
+		}
+		if err := resolvePathsInStruct(optsPtr, configDir); err != nil {
+			return fmt.Errorf("failed to resolve paths for %q: %w", name, err)
+		}
+
+		setter(optsPtr)
+		return nil
+	}
+
+	// Configure each component
+	if err := configureComponentFromEnv("LLM", baseBuilder.WithLLM); err != nil {
+		return nil, err
+	}
+	if err := configureComponentFromEnv("EMBEDDER", baseBuilder.WithEmbedder); err != nil {
+		return nil, err
+	}
+	if err := configureComponentFromEnv("RETRIEVER", baseBuilder.WithRetriever); err != nil {
+		return nil, err
+	}
+	if err := configureComponentFromEnv("VECTORSTORE", baseBuilder.WithVectorStore); err != nil {
+		return nil, err
+	}
+	if err := configureComponentFromEnv("RERANKER", baseBuilder.WithReranker); err != nil {
+		return nil, err
+	}
+	if err := configureComponentFromEnv("RULES", baseBuilder.WithRules); err != nil {
+		return nil, err
+	}
+
+	// Configure top-level options
+	if topKStr := os.Getenv("MKT_TOPK"); topKStr != "" {
+		var topK int
+		if _, err := fmt.Sscanf(topKStr, "%d", &topK); err == nil {
+			baseBuilder.WithTopK(topK)
+		}
+	}
+	if maxTokensStr := os.Getenv("MKT_MAX_TOKENS"); maxTokensStr != "" {
+		var maxTokens int
+		if _, err := fmt.Sscanf(maxTokensStr, "%d", &maxTokens); err == nil {
+			baseBuilder.WithMaxTokens(maxTokens)
+		}
+	}
+	if fallbackStr := os.Getenv("MKT_FALLBACK_THRESHOLD"); fallbackStr != "" {
+		var fallback float64
+		if _, err := fmt.Sscanf(fallbackStr, "%f", &fallback); err == nil {
+			baseBuilder.WithFallbackThreshold(fallback)
+		}
+	}
+
+	return baseBuilder, nil
+}
+
 // resolvePathsInStruct recursively traverses a struct, slice, or pointer and
 // resolves any string or []string fields tagged with `path:"resolve"`.
 //
