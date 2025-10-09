@@ -36,9 +36,12 @@ type tfidfDoc struct {
 func (d tfidfDoc) IDs() []int { return d.tokenIDs }
 func (d tfidfDoc) ID() int    { return d.index }
 
-// BM25 implements the retrieve.Retriever interface providing a sparse, keyword-based
-// search using the Okapi BM25 algorithm. It indexes a directory of markdown
-// documents and performs term-based retrieval.
+// BM25 implements the `retrieve.Retriever` interface, providing a classic sparse,
+// keyword-based search using the Okapi BM25 algorithm. It operates by indexing a
+// directory of documents in-memory, calculating term frequencies, and scoring
+// documents based on the presence and frequency of query terms. This retriever
+// is ideal for exact keyword matching and is often used as a component in a
+// hybrid search system alongside a dense retriever.
 type BM25 struct {
 	tf     *tfidf.TFIDF
 	docs   []*ai.Document
@@ -47,17 +50,21 @@ type BM25 struct {
 	topK   int
 }
 
-// New creates a new BM25 retriever. It is the constructor function registered
-// with the MangleKit registry for the "bm25" retriever.
+// New is the constructor for the BM25 retriever. It is the function registered
+// with the MangleKit registry for the "bm25" provider name.
 //
-// The function performs the following steps:
-// 1. Validates that a document path is provided in the options.
-// 2. Loads all .md documents from the specified path.
-// 3. Builds a vocabulary and tokenizes the documents.
-// 4. Creates a TF-IDF model from the documents, which is used by the BM25 algorithm.
+// The constructor performs the following steps:
+//  1. Validates that a document path is provided in the options.
+//  2. Loads all `.md` documents from the specified directory path.
+//  3. Parses YAML front matter from each document to extract metadata.
+//  4. Builds an in-memory vocabulary and tokenizes the documents.
+//  5. Creates a TF-IDF model from the tokenized documents, which is a prerequisite
+//     for the BM25 scoring algorithm.
 //
-// opts are the configuration options, requiring at least a 'Path' to the documents.
-// It returns an initialized BM25 retriever or an error if setup fails.
+// opts are the configuration options, requiring at least a `Path` to the
+// directory of documents to be indexed.
+// It returns an initialized `retrieve.Retriever` or an error if the document
+// path is invalid or document loading/parsing fails.
 func New(opts retrieve.BM25Options) (retrieve.Retriever, error) {
 	if opts.Path == "" {
 		return nil, fmt.Errorf("path option is required for bm25 retriever")
@@ -107,13 +114,15 @@ func New(opts retrieve.BM25Options) (retrieve.Retriever, error) {
 	}, nil
 }
 
-// Retrieve performs a search against the indexed documents using the BM25 algorithm.
-// It tokenizes the query, finds matching documents, scores them, and returns
-// the top K results sorted by relevance.
-// This method satisfies the core.Retriever interface.
+// Retrieve performs a search against the in-memory document index using the BM25
+// algorithm. It tokenizes the query, finds matching documents containing the
+// query terms, scores them based on relevance, and returns the top K results
+// sorted in descending order of score.
+// This method satisfies the `retrieve.Retriever` interface.
 //
-// req contains the query string and the number of results to return (TopK).
-// It returns a retrieve.Result containing the ranked documents or an error.
+// req contains the query string and the number of results to return (`TopK`).
+// It returns a `retrieve.Result` containing the ranked documents or an error if
+// the retrieval fails.
 func (b *BM25) Retrieve(req retrieve.Request) (retrieve.Result, error) {
 	queryTokens := strings.Fields(strings.ToLower(req.Query))
 	var queryIDs []int

@@ -2,7 +2,7 @@
 
 # Manglekit
 
-**MangleKit** is a lightweight, embeddable **Go** framework for building robust and controllable **Retrieval-Augmented Generation (RAG)** applications. It integrates a declarative rules engine (**Mangle**) with modern RAG components, orchestrated using a "Sandwich Pattern" (`Rules → RAG → Rules → LLM`) to ensure every response is verifiable, policy-compliant, and grounded in evidence.
+**MangleKit** is a lightweight, embeddable **Go** framework for building robust and controllable **Retrieval-Augmented Generation (RAG)** applications. It integrates a declarative rules engine (**Mangle**) with modern RAG components, orchestrated using a "Sandwich Pattern" (`Rules → RAG → Rules`) to ensure every response is verifiable, policy-compliant, and grounded in evidence.
 
 It is designed for high-performance AI applications where correctness, safety, and explainability are critical.
 
@@ -12,12 +12,12 @@ It is designed for high-performance AI applications where correctness, safety, a
 -   **Verifiable & Explainable**: Every answer can be traced back to the source documents and the rules that were applied.
 -   **Pluggable Components**: Easily swap out components like Retrievers, Rerankers, LLMs, and Vector Stores. MangleKit provides built-in support for popular providers.
 -   **Fluent Builder API**: A type-safe, chainable API for programmatically constructing your RAG pipeline.
--   **YAML Configuration**: Alternatively, define your entire pipeline in a YAML file for easy setup and environment management.
+-   **Declarative Configuration**: Define your entire pipeline in a YAML file for easy setup and environment management.
 -   **High Performance**: Built in Go for low-latency, concurrent, and scalable services.
 
 ## ⚙️ Core Architecture: The Sandwich Pattern
 
-MangleKit processes queries using a multi-stage pipeline that wraps a standard RAG flow with rule evaluation stages.
+MangleKit processes queries using a multi-stage pipeline that wraps a standard RAG flow with rule evaluation stages. This ensures that logic and policies can be applied before and after the core generation step.
 
 ```
 User Query
@@ -44,40 +44,56 @@ Final Answer
 
 ## 🛠️ Getting Started
 
-### Prerequisites
+### 1. Prerequisites
 
--   Go 1.21+
+-   Go 1.21 or later.
 -   API keys for your chosen providers (e.g., OpenAI, Google).
 
-### Installation
+### 2. Installation
 
-To add MangleKit to your project, run:
+To add MangleKit to your Go project, run:
 
 ```bash
 go get github.com/duynguyendang/manglekit
 ```
 
-### Environment Variables
+### 3. Environment Setup
 
-Create a `.env` file in your project root or export the following environment variables:
+MangleKit can be configured to read API keys from environment variables. The easiest way to manage this during development is with a `.env` file.
 
-```
-# For OpenAI models (LLM or Embedder)
-OPENAI_API_KEY="sk-..."
+1.  Create a file named `.env` in the root of your project.
+2.  Add your API keys to the file:
 
-# For Google models (LLM or Embedder)
-GOOGLE_API_KEY="AIza..."
-```
+    ```env
+    # For OpenAI models (LLM or Embedder)
+    OPENAI_API_KEY="sk-..."
 
-The application will automatically load the `.env` file if it exists.
+    # For Google models (LLM or Embedder)
+    GOOGLE_API_KEY="AIza..."
+    ```
 
-## 💻 Usage
+3.  Use a library like `godotenv` to load this file when your application starts.
 
-MangleKit can be configured either programmatically using the Builder API or declaratively with a YAML file.
+    ```go
+    import "github.com/joho/godotenv"
 
-### Example 1: Programmatic Setup with the Builder
+    func main() {
+        // Load .env file from the current directory
+        _ = godotenv.Load()
 
-The `NewBuilder()` function provides a fluent, type-safe API to construct your orchestrator. This is the recommended approach for most use cases.
+        // ... rest of your application logic
+    }
+    ```
+
+## 💻 Usage Examples
+
+You can configure MangleKit either programmatically using the fluent Builder API or declaratively with a single YAML file.
+
+---
+
+### Example 1: Programmatic Setup with the Builder API
+
+This is the most common and type-safe way to build a MangleKit pipeline.
 
 ```go
 package main
@@ -93,7 +109,7 @@ import (
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/joho/godotenv"
 
-	// Blank import to register all standard providers
+	// This single blank import registers all standard MangleKit providers.
 	_ "github.com/duynguyendang/manglekit/providers/all"
 )
 
@@ -101,43 +117,46 @@ func main() {
 	_ = godotenv.Load()
 	ctx := context.Background()
 
-	// Use the builder to construct the orchestrator
+	// Use the fluent builder to construct the orchestrator.
+	// Components are configured with simple, type-safe options structs.
 	orch, err := manglekit.NewBuilder().
-		WithRetriever(&retrieve.BM25Options{Path: "mangle/knowledge_base"}).
+		WithRetriever(&retrieve.BM25Options{Path: "./path/to/your/docs"}).
 		WithLLM(&llm.OpenAIOptions{Model: "gpt-4o-mini"}).
 		WithTopK(5).
 		Build()
 	if err != nil {
-		log.Fatalf("failed to build orchestrator: %v", err)
+		log.Fatalf("Failed to build orchestrator: %v", err)
 	}
 
-	// Run a query
+	// Run a query through the pipeline.
 	query := core.Query{Text: "What is MangleKit?"}
 	answer, err := orch.Run(ctx, query)
 	if err != nil {
-		log.Fatalf("orchestrator run failed: %v", err)
+		log.Fatalf("Orchestrator run failed: %v", err)
 	}
 
 	fmt.Println("Answer:", answer.Text)
 }
 ```
 
-### Example 2: Configuration with YAML
+---
 
-For greater flexibility, you can define your entire pipeline in a `config.yaml` file and load it with a single function call.
+### Example 2: Declarative Setup with YAML
+
+For maximum flexibility, you can define your entire pipeline in a `config.yaml` file. This is ideal for applications where you want to change the pipeline without recompiling code.
 
 **`config.yaml`:**
 
 ```yaml
-# Set default pipeline parameters
+# Set default pipeline parameters for the "sandwich" orchestrator
 topK: 8
 maxTokens: 512
-fallbackThreshold: 0.5
 
-# Configure API keys and other provider-specific settings
+# Configure API keys and other provider-specific settings.
+# The ${VAR} syntax supports environment variable expansion.
 providers:
   openai:
-    apiKey: "${OPENAI_API_KEY}" # Supports environment variable expansion
+    apiKey: "${OPENAI_API_KEY}"
   google:
     apiKey: "${GOOGLE_API_KEY}"
 
@@ -148,16 +167,12 @@ embedder:
     model: "text-embedding-004"
 
 retriever:
-  name: "bm25"
-  params:
-    path: "mangle/knowledge_base"
-    topK: 10
+  name: "hybrid" # Use the hybrid retriever
 
 reranker:
   name: "cosine"
   params:
     topK: 5
-    # The 'embedder' dependency is automatically resolved by the builder
 
 llm:
   name: "openai"
@@ -177,33 +192,76 @@ import (
 
     "github.com/duynguyendang/manglekit"
     "github.com/duynguyendang/manglekit/core"
+    "github.com/joho/godotenv"
 
-    // Blank imports to register providers
-    _ "github.com/duynguyendang/manglekit/internal/providers/bm25"
-    _ "github.com/duynguyendang/manglekit/internal/providers/llm"
-    _ "github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
-    _ "github.com/duynguyendang/manglekit/internal/providers/embedders"
+    // This single blank import registers all standard MangleKit providers.
+    _ "github.com/duynguyendang/manglekit/providers/all"
 )
 
 func main() {
+    _ = godotenv.Load()
+
+    // Create a builder instance directly from the YAML file.
     builder, err := manglekit.NewBuilderFromYAML("config.yaml")
     if err != nil {
-        log.Fatalf("failed to create builder from YAML: %v", err)
+        log.Fatalf("Failed to create builder from YAML: %v", err)
     }
 
+    // Build the orchestrator from the configuration.
     orch, err := builder.Build()
     if err != nil {
-        log.Fatalf("failed to build orchestrator: %v", err)
+        log.Fatalf("Failed to build orchestrator: %v", err)
     }
 
-    // Run a query
+    // Run a query.
     query := core.Query{Text: "What is MangleKit?"}
     answer, err := orch.Run(context.Background(), query)
     if err != nil {
-        log.Fatalf("orchestrator run failed: %v", err)
+        log.Fatalf("Orchestrator run failed: %v", err)
     }
 
     fmt.Println("Answer:", answer.Text)
+}
+```
+
+---
+
+### Example 3: Using the Mangle Rules Engine
+
+The true power of MangleKit comes from its integrated rules engine. You can define policies and logic in `.dlog` files to control the pipeline's behavior.
+
+**`rules.dlog`:**
+
+```prolog
+// Deny any query that contains the word "secret".
+deny("Query contains forbidden term") :-
+  request_query_contains("secret").
+```
+
+**Go code to load the rules:**
+
+```go
+// ... (imports and main function setup from Example 1)
+
+// Add the Mangle rules engine to the builder.
+orch, err := manglekit.NewBuilder().
+    WithRetriever(&retrieve.BM25Options{Path: "./path/to/your/docs"}).
+    WithLLM(&llm.OpenAIOptions{Model: "gpt-4o-mini"}).
+    WithRules(&core.MangleOptions{
+        Path: []string{"rules.dlog"}, // Point to your Datalog file
+    }).
+    Build()
+if err != nil {
+    log.Fatalf("Failed to build orchestrator: %v", err)
+}
+
+// This query will now be denied by the rules engine.
+query := core.Query{Text: "Tell me a secret about MangleKit"}
+answer, err := orch.Run(ctx, query)
+
+if err != nil {
+    // The error will be of type `core.ErrDenied`.
+    fmt.Println("Request denied by Mangle rules:", err)
 }
 ```
 
@@ -211,149 +269,44 @@ func main() {
 
 MangleKit includes a suite of built-in providers that can be configured in the builder or YAML file.
 
-| Component Type    | Provider Name | Description                                                  |
-| ----------------- | ------------- | ------------------------------------------------------------ |
-| **Retriever**     | `bm25`        | Keyword-based search (Okapi BM25) over local files.          |
-|                   | `dense`       | Vector search using a configured embedder and vector store.  |
-|                   | `hybrid`      | Fuses results from `bm25` and `dense` using RRF.             |
-|                   | `inmemory`    | A simple, updatable in-memory store for testing.             |
-| **Reranker**      | `cosine`      | Re-ranks documents based on cosine similarity of embeddings. |
-| **LLM**           | `google`      | Integrates with Google's generative models via Genkit.       |
-|                   | `openai`      | Integrates with OpenAI's models (e.g., GPT-4).               |
-|                   | `groq`        | Integrates with Groq's fast inference API.                   |
-| **Embedder**      | `google`      | Generates embeddings using Google's models.                  |
-|                   | `openai`      | Generates embeddings using OpenAI's models.                  |
-| **Rules Engine**  | `mangle`      | The core Datalog engine for rules-based control.             |
-| **Schema Parser** | `jsonschema`  | Parses JSON Schema files into facts for the Mangle engine.   |
-| **Vector Store**  | `localvec`    | An in-memory vector store that persists to disk.             |
+| Component Type    | Provider Name | Description                                                  | Depends On         |
+| ----------------- | ------------- | ------------------------------------------------------------ | ------------------ |
+| **Retriever**     | `bm25`        | Keyword-based search (Okapi BM25) over local files.          | _None_             |
+|                   | `dense`       | Vector search using an embedder and vector store.            | `Embedder`, `VectorStore` |
+|                   | `hybrid`      | Fuses results from `bm25` and `dense` using RRF.             | `bm25`, `dense`    |
+|                   | `in-memory`   | A simple, updatable in-memory store for testing.             | _None_             |
+| **Reranker**      | `cosine`      | Re-ranks documents based on cosine similarity of embeddings. | `Embedder`         |
+| **LLM**           | `google`      | Integrates with Google's generative models via Genkit.       | _None_             |
+|                   | `openai`      | Integrates with OpenAI's models (e.g., GPT-4).               | _None_             |
+|                   | `groq`        | Integrates with Groq's fast inference API.                   | _None_             |
+| **Embedder**      | `google`      | Generates embeddings using Google's models.                  | _None_             |
+|                   | `openai`      | Generates embeddings using OpenAI's models.                  | _None_             |
+| **Rules Engine**  | `mangle`      | The core Datalog engine for rules-based control.             | _None_             |
+| **Schema Parser** | `jsonschema`  | Parses JSON Schema files into facts for the Mangle engine.   | _None_             |
+|                   | `rdf`         | Parses RDF (Turtle) files into facts for the Mangle engine.  | _None_             |
+| **Vector Store**  | `localvec`    | An in-memory vector store that persists to disk.             | `Embedder`         |
 
+## 📂 Simplified Repository Layout
 
-## 📂 Repository Layout
+This is a high-level overview of the most important directories in the MangleKit repository.
 
 ```
 .
-├── cmd/
-│   └── agent/
-│       └── main.go
-├── core/
-│   ├── rules.go
-│   ├── schema.go
-│   └── types.go
-├── docs/
-│   ├── CONTEXT.md
-│   ├── CSD.md
-│   ├── HLD.md
-│   └── LLD.md
-├── embed/
-│   └── options.go
-├── examples/
-│   ├── 01-basic-rag/
-│   │   ├── data/
-│   │   │   └── mangle.md
-│   │   └── main.go
-│   ├── 02-logic-layer-mode/
-│   │   ├── rules.dlog
-│   │   └── main.go
-│   ├── 03-custom-prompt/
-│   │   └── main.go
-│   ├── 04-hot-reload/
-│   │   └── main.go
-│   ├── 06-schema-validation/
-│   │   ├── user.schema.json
-│   │   ├── validation.dlog
-│   │   └── main.go
-│   └── custom-prompt/
-│       └── main.go
-├── internal/
-│   ├── embedders/
-│   │   ├── google/
-│   │   │   ├── google.go
-│   │   │   └── google_test.go
-│   │   └── openai/
-│   │       └── openai.go
-│   ├── logger/
-│   │   └── logger.go
+├── core/               # Core interfaces and types (Doc, Query, Answer, Retriever, etc.).
+├── providers/          # The registration point for all standard provider implementations.
+├── internal/           # Contains the concrete implementations of all providers.
 │   ├── providers/
-│   │   ├── bm25/
-│   │   │   ├── bm25.go
-│   │   │   └── bm25_test.go
-│   │   ├── dense/
-│   │   │   ├── dense.go
-│   │   │   └── dense_test.go
-│   │   ├── hybrid/
-│   │   │   ├── hybrid.go
-│   │   │   └── hybrid_test.go
-│   │   ├── llm/
-│   │   │   ├── google.go
-│   │   │   └── openai.go
-│   │   ├── mangle/
-│   │   │   ├── converters/
-│   │   │   │   ├── document.go
-│   │   │   │   ├── query.go
-│   │   │   │   └── user_context.go
-│   │   │   ├── rules.go
-│   │   │   └── rules_test.go
-│   │   ├── rerank/
-│   │   │   └── cosine/
-│   │   │       ├── cosine.go
-│   │   │       └── cosine_test.go
-│   │   ├── retrievers/
-│   │   │   └── inmemory/
-│   │   │       └── inmemory.go
-│   │   ├── schemaparsers/
-│   │   │   └── jsonschema/
-│   │   │       └── parser.go
-│   │   └── ...
-│   └── vectorstores/
-│       └── localvec/
-│           └── localvec.go
-├── llm/
-│   ├── google.go
-│   ├── llm.go
-│   ├── openai.go
-│   ├── options.go
-│   └── prompt.go
-├── mangle/
-│   ├── main.dlog
-│   ├── knowledge_base/
-│   │   ├── aliases.dlog
-│   │   └── stopwords.dlog
-│   ├── pipelines/
-│   │   └── retrieval_pipeline.dlog
-│   └── policies/
-│       └── access_control.dlog
-├── pipeline/
-│   ├── sandwich.go
-│   └── sandwich_test.go
-├── providers/
-│   └── all/
-│       └── all.go
-├── rerank/
-│   ├── options.go
-│   └── rerank.go
-├── retrieve/
-│   ├── bm25.go
-│   ├── embed.go
-│   ├── hybrid.go
-│   ├── inmemory.go
-│   ├── options.go
-│   └── retrieve.go
-├── .env.example
-├── .gitignore
-├── AGENTS.md
-├── CONTRIBUTING.md
-├── LICENSE
-├── Makefile
-├── README.md
-├── TODO.md
-├── builder.go
-├── config.go
-├── config.yaml
-├── go.mod
-├── go.sum
-├── registry.go
-├── sdk.go
-└── typemap.go
+│   └── embedders/
+├── pipeline/           # Implementations of the main orchestration logic (Sandwich, Declarative).
+├── examples/           # Standalone, runnable examples demonstrating key features.
+│
+├── sdk.go              # The main `New()` entry point.
+├── builder.go          # The fluent `NewBuilder()` API for programmatic setup.
+├── config.go           # Logic for loading pipelines from YAML files.
+├── registry.go         # The central registry for all component providers.
+│
+├── go.mod              # Go module definition.
+└── README.md           # This file.
 ```
 
 ## 🤝 Contributing

@@ -8,17 +8,20 @@ import (
 )
 
 // New creates a new MangleKit orchestrator using the default "Sandwich" pipeline.
-// This is the simplest way to get started if you are not using the Builder.
-// It requires, at a minimum, a configured Retriever and LLM client in the options.
+// This function provides a simple, direct way to construct an orchestrator when
+// you are building the components programmatically. It requires, at a minimum, a
+// configured Retriever and LLM client in the options.
 //
-// This function is a convenience wrapper around pipeline.NewSandwich. For more
-// complex setups, such as configuring providers from a YAML file or using
-// custom components, it is recommended to use the Builder.
+// This function is a convenience wrapper around the underlying pipeline constructor.
+// For more advanced use cases, such as loading configurations from YAML files or
+// using custom components with complex dependencies, it is recommended to use the
+// fluent Builder API (see `NewBuilder`).
 //
 // opts is a struct containing the configuration and components for the orchestrator.
-// A valid `Retriever` and `LLM` must be provided.
-// It returns a core.Orchestrator ready to process queries, or an error if
-// the configuration is invalid.
+// A valid `Retriever` (of type `retrieve.Retriever`) and `LLM` (of type `llm.Client`)
+// must be provided in this struct, otherwise `core.ErrInvalidOptions` will be returned.
+// It returns a `core.Orchestrator` ready to process queries, or an error if
+// the configuration is invalid or essential components are missing.
 func New(opts core.Options) (core.Orchestrator, error) {
 	if opts.Retriever == nil || opts.LLM == nil {
 		return nil, core.ErrInvalidOptions

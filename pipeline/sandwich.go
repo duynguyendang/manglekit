@@ -11,9 +11,15 @@ import (
 	"github.com/duynguyendang/manglekit/retrieve"
 )
 
-// Sandwich implements the default MangleKit orchestrator. It follows a
-// "sandwich" pattern: Pre-retrieval rules, Retrieval, Reranking, an LLM call,
-// and finally Post-retrieval rules.
+// Sandwich implements the default MangleKit orchestrator, which is the most
+// common execution flow. It follows a "sandwich" pattern where a central
+// retrieval and generation core is "sandwiched" between two layers of rule
+// evaluations:
+//
+// 1.  **Pre-retrieval rules**: Validate, normalize, and scope the user query.
+// 2.  **Retrieve & Rerank**: Fetch relevant documents and refine their order.
+// 3.  **LLM Call**: Synthesize an answer based on the evidence.
+// 4.  **Post-retrieval rules**: Filter the final answer and citations for compliance.
 type Sandwich struct {
 	opts      core.Options
 	retriever retrieve.Retriever
@@ -21,13 +27,15 @@ type Sandwich struct {
 	llm       llm.Client
 }
 
-// NewSandwich creates a new Sandwich orchestrator. It takes core.Options,
-// performs type assertions to ensure the provided components (Retriever, LLM,
-// Reranker) are of the correct type, and initializes the orchestrator.
+// NewSandwich creates a new Sandwich orchestrator from a set of options.
+// It performs critical type assertions to ensure that the components provided
+// in the `core.Options` struct (which uses `any` for flexibility) match the
+// interfaces expected by the pipeline, such as `retrieve.Retriever` and `llm.Client`.
+// This function is typically called by the framework's builder, not directly by end-users.
 //
 // o contains the configuration and components for the pipeline.
-// It returns a configured core.Orchestrator or an error if any component
-// has an invalid type.
+// It returns a configured `core.Orchestrator` or an error if any required
+// component is missing or has an invalid type.
 func NewSandwich(o core.Options) (core.Orchestrator, error) {
 	s := &Sandwich{opts: o}
 	var ok bool
@@ -56,28 +64,42 @@ func NewSandwich(o core.Options) (core.Orchestrator, error) {
 }
 
 // Retriever returns the retriever component configured for the orchestrator.
-// It satisfies a requirement of the core.Orchestrator interface, allowing access
-// to the retriever instance at runtime, for example, to use its Update methods.
+// It satisfies a requirement of the `core.Orchestrator` interface, allowing access
+// to the retriever instance at runtime. This is particularly useful for calling
+// methods on an `Updatable` retriever to add or modify documents in a live system.
+// The return type is `any` to avoid circular package dependencies; the caller is
+// expected to perform a type assertion to `retrieve.Retriever` or `retrieve.Updatable`.
 func (s *Sandwich) Retriever() any {
 	return s.retriever
 }
 
-// Run executes the full orchestration pipeline for a given query.
-// The process is as follows:
-//  1. Pre-Rules: Executes Mangle rules at the 'pre' stage to validate,
-//     normalize, or modify the incoming query.
-//  2. Retrieve: Fetches relevant documents using the configured retriever.
-//  3. Rerank: If a reranker is configured, it re-scores and re-orders the
-//     retrieved documents for better relevance.
-//  4. Fallback Check: If a confidence threshold is set and the best score from
-//     reranking is too low, it can exit early.
-//  5. LLM: Sends the final context and prompt to the language model to generate an answer.
-//  6. Post-Rules: Executes Mangle rules at the 'post' stage to filter or
-//     modify the final answer and its citations based on policies.
+// Run executes the full, sequential orchestration pipeline for a given query.
+// It is the primary method of the `Sandwich` orchestrator and follows a series
+// of distinct steps, with observability hooks for logging and tracing at each point.
 //
-// ctx is the context for the entire operation.
+// The process is as follows:
+//  1. **Pre-Rules**: Executes Mangle rules at the 'pre' stage to validate,
+//     normalize, or modify the incoming query. This can result in adding filters
+//     or expansion terms to the query's metadata. If a rule denies the request,
+//     the pipeline halts immediately.
+//  2. **Retrieve**: Fetches an initial set of documents using the configured
+//     retriever, passing along any metadata from the pre-rules stage.
+//  3. **Rerank**: If a reranker is configured, it re-scores and re-orders the
+//     retrieved documents to improve their relevance to the query.
+//  4. **Fallback Check**: If a `FallbackThreshold` is set, the pipeline checks the
+//     top score from the reranker. If the score is below the threshold, it
+//     exits early with an `ErrNoEvidence` error, preventing the LLM from being
+//     called with low-quality context.
+//  5. **LLM Call**: Sends the final, reranked context and the user prompt to the
+//     language model to generate a synthesized answer.
+//  6. **Post-Rules**: Executes Mangle rules at the 'post' stage. These rules can
+//     inspect the generated answer and the source citations, filtering or modifying
+//     them to enforce policies (e.g., removing PII, checking for entitlements).
+//     If a rule denies the result, the pipeline halts.
+//
+// ctx is the context for the entire operation, used for cancellation and tracing.
 // q is the user's query to be processed.
-// It returns the final Answer or an error if any stage of the pipeline fails.
+// It returns the final `core.Answer` or an error if any stage of the pipeline fails.
 func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 	// 0. Setup observability
 	logger := s.opts.Obs.Logger

@@ -1,21 +1,28 @@
 package llm
 
-// OpenAIOptions provides typed configuration for OpenAI language models.
+// OpenAIOptions provides typed configuration for OpenAI and compatible language
+// models (e.g., Groq). It specifies the model to use and how to authenticate.
 type OpenAIOptions struct {
-	// APIKey is the API key for authenticating with the OpenAI service.
+	// APIKey is the API key for authenticating with the OpenAI or a compatible service.
+	// If not set here, it is often read from an environment variable (e.g., OPENAI_API_KEY).
 	APIKey string `json:"apiKey,omitempty"`
-	// Model is the identifier for the specific OpenAI model to be used (e.g., "gpt-4-turbo").
+	// Model is the identifier for the specific model to be used for completions,
+	// for example, "gpt-4-turbo" or "llama3-8b-8192".
 	Model string `json:"model,omitempty"`
 	// PromptTemplate is an optional custom Go template string for formatting the
-	// final prompt. If empty, a default template will be used.
+	// final prompt that is sent to the LLM. If this is empty, a default
+	// prompt template will be used by the client.
 	PromptTemplate string `json:"promptTemplate,omitempty"`
 }
 
-// GoogleOptions provides typed configuration for Google language models.
+// GoogleOptions provides typed configuration for Google language models,
+// such as those in the Gemini family.
 type GoogleOptions struct {
-	// Model is the identifier for the specific Google model to be used (e.g., "gemini-1.5-flash").
+	// Model is the identifier for the specific Google model to be used for
+	// completions, for example, "gemini-1.5-flash".
 	Model string `json:"model"`
 	// PromptTemplate is an optional custom Go template string for formatting the
-	// final prompt. If empty, a default template will be used.
+	// final prompt that is sent to the LLM. If this is empty, a default
+	// prompt template will be used by the client.
 	PromptTemplate string `json:"promptTemplate"`
 }

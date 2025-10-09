@@ -1,3 +1,6 @@
+// Package inmemory provides a basic, thread-safe in-memory retriever that is
+// useful for testing, demos, or small-scale applications where the entire
+// document set can fit comfortably in memory.
 package inmemory
 
 import (
@@ -10,19 +13,21 @@ import (
 	"github.com/duynguyendang/manglekit/retrieve"
 )
 
-// InMemoryRetriever is a simple, thread-safe in-memory document store that is
-// useful for testing or small-scale applications. It implements both the
-// retrieve.Retriever and retrieve.Updatable interfaces.
+// InMemoryRetriever is a simple, thread-safe in-memory document store. It uses
+// a map for efficient O(1) lookups, upserts, and deletes by document ID.
+// It implements both the `retrieve.Retriever` and `retrieve.Updatable` interfaces,
+// making it a fully functional component for dynamic applications.
 type InMemoryRetriever struct {
 	mu   sync.RWMutex
-	docs map[string]core.Doc // Use a map for efficient upserts by ID.
+	docs map[string]core.Doc // Use a map for efficient operations by document ID.
 }
 
-// New creates a new InMemoryRetriever. It is the constructor function registered
-// with the MangleKit registry for the "inmemory" retriever.
+// New is the constructor for the InMemoryRetriever. It is registered with the
+// MangleKit registry for the "in-memory" provider name.
 //
 // opts can contain an initial set of documents to populate the retriever with.
-// It returns an initialized retriever or an error if any document is missing an ID.
+// It returns an initialized `retrieve.Retriever` or an error if any provided
+// document is missing a required ID.
 func New(opts retrieve.InMemoryOptions) (retrieve.Retriever, error) {
 	docMap := make(map[string]core.Doc)
 	// opts.Documents can be nil if the retriever is initialized empty.
@@ -41,9 +46,11 @@ func New(opts retrieve.InMemoryOptions) (retrieve.Retriever, error) {
 }
 
 // Retrieve returns documents from the in-memory store. For simplicity, this
-// implementation does not perform any searching or filtering based on the query;
-// it returns all stored documents up to the requested TopK limit.
-// It satisfies the retrieve.Retriever interface.
+// basic implementation does not perform any searching or filtering based on the
+// query text; it returns all stored documents, respecting the requested `TopK`
+// limit. This method is thread-safe.
+//
+// It satisfies the `retrieve.Retriever` interface.
 func (r *InMemoryRetriever) Retrieve(req retrieve.Request) (retrieve.Result, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -62,8 +69,10 @@ func (r *InMemoryRetriever) Retrieve(req retrieve.Request) (retrieve.Result, err
 }
 
 // Upsert adds new documents to the store or updates existing ones if they share
-// the same ID. This operation is thread-safe.
-// It satisfies the retrieve.Updatable interface.
+// the same ID. This operation is thread-safe, using a write lock to prevent
+// concurrent access during modification.
+//
+// It satisfies the `retrieve.Updatable` interface.
 func (r *InMemoryRetriever) Upsert(docs []core.Doc) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -79,8 +88,10 @@ func (r *InMemoryRetriever) Upsert(docs []core.Doc) error {
 }
 
 // Replace clears all existing documents in the store and replaces them with a
-// new set. This operation is thread-safe.
-// It satisfies the retrieve.Updatable interface.
+// new set. This is a destructive operation that is useful for completely
+// refreshing the knowledge base. This operation is thread-safe.
+//
+// It satisfies the `retrieve.Updatable` interface.
 func (r *InMemoryRetriever) Replace(docs []core.Doc) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
