@@ -1,157 +1,169 @@
 # Manglekit SDK — High-Level Architecture
 
-**Version:** 4.0 (Architectural Blueprint)
-**Status:** Final
+**Version:** 5.0 (Current Implementation)  
+**Status:** Maintained
 
-## **1. Vision & Architectural Principles**
+## 1. Vision & Architectural Principles
 
-### **1.1. Vision**
+### 1.1 Vision
 
-Manglekit is an **SDK-first, embeddable Go framework** for building verifiable and controllable neuro-symbolic RAG applications. Its architecture prioritizes a superior developer experience by abstracting complexity, enabling flexibility through a pluggable provider model, and enforcing correctness via a declarative rules engine.
+Manglekit is an embeddable Go framework for building verifiable, policy-aware retrieval-augmented experiences. It fuses Google’s Mangle Datalog engine with Genkit-powered neural components so that every answer is routed through programmable rules before and after retrieval and generation.
 
-### **1.2. Architectural Principles**
+### 1.2 Architectural Principles
 
-  * **SDK-First, Service-Second:** The core product is a library. A runnable service is a reference implementation, not the primary artifact. This ensures maximum flexibility for integration.
-  * **Zero-Wiring & Convention over Configuration:** The primary user interaction is through a fluent `Builder` API that manages all dependency injection and initialization internally. The user declares *what* they want, and the SDK handles *how* to wire it.
-  * **Pluggable & Agnostic Core:** All major components (LLM, Retriever, Reranker, Embedder, RuleSet, VectorStore, SchemaParser) are defined by Go interfaces. This decouples the core pipeline logic from specific implementations, making the system provider-agnostic.
-  * **Separation of Concerns:** A strict separation exists between:
-      * **Orchestration Logic** (the fixed "Sandwich Pipeline" or the dynamic "Declarative Pipeline").
-      * **Business Logic** (the pluggable `Providers`).
-      * **Declarative Logic** (the external `Mangle` rules and facts, belonging to the application).
-  * **Fail Fast, Fail Clear:** The configuration and build process must validate the entire dependency tree at initialization. Missing configurations or incompatible components will result in an immediate, clear error, not a runtime failure deep within the pipeline.
-  * **Stateless Pipeline Core:** The core RAG pipeline is stateless, making it inherently scalable. State (like indexes or caches) is managed by stateful providers that are injected into the pipeline.
+- **SDK-first, Service-optional:** The primary artifact is a Go library. Executables (CLI demos, HTTP servers) are thin layers that consume the SDK.
+- **Sandwich by Default:** The core orchestrator always runs Mangle-Pre → Retrieval/Rerank → Mangle-Post → LLM to keep guardrails wrapped around neural stages.
+- **Provider-Agnostic Extensibility:** Every major capability—retrievers, rerankers, embedders, vector stores, LLM clients, schema parsers—is selected via a registry so teams can swap implementations without touching pipeline code.
+- **Fail Fast Construction:** The fluent builder resolves configuration, validates dependencies, and creates external clients up front so misconfiguration never reaches runtime.
+- **Stateless Pipelines, Explicit Resources:** Orchestrators keep no mutable state. External handles (Genkit clients, OpenAI clients, vector stores) are owned by providers and closed through `core.ResourceCloser` hooks.
+- **Declarative Hooks Everywhere:** Rules, schema imports, orchestration flows, and provider wiring can all be described declaratively (YAML + Datalog) to enable runtime reconfiguration.
 
------
+---
 
-## **2. System Architecture & Boundaries (C4 Model - Level 2)**
+## 2. System Architecture & Boundaries (C4 Level 2)
 
-The Manglekit ecosystem consists of the Application Layer, the SDK Core, Pluggable Providers, and External Systems. The SDK Core is the central component, providing the framework and orchestration.
+Manglekit is split into an SDK core, a provider ecosystem, and the consuming application. Applications can load configuration from YAML, register custom providers, or instantiate components programmatically.
 
 ```mermaid
 graph TD
-    subgraph "Application Layer (User's Domain)"
-        UserApp[Go Application / Genkit Flow]
-        AppConfig[Application config.yaml]
-        AppRules["Application Rules (.dlog)"]
+    subgraph "Application Layer"
+        App[Go App / Genkit Flow / CLI]
+        Config[config.yaml | typed With* calls]
+        RulesFiles[Rules & Facts (.dlog, .ttl, .md)]
     end
 
-    subgraph "Manglekit SDK (System Boundary)"
-        Builder[Builder API & Config System]
-        Orchestrator{Orchestrator}
-
-        subgraph "Core Interfaces"
-            I_Retriever[retrieve.Retriever]
-            I_LLM[llm.Client]
-            I_RuleSet[core.RuleSet]
-            I_Reranker[rerank.Reranker]
-            I_SchemaParser[core.SchemaParser]
+    subgraph "Manglekit SDK"
+        Builder[Builder API & Config Loader]
+        Registry[Provider Registry]
+        Options[core.Options & Observability]
+        subgraph "Orchestrators"
+            Sandwich[Sandwich Pipeline]
+            Declarative[Declarative Orchestrator]
         end
     end
 
-    subgraph "Provider Ecosystem (Implementations)"
-        P_Mangle[Mangle RuleSet Provider]
-        P_Hybrid[Hybrid Retriever]
-        P_InMemory[In-Memory Retriever]
-        P_OpenAI[OpenAI LLM/Embedder]
-        P_Google[Google LLM/Embedder]
-        P_JSONSchema[JSON Schema Parser]
-        P_RDF[RDF Parser]
-        P_Custom[...]
+    subgraph "Provider Implementations"
+        Rules[Mangle RuleSet & FlowController]
+        Retriever[Retrievers (bm25, dense, hybrid, in-memory)]
+        Reranker[Cosine Reranker]
+        Embedder[Embedders (Google, OpenAI)]
+        VectorStore[Vector Store (localvec)]
+        LLM[LLM Clients (Google, OpenAI, Groq)]
+        Schema[Schema Parsers (JSON Schema, RDF)]
     end
 
     subgraph "External Systems"
-        Ext_LLM["LLM APIs (OpenAI, Google)"]
-        Ext_VDB["Vector DBs (Qdrant, Chroma)"]
-        Ext_Data["Data Sources (Docs, SQL DBs, KGs)"]
+        Genkit[Genkit runtime & transformers]
+        LLMAPI["LLM APIs"]
+        VectorDB["Vector DBs / Local Storage"]
+        Data["Markdown, RDF, Custom Corpora"]
     end
 
-    UserApp -- Uses --> Builder
-    Builder -- Reads --> AppConfig
-    Builder -- Instantiates & Wires --> Orchestrator
-    UserApp -- Invokes `Run()` --> Orchestrator
-
-    Orchestrator -- Uses --> I_RuleSet
-    Orchestrator -- Uses --> I_Retriever
-    Orchestrator -- Uses --> I_Reranker
-    Orchestrator -- Uses --> I_LLM
-
-    P_Mangle -- Implements --> I_RuleSet
-    P_Hybrid -- Implements --> I_Retriever
-    P_InMemory -- Implements --> I_Retriever
-    P_OpenAI -- Implements --> I_LLM
-    P_Google -- Implements --> I_LLM
-    P_JSONSchema -- Implements --> I_SchemaParser
-    P_RDF -- Implements --> I_SchemaParser
-
-    P_Mangle -- Reads --> AppRules
-    P_OpenAI --> Ext_LLM
-    P_Google --> Ext_LLM
-    P_Hybrid --> Ext_VDB
+    App --> Builder
+    Builder -- reads --> Config
+    Builder -- resolves --> RulesFiles
+    Builder -- uses --> Registry
+    Builder -- produces --> Options
+    Options --> Sandwich
+    Options --> Declarative
+    Sandwich --> Rules
+    Sandwich --> Retriever
+    Sandwich --> Reranker
+    Sandwich --> LLM
+    Declarative --> Rules
+    Declarative --> Retriever
+    Declarative --> LLM
+    Retriever --> Embedder
+    Retriever --> VectorStore
+    Reranker --> Embedder
+    Rules --> Schema
+    Embedder --> Genkit
+    LLM --> Genkit
+    LLM --> LLMAPI
+    VectorStore --> VectorDB
+    Retriever --> Data
 ```
 
------
+---
 
-## **3. Component Breakdown & Interaction Patterns**
+## 3. Component Breakdown & Interaction Patterns
 
-### **3.1. The Builder & Configuration System**
+### 3.1 Builder, Configuration, and Registry
 
-  * **Responsibility**: To provide the sole, user-facing entry point for constructing a pipeline and to manage all configuration and dependency injection.
-  * **Interaction Pattern**:
-    1.  The user instantiates the `Builder`.
-    2.  The user declaratively configures the pipeline using type-safe `With...` methods (e.g., `WithLLM(&llm.OpenAIOptions{...})`). The provider name is inferred from the options type.
-    3.  Optionally, the user provides a `Config` struct via `WithConfig()` for explicit, code-based configuration.
-    4.  The user calls `Build()`.
-    5.  The `Builder` performs a **layered configuration lookup** (explicit config -> environment variables) for each requested provider.
-    6.  It **automatically initializes** any required API clients using the resolved credentials.
-    7.  It fetches the provider implementations from an internal **Registry**.
-    8.  It **injects** the initialized clients and configurations into the provider constructors using explicit, typed arguments.
-    9.  It instantiates the chosen `Orchestrator` with the fully configured providers.
-    10. It returns the ready-to-use `Orchestrator` instance or a detailed error.
+- `manglekit.NewBuilder()` exposes type-safe `With*` methods for programmatic assembly. Each call stores a provider name plus typed options.
+- `NewBuilderFromYAML` parses `config.yaml`, resolves relative paths, expands environment variables, and seeds the builder’s state. Declarative flows are described through the `tools` map and `orchestrator` block.
+- The builder consults `config.Providers` to initialize external clients (Google Genkit, OpenAI/Groq). Created clients register a `ResourceCloser` so orchestrators can cleanly shut them down.
+- Providers register constructors via `manglekit.Register*` during their `init()` functions. The builder looks up constructors in the global registry, injects typed options, and performs strict signature assertions.
+- Dependency ordering is handled automatically: the builder constructs embedders first, then vector stores, then retrievers, rerankers, rules, and finally the orchestrator.
+- Successful builds produce a populated `core.Options` struct that captures the chosen components, numeric knobs (`TopK`, `MaxTokens`, `FallbackThreshold`), and observability hooks.
 
-### **3.2. Orchestrators**
+### 3.2 Standard Provider Set
 
-Manglekit supports multiple orchestration strategies.
+A single blank import `github.com/duynguyendang/manglekit/providers/all` registers:
 
-  * **`SandwichOrchestrator` (Default):** A simple, high-performance orchestrator with a fixed, hardcoded pipeline: `Pre-Process -> Retrieve -> Rerank -> Synthesize -> Post-Process`. It is ideal for standard RAG use cases.
-  * **`DeclarativeOrchestrator` (Advanced):** A powerful, data-driven orchestrator.
-      * **Interaction Pattern:** It queries the Mangle provider to read a "flow" defined by DLOG facts (e.g., `flow_stage(...)`, `stage_tool(...)`). It then executes this plan step-by-step, dispatching calls to the appropriate providers ("tools") configured in the application's `config.yaml`. This allows for complex, conditional, and dynamically modifiable workflows.
+- **Retrievers:** in-memory, BM25 (markdown front matter aware), dense (Genkit embedder + vector store), and hybrid (BM25 + dense via reciprocal rank fusion).
+- **Rerankers:** cosine similarity reranker backed by the configured embedder.
+- **Embedders:** Google and OpenAI implementations that rely on Genkit or `openai-go` clients.
+- **Vector Store:** `localvec`, a lightweight local filesystem-backed store.
+- **LLM Clients:** Google (Genkit), OpenAI, and Groq (OpenAI-compatible) clients with prompt templating.
+- **Rules:** the Mangle engine implementing both `core.RuleSet` and `core.FlowController`.
+- **Schema Parsers:** JSON Schema and RDF parsers that emit Mangle facts.
 
-### **3.3. The Mangle Provider & Logic System**
+Custom providers can register alternative constructors without editing core packages.
 
-  * **Responsibility**: To provide the symbolic reasoning capabilities of the SDK.
-  * **Features**:
-      * **Fact Converters**: A pluggable system of converters translates application-level data (queries, documents, user context) into Mangle facts.
-      * **Schema Integration**: The provider can use `SchemaParser` extensions (e.g., for JSON Schema, RDF) to automatically ingest data schemas as facts, enabling powerful reasoning over the application's data structures.
-      * **Persistent Fact Store (Extension)**: The architecture supports pluggable `FactStore` implementations, such as an extension using **BoltDB** or **BadgerDB**, to manage large, persistent ontologies with fast startup times. This can include a `MutableFactStore` interface for dynamic, runtime updates to the knowledge base.
+### 3.3 Orchestrators
 
------
+- **Sandwich (`pipeline.Sandwich`):** The default orchestrator. It enforces the rule-wrapped flow:
+  1. Evaluate pre-rules (`core.RuleSet.Evaluate(core.Pre)`) to normalize the query, apply filters, or deny the request.
+  2. Call the retriever with `retrieve.Request{Query, TopK, Meta}`. Filters and expansion terms are passed via `Meta`.
+  3. Optionally rerank results with `rerank.Reranker`. The cosine implementation embeds the query and documents in parallel (`errgroup`) and trims to the configured `TopK`.
+  4. Enforce the fallback threshold before invoking the LLM to avoid low-confidence responses.
+  5. Invoke the LLM client with a prompt constructed by `llm.PromptBuilder`, capturing token usage in `Answer.Meta`.
+  6. Execute post-rules (`core.Post`) to filter citations or redact output before returning the final `core.Answer`.
+  Observability spans/logs/metrics flow through `core.Observability`. Resource closers run in LIFO order when `Close` is called.
+- **Declarative (`pipeline/declarative`):** Interprets orchestration steps from Datalog facts (`flow_stage/3`, `stage_tool/2`). The builder injects a map of named tools (retrievers, rerankers, LLMs, custom utilities). Pre-rules can flag stages to skip, mutate the query, or deny the request. Each stage operates on a shared context map (`query`, `docs`, `answer`, `meta`). This enables complex conditional flows without recompiling code.
 
-## **4. Core Operational Modes**
+### 3.4 Rules Engine & Fact Management
 
-The architecture is designed to support multiple operational modes, providing maximum utility.
+- The Mangle provider consumes `core.MangleOptions`: rule paths, schema sources, converter lists, and a `FileFirst` toggle deciding whether declarations come from `.dlog` files or converters.
+- Built-in converters (query, user context, documents) are enabled via `DefaultConverters` and can be augmented with custom converters registered in the component registry.
+- Schema sources such as JSON Schema or RDF are parsed into facts and declarations so that rules can reason about ontologies and typed relationships.
+- Rules are stratified once at initialization using Mangle analysis APIs and evaluated against an in-memory fact store (`factstore.SimpleInMemoryStore`). Runtime evaluations clone the base store, add transient facts from converters, and execute the requested stage.
+- Because the provider implements `core.FlowController`, the same engine powers both rule stages and declarative flow queries.
 
-### **4.1. Integrated RAG Framework Mode**
+### 3.5 Retrieval, Embedding, Ranking, and Generation
 
-  * **Architectural Pattern**: Manglekit acts as a complete, self-contained RAG system. The user configures a `Retriever` that connects to a data source. The application calls `orch.Run(query)`.
-  * **Use Case**: Building new, end-to-end RAG applications where Manglekit manages the entire data flow.
+- **BM25 Retriever:** Indexes Markdown documents (with YAML front matter metadata) and scores via Okapi BM25. Scores are attached to `Doc.Meta["score"]`.
+- **Dense Retriever:** Uses a Genkit embedder to embed the query and delegates vector search to the configured vector store. Metadata filters emitted by pre-rules pass through to the store.
+- **Hybrid Retriever:** Executes sparse and dense retrieval concurrently and fuses rankings using Reciprocal Rank Fusion.
+- **Localvec Vector Store:** Stores embeddings on disk, supporting metadata filters and streaming large corpora without external dependencies.
+- **Cosine Reranker:** Embeds query/documents in parallel, computes cosine similarity, and returns scored documents for downstream use.
+- **LLM Clients:** Wrap provider SDKs, share a thread-safe `PromptBuilder`, and expose token usage via `llm.Response.Usage`. Google models run through Genkit’s plugin, OpenAI/Groq use `openai-go`.
+- **Embedders:** Built atop Genkit (Google) or OpenAI APIs. The builder ensures the same embedder instance can be reused by retrievers and rerankers.
 
-### **4.2. Pluggable Logic Layer Mode**
+### 3.6 Observability & Lifecycle
 
-  * **Architectural Pattern**: Manglekit acts as a specialized processing engine. The application layer is responsible for retrieval. It passes a set of pre-retrieved documents to Manglekit via `orch.RunWithContext(query, retrievedDocs)`.
-  * **Internal Flow**: The `Orchestrator` detects this mode, bypasses its internal `Retrieve` step, and injects the user-provided documents directly into the `Rerank` stage.
-  * **Use Case**: Augmenting existing RAG pipelines with Manglekit's unique symbolic reasoning, guardrail capabilities, and robust LLM generation features.
+- `core.Observability` carries optional logger, tracer, and meter interfaces. The Sandwich orchestrator emits lifecycle events and timing metrics if hooks are provided.
+- `core.Options.ResourceClosers` ensures all external clients (Genkit, GenAI, OpenAI) are closed exactly once. The builder registers closers as it constructs providers.
+- Metadata emitted by providers (retrieval scores, rule traces, token usage) is collected in `Answer.Meta` for downstream auditing.
 
-### **4.3. Validation & Filtering Mode**
+---
 
-  * **Architectural Pattern**: A specialized version of the Logic Layer mode where the `LLM` component is omitted. The pipeline becomes: `Pre-Process -> (User-provided context) -> Rerank -> Post-Process`.
-  * **Use Case**: Using Manglekit purely as a data validation and filtering engine. The output is not a generated answer but a vetted and ranked list of documents.
+## 4. Usage Patterns
 
------
+- **Sandwich SDK Mode:** Import `providers/all`, instantiate the builder (`NewBuilder()` or `NewBuilderFromYAML`), call `Build()`, then run queries through `core.Orchestrator.Run`. This is the default path for HTTP services or CLI tools.
+- **Declarative Flow Mode:** Provide a `config.yaml` with `tools` and select `orchestrator.type: declarative`. Author orchestration logic in Datalog (`flow_stage/3`, `stage_tool/2`, `stage_param/3`) to direct stage execution, including custom tools that invoke domain-specific code.
+- **Rules-first Utilities:** For lightweight policy checks (e.g., `apps/rdf-knowledge-base`), applications can construct the Mangle rules provider directly via the registry and call `RuleSet.Evaluate` without bringing up the full orchestrator.
 
-## **5. Non-Functional Requirements (High-Level)**
+---
 
-  * **Performance**: The stateless nature of the core pipeline allows for horizontal scaling. Performance targets (e.g., P99 \<300ms) are the responsibility of the injected providers. The SDK will provide OTel traces to measure and identify bottlenecks in each stage.
-  * **Scalability**: The SDK itself is a library and scales with the application it's embedded in. For service mode, standard cloud-native scaling patterns (e.g., Kubernetes replicas) apply.
-  * **Security**: Security is addressed at two levels:
-      * **SDK Level**: The SDK provides the mechanism for security via `Mangle Post-Rules` (for redaction and policy enforcement). It does not handle transport-level security or user authentication.
-      * **Application Level**: The consuming application is responsible for securing its endpoints, managing user identity, and passing user context into the Manglekit pipeline for policy evaluation.
+## 5. Non-Functional Requirements
+
+- **Performance:** Retrieval and embedding workloads use concurrency (`errgroup`) to keep latency low. The stateless orchestrators allow horizontal scaling; caching lives in provider implementations such as vector stores.
+- **Scalability:** Because orchestrators hold no mutable state, they can be cloned per request or shared across goroutines. External services (vector DBs, LLMs) should be scaled independently.
+- **Security & Compliance:** Sensitive information is enforced through Mangle post-rules and converter redactions. Secrets (API keys) stay outside code, pulled from environment variables at build time.
+- **Observability:** Providers and orchestrators expose metrics (e.g., `manglekit.rules_pre_ms`, retrieval timings) and structured logs so operators can audit decisions. Token usage and rule outcomes are surfaced in the response metadata for downstream analytics.
+
+---
+
+This document reflects the current implementation of Manglekit’s architecture, aligning the high-level design with the code in the repository.
