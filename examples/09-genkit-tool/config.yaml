@@ -1,0 +1,11 @@
+# Minimal configuration for the Genkit tool example. The in-memory retriever
+# starts empty and is populated programmatically in main.go.
+retriever:
+  name: "in-memory"
+
+# Use your preferred LLM provider; Gemini is the default for demos.
+llm:
+  name: "google"
+  params:
+    model: "gemini-2.5-flash"
+    apiKey: "${GOOGLE_API_KEY}"

@@ -14,7 +14,6 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
-	_ "github.com/duynguyendang/manglekit/internal/providers/orchestrators/declarative"
 	_ "github.com/duynguyendang/manglekit/providers/all"
 	"github.com/duynguyendang/manglekit/retrieve"
 )
