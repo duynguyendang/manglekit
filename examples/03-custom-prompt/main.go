@@ -1,3 +1,10 @@
+// Package main for 03-custom-prompt demonstrates how to override the default
+// RAG prompt template with a custom one.
+//
+// The `config.yaml` file specifies a `promptTemplate` for the LLM component.
+// This allows you to change the instructions given to the language model to
+// better suit a specific task, such as asking it to adopt a certain persona
+// or to format its output in a particular way (e.g., as JSON).
 package main
 
 import (

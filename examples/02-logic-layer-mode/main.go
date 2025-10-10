@@ -1,3 +1,11 @@
+// Package main for 02-logic-layer-mode demonstrates how to inject runtime
+// context into the Mangle rules engine to dynamically control the pipeline.
+//
+// It loads a base configuration from YAML, but then programmatically adds an
+// in-memory retriever. The key part of the example is in the call to `pipeline.Run`,
+// where it passes a `doc_id` in the query's metadata. A Mangle rule in the
+// `rules/pre.dlog` file uses this runtime fact to precisely filter which document
+// should be retrieved, showcasing how business logic can steer the retrieval process.
 package main
 
 import (

@@ -1,3 +1,13 @@
+// Package main for 08-symbolic-rag demonstrates a symbolic RAG pipeline, where
+// the retrieval process is guided by symbolic reasoning and knowledge representation.
+//
+// In this example, the user asks a natural language question. The Mangle rules
+// in `rules/policy.dlog` first parse this query to extract key entities (like
+// "Builder function"). They then use a knowledge base of facts (`rules/kb.facts`)
+// to find the specific document that is known to describe this entity. Finally,
+// the pipeline retrieves only that specific document to pass to the LLM. This
+// shows how symbolic reasoning can dramatically improve retrieval precision
+// over purely semantic or keyword-based methods.
 package main
 
 import (

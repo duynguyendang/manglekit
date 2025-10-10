@@ -1,3 +1,11 @@
+// Package main for 06-schema-validation demonstrates how Mangle's rule engine
+// can be used for powerful input and output schema validation.
+//
+// This example defines a custom `FactConverter` to turn an incoming request body
+// into facts. It then uses a Mangle rule (`rules/policy.dlog`) to check these
+// facts against a schema definition loaded from a JSON Schema file
+// (`user.schema.json`). This showcases how Mangle can enforce data integrity,
+// security, and business logic by validating data structures at runtime.
 package main
 
 import (

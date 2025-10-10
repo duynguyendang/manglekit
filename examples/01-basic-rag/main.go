@@ -1,3 +1,8 @@
+// Package main for 01-basic-rag demonstrates the simplest way to create and run
+// a MangleKit pipeline. It uses the `NewBuilderFromYAML` function to load a
+// complete "sandwich" pipeline configuration from a local `config.yaml` file.
+// This example showcases how to initialize the system, run a query, and print
+// the response and its citations.
 package main
 
 import (
