@@ -1,26 +1,23 @@
-tools:
-  # The Mangle provider loads our RDF knowledge base and our logic rules.
-  logic_engine:
-    provider: "mangle"
-    params:
-      typedConfig:
-        # Load both the RDF data and the DLOG rules
-        rulePaths:
-          - "./rules/logic.dlog"
-        schemaSources:
-          - { type: "rdf", path: "./rules/design_docs.ttl" }
-        defaultConverters: true # We need QueryConverter
+providers:
+  google:
+    apiKey: "${GOOGLE_API_KEY}"
 
-  # A simple retriever that will be guided by the Mangle logic.
-  doc_retriever:
-    provider: "bm25"
-    params:
-      typedConfig:
-        path: "./corpus"
+rules:
+  name: "mangle"
+  params:
+    path:
+      - "./rules/logic.dlog"
+    schemaSources:
+      - type: "rdf"
+        path: "./rules/design_docs.ttl"
+    defaultConverters: true
 
-  # The LLM to generate the final answer.
-  answer_generator:
-    provider: "google" # or "openai"
-    params:
-      typedConfig:
-        model: "gemini-1.5-flash"
+retriever:
+  name: "bm25"
+  params:
+    path: "./corpus"
+
+llm:
+  name: "google"
+  params:
+    model: "gemini-2.5-flash"

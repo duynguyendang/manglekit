@@ -11,7 +11,7 @@ Manglekit is an embeddable Go framework for building verifiable, policy-aware re
 
 ### 1.2 Architectural Principles
 
-- **SDK-first, Service-optional:** The primary artifact is a Go library. Executables (CLI demos, HTTP servers) are thin layers that consume the SDK.
+- **SDK-first, Service-optional:** The primary artifact is a Go library. Optional executables (CLI demos or custom hosts) are thin layers that consume the SDK.
 - **Sandwich by Default:** The core orchestrator always runs Mangle-Pre → Retrieval/Rerank → Mangle-Post → LLM to keep guardrails wrapped around neural stages.
 - **Provider-Agnostic Extensibility:** Every major capability—retrievers, rerankers, embedders, vector stores, LLM clients, schema parsers—is selected via a registry so teams can swap implementations without touching pipeline code.
 - **Fail Fast Construction:** The fluent builder resolves configuration, validates dependencies, and creates external clients up front so misconfiguration never reaches runtime.

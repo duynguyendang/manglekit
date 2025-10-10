@@ -325,8 +325,7 @@ This is a high-level overview of the most important directories in the MangleKit
 │   ├── providers/
 │   └── vectorstores/
 ├── providers/              # Public registration helpers (e.g., providers/all)
-├── cmd/agent/              # Demo HTTP server
-├── examples/               # Runnable guides (01-basic-rag … 08-symbolic-rag)
+├── examples/               # Runnable guides (01-basic-rag … 09-genkit-tool)
 └── docs/                   # CONTEXT.md, HLD/LLD/CSD, reviews
 ```
 
