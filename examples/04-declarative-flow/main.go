@@ -1,3 +1,11 @@
+// Package main for 04-declarative-flow demonstrates the power of the declarative
+// orchestrator. In this mode, the execution logic of the pipeline is not defined
+// in Go code but is instead described by Datalog facts in a `.dlog` file.
+//
+// This example defines a `main_flow` in `rules/flow.dlog` that includes stages
+// for retrieval and LLM generation. It also shows how pre-rules can dynamically
+// skip stages of the flow based on the incoming query, providing a level of
+// flexibility not possible with the linear "sandwich" orchestrator.
 package main
 
 import (

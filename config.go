@@ -11,40 +11,57 @@ import (
 )
 
 // componentCfg is a generic configuration for a named component with parameters.
+// It is used in the "sandwich" orchestrator configuration to define which
+// provider to use for a given role (e.g., retriever, llm) and its settings.
 type componentCfg struct {
-	Name   string         `yaml:"name"`
+	// Name is the registered name of the provider for this component (e.g., "bm25", "google").
+	Name string `yaml:"name"`
+	// Params is a map of parameters used to configure the provider instance. The
+	// structure of this map must match the provider's specific options struct.
 	Params map[string]any `yaml:"params"`
 }
 
 // ToolConfig defines the configuration for a single, named tool that can be
 // used within the declarative workflow. A tool is a configured instance of a
-// provider (e.g., a specific retriever or LLM with its own settings).
+// provider (e.g., a specific retriever or LLM with its own settings) that can
+// be referenced by name in Datalog rules.
 type ToolConfig struct {
-	// Provider is the registered name of the component provider (e.g., "openai", "bm25").
+	// Provider is the registered name of the component provider (e.g., "openai", "bm25", "google-embedder").
 	Provider string `yaml:"provider"`
-	// Params is a map of parameters used to configure the tool instance.
+	// Params is a map of parameters used to configure the tool instance. The
+	// structure must match the provider's specific options struct. Dependencies
+	// on other tools are specified here by providing the name of the dependency
+	// tool as a string value (e.g., `embedder: "my_embedder_tool"`).
 	Params map[string]any `yaml:"params"`
 }
 
 // OrchestratorConfig defines which orchestrator to use (e.g., "sandwich" or
 // "declarative") and its specific settings.
 type OrchestratorConfig struct {
-	// Type specifies the orchestrator to use. If omitted, it defaults to "sandwich".
+	// Type specifies the orchestrator to use. Supported values are "sandwich" and
+	// "declarative". If omitted, it defaults to "sandwich".
 	Type string `yaml:"type"`
 	// FlowName is the name of the flow to execute. This is required for the
-	// "declarative" orchestrator, as it specifies the entry point for the Datalog query.
+	// "declarative" orchestrator, as it specifies the entry point for the Datalog query
+	// that drives the workflow.
 	FlowName string `yaml:"flowName,omitempty"`
 }
 
 // Config is the top-level struct for loading a MangleKit orchestrator's
-// configuration from a YAML file. It defines the components to be used for each
-// stage of the pipeline ("sandwich" mode) or the set of available tools
-// ("declarative" mode), along with their parameters.
+// configuration from a YAML file. It supports two primary modes of operation,
+// controlled by the `Orchestrator.Type` field.
+//
+// In "sandwich" mode, it uses the top-level component fields (`Retriever`, `LLM`, etc.)
+// to define a fixed, linear pipeline.
+//
+// In "declarative" mode, it uses the `Tools` map to define a collection of
+// available components that can be orchestrated dynamically by a rules engine.
 type Config struct {
 	// Orchestrator selects and configures the workflow engine.
 	Orchestrator OrchestratorConfig `yaml:"orchestrator"`
 	// Tools defines a map of named components that can be referenced as dependencies
-	// in declarative flows. The map key is the tool's name.
+	// in declarative flows. The map key is the tool's name. This is used only
+	// by the "declarative" orchestrator.
 	Tools map[string]ToolConfig `yaml:"tools"`
 	// Providers holds global configurations for provider families, such as API keys,
 	// which can be shared across multiple components.
@@ -73,7 +90,7 @@ type Config struct {
 
 // ProviderConfigs holds the global configurations for different provider families.
 // These settings, such as API keys or default models, can be shared across
-// multiple components that belong to the same family.
+// multiple components that belong to the same family, reducing duplication.
 type ProviderConfigs struct {
 	// Google holds global settings for all Google-based providers (Gemini, Google Embedders).
 	Google *GoogleConfig `yaml:"google,omitempty"`
@@ -149,8 +166,8 @@ type OpenAICompatibleConfig struct {
 //     to use relative paths in your config file, which are resolved relative to the
 //     config file's location.
 //
-// path is the file system path to the YAML configuration file.
-// It returns a pre-configured, ready-to-use BuilderAPI instance, or an error
+// @param path is the file system path to the YAML configuration file.
+// @return A pre-configured, ready-to-use BuilderAPI instance, or an error
 // if the file cannot be read, parsed, or if the configuration is invalid.
 func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 	b, err := os.ReadFile(path)
@@ -246,6 +263,8 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 //
 // ...and so on for "EMBEDDER", "RERANKER", "RULES", and "VECTORSTORE".
 // It also reads `MKT_TOPK`, `MKT_MAX_TOKENS`, and `MKT_FALLBACK_THRESHOLD`.
+//
+// @return A pre-configured BuilderAPI instance or an error if configuration is invalid.
 func NewBuilderFromEnv() (BuilderAPI, error) {
 	baseBuilder := NewBuilder()
 

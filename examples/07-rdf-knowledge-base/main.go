@@ -1,3 +1,12 @@
+// Package main for 07-rdf-knowledge-base demonstrates how to integrate an RDF
+// knowledge base into the MangleKit pipeline.
+//
+// This example loads an RDF graph (in Turtle format) containing statements about
+// user permissions. The `config.yaml` file configures the `rdf` schema parser,
+// which converts the RDF triples into Mangle facts. The Mangle rules in
+// `rules/policy.dlog` then query this graph-structured data to make complex
+// access control decisions, showcasing how Mangle can reason over structured,
+// semantic knowledge.
 package main
 
 import (

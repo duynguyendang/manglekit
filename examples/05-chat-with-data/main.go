@@ -1,3 +1,12 @@
+// Package main for 05-chat-with-data provides an example of building a chat
+// application that can interact with and answer questions about your data.
+//
+// This example demonstrates how to pass dynamic, request-specific facts into
+// the Mangle engine using the `dynamic_facts` metadata key. The rules in
+// `rules/policy.dlog` use these facts (e.g., the user's department) to
+// enforce access control, ensuring that the retriever only returns documents
+// that the user is permitted to see. This showcases a powerful pattern for
+// building multi-tenant or role-based access control (RBAC) systems.
 package main
 
 import (

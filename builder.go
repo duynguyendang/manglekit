@@ -29,51 +29,126 @@ import (
 // Orchestrator. It is the recommended way to assemble a pipeline, as it handles
 // dependency injection, component construction, and configuration resolution
 // from multiple sources (programmatic, YAML, environment variables).
+//
+// The builder pattern allows for a clean and readable setup, where each component
+// of the pipeline (e.g., Retriever, LLM, Rules Engine) is configured with a
+// dedicated method. The final call to `Build()` consumes the configuration,
+// resolves dependencies, and returns a fully initialized orchestrator.
+//
+// Example:
+//
+//	builder := NewBuilder()
+//	orchestrator, err := builder.
+//		WithRetriever(&retrieve.BM25Options{Path: "./docs"}).
+//		WithLLM(&llm.GoogleOptions{Model: "gemini-1.5-flash"}).
+//		Build()
+//	if err != nil {
+//		log.Fatalf("Failed to build orchestrator: %v", err)
+//	}
 type BuilderAPI interface {
 	// WithConfig sets the base configuration from a Config object. This is typically
-	// used when loading settings from a YAML file. Settings provided by other
-	// builder methods (e.g., `WithLLM`) will override values from this config.
+	// used when loading settings from a YAML file using `NewBuilderFromYAML`.
+	// Settings provided by other builder methods (e.g., `WithLLM`) will override
+	// values from this config.
+	//
+	// cfg is a pointer to the configuration object to apply.
+	// It returns the `BuilderAPI` instance for chaining.
 	WithConfig(cfg *Config) BuilderAPI
-	// WithRetriever configures the retriever component. The `opts` parameter should
-	// be a pointer to a provider-specific options struct (e.g., `retrieve.BM25Options`).
-	// The builder infers the provider name from the options type.
+
+	// WithRetriever configures the retriever component for the pipeline. The `opts`
+	// parameter should be a pointer to a provider-specific options struct (e.g.,
+	// `retrieve.BM25Options` or `retrieve.DenseOptions`). The builder infers the
+	// provider name from the options type.
+	//
+	// opts is a pointer to the retriever's configuration options.
+	// It returns the `BuilderAPI` instance for chaining.
 	WithRetriever(opts any) BuilderAPI
-	// WithVectorStore configures the vector store component, which is a dependency
-	// for dense and hybrid retrievers. The `opts` parameter should be a pointer to
-	// a provider-specific options struct (e.g., `core.LocalvecOptions`).
+
+	// WithVectorStore configures the vector store component, which is a required
+	// dependency for dense and hybrid retrievers. The `opts` parameter should be a
+	// pointer to a provider-specific options struct (e.g., `core.LocalvecOptions`).
+	//
+	// opts is a pointer to the vector store's configuration options.
+	// It returns the `BuilderAPI` instance for chaining.
 	WithVectorStore(opts any) BuilderAPI
-	// WithReranker configures the reranker component. The `opts` parameter should
-	// be a pointer to a provider-specific options struct (e.g., `rerank.CosineOptions`).
+
+	// WithReranker configures the reranker component for the pipeline. The `opts`
+	// parameter should be a pointer to a provider-specific options struct (e.g.,
+	// `rerank.CosineOptions`).
+	//
+	// opts is a pointer to the reranker's configuration options.
+	// It returns the `BuilderAPI` instance for chaining.
 	WithReranker(opts any) BuilderAPI
-	// WithRules configures the rules engine component. The `opts` parameter should
-	// be a pointer to a provider-specific options struct (e.g., `core.MangleOptions`).
+
+	// WithRules configures the rules engine component for the pipeline. The `opts`
+	// parameter should be a pointer to a provider-specific options struct (e.g.,
+	// `core.MangleOptions`).
+	//
+	// opts is a pointer to the rules engine's configuration options.
+	// It returns the `BuilderAPI` instance for chaining.
 	WithRules(opts any) BuilderAPI
+
 	// WithLLM configures the language model client. The `opts` parameter should
-	// be a pointer to a provider-specific options struct (e.g., `llm.OpenAIOptions`).
+	// be a pointer to a provider-specific options struct (e.g., `llm.OpenAIOptions`
+	// or `llm.GoogleOptions`).
+	//
+	// opts is a pointer to the LLM's configuration options.
+	// It returns the `BuilderAPI` instance for chaining.
 	WithLLM(opts any) BuilderAPI
+
 	// WithEmbedder configures the text embedding model. The `opts` parameter can
-	// be either a pointer to a provider-specific options struct (e.g., `embed.GoogleEmbedderOptions`)
-	// or a pre-constructed `ai.Embedder` instance.
+	// be either a pointer to a provider-specific options struct (e.g.,
+	// `embed.GoogleEmbedderOptions`) or a pre-constructed `ai.Embedder` instance,
+	// allowing for custom or externally configured embedders to be injected.
+	//
+	// opts is a pointer to the embedder's configuration or a pre-built instance.
+	// It returns the `BuilderAPI` instance for chaining.
 	WithEmbedder(opts any) BuilderAPI
+
 	// WithFlow sets the name of the flow to be executed by the declarative
-	// orchestrator. This is only used if the orchestrator type is "declarative".
+	// orchestrator. This method is only effective if the orchestrator type is
+	// set to "declarative" in the main configuration.
+	//
+	// name is the name of the flow to execute.
+	// It returns the `BuilderAPI` instance for chaining.
 	WithFlow(name string) BuilderAPI
-	// WithTopK sets the default number of documents to retrieve. This can be
-	// overridden by provider-specific settings.
+
+	// WithTopK sets the default number of documents to retrieve from the retriever.
+	// This value can be overridden by provider-specific settings in their options.
+	//
+	// k is the number of documents to retrieve.
+	// It returns the `BuilderAPI` instance for chaining.
 	WithTopK(k int) BuilderAPI
-	// WithMaxTokens sets the default maximum number of tokens for the LLM response.
-	// This can be overridden by provider-specific settings.
+
+	// WithMaxTokens sets the default maximum number of tokens for the LLM to generate.
+	// This value can be overridden by provider-specific settings in their options.
+	//
+	// n is the maximum number of tokens to generate.
+	// It returns the `BuilderAPI` instance for chaining.
 	WithMaxTokens(n int) BuilderAPI
+
 	// WithObservability sets the observability hooks (logger, tracer, meter) for
-	// the entire pipeline.
+	// the entire pipeline, allowing for integration with monitoring and logging systems.
+	//
+	// obs is the `core.Observability` struct containing the hooks.
+	// It returns the `BuilderAPI` instance for chaining.
 	WithObservability(obs core.Observability) BuilderAPI
-	// WithFallbackThreshold sets the confidence score below which the pipeline
-	// may exit early and return a fallback response.
+
+	// WithFallbackThreshold sets a confidence score (typically from a reranker) below
+	// which the pipeline may exit early and return a fallback response instead of
+	// calling the LLM. A value of 0 disables this feature.
+	//
+	// f is the confidence score threshold.
+	// It returns the `BuilderAPI` instance for chaining.
 	WithFallbackThreshold(f float64) BuilderAPI
+
 	// Build is the final step in the chain. It resolves all dependencies,
 	// constructs the components based on the collected configuration, and assembles
-	// the final, ready-to-use core.Orchestrator. It returns an error if any
-	// part of the construction fails, such as missing dependencies or invalid configuration.
+	// the final, ready-to-use `core.Orchestrator`.
+	//
+	// It returns the initialized `core.Orchestrator` or an error if any part of
+	// the construction fails, such as missing dependencies, invalid configuration,
+	// or failed client initializations.
 	Build() (core.Orchestrator, error)
 }
 
@@ -115,6 +190,7 @@ type builder struct {
 	vectorStore core.VectorStore
 }
 
+// googleClients is a private struct to hold the initialized clients for Google services.
 type googleClients struct {
 	genkit *genkit.Genkit
 	genai  *genai.Client
@@ -122,7 +198,7 @@ type googleClients struct {
 }
 
 // NewBuilder returns a new, empty instance of the fluent builder, ready to be
-// configured. This is the entry point for programmatically constructing a
+// configured. This is the primary entry point for programmatically constructing a
 // MangleKit orchestrator.
 func NewBuilder() BuilderAPI {
 	return &builder{
@@ -135,7 +211,8 @@ func NewBuilder() BuilderAPI {
 }
 
 // WithConfig applies a configuration object to the builder. This is the primary
-// way to use settings loaded from a YAML file.
+// way to use settings loaded from a YAML file. Settings from the config object
+// serve as a baseline, which can be overridden by individual `With...` calls.
 func (b *builder) WithConfig(cfg *Config) BuilderAPI {
 	if cfg != nil {
 		b.config = cfg
@@ -144,7 +221,9 @@ func (b *builder) WithConfig(cfg *Config) BuilderAPI {
 }
 
 // WithRetriever programmatically configures the retriever component for the pipeline.
-// The provider name is inferred from the type of the `opts` struct.
+// It accepts a pointer to a provider-specific options struct (e.g., `retrieve.BM25Options`),
+// infers the provider's name from the type, and stores the configuration for later use
+// during the `Build` process. If `opts` is nil, it clears any existing retriever configuration.
 func (b *builder) WithRetriever(opts any) BuilderAPI {
 	if opts == nil {
 		b.retrieverName = ""
@@ -163,7 +242,9 @@ func (b *builder) WithRetriever(opts any) BuilderAPI {
 }
 
 // WithVectorStore programmatically configures the vector store, which is a dependency
-// for dense and hybrid retrievers. The provider name is inferred from the `opts` type.
+// for dense and hybrid retrievers. It accepts a pointer to a provider-specific options
+// struct (e.g., `core.LocalvecOptions`), infers the provider's name from the type,
+// and stores the configuration. If `opts` is nil, it clears any existing vector store configuration.
 func (b *builder) WithVectorStore(opts any) BuilderAPI {
 	if opts == nil {
 		b.vectorStoreName = ""
@@ -181,8 +262,10 @@ func (b *builder) WithVectorStore(opts any) BuilderAPI {
 	return b
 }
 
-// WithReranker programmatically configures the reranker component.
-// The provider name is inferred from the type of the `opts` struct.
+// WithReranker programmatically configures the reranker component. It accepts a pointer
+// to a provider-specific options struct (e.g., `rerank.CosineOptions`), infers the
+// provider's name, and stores the configuration. If `opts` is nil, it clears any
+// existing reranker configuration.
 func (b *builder) WithReranker(opts any) BuilderAPI {
 	if opts == nil {
 		b.rerankerName = ""
@@ -200,8 +283,10 @@ func (b *builder) WithReranker(opts any) BuilderAPI {
 	return b
 }
 
-// WithRules programmatically configures the rules engine.
-// The provider name is inferred from the type of the `opts` struct.
+// WithRules programmatically configures the rules engine. It accepts a pointer to a
+// provider-specific options struct (e.g., `core.MangleOptions`), infers the provider's
+// name, and stores the configuration. If `opts` is nil, it clears any existing rules
+// engine configuration.
 func (b *builder) WithRules(opts any) BuilderAPI {
 	if opts == nil {
 		b.rulesName = ""
@@ -219,8 +304,10 @@ func (b *builder) WithRules(opts any) BuilderAPI {
 	return b
 }
 
-// WithLLM programmatically configures the language model client.
-// The provider name is inferred from the type of the `opts` struct.
+// WithLLM programmatically configures the language model client. It accepts a pointer
+// to a provider-specific options struct (e.g., `llm.GoogleOptions`), infers the provider's
+// name, and stores the configuration. If `opts` is nil, it clears any existing LLM
+// configuration.
 func (b *builder) WithLLM(opts any) BuilderAPI {
 	if opts == nil {
 		b.llmName = ""
@@ -239,15 +326,23 @@ func (b *builder) WithLLM(opts any) BuilderAPI {
 }
 
 // WithFlow programmatically sets the flow name for the declarative orchestrator.
+// This is only used if the orchestrator type is set to "declarative" in the
+// main configuration.
 func (b *builder) WithFlow(name string) BuilderAPI {
 	b.flowName = name
 	return b
 }
 
-// WithEmbedder programmatically configures the text embedding model.
-// The provider name is inferred from the type of the `opts` struct.
-// This method also accepts a pre-constructed `ai.Embedder` instance, allowing
-// for custom or externally configured embedders to be injected.
+// WithEmbedder programmatically configures the text embedding model. It supports two
+// modes of operation:
+//  1. By provider options: Pass a pointer to a provider-specific options struct
+//     (e.g., `embed.GoogleEmbedderOptions`). The builder infers the provider name
+//     and constructs the embedder during the `Build` phase.
+//  2. By pre-constructed instance: Pass an already-initialized object that implements
+//     the `ai.Embedder` interface. This allows for injecting custom or externally
+//     configured embedders.
+//
+// If `opts` is nil, any existing embedder configuration is cleared.
 func (b *builder) WithEmbedder(opts any) BuilderAPI {
 	if opts == nil {
 		b.embedderName = ""
@@ -276,25 +371,33 @@ func (b *builder) WithEmbedder(opts any) BuilderAPI {
 	return b
 }
 
-// WithTopK programmatically sets the default number of documents to retrieve.
+// WithTopK programmatically sets the default number of documents to retrieve. This
+// value acts as a fallback if a more specific value is not provided in a
+// retriever's own configuration.
 func (b *builder) WithTopK(k int) BuilderAPI {
 	b.opts.TopK = k
 	return b
 }
 
-// WithMaxTokens programmatically sets the default maximum number of tokens for the LLM response.
+// WithMaxTokens programmatically sets the default maximum number of tokens for the
+// LLM response. This value acts as a fallback if a more specific value is not
+// provided in the LLM's own configuration.
 func (b *builder) WithMaxTokens(n int) BuilderAPI {
 	b.opts.MaxTokens = n
 	return b
 }
 
-// WithObservability programmatically sets the observability hooks (logger, tracer, meter).
+// WithObservability programmatically sets the observability hooks (logger, tracer,
+// meter) for the entire pipeline, enabling integration with monitoring and
+// logging systems.
 func (b *builder) WithObservability(obs core.Observability) BuilderAPI {
 	b.opts.Obs = obs
 	return b
 }
 
-// WithFallbackThreshold programmatically sets the confidence score below which a fallback is triggered.
+// WithFallbackThreshold programmatically sets the confidence score below which the
+// pipeline may exit early and return a fallback response instead of calling the
+// LLM. This is typically used with a reranker. A value of 0 disables this feature.
 func (b *builder) WithFallbackThreshold(f float64) BuilderAPI {
 	b.opts.FallbackThreshold = f
 	return b
@@ -396,6 +499,20 @@ func (b *builder) resolveProviderConfig(providerType, providerName string) error
 // Build constructs the final Orchestrator by resolving all dependencies and
 // building the components in the correct order. It is the terminal method in
 // the builder chain.
+//
+// The build process differs based on the orchestrator type ("sandwich" or "declarative"):
+//
+//   - For the "sandwich" orchestrator (default), it follows a linear dependency
+//     resolution: Embedder -> VectorStore -> Retriever/Reranker -> LLM -> Rules.
+//
+//   - For the "declarative" orchestrator, it first builds a required FlowController
+//     (a special rules engine) and then iteratively builds all "tools" defined in
+//     the configuration, respecting inter-tool dependencies.
+//
+// In both cases, it handles the initialization of API clients (e.g., Google,
+// OpenAI), manages their lifecycle, and injects them into the components that
+// need them. If any step fails, it attempts to clean up any resources that were
+// allocated before returning an error.
 func (b *builder) Build() (core.Orchestrator, error) {
 	orchestratorType := "sandwich" // default
 	if b.config.Orchestrator.Type != "" {

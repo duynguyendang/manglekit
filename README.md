@@ -2,8 +2,7 @@
 
 # Manglekit
 
-**Manglekit** is a lightweight, embeddable Go framework for building **neuro-symbolic AI applications**.
-It integrates Genkit’s neural components — retrievers, rerankers, and LLMs — with Mangle’s symbolic reasoning engine of declarative rules and ontology.
+**Manglekit** is a lightweight, embeddable Go framework for building **neuro-symbolic AI applications**. It integrates Genkit’s neural components—retrievers, rerankers, and LLMs—with Mangle’s symbolic reasoning engine of declarative rules and ontology.
 
 Through both declarative and programmable orchestration, Manglekit lets developers define and control AI pipelines as logical flows. From simple “Sandwich Patterns” (Rules → RAG → Rules → LLM) to fully rule-driven workflows, every response remains grounded, explainable, and policy-compliant.
 
@@ -16,11 +15,16 @@ It is designed for high-performance AI applications where correctness, safety, a
 -   **Pluggable Components**: Easily swap out components like Retrievers, Rerankers, LLMs, and Vector Stores. MangleKit provides built-in support for popular providers.
 -   **Fluent Builder API**: A type-safe, chainable API for programmatically constructing your RAG pipeline.
 -   **Declarative Configuration**: Define your entire pipeline in a YAML file for easy setup and environment management.
+-   **Two Orchestration Modes**: Choose between a simple, linear "Sandwich" pipeline or a powerful, dynamic "Declarative" workflow driven by rules.
 -   **High Performance**: Built in Go for low-latency, concurrent, and scalable services.
 
-## ⚙️ Core Architecture: The Sandwich Pattern
+## ⚙️ Core Architectures
 
-MangleKit processes queries using a multi-stage pipeline that wraps a standard RAG flow with rule evaluation stages. This ensures that logic and policies can be applied before and after the core generation step.
+MangleKit offers two primary orchestration models to suit different needs.
+
+### 1. The Sandwich Pattern (Default)
+
+This is a robust, linear pipeline that wraps a standard RAG flow with rule evaluation stages. It's easy to configure and ideal for many common use cases.
 
 ```
 User Query
@@ -45,11 +49,17 @@ User Query
 Final Answer
 ```
 
+### 2. The Declarative Workflow
+
+For ultimate flexibility, the declarative orchestrator uses the Mangle engine itself to define the execution flow. The pipeline is defined as a set of Datalog facts, allowing you to create complex, conditional, and dynamic workflows without changing any Go code.
+
+See the [Declarative Workflow](#example-3-declarative-workflow-with-yaml) section for a detailed example.
+
 ## 🛠️ Getting Started
 
 ### 1. Prerequisites
 
--   Go 1.21 or later.
+-   Go 1.24 or later.
 -   API keys for your chosen providers (e.g., OpenAI, Google).
 
 ### 2. Installation
@@ -58,6 +68,12 @@ To add MangleKit to your Go project, run:
 
 ```bash
 go get github.com/duynguyendang/manglekit
+```
+
+You will also need to import the `providers/all` package to register the built-in components:
+
+```go
+import _ "github.com/duynguyendang/manglekit/providers/all"
 ```
 
 ### 3. Environment Setup
@@ -73,6 +89,9 @@ MangleKit can be configured to read API keys from environment variables. The eas
 
     # For Google models (LLM or Embedder)
     GOOGLE_API_KEY="AIza..."
+
+    # For Groq's fast inference API
+    GROQ_API_KEY="gsk_..."
     ```
 
 3.  Use a library like `godotenv` to load this file when your application starts.
@@ -81,7 +100,8 @@ MangleKit can be configured to read API keys from environment variables. The eas
     import "github.com/joho/godotenv"
 
     func main() {
-        // Load .env file from the current directory
+        // Load .env file from the current directory.
+        // It's conventional to ignore the error if the file doesn't exist.
         _ = godotenv.Load()
 
         // ... rest of your application logic
@@ -94,7 +114,7 @@ You can configure MangleKit either programmatically using the fluent Builder API
 
 ---
 
-### Example 1: Programmatic Setup with the Builder API
+### Example 1: Programmatic Setup (Sandwich Pattern)
 
 This is the most common and type-safe way to build a MangleKit pipeline. The example below wires the Sandwich flow with Mangle pre/post rules, a BM25 retriever, and an OpenAI LLM.
 
@@ -148,14 +168,17 @@ func main() {
 
 ---
 
-### Example 2: Declarative Setup with YAML
+### Example 2: Declarative Setup with YAML (Sandwich Pattern)
 
-For maximum flexibility, you can define your entire pipeline in a `config.yaml` file (see `examples/05-chat-with-data`). This is ideal for applications where you want to change the pipeline without recompiling code.
+For easy configuration changes, you can define the entire sandwich pipeline in a `config.yaml` file.
 
 **`config.yaml`:**
 
 ```yaml
 # Set default pipeline parameters for the "sandwich" orchestrator.
+orchestrator:
+  type: "sandwich"
+
 topK: 6
 fallbackThreshold: 0.35
 
@@ -185,7 +208,7 @@ retriever:
 llm:
   name: "google"
   params:
-    model: "gemini-2.5-flash"
+    model: "gemini-1.5-flash"
 ```
 
 **Go code to load the YAML:**
@@ -234,51 +257,58 @@ func main() {
 
 ---
 
-### Example 3: Using the Mangle Rules Engine
+### Example 3: Declarative Workflow with YAML
 
-The true power of MangleKit comes from its integrated rules engine. You can define policies and logic in `.dlog` files to control the pipeline's behavior.
+This example showcases the power of the declarative orchestrator. The workflow is defined in Datalog (`.dlog`) files, not in Go code. This allows for incredibly dynamic and complex pipelines.
 
-**`rules.dlog`:**
+**`config.yaml`:**
+
+```yaml
+orchestrator:
+  type: "declarative"
+  # The 'main_flow' is defined in our .dlog files.
+  flowName: "main_flow"
+
+providers:
+  google:
+    apiKey: "${GOOGLE_API_KEY}"
+
+# The main rules engine that will also act as the FlowController.
+rules:
+  name: "mangle"
+  params:
+    path:
+      - "./rules/flow.dlog" # Contains the workflow definition
+      - "./rules/policy.dlog"
+
+# Define a map of named "tools" that can be used by the workflow.
+tools:
+  google_llm:
+    provider: "google"
+    params:
+      model: "gemini-1.5-flash"
+
+  doc_retriever:
+    provider: "bm25"
+    params:
+      path: "./data"
+```
+
+**`rules/flow.dlog`:**
 
 ```prolog
-// Deny any query that contains the word "secret".
-deny("Query contains forbidden term") :-
-  request_query_contains("secret").
+// Define the stages of the 'main_flow'.
+// The second argument is the execution order.
+flow_stage("main_flow", "1", "retrieval_stage").
+flow_stage("main_flow", "2", "llm_stage").
 
-// Allow listing the documents that were cited.
-allow("Citations may be returned") :-
-  answer_contains("doc_id").
+// Assign a configured tool to each stage.
+// The tool name must match a key in the 'tools' map in config.yaml.
+stage_tool("retrieval_stage", "doc_retriever").
+stage_tool("llm_stage", "google_llm").
 ```
 
-**Go code to load the rules:**
-
-```go
-// ... (imports and main function setup from Example 1)
-
-// Add the Mangle rules engine to the builder.
-orch, err := manglekit.NewBuilder().
-    WithRules(&core.MangleOptions{
-        Path:              []string{"rules.dlog"}, // Point to your Datalog file
-        DefaultConverters: true,
-        FileFirst:         true,
-    }).
-    WithRetriever(&retrieve.BM25Options{Path: "./data"}).
-    WithLLM(&llm.OpenAIOptions{Model: "gpt-4o-mini"}).
-    WithTopK(6).
-    Build()
-if err != nil {
-    log.Fatalf("Failed to build orchestrator: %v", err)
-}
-
-// This query will now be denied by the rules engine.
-query := core.Query{Text: "Tell me a secret about MangleKit"}
-answer, err := orch.Run(ctx, query)
-
-if err != nil {
-    // The error will be of type `core.ErrDenied`.
-    fmt.Println("Request denied by Mangle rules:", err)
-}
-```
+The Go code to run this is identical to the previous YAML example. The `NewBuilderFromYAML` function handles the complexity of parsing the declarative configuration and wiring the tools.
 
 ## 📦 Available Components
 
@@ -294,8 +324,8 @@ MangleKit includes a suite of built-in providers that can be configured in the b
 | **LLM**           | `google`      | Integrates with Google's generative models via Genkit.       | _None_             |
 |                   | `openai`      | Integrates with OpenAI's models (e.g., GPT-4).               | _None_             |
 |                   | `groq`        | Integrates with Groq's fast inference API.                   | _None_             |
-| **Embedder**      | `google`      | Generates embeddings using Google's models.                  | _None_             |
-|                   | `openai`      | Generates embeddings using OpenAI's models.                  | _None_             |
+| **Embedder**      | `google-embedder` | Generates embeddings using Google's models.                  | _None_             |
+|                   | `openai-embedder` | Generates embeddings using OpenAI's models.                  | _None_             |
 | **Rules Engine**  | `mangle`      | The core Datalog engine for rules-based control.             | _None_             |
 | **Schema Parser** | `jsonschema`  | Parses JSON Schema files into facts for the Mangle engine.   | _None_             |
 |                   | `rdf`         | Parses RDF (Turtle) files into facts for the Mangle engine.  | _None_             |
@@ -325,7 +355,7 @@ This is a high-level overview of the most important directories in the MangleKit
 │   ├── providers/
 │   └── vectorstores/
 ├── providers/              # Public registration helpers (e.g., providers/all)
-├── examples/               # Runnable guides (01-basic-rag … 09-genkit-tool)
+├── examples/               # Runnable guides and sample data
 └── docs/                   # CONTEXT.md, HLD/LLD/CSD, reviews
 ```
 

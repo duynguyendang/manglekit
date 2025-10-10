@@ -1,3 +1,11 @@
+// Package main for 09-genkit-tool shows how to integrate Manglekit as a tool
+// within a larger Genkit-based application.
+//
+// In this example, the entire Manglekit orchestrator (built from its own YAML
+// configuration) is wrapped into a single Genkit `Tool`. This tool,
+// `manglekitKnowledgeBase`, can then be used within a Genkit `Flow`. This
+// demonstrates the composability of Manglekit, allowing its powerful, rules-driven
+// RAG capabilities to be seamlessly embedded as a component in other systems.
 package main
 
 import (
