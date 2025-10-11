@@ -109,8 +109,6 @@ func (e *openAIEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.E
 }
 
 // Register is part of the `ai.Embedder` interface for use in Genkit flows,
-// but is not used by the MangleKit builder.
-func (e *openAIEmbedder) Register(r api.Registry) {
-	//TODO: implement me
-	panic("implement me")
-}
+// but is not used by the MangleKit builder. This is a no-op to satisfy the
+// interface, as seen in mock implementations within the codebase (e.g., dense_test.go).
+func (e *openAIEmbedder) Register(r api.Registry) {}
