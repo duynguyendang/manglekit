@@ -23,6 +23,13 @@ type openAIClient struct {
 	promptBuilder  *llm.PromptBuilder
 }
 
+// Close is a no-op for the standard OpenAI client but satisfies the
+// Closer interface, allowing the builder to manage its lifecycle.
+func (c *openAIClient) Close(ctx context.Context) error {
+	// The underlying openai-go client does not expose a Close() method.
+	return nil
+}
+
 // NewOpenAI is the constructor for an `llm.Client` that is compatible with
 // the OpenAI API. It is registered for multiple providers (e.g., "openai", "groq")
 // as they share the same interface. It relies on a pre-configured `openai.Client`

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"reflect"
 	"sync"
@@ -188,6 +189,14 @@ type builder struct {
 	// Built components are stored here during the build process.
 	embedder    ai.Embedder
 	vectorStore core.VectorStore
+}
+
+// closer is a local interface used for type assertions. It ensures that any
+// component that needs to be closed at shutdown has a `Close` method that
+// adheres to the `ResourceCloser` function signature. This avoids the need for a
+// public `Closer` interface in the `core` package, keeping the API clean.
+type closer interface {
+	Close(context.Context) error
 }
 
 // googleClients is a private struct to hold the initialized clients for Google services.
@@ -469,9 +478,20 @@ func (b *builder) resolveProviderConfig(providerType, providerName string) error
 		if apiKey == "" {
 			return fmt.Errorf("missing apiKey for provider 'openai': please provide it via config or OPENAI_API_KEY env var")
 		}
-		client := openai.NewClient(option.WithAPIKey(apiKey))
+		transport := &http.Transport{
+			IdleConnTimeout: 30 * time.Second,
+		}
+		httpClient := &http.Client{
+			Transport: transport,
+			Timeout:   120 * time.Second,
+		}
+		client := openai.NewClient(option.WithAPIKey(apiKey), option.WithHTTPClient(httpClient))
 		b.clients["openai"] = client
 		b.resolvedCfgs[key] = cfg
+		b.opts.ResourceClosers = append(b.opts.ResourceClosers, func(ctx context.Context) error {
+			transport.CloseIdleConnections()
+			return nil
+		})
 
 	case "groq":
 		cfg := b.config.Providers.Groq
@@ -489,9 +509,20 @@ func (b *builder) resolveProviderConfig(providerType, providerName string) error
 		if baseURL == "" {
 			baseURL = "https://api.groq.com/openai/v1"
 		}
-		client := openai.NewClient(option.WithAPIKey(apiKey), option.WithBaseURL(baseURL))
+		transport := &http.Transport{
+			IdleConnTimeout: 30 * time.Second,
+		}
+		httpClient := &http.Client{
+			Transport: transport,
+			Timeout:   120 * time.Second,
+		}
+		client := openai.NewClient(option.WithAPIKey(apiKey), option.WithBaseURL(baseURL), option.WithHTTPClient(httpClient))
 		b.clients["groq"] = client
 		b.resolvedCfgs[key] = cfg
+		b.opts.ResourceClosers = append(b.opts.ResourceClosers, func(ctx context.Context) error {
+			transport.CloseIdleConnections()
+			return nil
+		})
 	}
 	return nil
 }
@@ -932,6 +963,9 @@ func (b *builder) buildVectorStore() error {
 	if err != nil {
 		return fmt.Errorf("failed to build vector store '%s': %w", b.vectorStoreName, err)
 	}
+	if c, ok := b.vectorStore.(closer); ok {
+		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
+	}
 	return nil
 }
 
@@ -1192,6 +1226,9 @@ func (b *builder) buildLLM() error {
 
 	if err != nil {
 		return fmt.Errorf("failed to build llm '%s': %w", b.llmName, err)
+	}
+	if c, ok := b.opts.LLM.(closer); ok {
+		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
 	}
 	return nil
 }
