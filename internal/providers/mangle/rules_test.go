@@ -33,7 +33,7 @@ func TestRuleSet_Evaluate_PreProcess_WithConverters(t *testing.T) {
 		DefaultConverters: true,
 	}
 	// Call the refactored New function with the correct signature.
-	ruleSet, err := mangle.New(context.Background(), opts)
+	ruleSet, err := mangle.New(context.TODO(), opts)
 	require.NoError(t, err)
 
 	query := core.Query{Text: "foo"} // The QueryConverter will process this text.
@@ -67,7 +67,7 @@ func TestRuleSet_Evaluate_PostProcess_WithConverters(t *testing.T) {
 		DefaultConverters: true,
 	}
 	// Call the refactored New function with the correct signature.
-	ruleSet, err := mangle.New(context.Background(), opts)
+	ruleSet, err := mangle.New(context.TODO(), opts)
 	require.NoError(t, err)
 
 	query := core.Query{
@@ -124,7 +124,7 @@ func TestRuleSet_PostRules_DropsDocuments(t *testing.T) {
 		Path:              []string{rulePath},
 		DefaultConverters: true,
 	}
-	ruleSet, err := mangle.New(context.Background(), opts)
+	ruleSet, err := mangle.New(context.TODO(), opts)
 	require.NoError(t, err)
 
 	postEval, ok := ruleSet.(core.PostRuleEvaluator)
@@ -135,7 +135,7 @@ func TestRuleSet_PostRules_DropsDocuments(t *testing.T) {
 		{ID: "internal", Text: "secret", Meta: map[string]any{"tag": "internal"}},
 	}
 
-	result, err := postEval.Post(context.Background(), core.Query{}, docs, nil)
+	result, err := postEval.Post(context.TODO(), core.Query{}, docs, nil)
 	require.NoError(t, err)
 	require.False(t, result.Denied)
 	require.Len(t, result.Filtered, 1)
@@ -165,13 +165,13 @@ func TestRuleSet_PostRules_DenyOnLowConfidence(t *testing.T) {
 		Path:              []string{rulePath},
 		DefaultConverters: true,
 	}
-	ruleSet, err := mangle.New(context.Background(), opts)
+	ruleSet, err := mangle.New(context.TODO(), opts)
 	require.NoError(t, err)
 
 	postEval, ok := ruleSet.(core.PostRuleEvaluator)
 	require.True(t, ok)
 
-	result, err := postEval.Post(context.Background(), core.Query{}, nil, map[string]any{"best_score": 20})
+	result, err := postEval.Post(context.TODO(), core.Query{}, nil, map[string]any{"best_score": 20})
 	require.NoError(t, err)
 	require.True(t, result.Denied)
 	assert.Equal(t, "low_confidence", result.Reason)
@@ -196,7 +196,7 @@ func TestRuleSet_PostRules_RedactsSensitiveText(t *testing.T) {
 		Path:              []string{rulePath},
 		DefaultConverters: true,
 	}
-	ruleSet, err := mangle.New(context.Background(), opts)
+	ruleSet, err := mangle.New(context.TODO(), opts)
 	require.NoError(t, err)
 
 	postEval, ok := ruleSet.(core.PostRuleEvaluator)
@@ -206,7 +206,7 @@ func TestRuleSet_PostRules_RedactsSensitiveText(t *testing.T) {
 		{ID: "doc1", Text: "Call me at 123-456-7890"},
 	}
 
-	result, err := postEval.Post(context.Background(), core.Query{}, docs, nil)
+	result, err := postEval.Post(context.TODO(), core.Query{}, docs, nil)
 	require.NoError(t, err)
 	require.False(t, result.Denied)
 	require.Len(t, result.Filtered, 1)

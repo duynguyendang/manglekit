@@ -58,7 +58,7 @@ func TestRerank(t *testing.T) {
 		TopK: 2,
 	}
 
-	rerankedDocs, err := reranker.Rerank(context.Background(), req)
+	rerankedDocs, err := reranker.Rerank(context.TODO(), req)
 	require.NoError(t, err)
 	assert.Len(t, rerankedDocs, 2)
 

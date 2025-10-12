@@ -54,7 +54,7 @@ func New(ctx context.Context, opts core.LocalvecOptions, embedder ai.Embedder) (
 
 	// Initialize Genkit internally. It needs a long-lived context that we manage
 	// via the Close() method.
-	gCtx, gCancel := context.WithCancel(context.Background())
+	gCtx, gCancel := context.WithCancel(ctx)
 	g := genkit.Init(gCtx)
 
 	docs, err := loadDocuments(opts.Path)

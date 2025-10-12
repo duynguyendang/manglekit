@@ -27,7 +27,7 @@ func TestBM25_Retrieve(t *testing.T) {
 		Query: "lazy dog",
 		TopK:  2,
 	}
-	result, err := retriever.Retrieve(context.Background(), req)
+	result, err := retriever.Retrieve(context.TODO(), req)
 	require.NoError(t, err)
 
 	assert.Len(t, result.Docs, 2)

@@ -48,7 +48,7 @@ func TestHybrid_Retrieve(t *testing.T) {
 
 	// 3. Perform the retrieval.
 	req := retrieve.Request{Query: "test", TopK: 5}
-	result, err := retriever.Retrieve(context.Background(), req)
+	result, err := retriever.Retrieve(context.TODO(), req)
 	require.NoError(t, err)
 
 	// 4. Assert the results.

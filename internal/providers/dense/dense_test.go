@@ -72,7 +72,7 @@ func TestDense_Retrieve(t *testing.T) {
 		Query: "query",
 		TopK:  1,
 	}
-	result, err := retriever.Retrieve(context.Background(), req)
+	result, err := retriever.Retrieve(context.TODO(), req)
 	require.NoError(t, err)
 
 	// 4. Assert the results.

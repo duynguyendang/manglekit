@@ -179,7 +179,7 @@ func seedSampleDocuments(orch core.Orchestrator) error {
 	}
 
 	log.Printf("[Init] seeding %d sample documents into the in-memory retriever", len(docs))
-	if err := updatable.Upsert(docs); err != nil {
+	if err := updatable.Upsert(context.Background(), docs); err != nil {
 		return fmt.Errorf("failed to upsert sample documents: %w", err)
 	}
 	return nil

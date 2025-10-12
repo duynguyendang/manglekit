@@ -74,7 +74,7 @@ func (r *InMemoryRetriever) Retrieve(ctx context.Context, req retrieve.Request) 
 // concurrent access during modification.
 //
 // It satisfies the `retrieve.Updatable` interface.
-func (r *InMemoryRetriever) Upsert(docs []core.Doc) error {
+func (r *InMemoryRetriever) Upsert(ctx context.Context, docs []core.Doc) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -93,7 +93,7 @@ func (r *InMemoryRetriever) Upsert(docs []core.Doc) error {
 // refreshing the knowledge base. This operation is thread-safe.
 //
 // It satisfies the `retrieve.Updatable` interface.
-func (r *InMemoryRetriever) Replace(docs []core.Doc) error {
+func (r *InMemoryRetriever) Replace(ctx context.Context, docs []core.Doc) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

@@ -56,12 +56,12 @@ type Updatable interface {
 	//
 	// docs is a slice of documents to add or update in the retriever's index.
 	// It returns an error if the upsert operation fails.
-	Upsert(docs []core.Doc) error
+	Upsert(ctx context.Context, docs []core.Doc) error
 	// Replace clears the entire existing index and replaces it with a new set
 	// of documents. This is a destructive operation useful for completely
 	// refreshing the retriever's knowledge base.
 	//
 	// docs is the new, complete slice of documents to populate the index with.
 	// It returns an error if the replacement operation fails.
-	Replace(docs []core.Doc) error
+	Replace(ctx context.Context, docs []core.Doc) error
 }
