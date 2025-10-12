@@ -1,6 +1,7 @@
 package bm25_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,7 +27,7 @@ func TestBM25_Retrieve(t *testing.T) {
 		Query: "lazy dog",
 		TopK:  2,
 	}
-	result, err := retriever.Retrieve(req)
+	result, err := retriever.Retrieve(context.Background(), req)
 	require.NoError(t, err)
 
 	assert.Len(t, result.Docs, 2)

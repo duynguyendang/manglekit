@@ -149,11 +149,12 @@ func TestRuleSet_PostRules_DropsDocuments(t *testing.T) {
 func TestRuleSet_PostRules_DenyOnLowConfidence(t *testing.T) {
 	dir := t.TempDir()
 	rules := `
+		Decl best_score(Score).
 		threshold(0.45).
 		deny("low_confidence") :-
 			best_score(S),
 			threshold(T),
-			S < T.
+			:lt(S, T).
 	`
 	rulePath := filepath.Join(dir, "policy.dlog")
 	require.NoError(t, os.WriteFile(rulePath, []byte(rules), 0o600))
@@ -168,7 +169,7 @@ func TestRuleSet_PostRules_DenyOnLowConfidence(t *testing.T) {
 	postEval, ok := ruleSet.(core.PostRuleEvaluator)
 	require.True(t, ok)
 
-	result, err := postEval.Post(context.Background(), core.Query{}, nil, map[string]any{"best_score": 0.2})
+	result, err := postEval.Post(context.Background(), core.Query{}, nil, map[string]any{"best_score": float64(0.2)})
 	require.NoError(t, err)
 	require.True(t, result.Denied)
 	assert.Equal(t, "low_confidence", result.Reason)
@@ -180,7 +181,7 @@ func TestRuleSet_PostRules_RedactsSensitiveText(t *testing.T) {
 	rules := `
 		redact("phone") :-
 			doc_text(T),
-			:regex:match(T, "[0-9]{3}-[0-9]{3}-[0-9]{4}").
+			:regex:match("[0-9]{3}-[0-9]{3}-[0-9]{4}", T).
 	`
 	rulePath := filepath.Join(dir, "policy.dlog")
 	require.NoError(t, os.WriteFile(rulePath, []byte(rules), 0o600))

@@ -20,7 +20,7 @@ type mockRetriever struct {
 	Err    error
 }
 
-func (m *mockRetriever) Retrieve(req retrieve.Request) (retrieve.Result, error) {
+func (m *mockRetriever) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Result, error) {
 	return m.Result, m.Err
 }
 
@@ -29,7 +29,7 @@ type mockReranker struct {
 	Err    error
 }
 
-func (m *mockReranker) Rerank(req rerank.Request) ([]rerank.ScoredDoc, error) {
+func (m *mockReranker) Rerank(ctx context.Context, req rerank.Request) ([]rerank.ScoredDoc, error) {
 	if m.Err != nil {
 		return nil, m.Err
 	}
@@ -49,7 +49,7 @@ type mockLLM struct {
 	Err    error
 }
 
-func (m *mockLLM) Complete(req llm.Request) (llm.Response, error) {
+func (m *mockLLM) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
 	return m.Result, m.Err
 }
 

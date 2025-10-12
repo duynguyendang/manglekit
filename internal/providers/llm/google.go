@@ -59,10 +59,11 @@ func NewGoogle(opts llm.GoogleOptions, g *genkit.Genkit) (llm.Client, error) {
 // via the Genkit framework and formats the result into a standard `llm.Response`.
 // This method satisfies the `llm.Client` interface.
 //
+// ctx is the context for the API call.
 // req is the request containing the prompt, context, and other parameters.
 // It returns an `llm.Response` with the generated text and token usage data, or
 // an error if prompt building or the model generation call fails.
-func (c *googleClient) Complete(req llm.Request) (llm.Response, error) {
+func (c *googleClient) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
 	// Prepare the data for the template.
 	data := map[string]any{
 		"Context": req.Context,
@@ -82,7 +83,6 @@ func (c *googleClient) Complete(req llm.Request) (llm.Response, error) {
 	var usage map[string]int
 
 	genkitReq := ai.NewModelRequest(nil, ai.NewUserMessage(ai.NewTextPart(prompt)))
-	ctx := context.Background()
 
 	res, err := c.model.Generate(ctx, genkitReq, nil)
 	if err != nil {
