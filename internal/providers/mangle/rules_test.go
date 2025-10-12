@@ -148,13 +148,14 @@ func TestRuleSet_PostRules_DropsDocuments(t *testing.T) {
 
 func TestRuleSet_PostRules_DenyOnLowConfidence(t *testing.T) {
 	dir := t.TempDir()
+	// Mangle v0.3.0 uses :filter(expr) for float comparisons.
 	rules := `
 		Decl best_score(Score).
 		threshold(0.45).
 		deny("low_confidence") :-
 			best_score(S),
 			threshold(T),
-			:lt(S, T).
+			:filter(S < T).
 	`
 	rulePath := filepath.Join(dir, "policy.dlog")
 	require.NoError(t, os.WriteFile(rulePath, []byte(rules), 0o600))
@@ -178,10 +179,14 @@ func TestRuleSet_PostRules_DenyOnLowConfidence(t *testing.T) {
 
 func TestRuleSet_PostRules_RedactsSensitiveText(t *testing.T) {
 	dir := t.TempDir()
+	// Mangle v0.3.0 does not support :regex:match.
+	// The Go code in `applySingleRedaction` handles matching "phone" to a real regex.
+	// This test verifies that the `redact("phone")` fact is correctly produced
+	// by a valid rule, and that the Go code acts on it.
 	rules := `
 		redact("phone") :-
 			doc_text(T),
-			:regex:match("[0-9]{3}-[0-9]{3}-[0-9]{4}", T).
+			:string:contains(T, "123-456-7890").
 	`
 	rulePath := filepath.Join(dir, "policy.dlog")
 	require.NoError(t, os.WriteFile(rulePath, []byte(rules), 0o600))
