@@ -221,6 +221,10 @@ func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 	}
 
 	// 3. Rerank / 4. Fallback
+	if len(docs) == 0 {
+		return core.Answer{}, core.ErrNoEvidence
+	}
+	// Only apply reranking and fallback if a reranker is configured.
 	if s.reranker != nil {
 		tRerankStart := time.Now()
 		rerankedDocs, err := s.reranker.Rerank(ctx, rerank.Request{Query: q.Text, Docs: docs, TopK: s.opts.TopK})
