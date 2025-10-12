@@ -1,5 +1,7 @@
 package llm
 
+import "context"
+
 // Request encapsulates the input for a large language model (LLM) completion
 // request. It provides a structured way to define the prompt, context, and
 // other parameters for the generation task.
@@ -35,9 +37,10 @@ type Client interface {
 	// Complete takes a structured Request, sends it to the language model, and
 	// returns a structured Response.
 	//
+	// ctx is the context for the API call.
 	// req is the LLM completion request, containing the prompt, context, and
 	// other generation parameters.
 	// It returns a Response containing the generated text and usage data,
 	// or an error if the API call or processing fails.
-	Complete(req Request) (Response, error)
+	Complete(ctx context.Context, req Request) (Response, error)
 }

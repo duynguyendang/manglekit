@@ -32,10 +32,19 @@ type LocalVecStore struct {
 	docStore  *localvec.DocStore
 	generator *genkit.Genkit
 	embedder  ai.Embedder
+	cancel    context.CancelFunc
+}
+
+// Close shuts down the underlying Genkit generator.
+func (l *LocalVecStore) Close(ctx context.Context) error {
+	if l.cancel != nil {
+		l.cancel()
+	}
+	return nil
 }
 
 // New creates a new LocalVecStore with explicit dependencies.
-func New(opts core.LocalvecOptions, embedder ai.Embedder) (core.VectorStore, error) {
+func New(ctx context.Context, opts core.LocalvecOptions, embedder ai.Embedder) (core.VectorStore, error) {
 	if embedder == nil {
 		return nil, fmt.Errorf("localvec: an embedder is required")
 	}
@@ -43,11 +52,14 @@ func New(opts core.LocalvecOptions, embedder ai.Embedder) (core.VectorStore, err
 		return nil, fmt.Errorf("localvec: 'path' parameter is required")
 	}
 
-	// Initialize Genkit internally. The user doesn't need to know about this.
-	g := genkit.Init(context.Background())
+	// Initialize Genkit internally. It needs a long-lived context that we manage
+	// via the Close() method.
+	gCtx, gCancel := context.WithCancel(context.Background())
+	g := genkit.Init(gCtx)
 
 	docs, err := loadDocuments(opts.Path)
 	if err != nil {
+		gCancel()
 		return nil, fmt.Errorf("localvec: failed to load documents: %w", err)
 	}
 
@@ -63,9 +75,10 @@ func New(opts core.LocalvecOptions, embedder ai.Embedder) (core.VectorStore, err
 		return nil, fmt.Errorf("localvec: failed to define retriever: %w", err)
 	}
 
-	// Index documents at startup.
+	// Index documents at startup using the context passed to the constructor.
 	if len(docs) > 0 {
-		if err := localvec.Index(context.Background(), docs, docStore); err != nil {
+		if err := localvec.Index(ctx, docs, docStore); err != nil {
+			gCancel()
 			return nil, fmt.Errorf("localvec: failed to index documents: %w", err)
 		}
 	}
@@ -75,6 +88,7 @@ func New(opts core.LocalvecOptions, embedder ai.Embedder) (core.VectorStore, err
 		docStore:  docStore,
 		generator: g,
 		embedder:  embedder,
+		cancel:    gCancel,
 	}, nil
 }
 

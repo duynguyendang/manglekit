@@ -4,6 +4,7 @@
 package inmemory
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -51,7 +52,7 @@ func New(opts retrieve.InMemoryOptions) (retrieve.Retriever, error) {
 // limit. This method is thread-safe.
 //
 // It satisfies the `retrieve.Retriever` interface.
-func (r *InMemoryRetriever) Retrieve(req retrieve.Request) (retrieve.Result, error) {
+func (r *InMemoryRetriever) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Result, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

@@ -52,16 +52,17 @@ func New(embedder ai.Embedder, vectorStore core.VectorStore) (retrieve.Retriever
 // embedding, and then using that vector to search the configured vector store.
 // This method satisfies the `retrieve.Retriever` interface.
 //
+// ctx is the context for the API call.
 // req contains the query string, the number of results to return (`TopK`), and
 // any metadata to be used for filtering within the vector store.
 // It returns a `retrieve.Result` containing the documents found by the vector
 // store, or an error if the query embedding or vector search fails.
-func (d *Dense) Retrieve(req retrieve.Request) (retrieve.Result, error) {
+func (d *Dense) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Result, error) {
 	// 1. Embed the query text.
 	embedReq := &ai.EmbedRequest{
 		Input: []*ai.Document{ai.DocumentFromText(req.Query, nil)},
 	}
-	embedResp, err := d.embedder.Embed(context.Background(), embedReq)
+	embedResp, err := d.embedder.Embed(ctx, embedReq)
 	if err != nil {
 		return retrieve.Result{}, fmt.Errorf("dense: failed to embed query: %w", err)
 	}
@@ -72,14 +73,14 @@ func (d *Dense) Retrieve(req retrieve.Request) (retrieve.Result, error) {
 
 	// 2. Search the vector store.
 	// WORKAROUND: Pass query text in context for localvec compatibility.
-	ctx := context.WithValue(context.Background(), "query_text", req.Query)
+	searchCtx := context.WithValue(ctx, "query_text", req.Query)
 
 	var filter map[string]any
 	if f, ok := req.Meta["filters"].(map[string]any); ok {
 		filter = f
 	}
 
-	docs, err := d.vectorStore.Search(ctx, queryVector, req.TopK, filter)
+	docs, err := d.vectorStore.Search(searchCtx, queryVector, req.TopK, filter)
 	if err != nil {
 		return retrieve.Result{}, fmt.Errorf("dense: vector store search failed: %w", err)
 	}

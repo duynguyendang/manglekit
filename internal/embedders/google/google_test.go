@@ -7,10 +7,10 @@ import (
 
 	"github.com/duynguyendang/manglekit/embed"
 	"github.com/firebase/genkit/go/ai"
-	"github.com/google/generative-ai-go/genai"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/api/option"
 )
 
 func TestNewGoogleEmbedder(t *testing.T) {
@@ -24,10 +24,9 @@ func TestNewGoogleEmbedder(t *testing.T) {
 	opts := embed.GoogleEmbedderOptions{
 		Model: "embedding-001",
 	}
-	client, err := genai.NewClient(context.Background(), option.WithAPIKey(apiKey))
-	require.NoError(t, err)
+	g := genkit.Init(context.Background(), genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: apiKey}))
 
-	embedder, err := New(opts, client)
+	embedder, err := New(opts, g)
 	require.NoError(t, err)
 	assert.NotNil(t, embedder)
 	assert.Equal(t, "embedding-001", embedder.Name())
@@ -43,10 +42,9 @@ func TestGoogleEmbedder_Embed(t *testing.T) {
 	opts := embed.GoogleEmbedderOptions{
 		Model: "embedding-001",
 	}
-	client, err := genai.NewClient(context.Background(), option.WithAPIKey(apiKey))
-	require.NoError(t, err)
+	g := genkit.Init(context.Background(), genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: apiKey}))
 
-	embedder, err := New(opts, client)
+	embedder, err := New(opts, g)
 	require.NoError(t, err)
 
 	req := &ai.EmbedRequest{

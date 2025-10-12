@@ -3,6 +3,7 @@
 package hybrid
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -56,28 +57,29 @@ func New(opts retrieve.HybridOptions) (retrieve.Retriever, error) {
 // If the dense retriever is not configured, this method will fall back to
 // returning only the results from the BM25 retriever.
 //
+// ctx is the context for the API call.
 // req contains the query string and `TopK` value, which are passed to the
 // underlying retrievers and used to trim the final fused result set.
 // It returns a single, fused, and re-ranked `retrieve.Result` or an error if
 // either of the underlying retrieval operations fail.
-func (h *Retriever) Retrieve(req retrieve.Request) (retrieve.Result, error) {
+func (h *Retriever) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Result, error) {
 	if h.dense == nil {
 		// If dense retriever is not configured, just use BM25.
-		return h.bm25.Retrieve(req)
+		return h.bm25.Retrieve(ctx, req)
 	}
 
-	var g errgroup.Group
+	g, gCtx := errgroup.WithContext(ctx)
 	var bm25Result, denseResult retrieve.Result
 
 	g.Go(func() error {
 		var err error
-		bm25Result, err = h.bm25.Retrieve(req)
+		bm25Result, err = h.bm25.Retrieve(gCtx, req)
 		return err
 	})
 
 	g.Go(func() error {
 		var err error
-		denseResult, err = h.dense.Retrieve(req)
+		denseResult, err = h.dense.Retrieve(gCtx, req)
 		return err
 	})
 

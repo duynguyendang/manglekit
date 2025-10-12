@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"reflect"
 	"sync"
@@ -149,7 +150,7 @@ type BuilderAPI interface {
 	// It returns the initialized `core.Orchestrator` or an error if any part of
 	// the construction fails, such as missing dependencies, invalid configuration,
 	// or failed client initializations.
-	Build() (core.Orchestrator, error)
+	Build(ctx context.Context) (core.Orchestrator, error)
 }
 
 // builder implements the BuilderAPI. It holds the state of the configuration
@@ -188,6 +189,14 @@ type builder struct {
 	// Built components are stored here during the build process.
 	embedder    ai.Embedder
 	vectorStore core.VectorStore
+}
+
+// closer is a local interface used for type assertions. It ensures that any
+// component that needs to be closed at shutdown has a `Close` method that
+// adheres to the `ResourceCloser` function signature. This avoids the need for a
+// public `Closer` interface in the `core` package, keeping the API clean.
+type closer interface {
+	Close(context.Context) error
 }
 
 // googleClients is a private struct to hold the initialized clients for Google services.
@@ -469,9 +478,20 @@ func (b *builder) resolveProviderConfig(providerType, providerName string) error
 		if apiKey == "" {
 			return fmt.Errorf("missing apiKey for provider 'openai': please provide it via config or OPENAI_API_KEY env var")
 		}
-		client := openai.NewClient(option.WithAPIKey(apiKey))
+		transport := &http.Transport{
+			IdleConnTimeout: 30 * time.Second,
+		}
+		httpClient := &http.Client{
+			Transport: transport,
+			Timeout:   120 * time.Second,
+		}
+		client := openai.NewClient(option.WithAPIKey(apiKey), option.WithHTTPClient(httpClient))
 		b.clients["openai"] = client
 		b.resolvedCfgs[key] = cfg
+		b.opts.ResourceClosers = append(b.opts.ResourceClosers, func(ctx context.Context) error {
+			transport.CloseIdleConnections()
+			return nil
+		})
 
 	case "groq":
 		cfg := b.config.Providers.Groq
@@ -489,9 +509,20 @@ func (b *builder) resolveProviderConfig(providerType, providerName string) error
 		if baseURL == "" {
 			baseURL = "https://api.groq.com/openai/v1"
 		}
-		client := openai.NewClient(option.WithAPIKey(apiKey), option.WithBaseURL(baseURL))
+		transport := &http.Transport{
+			IdleConnTimeout: 30 * time.Second,
+		}
+		httpClient := &http.Client{
+			Transport: transport,
+			Timeout:   120 * time.Second,
+		}
+		client := openai.NewClient(option.WithAPIKey(apiKey), option.WithBaseURL(baseURL), option.WithHTTPClient(httpClient))
 		b.clients["groq"] = client
 		b.resolvedCfgs[key] = cfg
+		b.opts.ResourceClosers = append(b.opts.ResourceClosers, func(ctx context.Context) error {
+			transport.CloseIdleConnections()
+			return nil
+		})
 	}
 	return nil
 }
@@ -513,7 +544,7 @@ func (b *builder) resolveProviderConfig(providerType, providerName string) error
 // OpenAI), manages their lifecycle, and injects them into the components that
 // need them. If any step fails, it attempts to clean up any resources that were
 // allocated before returning an error.
-func (b *builder) Build() (core.Orchestrator, error) {
+func (b *builder) Build(ctx context.Context) (core.Orchestrator, error) {
 	orchestratorType := "sandwich" // default
 	if b.config.Orchestrator.Type != "" {
 		orchestratorType = b.config.Orchestrator.Type
@@ -538,7 +569,7 @@ func (b *builder) Build() (core.Orchestrator, error) {
 		}
 
 		// Build all the tools defined in the config.
-		if err := b.buildTools(); err != nil {
+		if err := b.buildTools(ctx); err != nil {
 			closeErr := b.closeResources()
 			return nil, errors.Join(err, closeErr)
 		}
@@ -569,7 +600,7 @@ func (b *builder) Build() (core.Orchestrator, error) {
 			closeErr := b.closeResources()
 			return nil, errors.Join(err, closeErr)
 		}
-		if err := b.buildComponents(); err != nil {
+		if err := b.buildComponents(ctx); err != nil {
 			closeErr := b.closeResources()
 			return nil, errors.Join(err, closeErr)
 		}
@@ -588,7 +619,7 @@ func (b *builder) Build() (core.Orchestrator, error) {
 
 // buildTools iterates through the tools defined in the config, respects dependencies,
 // and builds each one. It uses an iterative approach to handle the dependency graph.
-func (b *builder) buildTools() error {
+func (b *builder) buildTools(ctx context.Context) error {
 	toBuild := make(map[string]ToolConfig)
 	for name, cfg := range b.config.Tools {
 		toBuild[name] = cfg
@@ -613,9 +644,12 @@ func (b *builder) buildTools() error {
 			}
 
 			if allDepsMet {
-				tool, err := b.buildSingleTool(name, cfg)
+				tool, err := b.buildSingleTool(ctx, name, cfg)
 				if err != nil {
 					return fmt.Errorf("failed to build tool %q: %w", name, err)
+				}
+				if c, ok := tool.(closer); ok {
+					b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
 				}
 				b.tools[name] = tool
 				delete(toBuild, name)
@@ -656,7 +690,7 @@ func getToolDependencies(cfg ToolConfig, allToolNames map[string]struct{}) []str
 }
 
 // buildSingleTool is a dispatcher that constructs a single tool instance based on its provider type.
-func (b *builder) buildSingleTool(name string, cfg ToolConfig) (any, error) {
+func (b *builder) buildSingleTool(ctx context.Context, name string, cfg ToolConfig) (any, error) {
 	// 1. Resolve provider-level config (e.g., API keys)
 	providerFamily := cfg.Provider
 	if family, ok := providerToFamily[providerFamily]; ok {
@@ -706,13 +740,15 @@ func (b *builder) buildSingleTool(name string, cfg ToolConfig) (any, error) {
 
 	case "localvec":
 		constructor, _ := Get(Registry.Component, cfg.Provider)
-		newFn := constructor.(func(core.LocalvecOptions, ai.Embedder) (core.VectorStore, error))
+		newFn := constructor.(func(context.Context, core.LocalvecOptions, ai.Embedder) (core.VectorStore, error))
 		embedderToolName := cfg.Params["embedder"].(string)
 		embedder, ok := b.tools[embedderToolName].(ai.Embedder)
 		if !ok {
 			return nil, fmt.Errorf("dependency '%s' for tool '%s' is not a valid embedder", embedderToolName, name)
 		}
-		return newFn(*optsPtr.(*core.LocalvecOptions), embedder)
+		// We pass a background context here because the tool's lifecycle is managed
+		// by the main application context, which is not available here.
+		return newFn(ctx, *optsPtr.(*core.LocalvecOptions), embedder)
 
 	case "dense":
 		constructor, _ := Get(Registry.Retriever, "dense")
@@ -812,14 +848,14 @@ func (b *builder) resolveDependencies() error {
 }
 
 // buildComponents calls the individual component builders in the correct order.
-func (b *builder) buildComponents() error {
+func (b *builder) buildComponents(ctx context.Context) error {
 	// The order is important due to dependencies:
 	// Embedder -> VectorStore -> Retriever
 	// Embedder -> Reranker
 	if err := b.buildEmbedder(); err != nil {
 		return err
 	}
-	if err := b.buildVectorStore(); err != nil {
+	if err := b.buildVectorStore(ctx); err != nil {
 		return err
 	}
 	if err := b.buildRetriever(); err != nil {
@@ -852,7 +888,7 @@ func (b *builder) buildEmbedder() error {
 
 	switch b.embedderName {
 	case "google":
-		newFn, ok := constructor.(func(embed.GoogleEmbedderOptions, *genai.Client) (ai.Embedder, error))
+		newFn, ok := constructor.(func(embed.GoogleEmbedderOptions, *genkit.Genkit) (ai.Embedder, error))
 		if !ok {
 			return fmt.Errorf("invalid constructor type for embedder '%s'", b.embedderName)
 		}
@@ -866,7 +902,7 @@ func (b *builder) buildEmbedder() error {
 		if !ok {
 			return fmt.Errorf("invalid client type for google embedder")
 		}
-		b.embedder, err = newFn(opts, client.genai)
+		b.embedder, err = newFn(opts, client.genkit)
 
 	case "openai", "groq":
 		newFn, ok := constructor.(func(embed.OpenAIEmbedderOptions, *openai.Client) (ai.Embedder, error))
@@ -879,11 +915,11 @@ func (b *builder) buildEmbedder() error {
 		} else if o, ok := b.embedderParams["typedConfig"].(embed.OpenAIEmbedderOptions); ok {
 			opts = o
 		}
-		clientVal, ok := b.clients[b.embedderName].(openai.Client)
+		clientVal, ok := b.clients[b.embedderName].(*openai.Client)
 		if !ok {
-			return fmt.Errorf("invalid client type for %s embedder, expected openai.Client but got %T", b.embedderName, b.clients[b.embedderName])
+			return fmt.Errorf("invalid client type for %s embedder, expected *openai.Client but got %T", b.embedderName, b.clients[b.embedderName])
 		}
-		b.embedder, err = newFn(opts, &clientVal)
+		b.embedder, err = newFn(opts, clientVal)
 
 	default:
 		return fmt.Errorf("unsupported embedder type in builder: %s", b.embedderName)
@@ -892,10 +928,13 @@ func (b *builder) buildEmbedder() error {
 	if err != nil {
 		return fmt.Errorf("failed to build embedder '%s': %w", b.embedderName, err)
 	}
+	if c, ok := b.embedder.(closer); ok {
+		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
+	}
 	return nil
 }
 
-func (b *builder) buildVectorStore() error {
+func (b *builder) buildVectorStore(ctx context.Context) error {
 	if b.vectorStoreName == "" {
 		return nil
 	}
@@ -907,7 +946,7 @@ func (b *builder) buildVectorStore() error {
 	if err != nil {
 		return err
 	}
-	newFn, ok := constructor.(func(core.LocalvecOptions, ai.Embedder) (core.VectorStore, error))
+	newFn, ok := constructor.(func(context.Context, core.LocalvecOptions, ai.Embedder) (core.VectorStore, error))
 	if !ok {
 		return fmt.Errorf("invalid constructor type for vector store '%s'", b.vectorStoreName)
 	}
@@ -928,9 +967,15 @@ func (b *builder) buildVectorStore() error {
 		}
 	}
 
-	b.vectorStore, err = newFn(opts, b.embedder)
+	// We pass a background context here because the vector store's lifecycle is managed
+	// by the main application context, which is not available here. The Close()
+	// method on the vector store will handle the shutdown.
+	b.vectorStore, err = newFn(ctx, opts, b.embedder)
 	if err != nil {
 		return fmt.Errorf("failed to build vector store '%s': %w", b.vectorStoreName, err)
+	}
+	if c, ok := b.vectorStore.(closer); ok {
+		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
 	}
 	return nil
 }
@@ -1180,11 +1225,11 @@ func (b *builder) buildLLM() error {
 		} else if o, ok := b.llmParams["typedConfig"].(llm.OpenAIOptions); ok {
 			opts = o
 		}
-		clientVal, ok := b.clients[b.llmName].(openai.Client)
+		clientVal, ok := b.clients[b.llmName].(*openai.Client)
 		if !ok {
-			return fmt.Errorf("invalid client type for %s llm, expected openai.Client but got %T", b.llmName, b.clients[b.llmName])
+			return fmt.Errorf("invalid client type for %s llm, expected *openai.Client but got %T", b.llmName, b.clients[b.llmName])
 		}
-		b.opts.LLM, err = newFn(opts, &clientVal)
+		b.opts.LLM, err = newFn(opts, clientVal)
 
 	default:
 		return fmt.Errorf("unsupported llm type in builder: %s", b.llmName)
@@ -1192,6 +1237,9 @@ func (b *builder) buildLLM() error {
 
 	if err != nil {
 		return fmt.Errorf("failed to build llm '%s': %w", b.llmName, err)
+	}
+	if c, ok := b.opts.LLM.(closer); ok {
+		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
 	}
 	return nil
 }

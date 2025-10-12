@@ -67,7 +67,7 @@ func main() {
 
 	// 3. Build the pipeline.
 	ctx := context.Background()
-	pipeline, err := builder.Build()
+	pipeline, err := builder.Build(context.Background())
 	if err != nil {
 		log.Fatalf("failed to build pipeline: %v", err)
 	}
