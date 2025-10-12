@@ -1,101 +1,126 @@
 # Manglekit Project Context
 
-_Last updated: 2025-05-30_
+_Last updated: 2025-05-31_
 
 ---
 
 ## Overview
-Manglekit is a Go 1.24 SDK for policy-aware retrieval-augmented generation. It wraps Google’s Mangle rules engine around Genkit-powered retrieval, reranking, and LLM stages so every answer runs through the Sandwich sequence **(Mangle-Pre → Retrieval → optional Rerank → LLM → Mangle-Post)**. The library targets explainable copilots that must cite sources, enforce policy filters, and remain configurable at runtime.
+Manglekit is a Go 1.24+ SDK that wraps Google’s Mangle rules engine around Genkit-backed retrieval, reranking, and LLM calls. The default “Sandwich” path enforces **Mangle-Pre → Retrieval → optional Rerank → LLM → Mangle-Post** to keep answers grounded, compliant, and explainable while remaining provider-agnostic through the runtime registry in `registry.go`.
 
 ---
 
-## Implementation Snapshot
-- SDK entry points live in `builder.go`/`config.go` (fluent `With*`, YAML/env loaders) and `sdk.go` (Sandwich constructor guarded by `core.ErrInvalidOptions`).
-- Domain contracts in `core/` cover `Doc`, `Query`, `Answer`, `Citation`, options, rule interfaces (`RuleSet`, `FlowController`, `PostRuleEvaluator`), and `Observability` hooks (logger/tracer/meter).
-- Pipelines include `pipeline/sandwich.go` (pre rules, retrieval, optional rerank, fallback threshold, LLM call, post rules, metrics, LIFO `ResourceClosers`) and `pipeline/declarative/orchestrator.go` (Datalog-defined flows with shared context map, stage skipping, and denial propagation).
-- Providers under `internal/` back the standard stack: BM25/dense/hybrid/in-memory retrievers, cosine reranker, Google/OpenAI embedders, localvec vector store, Google/OpenAI/Groq LLM clients, Mangle rules engine, and schema parsers (JSON Schema, RDF); `providers/all` registers the bundle.
-- Rule converters (`internal/providers/mangle/converters`) turn queries, documents, and user context into facts; schema loaders (`internal/providers/schemaparsers`) seed program facts; `core.MangleOptions` toggles file-first vs code-first behaviour.
-- Examples (`examples/01-basic-rag` … `examples/09-genkit-tool`) and the `apps/rdf-knowledge-base` CLI demonstrate sandwich, declarative, and rules-only usage; they rely on `.env` keys and provider registration via blank imports.
-- Tests cover the Sandwich orchestrator (`pipeline/sandwich_test.go`) and all core providers (BM25, dense, hybrid, cosine reranker, Google embedder, Mangle rules); builder/declarative end-to-end tests remain on the backlog.
+## Core Entry Points
+- `sdk.New` guards the Sandwich constructor: it validates that `Retriever` and `LLM` were supplied, fills default `TopK` (8) and `MaxTokens` (512), type-asserts the concrete interfaces, and delegates to `pipeline.NewSandwich`.
+- `NewBuilder`/`BuilderAPI` (`builder.go`) collect typed options via fluent `With*` calls, track provider names through `optionsTypeToName`, and accumulate `ResourceClosers` to be invoked LIFO on teardown.
+- `NewBuilderFromYAML`/`NewBuilderFromEnv` (`config.go`) deserialize declarative configs, expand environment variables, resolve any `path:"resolve"` fields relative to the config source, and feed the builder with pre-populated typed option structures.
 
 ---
 
-## HLD Feature Status
-**HLD 1.2 Architectural Principles**
-- Done — SDK-first, service-optional: the repository centres on the Go library with optional thin CLIs (`apps/rdf-knowledge-base`).
-- Done — Sandwich by default: `sdk.New` and `builder.Build` default to `pipeline/sandwich` guarded by Mangle stages.
-- Done — Provider-agnostic extensibility: `registry.go` plus `providers/all` let callers swap constructors without touching pipelines.
-- Done — Fail fast construction: `builder.go` resolves configs, instantiates external clients, and aborts `Build()` on misconfiguration.
-- Done — Stateless pipelines & explicit resources: orchestrators keep no mutable state and rely on `core.ResourceCloser` slices.
-- Done — Declarative hooks everywhere: `pipeline/declarative` + the Mangle `FlowController` expose Datalog-driven orchestration.
-
-**HLD 3.1 Builder, Configuration, and Registry**
-- Done — NewBuilder `With*` typed options: `builder.go` records provider names plus typed configs for every component.
-- Done — `NewBuilderFromYAML`: `config.go` expands env vars, resolves `path:"resolve"` fields, and seeds the builder state.
-- Done — Provider configs instantiate clients up front: `resolveProviderConfig` wires Google/OpenAI/Groq clients with closers.
-- Done — Providers register via `Register*` with enforced signatures; builders type-assert before invocation.
-- Done — Dependency ordering is automatic: `buildComponents` constructs embedder → vector store → retrievers → reranker → rules → LLM.
-- Done — `Build()` emits populated `core.Options` (TopK, MaxTokens, FallbackThreshold, Observability hooks).
-
-**HLD 3.2 Standard Provider Set**
-- Done — Retrievers (in-memory, BM25, dense, hybrid) are implemented and registered under `internal/providers/...`.
-- Done — Cosine reranker backed by the shared embedder lives in `internal/providers/rerank/cosine`.
-- Done — Google and OpenAI embedders reside in `internal/embedders/{google,openai}` with typed registration.
-- Done — Localvec vector store (`internal/vectorstores/localvec`) injects the embedder and indexes corpora on disk.
-- Done — LLM clients for Google, OpenAI, and Groq wrap Genkit/openai-go in `internal/providers/llm`.
-- Done — Mangle rules engine provides `RuleSet` and `FlowController` via `internal/providers/mangle`.
-- Done — Schema parsers for JSON Schema and RDF are available under `internal/providers/schemaparsers`.
-- Done — Custom providers can register alternative constructors through the public `Register*` helpers.
-
-**HLD 3.3 Orchestrators**
-- Done — Sandwich orchestrator enforces Pre → Retrieve → optional Rerank → Fallback → LLM → Post, records metrics, and closes resources in LIFO order (`pipeline/sandwich.go`).
-- Done — Declarative orchestrator queries `flow_stage`/`stage_tool` facts, shares execution context, honours stage skips, and dispatches named tools (`pipeline/declarative`).
-
-**HLD 3.4 Rules Engine & Fact Management**
-- Done — `core.MangleOptions` captures rule paths, schema sources, converters, and the FileFirst toggle.
-- Done — Default and custom converters load via `internal/providers/mangle/converters`.
-- Done — Schema sources turn into facts and declarations through `parseSchemas` and registered parsers.
-- Done — Rules are stratified once via Mangle analysis and each evaluation clones the base fact store before executing.
-- Done — `ruleSet` implements `FlowController`, powering both rule stages and declarative flow queries.
-
-**HLD 3.5 Retrieval, Embedding, Ranking, and Generation**
-- Done — BM25 retriever indexes Markdown with front matter metadata and surfaces scores (`internal/providers/bm25`).
-- Done — Dense retriever embeds queries, applies metadata filters, and delegates to `core.VectorStore`.
-- Done — Hybrid retriever executes sparse and dense searches in parallel and fuses via Reciprocal Rank Fusion.
-- Done — Localvec vector store persists embeddings and honours metadata filters during search.
-- Done — Cosine reranker embeds query/docs concurrently and emits scored citations.
-- Done — LLM clients use `llm.PromptBuilder`, call provider SDKs, and expose token usage in `llm.Response`.
-- Done — Embedders are reused across retrievers and rerankers through builder-managed dependency injection.
-
-**HLD 3.6 Observability & Lifecycle**
-- Done — `core.Observability` supplies logger/tracer/meter hooks consumed across the pipelines.
-- Done — `ResourceClosers` are appended during client creation and invoked in LIFO order by `Orchestrator.Close`.
-- Done — `Answer.Meta` captures retrieve_ms, llm_ms, best_score, rule results, and token usage for audits.
-
-**HLD 4 Usage Patterns**
-- Done — Sandwich SDK mode demonstrated in `examples/01-basic-rag` with `providers/all` and builder chaining.
-- Done — Declarative flow mode exercised via `examples/04-declarative-flow` (`orchestrator.type: declarative`, Datalog flows).
-- Done — Rules-first utilities illustrated by `apps/rdf-knowledge-base`, which instantiates the rules provider directly.
-
-**HLD 5 Non-Functional Requirements**
-- Done — Performance: retrievers/rerankers use `errgroup` for concurrency and pipelines remain stateless for low latency.
-- Done — Scalability: orchestrators avoid mutable state; external stores and LLMs scale independently.
-- Done — Security & compliance: Mangle post-rules drop/redact evidence and secrets flow from env-backed provider configs.
-- Done — Observability: metrics (`manglekit.*`), structured logs, and token usage propagate through response metadata.
+## Builder (`builder.go`)
+- **Build**: chooses orchestrator type (default `sandwich`), aggregates any previous `errs`, resolves providers, and either:
+  - For `sandwich`: calls `resolveDependencies` (infers missing embedder names, pre-warms provider clients), then `buildComponents` (Embedder → VectorStore → Retriever → Reranker → Rules → LLM), finally wrapping the populated `core.Options` with `sdk.New`.
+  - For `declarative`: requires the rules engine (`buildRules`), builds the tool graph iteratively via `buildTools`/`buildSingleTool`, promotes the resulting `FlowController`, and instantiates `declarative.New` with all constructed tools and closers.
+- **resolveProviderConfig**: lazily creates provider clients, validates API keys (GOOGLE/OpenAI/Groq), installs connection-closing callbacks, and caches both the config and the constructed client (including a shared Genkit+GenAI bundle wrapped in `googleClients`).
+- **resolveDependencies**: backfills missing embedder names by inspecting configured components, then calls `resolveProviderConfig` for each required provider family to guarantee prerequisites (e.g., embedder or LLM clients) exist before construction.
+- **buildComponents**: orchestrates construction order so shared dependencies (embedder/vector store) are ready before retrievers or rerankers. Each `build*` helper type-asserts the registry constructor, passes through typed options extracted from `With*` calls, and appends closers when components implement the local `closer` interface.
+- **buildTools / buildSingleTool**: declarative mode support. Tool dependencies are inferred by scanning top-level string fields in tool params; the loop keeps building tools whose dependencies are already materialized, preventing circular references. Dispatch covers embedders, vector stores, retrievers (bm25/dense/hybrid), and LLMs (Google/OpenAI/Groq) by combining registry constructors with previously created tool instances.
+- **closeResources**: on error paths (or explicit Close) unwinds accumulated `ResourceClosers` with a 5s timeout, aggregating any shutdown errors.
+- **Known nuance**: the typed-to-name mapping maps `embed.GoogleEmbedderOptions` to `"google"` while the Google embedder registers as `"google-embedder"`; this mismatch currently prevents the builder from instantiating that embedder without manual registry shims.
 
 ---
 
-## Known Gaps and Risks
-- Context propagation: dense retrieval, cosine rerank, and LLM providers use `context.Background()`, so caller cancellations/timeouts do not reach external APIs.
-- Localvec lifecycle: `internal/vectorstores/localvec` calls `genkit.Init` per build without registering a `ResourceCloser`, leaving background goroutines alive after `Close`.
-- Fallback semantics: when no reranker is configured, `best_score` stays 0 and any positive `FallbackThreshold` yields `core.ErrNoEvidence` instead of a deterministic fallback message.
-- Declarative dependency inference: `getToolDependencies` treats every string parameter as a tool reference, risking build-order issues for configs containing literal strings.
+## Configuration Helpers (`config.go` / `typemap.go`)
+- `componentCfg`/`ToolConfig` capture provider names plus free-form params. When loading YAML, `configureComponent` marshals raw maps through JSON into typed structs, then calls `resolvePathsInStruct` to rewrite relative file paths.
+- `NewBuilderFromEnv` mirrors this via `MKT_*` environment variables containing provider names and JSON blobs of params.
+- `resolvePathsInStruct` recursively walks struct fields tagged `path:"resolve"` (including slices) and rewrites them relative to the YAML file or working directory.
+- `optionsTypeToName` + `nameToOptionsType` map typed options pointers to registry names for both Sandwich and declarative flows. Aliases are provided for OpenAI-compatible providers and embedder variants.
 
 ---
 
-## Roadmap
-- Propagate contexts through dense retrieval, reranking, and LLM clients to support cancellation and deadlines.
-- Register `ResourceClosers` (or reuse handles) for localvec/genkit resources to guarantee clean shutdowns.
-- Refine fallback threshold handling so sandwich pipelines emit deterministic fallback text when rerankers are absent.
-- Tighten declarative tool dependency parsing (e.g., explicit dependency keys) to avoid false-positive dependency cycles.
-- Add end-to-end tests covering builder YAML/env flows and declarative orchestrator execution.
+## Orchestrators
+- **Sandwich (`pipeline/sandwich.go`)**:
+  - `NewSandwich` validates type assertions for retriever, reranker, and LLM before freezing the provided `core.Options`.
+  - `Run` executes the golden flow:
+    1. Logs/traces start, seeds `Answer.Meta`.
+    2. If rules are configured, executes `Rules.Evaluate(core.Pre, q, nil)`, records rule latency, applies mutations (filters/expansions) into `Query.Meta`, or short-circuits on denial.
+    3. Calls `Retriever.Retrieve` with query text, requested `TopK`, and mutated metadata; stores duration and the original doc set in `Answer.Meta["original_docs"]`.
+    4. If no docs, returns `core.ErrNoEvidence`. If a reranker exists, reranks and constructs aligned `Answer.Citations`, saves `best_score`, and enforces `FallbackThreshold` only when reranker output exists.
+    5. Invokes `LLM.Complete` with prompt, grounded passages, and query metadata; records latency and token usage.
+    6. Runs post rules via `Rules.Evaluate(core.Post, q, &answer)`—which may mutate the answer/citations, deny with reason, or add audit metadata—and logs success before returning.
+  - `Close` walks `ResourceClosers` in reverse order to release API clients and background resources.
+  - Metadata emitted: `retrieve_ms`, `best_score`, `llm_ms`, `token_usage`, plus whatever the rules engine adds.
+- **Declarative (`pipeline/declarative/orchestrator.go`)**:
+  - `New` enforces non-nil `FlowController`, tool map, and flow name.
+  - `Run` flow:
+    1. `getFlowStages` queries `flow_stage/3` and `stage_tool/2` facts via the `FlowController`, sorting stage order numerically.
+    2. Executes `pre` rules, allowing them to deny the request, mutate the query/answer stub, or mark `SkippedStages`.
+    3. Seeds a shared execution context map (`query`, `answer`, `docs`, `meta`, denial flags).
+    4. Iterates sorted stages, skips any flagged by pre-rules, and dispatches to tools based on type:
+       - `retrieve.Retriever`: logs filters/expansions, executes retrieval, stores docs, and preserves originals in the answer meta.
+       - `rerank.Reranker`: reranks docs, refreshes citations, tracks `best_score`.
+       - `llm.Client`: only runs if not already denied, builds passages, calls LLM, and saves text/token usage.
+       - `core.PostRuleEvaluator`: runs advanced post-rules, filters docs/citations, appends rule diagnostics, enforces denials, and writes audit metadata.
+       - `core.RuleSet`: treated as no-op (rules engine already invoked).
+    5. Returns the final `core.Answer`, propagating denial reasons through `Answer.Meta`.
+  - `Close` mirrors Sandwich behavior with LIFO closers.
+
+---
+
+## Rules Engine (`internal/providers/mangle`)
+- **New**: orchestrates engine construction by parsing optional schema sources (via registered `SchemaParser`s), instantiating default/custom converters, computing EDB declarations (code-first unless `FileFirst`), loading `.dlog` and `.facts` files, stratifying the program once, seeding a base fact store with schema/file facts, and performing an initial evaluation.
+- **preProcess**: clones the base fact store, feeds query facts from configured converters, evaluates rules, and returns `RuleResult` with:
+  - `Allowed=false` + reason when any `deny/1` fact produced, capturing reasons in `Answer.Meta`.
+  - `Mutate` that injects `filters` (from `query_filter(Key, Value)`) and `expansion_terms` (from `expanded_query/2`) into the query metadata.
+  - `SkippedStages` derived from `skip_stage(Stage)` atoms for declarative orchestrations.
+- **postProcess**: targets Sandwich post rules. It converts cited documents into facts, runs the rules, scrubs denied citations based on `deny(DocID, Reason)` facts, and copies denial reasons into `Answer.Meta`.
+- **Post** (declarative post hook): loads query/user/doc facts plus execution metadata, evaluates rules, and returns `core.PostRuleResult` containing:
+  - Filtered evidence (drops docs referenced by `drop_doc` facts).
+  - Redaction specs (`redact` atoms) applied via built-in regex matchers.
+  - Denial reason (first `deny/1`) and audit info (`rule_results`, `dropped_docs`, `redactions`, timing info).
+- **Query**: provides read-only access to base facts (used by declarative orchestrator) by manually unifying query atoms against stored facts.
+- Supporting helpers (`collectStrings`, `collectKeyValue`, `applySingleRedaction`, etc.) translate fact stores into Go structures.
+
+---
+
+## Providers & Components
+- **Retrieval**
+  - `internal/providers/bm25.New`: loads Markdown files with YAML front matter, tokenizes content into a TF-IDF model, and builds a BM25 retriever with default `TopK=10`. `Retrieve` tokenizes the query, scores docs via Okapi BM25, attaches raw BM25 scores to doc metadata, and returns the top-K as `core.Doc`s.
+  - `internal/providers/dense.New`: wires an `ai.Embedder` with a `core.VectorStore`. `Retrieve` embeds the query through Genkit, forwards the vector (and metadata filters under `Meta["filters"]`) to the vector store, and returns matching docs.
+  - `internal/providers/hybrid.New`: accepts pre-built BM25 and (optional) dense retrievers. `Retrieve` executes both in parallel (`errgroup`), applies Reciprocal Rank Fusion (k=60) on IDs, and returns the fused top-K.
+  - `internal/providers/retrievers/inmemory.New`: stores docs in a map, implements both `Retriever` and `Updatable` with thread-safe `Retrieve`, `Upsert`, and `Replace`.
+- **Vector Store**
+  - `internal/vectorstores/localvec.New`: initializes Genkit’s LocalVec plugin with a long-lived context, indexes Markdown documents upfront, and returns a `core.VectorStore`. `Search` requires the original query text via `ctx.Value("query_text")`, uses LocalVec’s retriever, and post-filters matches on metadata.
+- **Rerank**
+  - `internal/providers/rerank/cosine.New`: couples a shared embedder with default/requested `TopK`. `Rerank` embeds query and docs concurrently, calculates cosine similarity per doc, sorts descending, and truncates to the requested cut.
+- **LLM**
+  - `internal/providers/llm/google.NewGoogle`: receives a shared Genkit instance, wraps a `googlegenai` model, and uses `llm.PromptBuilder` (default template) in `Complete` to merge context snippets, call `Generate`, and return text plus prompt/completion token counts (if provided).
+  - `internal/providers/llm/openai.NewOpenAI`: reuses an `openai-go` client (OpenAI or Groq base URL), builds prompts via `PromptBuilder`, and calls Chat Completions, returning the first choice and usage counts.
+- **Embedders**
+  - `internal/embedders/openai.New`: constructs an embedder around the OpenAI Embeddings API, optionally accepting custom dimensions, and casts float64 vectors to float32.
+  - `internal/embedders/google.New`: uses Genkit’s `GoogleAIEmbedder`; currently registers under `"google-embedder"` (see builder mismatch note above).
+- **Prompt Builder (`llm/prompt.go`)**: caches compiled templates, provides helper funcs (`toJSON`, `join`, `truncate`), and defaults to the built-in RAG prompt that insists on grounded answers.
+
+---
+
+## Observability & Metadata
+- `core.Observability` surfaces optional `Logger`, `Tracer`, and `Meter`. Sandwich and declarative orchestrators guard logging with `if logger != nil`, fallback to `fmt.Printf` otherwise, and emit latency metrics (e.g., `manglekit.retrieve_ms`, `manglekit.rules_post_ms`).
+- `Answer.Meta` accumulates operational insight: timings, reranker scores, token usage, original document lists, denial flags, and rule audit payloads produced by the Mangle provider.
+- `ResourceClosers` are appended by the builder whenever a component exposes a `Close(context.Context)` method, ensuring idempotent shutdown when orchestrators are disposed.
+
+---
+
+## Known Gaps & Risks
+- **Provider aliasing**: the builder maps `embed.GoogleEmbedderOptions` to `"google"` but the Google embedder registers as `"google-embedder"`, so the stock builder cannot instantiate that embedder without manual override.
+- **Context propagation**: dense retriever (`Embed`), cosine reranker, LocalVec indexing, and LLM clients occasionally derive their own contexts or rely on background Genkit instances, limiting respect for caller deadlines/cancellation.
+- **Fallback semantics**: Sandwich only enforces `FallbackThreshold` when a reranker exists; with no reranker configured, the pipeline proceeds to the LLM even if evidence is weak.
+- **Declarative dependency heuristic**: `getToolDependencies` treats every string param as a potential dependency, so literal strings in tool configs can create false dependency edges or circularity errors.
+- **LocalVec lifecycle**: `localvec.New` creates a Genkit instance with `context.WithCancel` but never registers the closer with the builder (it returns the `LocalVecStore`, which implements `Close`, yet the builder only appends closers for tool instances, not components created outside declarative mode). Verify lifecycle in Sandwich flows.
+
+---
+
+## Roadmap / Suggested Improvements
+- Align registry names and builder aliases for the Google embedder (or update `optionsTypeToName`) to enable turnkey configuration.
+- Thread caller contexts through Genkit embedding/retrieval and all external SDK calls to honor cancellations.
+- Expand fallback handling to cover non-reranked paths (e.g., deterministic fallback copy when `FallbackThreshold` is set but no reranker).
+- Introduce explicit dependency metadata for declarative tools (e.g., `dependsOn` list) to avoid heuristic misfires.
+- Add integration tests that cover: YAML → Sandwich build, YAML → Declarative flow execution, LocalVec shutdown, and redaction/denial scenarios in both orchestrators.
