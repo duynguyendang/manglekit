@@ -24,7 +24,7 @@ func TestNewGoogleEmbedder(t *testing.T) {
 	opts := embed.GoogleEmbedderOptions{
 		Model: "embedding-001",
 	}
-	g := genkit.Init(context.Background(), genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: apiKey}))
+	g := genkit.Init(context.TODO(), genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: apiKey}))
 
 	embedder, err := New(opts, g)
 	require.NoError(t, err)
@@ -42,7 +42,7 @@ func TestGoogleEmbedder_Embed(t *testing.T) {
 	opts := embed.GoogleEmbedderOptions{
 		Model: "embedding-001",
 	}
-	g := genkit.Init(context.Background(), genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: apiKey}))
+	g := genkit.Init(context.TODO(), genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: apiKey}))
 
 	embedder, err := New(opts, g)
 	require.NoError(t, err)
@@ -54,7 +54,7 @@ func TestGoogleEmbedder_Embed(t *testing.T) {
 		},
 	}
 
-	resp, err := embedder.Embed(context.Background(), req)
+	resp, err := embedder.Embed(context.TODO(), req)
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.Len(t, resp.Embeddings, 2)

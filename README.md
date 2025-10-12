@@ -150,10 +150,11 @@ func main() {
 		WithRetriever(&retrieve.BM25Options{Path: "./data"}).
 		WithLLM(&llm.OpenAIOptions{Model: "gpt-4o-mini"}).
 		WithTopK(6). // Global default; individual retrievers can override this.
-		Build()
+		Build(ctx)
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}
+	defer orch.Close(ctx)
 
 	// Run a query through the pipeline.
 	query := core.Query{Text: "What is MangleKit?"}
@@ -239,14 +240,16 @@ func main() {
     }
 
     // Build the orchestrator from the configuration.
-    orch, err := builder.Build()
+    ctx := context.Background()
+    orch, err := builder.Build(ctx)
     if err != nil {
         log.Fatalf("Failed to build orchestrator: %v", err)
     }
+    defer orch.Close(ctx)
 
     // Run a query.
     query := core.Query{Text: "What is MangleKit?"}
-    answer, err := orch.Run(context.Background(), query)
+    answer, err := orch.Run(ctx, query)
     if err != nil {
         log.Fatalf("Orchestrator run failed: %v", err)
     }

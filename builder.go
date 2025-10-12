@@ -413,7 +413,7 @@ func (b *builder) WithFallbackThreshold(f float64) BuilderAPI {
 }
 
 // resolveProviderConfig finds the configuration for a given provider by checking params, config object, and env vars.
-func (b *builder) resolveProviderConfig(providerType, providerName string) error {
+func (b *builder) resolveProviderConfig(ctx context.Context, providerType, providerName string) error {
 	key := fmt.Sprintf("%s.%s", providerType, providerName)
 	if _, exists := b.resolvedCfgs[key]; exists {
 		return nil // Already resolved.
@@ -436,8 +436,8 @@ func (b *builder) resolveProviderConfig(providerType, providerName string) error
 			b.resolvedCfgs[key] = cfg
 			return nil
 		}
-		ctx, cancel := context.WithCancel(context.Background())
-		g, err := genai.NewClient(ctx, googleapi.WithAPIKey(apiKey))
+		gCtx, cancel := context.WithCancel(ctx)
+		g, err := genai.NewClient(gCtx, googleapi.WithAPIKey(apiKey))
 		if err != nil {
 			cancel()
 			return fmt.Errorf("failed to create genai client: %w", err)
@@ -559,18 +559,18 @@ func (b *builder) Build(ctx context.Context) (core.Orchestrator, error) {
 		// The declarative orchestrator requires a rules engine.
 		// Note: The main rules engine for the orchestrator is built here,
 		// separate from any "rules" tools that might be defined.
-		if err := b.buildRules(); err != nil {
-			closeErr := b.closeResources()
+		if err := b.buildRules(ctx); err != nil {
+			closeErr := b.closeResources(ctx)
 			return nil, errors.Join(fmt.Errorf("failed to build rules for declarative orchestrator: %w", err), closeErr)
 		}
 		if b.opts.Rules == nil {
-			closeErr := b.closeResources()
+			closeErr := b.closeResources(ctx)
 			return nil, errors.Join(errors.New("declarative orchestrator requires a rules engine, but none was configured"), closeErr)
 		}
 
 		// Build all the tools defined in the config.
 		if err := b.buildTools(ctx); err != nil {
-			closeErr := b.closeResources()
+			closeErr := b.closeResources(ctx)
 			return nil, errors.Join(err, closeErr)
 		}
 
@@ -590,29 +590,29 @@ func (b *builder) Build(ctx context.Context) (core.Orchestrator, error) {
 
 		orchestrator, err := declarative.New(flowController, b.tools, flowName, b.opts.Obs, b.opts.ResourceClosers)
 		if err != nil {
-			closeErr := b.closeResources()
+			closeErr := b.closeResources(ctx)
 			return nil, errors.Join(err, closeErr)
 		}
 		return orchestrator, nil
 
 	case "sandwich":
-		if err := b.resolveDependencies(); err != nil {
-			closeErr := b.closeResources()
+		if err := b.resolveDependencies(ctx); err != nil {
+			closeErr := b.closeResources(ctx)
 			return nil, errors.Join(err, closeErr)
 		}
 		if err := b.buildComponents(ctx); err != nil {
-			closeErr := b.closeResources()
+			closeErr := b.closeResources(ctx)
 			return nil, errors.Join(err, closeErr)
 		}
 		orchestrator, err := New(b.opts)
 		if err != nil {
-			closeErr := b.closeResources()
+			closeErr := b.closeResources(ctx)
 			return nil, errors.Join(err, closeErr)
 		}
 		return orchestrator, nil
 
 	default:
-		closeErr := b.closeResources()
+		closeErr := b.closeResources(ctx)
 		return nil, errors.Join(fmt.Errorf("unknown orchestrator type: %q", orchestratorType), closeErr)
 	}
 }
@@ -699,7 +699,7 @@ func (b *builder) buildSingleTool(ctx context.Context, name string, cfg ToolConf
 	// The resolveProviderConfig function will only return an error if a provider
 	// that requires external configuration (e.g., an API key) is missing it.
 	// For other providers (like bm25), it will do nothing and return nil.
-	if err := b.resolveProviderConfig("tool", providerFamily); err != nil {
+	if err := b.resolveProviderConfig(ctx, "tool", providerFamily); err != nil {
 		return nil, fmt.Errorf("failed to resolve provider config for %q: %w", providerFamily, err)
 	}
 
@@ -806,7 +806,7 @@ var providerToFamily = map[string]string{
 }
 
 // resolveDependencies handles identifying required providers and initializing API clients.
-func (b *builder) resolveDependencies() error {
+func (b *builder) resolveDependencies(ctx context.Context) error {
 	// Infer embedder from components that need it, only if one is not already provided or configured.
 	if b.embedder == nil && b.embedderName == "" {
 		if b.vectorStoreName != "" {
@@ -840,7 +840,7 @@ func (b *builder) resolveDependencies() error {
 	}
 
 	for compType, providerName := range b.providerNames {
-		if err := b.resolveProviderConfig(compType, providerName); err != nil {
+		if err := b.resolveProviderConfig(ctx, compType, providerName); err != nil {
 			return err
 		}
 	}
@@ -864,7 +864,7 @@ func (b *builder) buildComponents(ctx context.Context) error {
 	if err := b.buildReranker(); err != nil {
 		return err
 	}
-	if err := b.buildRules(); err != nil {
+	if err := b.buildRules(ctx); err != nil {
 		return err
 	}
 	if err := b.buildLLM(); err != nil {
@@ -1148,7 +1148,7 @@ func (b *builder) buildReranker() error {
 	return nil
 }
 
-func (b *builder) buildRules() error {
+func (b *builder) buildRules(ctx context.Context) error {
 	if b.rulesName == "" {
 		// If a declarative orchestrator is being used, a rules engine is required.
 		// This check is handled in the main Build method.
@@ -1179,7 +1179,7 @@ func (b *builder) buildRules() error {
 		}
 	}
 
-	ruleset, err := newFn(context.Background(), opts)
+	ruleset, err := newFn(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("failed to build rules '%s': %w", b.rulesName, err)
 	}
@@ -1247,11 +1247,11 @@ func (b *builder) buildLLM() error {
 // closeResources attempts to release any provider clients that were opened during the build.
 // It is primarily used on error paths to avoid leaking background goroutines or connections
 // when the build cannot be completed.
-func (b *builder) closeResources() error {
+func (b *builder) closeResources(ctx context.Context) error {
 	if len(b.opts.ResourceClosers) == 0 {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	closeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var combined error
@@ -1259,7 +1259,7 @@ func (b *builder) closeResources() error {
 		if b.opts.ResourceClosers[i] == nil {
 			continue
 		}
-		if err := b.opts.ResourceClosers[i](ctx); err != nil {
+		if err := b.opts.ResourceClosers[i](closeCtx); err != nil {
 			combined = errors.Join(combined, err)
 		}
 	}

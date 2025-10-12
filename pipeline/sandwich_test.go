@@ -68,7 +68,7 @@ func (m *mockRuleSet) Evaluate(stage core.Stage, q core.Query, a *core.Answer) (
 }
 
 func TestSandwichRun(t *testing.T) {
-	ctx := context.Background()
+	ctx := context.TODO()
 	query := core.Query{Text: "what is manglekit?"}
 
 	t.Run("successful run with all components", func(t *testing.T) {
