@@ -133,4 +133,19 @@ func TestSandwichRun(t *testing.T) {
 		require.Error(t, err)
 		assert.ErrorIs(t, err, core.ErrNoEvidence)
 	})
+
+	t.Run("fallback threshold is ignored if no reranker is present", func(t *testing.T) {
+		opts := core.Options{
+			Retriever: &mockRetriever{Result: retrieve.Result{Docs: []core.Doc{{ID: "1", Text: "doc1"}}}},
+			// No Reranker
+			LLM:               &mockLLM{Result: llm.Response{Text: "successful answer"}},
+			FallbackThreshold: 0.5,
+		}
+		orchestrator, err := pipeline.NewSandwich(opts)
+		require.NoError(t, err)
+
+		answer, err := orchestrator.Run(ctx, query)
+		require.NoError(t, err)
+		assert.Equal(t, "successful answer", answer.Text)
+	})
 }
