@@ -1,6 +1,10 @@
 package retrieve
 
-import "github.com/duynguyendang/manglekit/core"
+import (
+	"context"
+
+	"github.com/duynguyendang/manglekit/core"
+)
 
 // Request encapsulates a query to a retriever. It packages the query string,
 // the desired number of results, and any additional metadata needed for the operation.
@@ -33,10 +37,11 @@ type Retriever interface {
 	// Retrieve takes a Request and returns a Result containing the most
 	// relevant documents found by the implementation.
 	//
+	// ctx is the context for the API call.
 	// req is the retrieval request, containing the query and other parameters.
 	// It returns a Result containing the retrieved documents or an error if
 	// the retrieval process fails.
-	Retrieve(req Request) (Result, error)
+	Retrieve(ctx context.Context, req Request) (Result, error)
 }
 
 // Updatable defines the interface for retrievers that support runtime

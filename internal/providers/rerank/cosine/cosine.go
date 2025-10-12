@@ -50,10 +50,11 @@ func New(opts rerank.CosineOptions, embedder ai.Embedder) (rerank.Reranker, erro
 // list sorted by this score in descending order.
 // This method satisfies the `rerank.Reranker` interface.
 //
+// ctx is the context for the API call.
 // req contains the query and the initial list of documents to be reranked.
 // It returns a sorted slice of `rerank.ScoredDoc`, trimmed to the configured
 // `TopK` value, or an error if any of the embedding operations fail.
-func (r *Reranker) Rerank(req rerank.Request) ([]rerank.ScoredDoc, error) {
+func (r *Reranker) Rerank(ctx context.Context, req rerank.Request) ([]rerank.ScoredDoc, error) {
 	if len(req.Docs) == 0 {
 		return nil, nil // Nothing to rerank.
 	}
@@ -62,7 +63,7 @@ func (r *Reranker) Rerank(req rerank.Request) ([]rerank.ScoredDoc, error) {
 	embedReq := &ai.EmbedRequest{
 		Input: []*ai.Document{ai.DocumentFromText(req.Query, nil)},
 	}
-	embedResp, err := r.embedder.Embed(context.Background(), embedReq)
+	embedResp, err := r.embedder.Embed(ctx, embedReq)
 	if err != nil {
 		return nil, fmt.Errorf("cosine: failed to embed query: %w", err)
 	}
@@ -73,14 +74,14 @@ func (r *Reranker) Rerank(req rerank.Request) ([]rerank.ScoredDoc, error) {
 
 	// 2. Embed all the documents in parallel.
 	docVectors := make([][]float32, len(req.Docs))
-	var g errgroup.Group
+	g, gCtx := errgroup.WithContext(ctx)
 	for i, doc := range req.Docs {
 		i, doc := i, doc // https://golang.org/doc/faq#closures_and_goroutines
 		g.Go(func() error {
 			docEmbedReq := &ai.EmbedRequest{
 				Input: []*ai.Document{ai.DocumentFromText(doc.Text, nil)},
 			}
-			docEmbedResp, err := r.embedder.Embed(context.Background(), docEmbedReq)
+			docEmbedResp, err := r.embedder.Embed(gCtx, docEmbedReq)
 			if err != nil {
 				return fmt.Errorf("failed to embed doc %s: %w", doc.ID, err)
 			}

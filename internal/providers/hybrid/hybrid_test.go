@@ -1,6 +1,7 @@
 package hybrid_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -16,7 +17,7 @@ type mockRetriever struct {
 	err  error
 }
 
-func (m *mockRetriever) Retrieve(req retrieve.Request) (retrieve.Result, error) {
+func (m *mockRetriever) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Result, error) {
 	if m.err != nil {
 		return retrieve.Result{}, m.err
 	}
@@ -47,7 +48,7 @@ func TestHybrid_Retrieve(t *testing.T) {
 
 	// 3. Perform the retrieval.
 	req := retrieve.Request{Query: "test", TopK: 5}
-	result, err := retriever.Retrieve(req)
+	result, err := retriever.Retrieve(context.Background(), req)
 	require.NoError(t, err)
 
 	// 4. Assert the results.

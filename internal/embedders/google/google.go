@@ -10,6 +10,8 @@ import (
 	"github.com/duynguyendang/manglekit/embed"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/google/generative-ai-go/genai"
 )
 
@@ -34,32 +36,24 @@ type GoogleEmbedder struct {
 // MangleKit framework and called by the builder to create a new instance.
 //
 // opts provides the configuration, such as the specific model to use.
-// client is the pre-configured `genai.Client` dependency, injected by the builder.
+// g is the pre-configured `genkit.Genkit` instance, injected by the builder.
 // It returns an `ai.Embedder` or an error if the configuration is invalid.
-func New(opts embed.GoogleEmbedderOptions, client *genai.Client) (ai.Embedder, error) {
-	if client == nil {
-		return nil, fmt.Errorf("google: genai.Client is required")
+func New(opts embed.GoogleEmbedderOptions, g *genkit.Genkit) (ai.Embedder, error) {
+	if g == nil {
+		return nil, fmt.Errorf("google: genkit.Genkit is required")
 	}
 
-	model := opts.Model
-	if model == "" {
-		model = defaultEmbeddingModel
+	modelName := opts.Model
+	if modelName == "" {
+		modelName = defaultEmbeddingModel
 	}
 
-	var dim int
-	switch model {
-	case "embedding-001":
-		dim = defaultDim
-	default:
-		// A real implementation might query model capabilities instead of erroring.
-		return nil, fmt.Errorf("google: unknown model %s, cannot determine dimension", model)
+	embedder := googlegenai.GoogleAIEmbedder(g, modelName)
+	if embedder == nil {
+		return nil, fmt.Errorf("google: failed to create embedder '%s'", modelName)
 	}
 
-	return &GoogleEmbedder{
-		client: client.EmbeddingModel(model),
-		model:  model,
-		dim:    dim,
-	}, nil
+	return embedder, nil
 }
 
 // Name returns the identifier of the underlying Google embedding model.

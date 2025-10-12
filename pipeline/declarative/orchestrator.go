@@ -304,7 +304,7 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, stage flow
 			query.Meta["filters"], query.Meta["expansion_terms"])
 
 		req := retrieve.Request{Query: query.Text, Meta: query.Meta}
-		res, err := t.Retrieve(req)
+		res, err := t.Retrieve(ctx, req)
 		if err != nil {
 			return err
 		}
@@ -331,7 +331,7 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, stage flow
 			return fmt.Errorf("no documents in context for reranker to process")
 		}
 		req := rerank.Request{Query: query.Text, Docs: docs}
-		rerankedDocs, err := t.Rerank(req)
+		rerankedDocs, err := t.Rerank(ctx, req)
 		if err != nil {
 			return err
 		}
@@ -365,7 +365,7 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, stage flow
 			passages[i] = d.Text
 		}
 		req := llm.Request{Prompt: query.Text, Context: passages, Data: query.Meta}
-		res, err := t.Complete(req)
+		res, err := t.Complete(ctx, req)
 		if err != nil {
 			return err
 		}

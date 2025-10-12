@@ -2,6 +2,7 @@ package bm25
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -120,10 +121,11 @@ func New(opts retrieve.BM25Options) (retrieve.Retriever, error) {
 // sorted in descending order of score.
 // This method satisfies the `retrieve.Retriever` interface.
 //
+// ctx is the context for the API call.
 // req contains the query string and the number of results to return (`TopK`).
 // It returns a `retrieve.Result` containing the ranked documents or an error if
 // the retrieval fails.
-func (b *BM25) Retrieve(req retrieve.Request) (retrieve.Result, error) {
+func (b *BM25) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Result, error) {
 	queryTokens := strings.Fields(strings.ToLower(req.Query))
 	var queryIDs []int
 	for _, token := range queryTokens {

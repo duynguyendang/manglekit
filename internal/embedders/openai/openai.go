@@ -20,13 +20,6 @@ func init() {
 	manglekit.RegisterEmbedder("groq", New)
 }
 
-// openAIEmbedder implements the `ai.Embedder` interface for OpenAI and compatible services.
-type openAIEmbedder struct {
-	client     *openai.Client
-	modelName  string
-	dimensions int
-}
-
 // New is the constructor for the OpenAI-compatible embedder. It is registered
 // with the MangleKit framework for both "openai" and "groq" providers.
 //
@@ -47,6 +40,13 @@ func New(opts embed.OpenAIEmbedderOptions, client *openai.Client) (ai.Embedder, 
 		modelName:  modelName,
 		dimensions: opts.Dimensions,
 	}, nil
+}
+
+// openAIEmbedder implements the `ai.Embedder` interface for OpenAI and compatible services.
+type openAIEmbedder struct {
+	client     *openai.Client
+	modelName  string
+	dimensions int
 }
 
 // Name returns the identifier of the underlying OpenAI-compatible embedding model.
@@ -112,3 +112,11 @@ func (e *openAIEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.E
 // but is not used by the MangleKit builder. This is a no-op to satisfy the
 // interface, as seen in mock implementations within the codebase (e.g., dense_test.go).
 func (e *openAIEmbedder) Register(r api.Registry) {}
+
+// Close is a no-op for the standard OpenAI client but satisfies the
+// Closer interface, allowing the builder to manage its lifecycle.
+func (e *openAIEmbedder) Close(ctx context.Context) error {
+	// The underlying openai-go client does not expose a Close() method.
+	// We are already closing the idle connections on the transport in the builder.
+	return nil
+}

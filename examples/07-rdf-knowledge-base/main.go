@@ -42,7 +42,7 @@ func main() {
 		log.Fatalf("Failed to create builder from yaml: %v", err)
 	}
 
-	orch, err := builder.Build()
+	orch, err := builder.Build(context.Background())
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}

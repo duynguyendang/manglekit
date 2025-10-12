@@ -195,7 +195,7 @@ func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 		fmt.Printf("[sandwich] calling retriever with filters=%#v expansions=%#v\n",
 			q.Meta["filters"], q.Meta["expansion_terms"])
 	}
-	retrRes, err := s.retriever.Retrieve(retrReq)
+	retrRes, err := s.retriever.Retrieve(ctx, retrReq)
 	if err != nil {
 		if logger != nil {
 			logger.Error("retrieve failed", "error", err)
@@ -220,11 +220,10 @@ func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 		fmt.Printf("[sandwich] retrieved %d docs\n", len(docs))
 	}
 
-	// 3. Rerank
-	bestScore := 0.0
+	// 3. Rerank / 4. Fallback
 	if s.reranker != nil {
 		tRerankStart := time.Now()
-		rerankedDocs, err := s.reranker.Rerank(rerank.Request{Query: q.Text, Docs: docs, TopK: s.opts.TopK})
+		rerankedDocs, err := s.reranker.Rerank(ctx, rerank.Request{Query: q.Text, Docs: docs, TopK: s.opts.TopK})
 		if meter != nil {
 			meter.Record("manglekit.rerank_ms", float64(time.Since(tRerankStart).Milliseconds()))
 		}
@@ -243,6 +242,7 @@ func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 		}
 		d := make([]core.Doc, len(rerankedDocs))
 		citations := make([]core.Citation, len(rerankedDocs))
+		var bestScore float64
 		if len(rerankedDocs) > 0 {
 			bestScore = rerankedDocs[0].Score
 		}
@@ -258,17 +258,17 @@ func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 		}
 		docs = d
 		answer.Citations = citations
-	}
-	answer.Meta["best_score"] = bestScore
+		answer.Meta["best_score"] = bestScore
 
-	// 4. Fallback Threshold
-	if s.opts.FallbackThreshold > 0 && bestScore < s.opts.FallbackThreshold {
-		if logger != nil {
-			logger.Info("fallback threshold not met", "best_score", bestScore, "threshold", s.opts.FallbackThreshold)
-		} else {
-			fmt.Printf("[sandwich] fallback threshold not met best_score=%.4f threshold=%.4f\n", bestScore, s.opts.FallbackThreshold)
+		// Fallback Threshold check is now INSIDE the reranker block.
+		if s.opts.FallbackThreshold > 0 && bestScore < s.opts.FallbackThreshold {
+			if logger != nil {
+				logger.Info("fallback threshold not met", "best_score", bestScore, "threshold", s.opts.FallbackThreshold)
+			} else {
+				fmt.Printf("[sandwich] fallback threshold not met best_score=%.4f threshold=%.4f\n", bestScore, s.opts.FallbackThreshold)
+			}
+			return core.Answer{}, core.ErrNoEvidence
 		}
-		return core.Answer{}, core.ErrNoEvidence
 	}
 
 	// 5. LLM
@@ -277,7 +277,7 @@ func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 		passages[i] = d.Text
 	}
 	tLlmStart := time.Now()
-	llmRes, err := s.llm.Complete(llm.Request{
+	llmRes, err := s.llm.Complete(ctx, llm.Request{
 		Prompt:    q.Text,
 		Context:   passages,
 		MaxTokens: s.opts.MaxTokens,

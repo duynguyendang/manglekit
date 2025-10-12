@@ -23,10 +23,10 @@ type openAIClient struct {
 	promptBuilder  *llm.PromptBuilder
 }
 
-// Close is a no-op for the standard OpenAI client but satisfies the
-// Closer interface, allowing the builder to manage its lifecycle.
+// Close closes the idle connections on the underlying HTTP transport.
 func (c *openAIClient) Close(ctx context.Context) error {
 	// The underlying openai-go client does not expose a Close() method.
+	// We are already closing the idle connections on the transport in the builder.
 	return nil
 }
 
@@ -60,10 +60,11 @@ func NewOpenAI(opts llm.OpenAIOptions, client *openai.Client) (llm.Client, error
 // It uses the PromptBuilder to construct the final prompt and then calls the
 // standard Chat Completions API. This method satisfies the `llm.Client` interface.
 //
+// ctx is the context for the API call.
 // req is the request containing the prompt, context, and other parameters.
 // It returns an `llm.Response` with the generated text and token usage, or an
 // error if prompt building or the API call fails.
-func (c *openAIClient) Complete(req llm.Request) (llm.Response, error) {
+func (c *openAIClient) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
 	// Prepare the data for the template.
 	data := map[string]any{
 		"Context": req.Context,
@@ -79,7 +80,7 @@ func (c *openAIClient) Complete(req llm.Request) (llm.Response, error) {
 		return llm.Response{}, fmt.Errorf("failed to build prompt: %w", err)
 	}
 
-	resp, err := c.client.Chat.Completions.New(context.Background(), openai.ChatCompletionNewParams{
+	resp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model: c.modelName,
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage(prompt),
