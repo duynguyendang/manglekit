@@ -229,6 +229,7 @@ To ensure the project's ground truth is always current, you **must** use the `up
   * **Don’t go rogue:** Do not access external URLs or services unless configured in the environment.
   * **Don’t hallucinate:** Only generate answers grounded in the vetted context from the pipeline. Do not invent architectural decisions.
   * **Don’t assume:** Only document what has actually been implemented. Do not add hypothetical features to `docs/CONTEXT.md`.
+  * **Don’t hardcode values:** Resolve required variables via configuration, environment, or providers instead of embedding fixed literals.
 ---
 
 ## 10) Common Tasks
