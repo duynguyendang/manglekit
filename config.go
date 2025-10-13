@@ -185,7 +185,7 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 	configDir := filepath.Dir(path)
 
 	baseBuilder := NewBuilder()
-	if impl, ok := baseBuilder.(*builder); ok {
+	if impl, ok := baseBuilder.(*Builder); ok {
 		impl.configDir = configDir
 	}
 
@@ -274,7 +274,7 @@ func NewBuilderFromEnv() (BuilderAPI, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get working directory: %w", err)
 	}
-	if impl, ok := baseBuilder.(*builder); ok {
+	if impl, ok := baseBuilder.(*Builder); ok {
 		impl.configDir = configDir
 	}
 
@@ -304,7 +304,7 @@ func NewBuilderFromEnv() (BuilderAPI, error) {
 
 		jsonParams, err := json.Marshal(params)
 		if err != nil {
-			return fmt.Errorf("failed to marshal params for %q: %w", name, err)
+			return nil, fmt.Errorf("failed to marshal params for %q: %w", name, err)
 		}
 		if err := json.Unmarshal(jsonParams, optsPtr); err != nil {
 			return fmt.Errorf("failed to unmarshal params for %q: %w", name, err)

@@ -3,11 +3,14 @@ package mock
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/core/api"
 	"github.com/google/mangle/ast"
 )
 
@@ -109,6 +112,11 @@ func (l *LLM) Complete(ctx context.Context, req llm.Request) (llm.Response, erro
 	return llm.Response{Text: fmt.Sprintf("model: %s query: %s", l.model, req.Prompt)}, nil
 }
 
+// Model returns the model name.
+func (l *LLM) Model() string {
+	return l.model
+}
+
 func (l *LLM) GetName() string {
 	return "mock-llm"
 }
@@ -120,8 +128,21 @@ type LLMOptions struct {
 
 // Tool is a mock tool.
 type Tool struct {
-	Name string
-	Fn   func(Params) (Object, error)
+	Name       string
+	Fn         func(Params) (Object, error)
+	lastParams Params
+	mu         sync.Mutex
+}
+
+func (t *Tool) GetLastParams() Params {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	// Return a copy to avoid race conditions on the map.
+	p := make(Params)
+	for k, v := range t.lastParams {
+		p[k] = v
+	}
+	return p
 }
 
 func (t *Tool) GetName() string {
@@ -138,10 +159,33 @@ func (t *Tool) GetFn() func(args []ast.Constant) (ast.Constant, error) {
 		if err != nil {
 			return ast.Constant{}, err
 		}
+
 		obj, err := t.Fn(params)
 		if err != nil {
 			return ast.Constant{}, err
 		}
+
+		// Store params after Fn is called so mutations (like adding __called) are captured.
+		t.mu.Lock()
+		t.lastParams = params
+		t.mu.Unlock()
+
 		return ObjectToConstant(obj)
 	}
+}
+
+// Embedder is a mock embedder.
+type Embedder struct{}
+
+// Name returns the name of the embedder.
+func (e *Embedder) Name() string {
+	return "mock-embedder"
+}
+
+// Register registers the embedder.
+func (e *Embedder) Register(r api.Registry) {}
+
+// Embed embeds the documents.
+func (e *Embedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.EmbedResponse, error) {
+	return &ai.EmbedResponse{}, nil
 }
