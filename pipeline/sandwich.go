@@ -92,46 +92,17 @@ func (s *Sandwich) Close(ctx context.Context) error {
 	return combined
 }
 
-// Run executes the full, sequential orchestration pipeline for a given query.
-// It is the primary method of the `Sandwich` orchestrator and follows a series
-// of distinct steps, with observability hooks for logging and tracing at each point.
-//
-// The process is as follows:
-//  1. **Pre-Rules**: Executes Mangle rules at the 'pre' stage to validate,
-//     normalize, or modify the incoming query. This can result in adding filters
-//     or expansion terms to the query's metadata. If a rule denies the request,
-//     the pipeline halts immediately.
-//  2. **Retrieve**: Fetches an initial set of documents using the configured
-//     retriever, passing along any metadata from the pre-rules stage.
-//  3. **Rerank**: If a reranker is configured, it re-scores and re-orders the
-//     retrieved documents to improve their relevance to the query.
-//  4. **Fallback Check**: If a `FallbackThreshold` is set, the pipeline checks the
-//     top score from the reranker. If the score is below the threshold, it
-//     exits early with an `ErrNoEvidence` error, preventing the LLM from being
-//     called with low-quality context.
-//  5. **LLM Call**: Sends the final, reranked context and the user prompt to the
-//     language model to generate a synthesized answer.
-//  6. **Post-Rules**: Executes Mangle rules at the 'post' stage. These rules can
-//     inspect the generated answer and the source citations, filtering or modifying
-//     them to enforce policies (e.g., removing PII, checking for entitlements).
-//     If a rule denies the result, the pipeline halts.
-//
-// ctx is the context for the entire operation, used for cancellation and tracing.
-// q is the user's query to be processed.
-// It returns the final `core.Answer` or an error if any stage of the pipeline fails.
 func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 	// 0. Setup observability
 	logger := s.opts.Obs.Logger
-	meter := s.opts.Obs.Meter
 	if logger != nil {
 		logger.Info("pipeline run started", "query", q.Text)
 	} else {
 		fmt.Printf("[sandwich] pipeline run started query=%q\n", q.Text)
 	}
 
-	var endTrace func(attrs ...any)
 	if s.opts.Obs.Tracer != nil {
-		endTrace = s.opts.Obs.Tracer.StartSpan("manglekit.Run")
+		endTrace := s.opts.Obs.Tracer.StartSpan("manglekit.Run")
 		defer endTrace()
 	}
 	answer := core.Answer{
@@ -139,59 +110,112 @@ func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 	}
 
 	// 1. Pre-Rules
-	if s.opts.Rules != nil {
-		tPreRulesStart := time.Now()
-		res, err := s.opts.Rules.Evaluate(core.Pre, q, nil)
-		if meter != nil {
-			meter.Record("manglekit.rules_pre_ms", float64(time.Since(tPreRulesStart).Milliseconds()))
-		}
-		if err != nil {
-			if logger != nil {
-				logger.Error("pre-rules failed", "error", err)
-			} else {
-				fmt.Printf("[sandwich] pre-rules failed: %v\n", err)
-			}
-			return core.Answer{}, fmt.Errorf("pre-rules failed: %w", err)
-		}
-		if !res.Allowed {
-			if res.Mutate != nil {
-				res.Mutate(&q, &answer)
-			}
-			if logger != nil {
-				logger.Info("request denied by pre-rule", "reason", res.Reason)
-			} else {
-				fmt.Printf("[sandwich] request denied by pre-rule reason=%q\n", res.Reason)
-			}
-			return answer, fmt.Errorf("%w: %s", core.ErrDenied, res.Reason)
-		}
-		if res.Mutate != nil {
-			// ÁP DỤNG MUTATE để filters/expansion_terms đi vào q.Meta
-			res.Mutate(&q, &answer)
-			if logger != nil {
-				logger.Info("query mutated by pre-rule")
-			} else {
-				fmt.Printf("[sandwich] query mutated by pre-rule\n")
-			}
-		}
-
-		// Log filters/expansions sau mutate (dù có logger hay không)
-		var filters any
-		var expansions any
-		if q.Meta != nil {
-			filters = q.Meta["filters"]
-			expansions = q.Meta["expansion_terms"]
-		}
-		if logger != nil {
-			logger.Info("pre-rules outputs", "filters", filters, "expansions", expansions)
-		} else {
-			fmt.Printf("[sandwich] pre-rules outputs filters=%#v expansions=%#v\n", filters, expansions)
-		}
+	var err error
+	q, err = s.runPreRules(ctx, q, &answer)
+	if err != nil {
+		return answer, err
 	}
 
 	// 2. Retrieve
+	docs, err := s.runRetrieve(ctx, q, &answer)
+	if err != nil {
+		return answer, err
+	}
+	if len(docs) == 0 {
+		return answer, core.ErrNoEvidence
+	}
+
+	// 3. Rerank / Fallback
+	docs, err = s.runRerank(ctx, q, docs, &answer)
+	if err != nil {
+		return answer, err
+	}
+
+	// 4. Prepare for LLM
+	passages, err := s.prepareLlmRequest(docs, &answer)
+	if err != nil {
+		return answer, fmt.Errorf("prepare llm request failed: %w", err)
+	}
+
+	// 5. LLM
+	if err := s.runLlm(ctx, q, passages, &answer); err != nil {
+		return answer, err
+	}
+
+	// 6. Post-Rules
+	if err := s.runPostRules(ctx, q, &answer); err != nil {
+		return answer, err
+	}
+
+	if logger != nil {
+		logger.Info("pipeline run finished successfully")
+	} else {
+		fmt.Printf("[sandwich] pipeline run finished successfully\n")
+	}
+	return answer, nil
+}
+
+func (s *Sandwich) runPreRules(ctx context.Context, q core.Query, a *core.Answer) (core.Query, error) {
+	if s.opts.Rules == nil {
+		return q, nil
+	}
+	logger := s.opts.Obs.Logger
+	meter := s.opts.Obs.Meter
+
+	tPreRulesStart := time.Now()
+	res, err := s.opts.Rules.Evaluate(core.Pre, q, nil)
+	if meter != nil {
+		meter.Record("manglekit.rules_pre_ms", float64(time.Since(tPreRulesStart).Milliseconds()))
+	}
+	if err != nil {
+		if logger != nil {
+			logger.Error("pre-rules failed", "error", err)
+		} else {
+			fmt.Printf("[sandwich] pre-rules failed: %v\n", err)
+		}
+		return q, fmt.Errorf("pre-rules failed: %w", err)
+	}
+	if !res.Allowed {
+		if res.Mutate != nil {
+			res.Mutate(&q, a)
+		}
+		if logger != nil {
+			logger.Info("request denied by pre-rule", "reason", res.Reason)
+		} else {
+			fmt.Printf("[sandwich] request denied by pre-rule reason=%q\n", res.Reason)
+		}
+		return q, fmt.Errorf("%w: %s", core.ErrDenied, res.Reason)
+	}
+	if res.Mutate != nil {
+		res.Mutate(&q, a)
+		if logger != nil {
+			logger.Info("query mutated by pre-rule")
+		} else {
+			fmt.Printf("[sandwich] query mutated by pre-rule\n")
+		}
+	}
+
+	var filters any
+	var expansions any
+	if q.Meta != nil {
+		filters = q.Meta["filters"]
+		expansions = q.Meta["expansion_terms"]
+	}
+	if logger != nil {
+		logger.Info("pre-rules outputs", "filters", filters, "expansions", expansions)
+	} else {
+		fmt.Printf("[sandwich] pre-rules outputs filters=%#v expansions=%#v\n", filters, expansions)
+	}
+	return q, nil
+}
+
+func (s *Sandwich) runRetrieve(ctx context.Context, q core.Query, a *core.Answer) ([]core.Doc, error) {
+	logger := s.opts.Obs.Logger
+	meter := s.opts.Obs.Meter
+
 	tRetrieveStart := time.Now()
 	retrReq := retrieve.Request{Query: q.Text, TopK: s.opts.TopK, Meta: q.Meta}
-	if logger == nil { // in ra trước khi gọi retriever
+	if logger == nil {
 		fmt.Printf("[sandwich] calling retriever with filters=%#v expansions=%#v\n",
 			q.Meta["filters"], q.Meta["expansion_terms"])
 	}
@@ -202,56 +226,83 @@ func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 		} else {
 			fmt.Printf("[sandwich] retrieve failed: %v\n", err)
 		}
-		return core.Answer{}, fmt.Errorf("retrieve failed: %w", err)
+		return nil, fmt.Errorf("retrieve failed: %w", err)
 	}
 	retrieveMs := time.Since(tRetrieveStart).Milliseconds()
-	answer.Meta["retrieve_ms"] = retrieveMs
+	a.Meta["retrieve_ms"] = retrieveMs
 	if meter != nil {
 		meter.Record("manglekit.retrieve_ms", float64(retrieveMs))
 	}
 	docs := retrRes.Docs
-
-	// Lưu original_docs NGAY sau retrieve để post-rules có thể inspect
-	answer.Meta["original_docs"] = docs
+	a.Meta["original_docs"] = docs
 
 	if logger != nil {
 		logger.Info("retrieved documents", "count", len(docs))
 	} else {
 		fmt.Printf("[sandwich] retrieved %d docs\n", len(docs))
 	}
+	return docs, nil
+}
 
-	// 3. Rerank / 4. Fallback
-	if len(docs) == 0 {
-		return core.Answer{}, core.ErrNoEvidence
+func (s *Sandwich) runRerank(ctx context.Context, q core.Query, docs []core.Doc, a *core.Answer) ([]core.Doc, error) {
+	if s.reranker == nil {
+		return docs, nil
 	}
-	// Only apply reranking and fallback if a reranker is configured.
-	if s.reranker != nil {
-		tRerankStart := time.Now()
-		rerankedDocs, err := s.reranker.Rerank(ctx, rerank.Request{Query: q.Text, Docs: docs, TopK: s.opts.TopK})
-		if meter != nil {
-			meter.Record("manglekit.rerank_ms", float64(time.Since(tRerankStart).Milliseconds()))
-		}
-		if err != nil {
-			if logger != nil {
-				logger.Error("rerank failed", "error", err)
-			} else {
-				fmt.Printf("[sandwich] rerank failed: %v\n", err)
-			}
-			return core.Answer{}, fmt.Errorf("rerank failed: %w", err)
-		}
+	logger := s.opts.Obs.Logger
+	meter := s.opts.Obs.Meter
+
+	tRerankStart := time.Now()
+	rerankedDocs, err := s.reranker.Rerank(ctx, rerank.Request{Query: q.Text, Docs: docs, TopK: s.opts.TopK})
+	rerankMs := time.Since(tRerankStart).Milliseconds()
+	a.Meta["rerank_ms"] = rerankMs
+	if meter != nil {
+		meter.Record("manglekit.rerank_ms", float64(rerankMs))
+	}
+	if err != nil {
 		if logger != nil {
-			logger.Info("reranked documents", "count", len(rerankedDocs))
+			logger.Error("rerank failed", "error", err)
 		} else {
-			fmt.Printf("[sandwich] reranked documents count=%d\n", len(rerankedDocs))
+			fmt.Printf("[sandwich] rerank failed: %v\n", err)
 		}
-		d := make([]core.Doc, len(rerankedDocs))
+		return nil, fmt.Errorf("rerank failed: %w", err)
+	}
+	if logger != nil {
+		logger.Info("reranked documents", "count", len(rerankedDocs))
+	} else {
+		fmt.Printf("[sandwich] reranked documents count=%d\n", len(rerankedDocs))
+	}
+	a.Meta["reranked_docs"] = rerankedDocs
+
+	d := make([]core.Doc, len(rerankedDocs))
+	var bestScore float64
+	if len(rerankedDocs) > 0 {
+		bestScore = rerankedDocs[0].Score
+	}
+	for i, rd := range rerankedDocs {
+		d[i] = rd.Doc
+	}
+	a.Meta["best_score"] = bestScore
+
+	if s.opts.FallbackThreshold > 0 && bestScore < s.opts.FallbackThreshold {
+		if logger != nil {
+			logger.Info("fallback threshold not met", "best_score", bestScore, "threshold", s.opts.FallbackThreshold)
+		} else {
+			fmt.Printf("[sandwich] fallback threshold not met best_score=%.4f threshold=%.4f\n", bestScore, s.opts.FallbackThreshold)
+		}
+		return nil, core.ErrNoEvidence
+	}
+	return d, nil
+}
+
+func (s *Sandwich) prepareLlmRequest(docs []core.Doc, a *core.Answer) ([]string, error) {
+	passages := make([]string, len(docs))
+	for i, d := range docs {
+		passages[i] = d.Text
+	}
+
+	if rerankedDocs, ok := a.Meta["reranked_docs"].([]rerank.ScoredDoc); ok {
 		citations := make([]core.Citation, len(rerankedDocs))
-		var bestScore float64
-		if len(rerankedDocs) > 0 {
-			bestScore = rerankedDocs[0].Score
-		}
 		for i, rd := range rerankedDocs {
-			d[i] = rd.Doc
 			citations[i] = core.Citation{
 				ID:      rd.Doc.ID,
 				Source:  rd.Doc.Source,
@@ -260,26 +311,27 @@ func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 				Score:   rd.Score,
 			}
 		}
-		docs = d
-		answer.Citations = citations
-		answer.Meta["best_score"] = bestScore
-
-		// Fallback Threshold check is now INSIDE the reranker block.
-		if s.opts.FallbackThreshold > 0 && bestScore < s.opts.FallbackThreshold {
-			if logger != nil {
-				logger.Info("fallback threshold not met", "best_score", bestScore, "threshold", s.opts.FallbackThreshold)
-			} else {
-				fmt.Printf("[sandwich] fallback threshold not met best_score=%.4f threshold=%.4f\n", bestScore, s.opts.FallbackThreshold)
+		a.Citations = citations
+	} else {
+		citations := make([]core.Citation, len(docs))
+		for i, d := range docs {
+			citations[i] = core.Citation{
+				ID:      d.ID,
+				Source:  d.Source,
+				URI:     d.URI,
+				Snippet: d.Text,
 			}
-			return core.Answer{}, core.ErrNoEvidence
 		}
+		a.Citations = citations
 	}
 
-	// 5. LLM
-	passages := make([]string, len(docs))
-	for i, d := range docs {
-		passages[i] = d.Text
-	}
+	return passages, nil
+}
+
+func (s *Sandwich) runLlm(ctx context.Context, q core.Query, passages []string, a *core.Answer) error {
+	logger := s.opts.Obs.Logger
+	meter := s.opts.Obs.Meter
+
 	tLlmStart := time.Now()
 	llmRes, err := s.llm.Complete(ctx, llm.Request{
 		Prompt:    q.Text,
@@ -293,54 +345,53 @@ func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 		} else {
 			fmt.Printf("[sandwich] llm failed: %v\n", err)
 		}
-		return core.Answer{}, fmt.Errorf("llm failed: %w", err)
+		return fmt.Errorf("llm failed: %w", err)
 	}
 	llmMs := time.Since(tLlmStart).Milliseconds()
-	answer.Text = llmRes.Text
-	answer.Meta["llm_ms"] = llmMs
-	answer.Meta["token_usage"] = llmRes.Usage
+	a.Text = llmRes.Text
+	a.Meta["llm_ms"] = llmMs
+	a.Meta["token_usage"] = llmRes.Usage
 	if meter != nil {
 		meter.Record("manglekit.llm_ms", float64(llmMs))
 	}
+	return nil
+}
 
-	// 6. Post-Rules
-	if s.opts.Rules != nil {
-		// KHÔNG ghi đè original_docs ở đây nữa (đã lưu sau retrieve)
-		tPostRulesStart := time.Now()
-		res, err := s.opts.Rules.Evaluate(core.Post, q, &answer)
-		if meter != nil {
-			meter.Record("manglekit.rules_post_ms", float64(time.Since(tPostRulesStart).Milliseconds()))
-		}
-		if err != nil {
-			if logger != nil {
-				logger.Error("post-rules failed", "error", err)
-			} else {
-				fmt.Printf("[sandwich] post-rules failed: %v\n", err)
-			}
-			return core.Answer{}, fmt.Errorf("post-rules failed: %w", err)
-		}
-		if !res.Allowed {
-			if logger != nil {
-				logger.Info("request denied by post-rule", "reason", res.Reason)
-			} else {
-				fmt.Printf("[sandwich] request denied by post-rule reason=%q\n", res.Reason)
-			}
-			return core.Answer{}, fmt.Errorf("%w: %s", core.ErrDenied, res.Reason)
-		}
-		if res.Mutate != nil {
-			if logger != nil {
-				logger.Info("answer mutated by post-rule")
-			} else {
-				fmt.Printf("[sandwich] answer mutated by post-rule\n")
-			}
-			res.Mutate(&q, &answer)
-		}
+func (s *Sandwich) runPostRules(ctx context.Context, q core.Query, a *core.Answer) error {
+	if s.opts.Rules == nil {
+		return nil
 	}
+	logger := s.opts.Obs.Logger
+	meter := s.opts.Obs.Meter
 
-	if logger != nil {
-		logger.Info("pipeline run finished successfully")
-	} else {
-		fmt.Printf("[sandwich] pipeline run finished successfully\n")
+	tPostRulesStart := time.Now()
+	res, err := s.opts.Rules.Evaluate(core.Post, q, a)
+	if meter != nil {
+		meter.Record("manglekit.rules_post_ms", float64(time.Since(tPostRulesStart).Milliseconds()))
 	}
-	return answer, nil
+	if err != nil {
+		if logger != nil {
+			logger.Error("post-rules failed", "error", err)
+		} else {
+			fmt.Printf("[sandwich] post-rules failed: %v\n", err)
+		}
+		return fmt.Errorf("post-rules failed: %w", err)
+	}
+	if !res.Allowed {
+		if logger != nil {
+			logger.Info("request denied by post-rule", "reason", res.Reason)
+		} else {
+			fmt.Printf("[sandwich] request denied by post-rule reason=%q\n", res.Reason)
+		}
+		return fmt.Errorf("%w: %s", core.ErrDenied, res.Reason)
+	}
+	if res.Mutate != nil {
+		if logger != nil {
+			logger.Info("answer mutated by post-rule")
+		} else {
+			fmt.Printf("[sandwich] answer mutated by post-rule\n")
+		}
+		res.Mutate(&q, a)
+	}
+	return nil
 }

@@ -1,0 +1,14 @@
+pipeline: sandwich
+llm:
+  provider: mock-llm
+  options:
+    model: "some-model"
+retriever:
+  provider: "mock-retriever"
+  options:
+    pairs:
+      foo: "bar"
+reranker:
+  provider: "mock-reranker"
+options:
+  fallbackThreshold: 0.5
