@@ -36,16 +36,16 @@ func (m *mockEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.Emb
 
 // mockVectorStore simulates the behavior of a core.VectorStore.
 type mockVectorStore struct {
-	SearchFunc func(ctx context.Context, queryVector []float32, topK int, filter map[string]any) ([]core.Doc, error)
+	SearchFunc func(ctx context.Context, queryText string, queryVector []float32, topK int, filter map[string]any) ([]core.Doc, error)
 }
 
 func (m *mockVectorStore) AddDocuments(ctx context.Context, docs []core.Doc) error {
 	return nil // Not needed for this test.
 }
 
-func (m *mockVectorStore) Search(ctx context.Context, queryVector []float32, topK int, filter map[string]any) ([]core.Doc, error) {
+func (m *mockVectorStore) Search(ctx context.Context, queryText string, queryVector []float32, topK int, filter map[string]any) ([]core.Doc, error) {
 	if m.SearchFunc != nil {
-		return m.SearchFunc(ctx, queryVector, topK, filter)
+		return m.SearchFunc(ctx, queryText, queryVector, topK, filter)
 	}
 	return []core.Doc{{ID: "default-doc", Text: "default text"}}, nil
 }
@@ -54,7 +54,9 @@ func TestDense_Retrieve(t *testing.T) {
 	// 1. Setup mocks.
 	mockEmb := &mockEmbedder{}
 	mockVS := &mockVectorStore{}
-	mockVS.SearchFunc = func(ctx context.Context, queryVector []float32, topK int, filter map[string]any) ([]core.Doc, error) {
+	mockVS.SearchFunc = func(ctx context.Context, queryText string, queryVector []float32, topK int, filter map[string]any) ([]core.Doc, error) {
+		// Assert that the original query text is passed through.
+		assert.Equal(t, "query", queryText)
 		// Assert that the vector passed to the search is the one from the embedder.
 		assert.Equal(t, []float32{1.0, 0.1, 0.1}, queryVector)
 		// Return a sample document.
