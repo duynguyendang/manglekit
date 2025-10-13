@@ -51,7 +51,7 @@ type VectorStore interface {
 	// topK specifies the maximum number of documents to return.
 	// filter is an optional map of metadata to filter documents before searching.
 	// It returns a slice of documents ranked by similarity and an error if the search fails.
-	Search(ctx context.Context, queryVector []float32, topK int, filter map[string]any) ([]Doc, error)
+	Search(ctx context.Context, queryText string, queryVector []float32, topK int, filter map[string]any) ([]Doc, error)
 }
 
 // Orchestrator is the central interface for the MangleKit SDK. It defines the
