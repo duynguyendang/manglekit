@@ -12,6 +12,7 @@ import (
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
+	"github.com/duynguyendang/manglekit/internal/providers/mock"
 )
 
 const (
@@ -448,6 +449,8 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, stage flow
 	case core.RuleSet:
 		// Rule sets are invoked explicitly via pre/post stages outside the dispatch loop.
 		// Treat declarative invocations that reference the rules engine directly as no-ops.
+		return nil
+	case *mock.Tool:
 		return nil
 
 	default:

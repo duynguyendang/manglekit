@@ -2,6 +2,7 @@ package manglekit
 
 import (
 	"fmt"
+	"reflect"
 )
 
 // Registry is the global, central store for all registered component constructors.
@@ -36,6 +37,8 @@ var Registry = struct {
 	SchemaParser map[string]any
 	// Component holds registered generic component constructors, such as `core.VectorStore`.
 	Component map[string]any
+	// Options holds registered options types for components.
+	Options map[string]reflect.Type
 }{
 	Retriever:    make(map[string]any),
 	Reranker:     make(map[string]any),
@@ -44,6 +47,28 @@ var Registry = struct {
 	Embedder:     make(map[string]any),
 	SchemaParser: make(map[string]any),
 	Component:    make(map[string]any),
+	Options:      make(map[string]reflect.Type),
+}
+
+// Bidirectional maps: provider name <-> options pointer type (*T)
+var (
+	nameToOptionsType = make(map[string]reflect.Type)
+	optionsTypeToName = make(map[reflect.Type]string)
+)
+
+// RegisterOptions registers the **pointer-to-struct** options type for a provider.
+// Always pass a **typed nil pointer**:  (*MyOptions)(nil)
+func RegisterOptions(providerName string, typedNilPtr any) error {
+	t := reflect.TypeOf(typedNilPtr)
+	if t == nil {
+		return fmt.Errorf("RegisterOptions %q: got nil; pass a typed nil pointer like (*T)(nil)", providerName)
+	}
+	if t.Kind() != reflect.Ptr || t.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("RegisterOptions %q: expected pointer to struct, got %v", providerName, t)
+	}
+	nameToOptionsType[providerName] = t
+	optionsTypeToName[t] = providerName
+	return nil
 }
 
 // Get retrieves a constructor function from the specified registry map. It is a
@@ -88,6 +113,3 @@ func RegisterSchemaParser(name string, c any) { Registry.SchemaParser[name] = c 
 // global registry. This is typically called from an `init()` function in a
 // provider package.
 func Register(name string, c any) { Registry.Component[name] = c }
-
-// Note: All Try... and Must... functions have been removed.
-// The builder is now responsible for type-safe construction.
