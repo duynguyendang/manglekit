@@ -14,6 +14,7 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/embed"
 	"github.com/duynguyendang/manglekit/llm"
+	"github.com/duynguyendang/manglekit/pipeline"
 	"github.com/duynguyendang/manglekit/pipeline/declarative"
 	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
@@ -26,7 +27,7 @@ import (
 	googleapi "google.golang.org/api/option"
 )
 
-// BuilderAPI provides a fluent, chainable interface for constructing a MangleKit
+// Builder provides a fluent, chainable interface for constructing a MangleKit
 // Orchestrator. It is the recommended way to assemble a pipeline, as it handles
 // dependency injection, component construction, and configuration resolution
 // from multiple sources (programmatic, YAML, environment variables).
@@ -46,116 +47,7 @@ import (
 //	if err != nil {
 //		log.Fatalf("Failed to build orchestrator: %v", err)
 //	}
-type BuilderAPI interface {
-	// WithConfig sets the base configuration from a Config object. This is typically
-	// used when loading settings from a YAML file using `NewBuilderFromYAML`.
-	// Settings provided by other builder methods (e.g., `WithLLM`) will override
-	// values from this config.
-	//
-	// cfg is a pointer to the configuration object to apply.
-	// It returns the `BuilderAPI` instance for chaining.
-	WithConfig(cfg *Config) BuilderAPI
-
-	// WithRetriever configures the retriever component for the pipeline. The `opts`
-	// parameter should be a pointer to a provider-specific options struct (e.g.,
-	// `retrieve.BM25Options` or `retrieve.DenseOptions`). The builder infers the
-	// provider name from the options type.
-	//
-	// opts is a pointer to the retriever's configuration options.
-	// It returns the `BuilderAPI` instance for chaining.
-	WithRetriever(opts any) BuilderAPI
-
-	// WithVectorStore configures the vector store component, which is a required
-	// dependency for dense and hybrid retrievers. The `opts` parameter should be a
-	// pointer to a provider-specific options struct (e.g., `core.LocalvecOptions`).
-	//
-	// opts is a pointer to the vector store's configuration options.
-	// It returns the `BuilderAPI` instance for chaining.
-	WithVectorStore(opts any) BuilderAPI
-
-	// WithReranker configures the reranker component for the pipeline. The `opts`
-	// parameter should be a pointer to a provider-specific options struct (e.g.,
-	// `rerank.CosineOptions`).
-	//
-	// opts is a pointer to the reranker's configuration options.
-	// It returns the `BuilderAPI` instance for chaining.
-	WithReranker(opts any) BuilderAPI
-
-	// WithRules configures the rules engine component for the pipeline. The `opts`
-	// parameter should be a pointer to a provider-specific options struct (e.g.,
-	// `core.MangleOptions`).
-	//
-	// opts is a pointer to the rules engine's configuration options.
-	// It returns the `BuilderAPI` instance for chaining.
-	WithRules(opts any) BuilderAPI
-
-	// WithLLM configures the language model client. The `opts` parameter should
-	// be a pointer to a provider-specific options struct (e.g., `llm.OpenAIOptions`
-	// or `llm.GoogleOptions`).
-	//
-	// opts is a pointer to the LLM's configuration options.
-	// It returns the `BuilderAPI` instance for chaining.
-	WithLLM(opts any) BuilderAPI
-
-	// WithEmbedder configures the text embedding model. The `opts` parameter can
-	// be either a pointer to a provider-specific options struct (e.g.,
-	// `embed.GoogleEmbedderOptions`) or a pre-constructed `ai.Embedder` instance,
-	// allowing for custom or externally configured embedders to be injected.
-	//
-	// opts is a pointer to the embedder's configuration or a pre-built instance.
-	// It returns the `BuilderAPI` instance for chaining.
-	WithEmbedder(opts any) BuilderAPI
-
-	// WithFlow sets the name of the flow to be executed by the declarative
-	// orchestrator. This method is only effective if the orchestrator type is
-	// set to "declarative" in the main configuration.
-	//
-	// name is the name of the flow to execute.
-	// It returns the `BuilderAPI` instance for chaining.
-	WithFlow(name string) BuilderAPI
-
-	// WithTopK sets the default number of documents to retrieve from the retriever.
-	// This value can be overridden by provider-specific settings in their options.
-	//
-	// k is the number of documents to retrieve.
-	// It returns the `BuilderAPI` instance for chaining.
-	WithTopK(k int) BuilderAPI
-
-	// WithMaxTokens sets the default maximum number of tokens for the LLM to generate.
-	// This value can be overridden by provider-specific settings in their options.
-	//
-	// n is the maximum number of tokens to generate.
-	// It returns the `BuilderAPI` instance for chaining.
-	WithMaxTokens(n int) BuilderAPI
-
-	// WithObservability sets the observability hooks (logger, tracer, meter) for
-	// the entire pipeline, allowing for integration with monitoring and logging systems.
-	//
-	// obs is the `core.Observability` struct containing the hooks.
-	// It returns the `BuilderAPI` instance for chaining.
-	WithObservability(obs core.Observability) BuilderAPI
-
-	// WithFallbackThreshold sets a confidence score (typically from a reranker) below
-	// which the pipeline may exit early and return a fallback response instead of
-	// calling the LLM. A value of 0 disables this feature.
-	//
-	// f is the confidence score threshold.
-	// It returns the `BuilderAPI` instance for chaining.
-	WithFallbackThreshold(f float64) BuilderAPI
-
-	// Build is the final step in the chain. It resolves all dependencies,
-	// constructs the components based on the collected configuration, and assembles
-	// the final, ready-to-use `core.Orchestrator`.
-	//
-	// It returns the initialized `core.Orchestrator` or an error if any part of
-	// the construction fails, such as missing dependencies, invalid configuration,
-	// or failed client initializations.
-	Build(ctx context.Context) (core.Orchestrator, error)
-}
-
-// builder implements the BuilderAPI. It holds the state of the configuration
-// as methods are chained and performs the final build process.
-type builder struct {
+type Builder struct {
 	opts   core.Options
 	config *Config
 	errs   []error
@@ -209,8 +101,8 @@ type googleClients struct {
 // NewBuilder returns a new, empty instance of the fluent builder, ready to be
 // configured. This is the primary entry point for programmatically constructing a
 // MangleKit orchestrator.
-func NewBuilder() BuilderAPI {
-	return &builder{
+func NewBuilder() *Builder {
+	return &Builder{
 		config:        &Config{},
 		clients:       make(map[string]any),
 		resolvedCfgs:  make(map[string]any),
@@ -222,7 +114,7 @@ func NewBuilder() BuilderAPI {
 // WithConfig applies a configuration object to the builder. This is the primary
 // way to use settings loaded from a YAML file. Settings from the config object
 // serve as a baseline, which can be overridden by individual `With...` calls.
-func (b *builder) WithConfig(cfg *Config) BuilderAPI {
+func (b *Builder) WithConfig(cfg *Config) *Builder {
 	if cfg != nil {
 		b.config = cfg
 	}
@@ -233,7 +125,7 @@ func (b *builder) WithConfig(cfg *Config) BuilderAPI {
 // It accepts a pointer to a provider-specific options struct (e.g., `retrieve.BM25Options`),
 // infers the provider's name from the type, and stores the configuration for later use
 // during the `Build` process. If `opts` is nil, it clears any existing retriever configuration.
-func (b *builder) WithRetriever(opts any) BuilderAPI {
+func (b *Builder) WithRetriever(opts any) *Builder {
 	if opts == nil {
 		b.retrieverName = ""
 		b.retrieverParams = nil
@@ -254,7 +146,7 @@ func (b *builder) WithRetriever(opts any) BuilderAPI {
 // for dense and hybrid retrievers. It accepts a pointer to a provider-specific options
 // struct (e.g., `core.LocalvecOptions`), infers the provider's name from the type,
 // and stores the configuration. If `opts` is nil, it clears any existing vector store configuration.
-func (b *builder) WithVectorStore(opts any) BuilderAPI {
+func (b *Builder) WithVectorStore(opts any) *Builder {
 	if opts == nil {
 		b.vectorStoreName = ""
 		b.vectorStoreParams = nil
@@ -275,7 +167,7 @@ func (b *builder) WithVectorStore(opts any) BuilderAPI {
 // to a provider-specific options struct (e.g., `rerank.CosineOptions`), infers the
 // provider's name, and stores the configuration. If `opts` is nil, it clears any
 // existing reranker configuration.
-func (b *builder) WithReranker(opts any) BuilderAPI {
+func (b *Builder) WithReranker(opts any) *Builder {
 	if opts == nil {
 		b.rerankerName = ""
 		b.rerankerParams = nil
@@ -296,7 +188,7 @@ func (b *builder) WithReranker(opts any) BuilderAPI {
 // provider-specific options struct (e.g., `core.MangleOptions`), infers the provider's
 // name, and stores the configuration. If `opts` is nil, it clears any existing rules
 // engine configuration.
-func (b *builder) WithRules(opts any) BuilderAPI {
+func (b *Builder) WithRules(opts any) *Builder {
 	if opts == nil {
 		b.rulesName = ""
 		b.rulesParams = nil
@@ -317,7 +209,7 @@ func (b *builder) WithRules(opts any) BuilderAPI {
 // to a provider-specific options struct (e.g., `llm.GoogleOptions`), infers the provider's
 // name, and stores the configuration. If `opts` is nil, it clears any existing LLM
 // configuration.
-func (b *builder) WithLLM(opts any) BuilderAPI {
+func (b *Builder) WithLLM(opts any) *Builder {
 	if opts == nil {
 		b.llmName = ""
 		b.llmParams = nil
@@ -337,9 +229,14 @@ func (b *builder) WithLLM(opts any) BuilderAPI {
 // WithFlow programmatically sets the flow name for the declarative orchestrator.
 // This is only used if the orchestrator type is set to "declarative" in the
 // main configuration.
-func (b *builder) WithFlow(name string) BuilderAPI {
+func (b *Builder) WithFlow(name string) *Builder {
 	b.flowName = name
 	return b
+}
+
+var embedderAlias = map[string]string{
+	"google-embedder": "google",
+	"openai-embedder": "openai",
 }
 
 // WithEmbedder programmatically configures the text embedding model. It supports two
@@ -352,7 +249,7 @@ func (b *builder) WithFlow(name string) BuilderAPI {
 //     configured embedders.
 //
 // If `opts` is nil, any existing embedder configuration is cleared.
-func (b *builder) WithEmbedder(opts any) BuilderAPI {
+func (b *Builder) WithEmbedder(opts any) *Builder {
 	if opts == nil {
 		b.embedderName = ""
 		b.embedderParams = nil
@@ -383,7 +280,7 @@ func (b *builder) WithEmbedder(opts any) BuilderAPI {
 // WithTopK programmatically sets the default number of documents to retrieve. This
 // value acts as a fallback if a more specific value is not provided in a
 // retriever's own configuration.
-func (b *builder) WithTopK(k int) BuilderAPI {
+func (b *Builder) WithTopK(k int) *Builder {
 	b.opts.TopK = k
 	return b
 }
@@ -391,7 +288,7 @@ func (b *builder) WithTopK(k int) BuilderAPI {
 // WithMaxTokens programmatically sets the default maximum number of tokens for the
 // LLM response. This value acts as a fallback if a more specific value is not
 // provided in the LLM's own configuration.
-func (b *builder) WithMaxTokens(n int) BuilderAPI {
+func (b *Builder) WithMaxTokens(n int) *Builder {
 	b.opts.MaxTokens = n
 	return b
 }
@@ -399,7 +296,7 @@ func (b *builder) WithMaxTokens(n int) BuilderAPI {
 // WithObservability programmatically sets the observability hooks (logger, tracer,
 // meter) for the entire pipeline, enabling integration with monitoring and
 // logging systems.
-func (b *builder) WithObservability(obs core.Observability) BuilderAPI {
+func (b *Builder) WithObservability(obs core.Observability) *Builder {
 	b.opts.Obs = obs
 	return b
 }
@@ -407,13 +304,13 @@ func (b *builder) WithObservability(obs core.Observability) BuilderAPI {
 // WithFallbackThreshold programmatically sets the confidence score below which the
 // pipeline may exit early and return a fallback response instead of calling the
 // LLM. This is typically used with a reranker. A value of 0 disables this feature.
-func (b *builder) WithFallbackThreshold(f float64) BuilderAPI {
+func (b *Builder) WithFallbackThreshold(f float64) *Builder {
 	b.opts.FallbackThreshold = f
 	return b
 }
 
 // resolveProviderConfig finds the configuration for a given provider by checking params, config object, and env vars.
-func (b *builder) resolveProviderConfig(ctx context.Context, providerType, providerName string) error {
+func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, providerName string) error {
 	key := fmt.Sprintf("%s.%s", providerType, providerName)
 	if _, exists := b.resolvedCfgs[key]; exists {
 		return nil // Already resolved.
@@ -546,7 +443,7 @@ func (b *builder) resolveProviderConfig(ctx context.Context, providerType, provi
 // OpenAI), manages their lifecycle, and injects them into the components that
 // need them. If any step fails, it attempts to clean up any resources that were
 // allocated before returning an error.
-func (b *builder) Build(ctx context.Context) (core.Orchestrator, error) {
+func (b *Builder) Build(ctx context.Context) (core.Orchestrator, error) {
 	orchestratorType := "sandwich" // default
 	if b.config.Orchestrator.Type != "" {
 		orchestratorType = b.config.Orchestrator.Type
@@ -606,7 +503,7 @@ func (b *builder) Build(ctx context.Context) (core.Orchestrator, error) {
 			closeErr := b.closeResources(ctx)
 			return nil, errors.Join(err, closeErr)
 		}
-		orchestrator, err := New(b.opts)
+		orchestrator, err := pipeline.NewSandwich(b.opts)
 		if err != nil {
 			closeErr := b.closeResources(ctx)
 			return nil, errors.Join(err, closeErr)
@@ -621,7 +518,7 @@ func (b *builder) Build(ctx context.Context) (core.Orchestrator, error) {
 
 // buildTools iterates through the tools defined in the config, respects dependencies,
 // and builds each one. It uses an iterative approach to handle the dependency graph.
-func (b *builder) buildTools(ctx context.Context) error {
+func (b *Builder) buildTools(ctx context.Context) error {
 	toBuild := make(map[string]ToolConfig)
 	for name, cfg := range b.config.Tools {
 		toBuild[name] = cfg
@@ -692,12 +589,17 @@ func getToolDependencies(cfg ToolConfig, allToolNames map[string]struct{}) []str
 }
 
 // buildSingleTool is a dispatcher that constructs a single tool instance based on its provider type.
-func (b *builder) buildSingleTool(ctx context.Context, name string, cfg ToolConfig) (any, error) {
+func (b *Builder) buildSingleTool(ctx context.Context, name string, cfg ToolConfig) (any, error) {
 	// 1. Resolve provider-level config (e.g., API keys)
 	providerFamily := cfg.Provider
 	if family, ok := providerToFamily[providerFamily]; ok {
 		providerFamily = family
 	}
+
+	if norm, ok := embedderAlias[providerFamily]; ok {
+		providerFamily = norm
+	}
+
 	// The resolveProviderConfig function will only return an error if a provider
 	// that requires external configuration (e.g., an API key) is missing it.
 	// For other providers (like bm25), it will do nothing and return nil.
@@ -731,13 +633,25 @@ func (b *builder) buildSingleTool(ctx context.Context, name string, cfg ToolConf
 		}
 		switch cfg.Provider {
 		case "google-embedder":
-			newFn := constructor.(func(embed.GoogleEmbedderOptions, *genai.Client) (ai.Embedder, error))
-			client := b.clients["google"].(googleClients)
+			newFn, ok := constructor.(func(embed.GoogleEmbedderOptions, *genai.Client) (ai.Embedder, error))
+			if !ok {
+				return nil, fmt.Errorf("invalid constructor type for google-embedder")
+			}
+			client, ok := b.clients["google"].(googleClients)
+			if !ok {
+				return nil, fmt.Errorf("google client not initialized")
+			}
 			return newFn(*optsPtr.(*embed.GoogleEmbedderOptions), client.genai)
 		case "openai-embedder":
-			newFn := constructor.(func(embed.OpenAIEmbedderOptions, *openai.Client) (ai.Embedder, error))
-			client := b.clients["openai"].(openai.Client)
-			return newFn(*optsPtr.(*embed.OpenAIEmbedderOptions), &client)
+			newFn, ok := constructor.(func(embed.OpenAIEmbedderOptions, *openai.Client) (ai.Embedder, error))
+			if !ok {
+				return nil, fmt.Errorf("invalid constructor type for openai-embedder")
+			}
+			client, ok := b.clients["openai"].(*openai.Client)
+			if !ok {
+				return nil, fmt.Errorf("invalid client type for openai-embedder")
+			}
+			return newFn(*optsPtr.(*embed.OpenAIEmbedderOptions), client)
 		}
 
 	case "localvec":
@@ -808,7 +722,7 @@ var providerToFamily = map[string]string{
 }
 
 // resolveDependencies handles identifying required providers and initializing API clients.
-func (b *builder) resolveDependencies(ctx context.Context) error {
+func (b *Builder) resolveDependencies(ctx context.Context) error {
 	// Infer embedder from components that need it, only if one is not already provided or configured.
 	if b.embedder == nil && b.embedderName == "" {
 		if b.vectorStoreName != "" {
@@ -838,6 +752,9 @@ func (b *builder) resolveDependencies(ctx context.Context) error {
 	}
 	// Only resolve embedder provider if we are building it from a name, not if it's pre-built.
 	if b.embedder == nil && b.embedderName != "" {
+		if norm, ok := embedderAlias[b.embedderName]; ok {
+			b.embedderName = norm
+		}
 		b.providerNames["embedder"] = b.embedderName
 	}
 
@@ -850,7 +767,7 @@ func (b *builder) resolveDependencies(ctx context.Context) error {
 }
 
 // buildComponents calls the individual component builders in the correct order.
-func (b *builder) buildComponents(ctx context.Context) error {
+func (b *Builder) buildComponents(ctx context.Context) error {
 	// The order is important due to dependencies:
 	// Embedder -> VectorStore -> Retriever
 	// Embedder -> Reranker
@@ -875,7 +792,7 @@ func (b *builder) buildComponents(ctx context.Context) error {
 	return nil
 }
 
-func (b *builder) buildEmbedder() error {
+func (b *Builder) buildEmbedder() error {
 	// If an embedder is already built and provided, do nothing.
 	if b.embedder != nil {
 		return nil
@@ -890,7 +807,7 @@ func (b *builder) buildEmbedder() error {
 
 	switch b.embedderName {
 	case "google":
-		newFn, ok := constructor.(func(embed.GoogleEmbedderOptions, *genkit.Genkit) (ai.Embedder, error))
+		newFn, ok := constructor.(func(embed.GoogleEmbedderOptions, *genai.Client) (ai.Embedder, error))
 		if !ok {
 			return fmt.Errorf("invalid constructor type for embedder '%s'", b.embedderName)
 		}
@@ -904,7 +821,7 @@ func (b *builder) buildEmbedder() error {
 		if !ok {
 			return fmt.Errorf("invalid client type for google embedder")
 		}
-		b.embedder, err = newFn(opts, client.genkit)
+		b.embedder, err = newFn(opts, client.genai)
 
 	case "openai", "groq":
 		newFn, ok := constructor.(func(embed.OpenAIEmbedderOptions, *openai.Client) (ai.Embedder, error))
@@ -936,7 +853,7 @@ func (b *builder) buildEmbedder() error {
 	return nil
 }
 
-func (b *builder) buildVectorStore(ctx context.Context) error {
+func (b *Builder) buildVectorStore(ctx context.Context) error {
 	if b.vectorStoreName == "" {
 		return nil
 	}
@@ -982,7 +899,7 @@ func (b *builder) buildVectorStore(ctx context.Context) error {
 	return nil
 }
 
-func (b *builder) buildRetriever() error {
+func (b *Builder) buildRetriever() error {
 	if b.retrieverName == "" {
 		return nil
 	}
@@ -1007,7 +924,7 @@ func (b *builder) buildRetriever() error {
 	return nil
 }
 
-func (b *builder) buildDenseRetriever() (retrieve.Retriever, error) {
+func (b *Builder) buildDenseRetriever() (retrieve.Retriever, error) {
 	if b.embedder == nil || b.vectorStore == nil {
 		return nil, fmt.Errorf("retriever 'dense' requires an embedder and a vector store")
 	}
@@ -1022,7 +939,7 @@ func (b *builder) buildDenseRetriever() (retrieve.Retriever, error) {
 	return newFn(b.embedder, b.vectorStore)
 }
 
-func (b *builder) buildHybridRetriever() (retrieve.Retriever, error) {
+func (b *Builder) buildHybridRetriever() (retrieve.Retriever, error) {
 	constructor, err := Get(Registry.Retriever, "hybrid")
 	if err != nil {
 		return nil, err
@@ -1052,7 +969,7 @@ func (b *builder) buildHybridRetriever() (retrieve.Retriever, error) {
 	return newFn(hybridOpts)
 }
 
-func (b *builder) buildMapBasedRetriever(name string) (retrieve.Retriever, error) {
+func (b *Builder) buildMapBasedRetriever(name string) (retrieve.Retriever, error) {
 	constructor, err := Get(Registry.Retriever, name)
 	if err != nil {
 		return nil, err
@@ -1111,7 +1028,7 @@ func (b *builder) buildMapBasedRetriever(name string) (retrieve.Retriever, error
 	return retriever, nil
 }
 
-func (b *builder) buildReranker() error {
+func (b *Builder) buildReranker() error {
 	if b.rerankerName == "" {
 		return nil
 	}
@@ -1150,7 +1067,7 @@ func (b *builder) buildReranker() error {
 	return nil
 }
 
-func (b *builder) buildRules(ctx context.Context) error {
+func (b *Builder) buildRules(ctx context.Context) error {
 	if b.rulesName == "" {
 		// If a declarative orchestrator is being used, a rules engine is required.
 		// This check is handled in the main Build method.
@@ -1189,7 +1106,7 @@ func (b *builder) buildRules(ctx context.Context) error {
 	return nil
 }
 
-func (b *builder) buildLLM() error {
+func (b *Builder) buildLLM() error {
 	if b.llmName == "" {
 		return nil
 	}
@@ -1249,7 +1166,7 @@ func (b *builder) buildLLM() error {
 // closeResources attempts to release any provider clients that were opened during the build.
 // It is primarily used on error paths to avoid leaking background goroutines or connections
 // when the build cannot be completed.
-func (b *builder) closeResources(ctx context.Context) error {
+func (b *Builder) closeResources(ctx context.Context) error {
 	if len(b.opts.ResourceClosers) == 0 {
 		return nil
 	}

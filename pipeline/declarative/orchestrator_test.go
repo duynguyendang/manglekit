@@ -349,48 +349,58 @@ package declarative
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sync"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/mangle/ast"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/providers/mock"
+	"github.com/google/mangle/ast"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
+// mockFlowController is a simplified mock for testing the declarative orchestrator.
 type mockFlowController struct {
 	mu           sync.Mutex
 	decls        map[ast.PredicateSym]ast.Decl
 	clauses      []ast.Clause
 	transformers map[ast.PredicateSym]string
-	query        string
-	onSolution   func(map[string]any) error
-	args         []string
+	evalResult   core.RuleResult
+	queryResults map[string][]map[string]any
+	err          error // Generic error for any method
 }
 
-func newMockFlowController(decls map[ast.PredicateSym]ast.Decl, clauses []ast.Clause, transformers map[ast.PredicateSym]string) *mockFlowController {
-	return &mockFlowController{decls: decls, clauses: clauses, transformers: transformers}
+func newMockFlowController() *mockFlowController {
+	return &mockFlowController{
+		queryResults: map[string][]map[string]any{
+			`flow_stage("test", Order, StageName).`: {
+				{"Order": "1", "StageName": "one"},
+				{"Order": "2", "StageName": "two"},
+			},
+			`stage_tool(StageName, ToolName).`: {
+				{"StageName": "one", "ToolName": "toolOne"},
+				{"StageName": "two", "ToolName": "toolTwo"},
+			},
+		},
+	}
 }
 
-func (m *mockFlowController) GetDeclarations(ctx context.Context, desafío string) (map[ast.PredicateSym]ast.Decl, []ast.Clause, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *mockFlowController) GetDeclarations(context.Context, string) (map[ast.PredicateSym]ast.Decl, []ast.Clause, error) {
+	if m.err != nil {
+		return nil, nil, m.err
+	}
 	return m.decls, m.clauses, nil
 }
-
-func (m *mockFlowController) GetTransformer(ctx context.Context, name ast.PredicateSym) (string, bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	t, ok := m.transformers[name]
-	return t, ok, nil
+func (m *mockFlowController) GetTransformer(context.Context, ast.PredicateSym) (string, bool, error) {
+	return "", false, nil
 }
-
-func (m *mockFlowController) Close() error {
-	return nil
-}
+func (m *mockFlowController) Close() error { return nil }
 
 func (m *mockFlowController) Evaluate(stage core.Stage, q core.Query, a *core.Answer) (core.RuleResult, error) {
+	if m.err != nil {
+		return core.RuleResult{}, m.err
+	}
 	if q.Text == "skip" {
 		return core.RuleResult{Allowed: true, SkippedStages: map[string]bool{"two": true}}, nil
 	}
@@ -398,138 +408,199 @@ func (m *mockFlowController) Evaluate(stage core.Stage, q core.Query, a *core.An
 }
 
 func (m *mockFlowController) Query(ctx context.Context, query string, onSolution func(map[string]any) error) error {
-	m.query = query
-	m.onSolution = onSolution
-	if query == `flow_stage("test", Order, StageName).` {
-		onSolution(map[string]any{"Order": "1", "StageName": "one"})
-		onSolution(map[string]any{"Order": "2", "StageName": "two"})
+	if m.err != nil {
+		return m.err
 	}
-	if query == `stage_tool(StageName, ToolName).` {
-		onSolution(map[string]any{"StageName": "one", "ToolName": "mockTool"})
-		onSolution(map[string]any{"StageName": "two", "ToolName": "bar"})
+	if results, ok := m.queryResults[query]; ok {
+		for _, res := range results {
+			if err := onSolution(res); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
 
-func TestDeclarativeOrchestrator(t *testing.T) {
-	fc := newMockFlowController(nil, nil, nil)
-	tools := map[string]any{
-		"mockTool": &mock.Tool{
-			Name: "mockTool",
-			Fn: func(params mock.Params) (mock.Object, error) {
-				fc.args = append(fc.args, "mockTool")
-				return map[string]interface{}{
-					"a": "foo",
-					"b": "y",
-				}, nil
-			},
-		},
-		"bar": &mock.Tool{
-			Name: "bar",
-			Fn: func(p mock.Params) (mock.Object, error) {
-				fc.args = append(fc.args, "bar")
-				return mock.Object{"a": "bar"}, nil
-			},
-		},
-	}
-	o, err := New(fc, tools, "test", core.Observability{}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestNew(t *testing.T) {
+	t.Parallel()
 
-	out, err := o.Run(context.Background(), core.Query{Text: "foo"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := core.Answer{
-		Meta: map[string]any{},
-	}
-	if diff := cmp.Diff(want, out, cmp.AllowUnexported(core.Answer{})); diff != "" {
-		t.Errorf("o.Run() returned diff (-want, +got):\n%s", diff)
-	}
-	if diff := cmp.Diff([]string{"mockTool", "bar"}, fc.args); diff != "" {
-		t.Errorf("o.Run() returned diff (-want, +got):\n%s", diff)
-	}
-}
-
-func TestSkip(t *testing.T) {
-	fc := newMockFlowController(nil, nil, nil)
-	var barCalled bool
-	tools := map[string]any{
-		"mockTool": &mock.Tool{
-			Name: "mockTool",
-			Fn: func(params mock.Params) (mock.Object, error) {
-				return map[string]interface{}{
-					"a": "foo",
-					"b": "y",
-				}, nil
-			},
+	testCases := []struct {
+		name        string
+		fc          core.FlowController
+		tools       map[string]any
+		expectErr   bool
+		errContains string
+	}{
+		{
+			name:  "Happy path",
+			fc:    newMockFlowController(),
+			tools: make(map[string]any),
 		},
-		"bar": &mock.Tool{
-			Name: "bar",
-			Fn: func(p mock.Params) (mock.Object, error) {
-				barCalled = true
-				return mock.Object{"a": "bar"}, nil
+		{
+			name:      "Nil flow controller",
+			fc:        nil,
+			tools:     make(map[string]any),
+			expectErr: true,
+		},
+		{
+			name:      "Nil tools map",
+			fc:        newMockFlowController(),
+			tools:     nil,
+			expectErr: true,
+		},
+		{
+			name: "Flow controller fails to load stages",
+			fc: &mockFlowController{
+				err: errors.New("stage loading failed"),
 			},
+			tools:       make(map[string]any),
+			expectErr:   true,
+			errContains: "stage loading failed",
 		},
 	}
 
-	o, err := New(fc, tools, "test", core.Observability{}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := o.Run(context.Background(), core.Query{Text: "skip"}); err != nil {
-		t.Fatal(err)
-	}
-	if barCalled {
-		t.Errorf("bar was called, but should have been skipped")
-	}
-}
-
-func TestError(t *testing.T) {
-	fc := newMockFlowController(nil, nil, nil)
-	tools := map[string]any{
-		"mockTool": &mock.Tool{
-			Name: "mockTool",
-			Fn: func(p mock.Params) (mock.Object, error) {
-				return nil, fmt.Errorf("error")
-			},
-		},
-	}
-	o, err := New(fc, tools, "test", core.Observability{}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := o.Run(context.Background(), core.Query{Text: "foo"}); err == nil {
-		t.Errorf("o.Run() succeeded, want error")
-	}
-}
-
-func TestDependencyInference(t *testing.T) {
-	fc := newMockFlowController(nil, nil, nil)
-	tools := map[string]any{
-		"mockTool": &mock.Tool{
-			Name: "mockTool",
-			Fn: func(p mock.Params) (mock.Object, error) {
-				if got, want := p["a"], "baz"; got != want {
-					t.Errorf("p['a'] = %q, want %q", got, want)
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			orch, err := New(tc.fc, tc.tools, "test", core.Observability{}, nil)
+			if tc.expectErr {
+				require.Error(t, err)
+				if tc.errContains != "" {
+					assert.Contains(t, err.Error(), tc.errContains)
 				}
-				return mock.Object{"a": p["a"]}, nil
+				assert.Nil(t, orch)
+			} else {
+				require.NoError(t, err)
+				assert.NotNil(t, orch)
+			}
+		})
+	}
+}
+
+func TestDeclarativeOrchestrator_Run(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name         string
+		query        core.Query
+		tools        map[string]any
+		fc           *mockFlowController
+		validateFunc func(t *testing.T, answer core.Answer, tools map[string]any)
+		expectErr    bool
+		errContains  string
+	}{
+		{
+			name:  "Successful run with two stages",
+			query: core.Query{Text: "run"},
+			tools: map[string]any{
+				"toolOne": &mock.Tool{Fn: func(p mock.Params) (mock.Object, error) {
+					p["__called"] = true
+					return mock.Object{"a": "foo"}, nil
+				}},
+				"toolTwo": &mock.Tool{Fn: func(p mock.Params) (mock.Object, error) {
+					p["__called"] = true
+					return mock.Object{"b": "bar"}, nil
+				}},
+			},
+			validateFunc: func(t *testing.T, answer core.Answer, tools map[string]any) {
+				params1 := tools["toolOne"].(*mock.Tool).GetLastParams()
+				require.NotNil(t, params1)
+				assert.True(t, params1["__called"].(bool))
+
+				params2 := tools["toolTwo"].(*mock.Tool).GetLastParams()
+				require.NotNil(t, params2)
+				assert.True(t, params2["__called"].(bool))
+
+				assert.Equal(t, "foo", answer.Meta["a"])
+				assert.Equal(t, "bar", answer.Meta["b"])
 			},
 		},
-		"bar": &mock.Tool{
-			Name: "bar",
-			Fn: func(p mock.Params) (mock.Object, error) {
-				return mock.Object{"a": "bar"}, nil
+		{
+			name:  "Skip a stage",
+			query: core.Query{Text: "skip"},
+			tools: map[string]any{
+				"toolOne": &mock.Tool{Fn: func(p mock.Params) (mock.Object, error) {
+					p["__called"] = true
+					return nil, nil
+				}},
+				"toolTwo": &mock.Tool{Fn: func(p mock.Params) (mock.Object, error) {
+					p["__called"] = true
+					return nil, nil
+				}},
+			},
+			validateFunc: func(t *testing.T, answer core.Answer, tools map[string]any) {
+				params1 := tools["toolOne"].(*mock.Tool).GetLastParams()
+				require.NotNil(t, params1)
+				assert.True(t, params1["__called"].(bool))
+				// toolTwo is in stage "two", which is skipped.
+				params2 := tools["toolTwo"].(*mock.Tool).GetLastParams()
+				assert.Empty(t, params2, "Expected last params for skipped tool to be empty")
+			},
+		},
+		{
+			name:  "Tool returns an error",
+			query: core.Query{Text: "run"},
+			tools: map[string]any{
+				"toolOne": &mock.Tool{Fn: func(p mock.Params) (mock.Object, error) {
+					return nil, errors.New("tool failed")
+				}},
+				"toolTwo": &mock.Tool{},
+			},
+			expectErr:   true,
+			errContains: "tool failed",
+		},
+		{
+			name: "Dependency inference for tool parameters",
+			query: core.Query{
+				Meta: map[string]any{"initial": "value"},
+			},
+			fc: &mockFlowController{
+				queryResults: map[string][]map[string]any{
+					`flow_stage("test", Order, StageName).`: {{"Order": "1", "StageName": "one"}},
+					`stage_tool(StageName, ToolName).`:     {{"StageName": "one", "ToolName": "consumer"}},
+				},
+			},
+			tools: map[string]any{
+				"consumer": &mock.Tool{Fn: func(p mock.Params) (mock.Object, error) {
+					assert.Equal(t, "value", p["initial"])
+					return nil, nil
+				}},
 			},
 		},
 	}
-	o, err := New(fc, tools, "test", core.Observability{}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	q := core.Query{Text: "foo('baz')"}
-	if _, err := o.Run(context.Background(), q); err != nil {
-		t.Errorf("o.Run() failed: %v", err)
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fc := tc.fc
+			if fc == nil {
+				fc = newMockFlowController()
+			}
+
+			orch, err := New(fc, tc.tools, "test", core.Observability{}, nil)
+			if err != nil && tc.name == "Flow controller fails to load stages" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.errContains)
+				return
+			}
+			require.NoError(t, err)
+
+			answer, err := orch.Run(context.Background(), tc.query)
+
+			if tc.expectErr {
+				require.Error(t, err)
+				if tc.errContains != "" {
+					assert.Contains(t, err.Error(), tc.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+				if tc.validateFunc != nil {
+					tc.validateFunc(t, answer, tc.tools)
+				}
+			}
+		})
 	}
 }

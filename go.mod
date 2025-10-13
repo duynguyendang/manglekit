@@ -11,7 +11,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/knakk/rdf v0.0.0-20190304171630-8521bf4c5042
 	github.com/openai/openai-go v1.8.2
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.0
 	golang.org/x/sync v0.16.0
 	google.golang.org/api v0.236.0
