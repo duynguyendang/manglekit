@@ -106,12 +106,7 @@ func (l *LocalVecStore) AddDocuments(ctx context.Context, docs []core.Doc) error
 }
 
 // Search performs a vector search.
-func (l *LocalVecStore) Search(ctx context.Context, queryVector []float32, topK int, filter map[string]any) ([]core.Doc, error) {
-	queryText, ok := ctx.Value("query_text").(string)
-	if !ok {
-		return nil, fmt.Errorf("localvec: search requires the original query text in the context via `ctx.Value(\"query_text\")`")
-	}
-
+func (l *LocalVecStore) Search(ctx context.Context, queryText string, queryVector []float32, topK int, filter map[string]any) ([]core.Doc, error) {
 	dRequest := ai.DocumentFromText(queryText, nil)
 	retrieverOptions := &localvec.RetrieverOptions{K: topK}
 

@@ -72,15 +72,12 @@ func (d *Dense) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Re
 	queryVector := embedResp.Embeddings[0].Embedding
 
 	// 2. Search the vector store.
-	// WORKAROUND: Pass query text in context for localvec compatibility.
-	searchCtx := context.WithValue(ctx, "query_text", req.Query)
-
 	var filter map[string]any
 	if f, ok := req.Meta["filters"].(map[string]any); ok {
 		filter = f
 	}
 
-	docs, err := d.vectorStore.Search(searchCtx, queryVector, req.TopK, filter)
+	docs, err := d.vectorStore.Search(ctx, req.Query, queryVector, req.TopK, filter)
 	if err != nil {
 		return retrieve.Result{}, fmt.Errorf("dense: vector store search failed: %w", err)
 	}
