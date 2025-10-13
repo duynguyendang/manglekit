@@ -383,7 +383,8 @@ func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, provi
 			Timeout:   120 * time.Second,
 		}
 		client := openai.NewClient(option.WithAPIKey(apiKey), option.WithHTTPClient(httpClient))
-		b.clients["openai"] = client
+		clientPtr := client
+		b.clients["openai"] = &clientPtr
 		b.resolvedCfgs[key] = cfg
 		b.opts.ResourceClosers = append(b.opts.ResourceClosers, func(ctx context.Context) error {
 			transport.CloseIdleConnections()
@@ -414,7 +415,8 @@ func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, provi
 			Timeout:   120 * time.Second,
 		}
 		client := openai.NewClient(option.WithAPIKey(apiKey), option.WithBaseURL(baseURL), option.WithHTTPClient(httpClient))
-		b.clients["groq"] = client
+		clientPtr := client
+		b.clients["groq"] = &clientPtr
 		b.resolvedCfgs[key] = cfg
 		b.opts.ResourceClosers = append(b.opts.ResourceClosers, func(ctx context.Context) error {
 			transport.CloseIdleConnections()
@@ -702,10 +704,7 @@ func (b *Builder) buildSingleTool(ctx context.Context, name string, cfg ToolConf
 			return newFn(*optsPtr.(*llm.GoogleOptions), client.genkit)
 		case "openai", "groq":
 			newFn := constructor.(func(llm.OpenAIOptions, *openai.Client) (llm.Client, error))
-			client, ok := b.clients[cfg.Provider].(*openai.Client)
-			if !ok {
-				return nil, fmt.Errorf("invalid client type for %s", cfg.Provider)
-			}
+			client := b.clients[cfg.Provider].(*openai.Client)
 			return newFn(*optsPtr.(*llm.OpenAIOptions), client)
 		}
 
