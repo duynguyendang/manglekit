@@ -1,7 +1,10 @@
 package manglekit
 
 import (
+	"context"
 	"encoding/json"
+
+	"github.com/duynguyendang/manglekit/core"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +12,25 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// BuilderAPI defines the fluent interface for the MangleKit builder.
+// It is used by the YAML and environment variable constructors to provide a
+// consistent, chainable API for configuration.
+type BuilderAPI interface {
+	WithConfig(*Config) BuilderAPI
+	WithRetriever(any) BuilderAPI
+	WithVectorStore(any) BuilderAPI
+	WithReranker(any) BuilderAPI
+	WithRules(any) BuilderAPI
+	WithLLM(any) BuilderAPI
+	WithFlow(string) BuilderAPI
+	WithEmbedder(any) BuilderAPI
+	WithTopK(int) BuilderAPI
+	WithMaxTokens(int) BuilderAPI
+	WithObservability(core.Observability) BuilderAPI
+	WithFallbackThreshold(float64) BuilderAPI
+	Build(context.Context) (core.Orchestrator, error)
+}
 
 // componentCfg is a generic configuration for a named component with parameters.
 // It is used in the "sandwich" orchestrator configuration to define which
@@ -185,9 +207,7 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 	configDir := filepath.Dir(path)
 
 	baseBuilder := NewBuilder()
-	if impl, ok := baseBuilder.(*Builder); ok {
-		impl.configDir = configDir
-	}
+	baseBuilder.configDir = configDir
 
 	builder := baseBuilder.
 		WithConfig(&cfg). // Pass the full config to the builder
@@ -274,9 +294,7 @@ func NewBuilderFromEnv() (BuilderAPI, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get working directory: %w", err)
 	}
-	if impl, ok := baseBuilder.(*Builder); ok {
-		impl.configDir = configDir
-	}
+	baseBuilder.configDir = configDir
 
 	// Helper to read an env var and configure a component
 	configureComponentFromEnv := func(
@@ -304,7 +322,7 @@ func NewBuilderFromEnv() (BuilderAPI, error) {
 
 		jsonParams, err := json.Marshal(params)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal params for %q: %w", name, err)
+			return fmt.Errorf("failed to marshal params for %q: %w", name, err)
 		}
 		if err := json.Unmarshal(jsonParams, optsPtr); err != nil {
 			return fmt.Errorf("failed to unmarshal params for %q: %w", name, err)

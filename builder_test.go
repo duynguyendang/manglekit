@@ -1,4 +1,4 @@
-package manglekit
+package manglekit_test
 
 import (
 	"context"
@@ -7,16 +7,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/firebase/genkit/go/ai"
-	api "github.com/firebase/genkit/go/core/api"
-
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/embed"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/pipeline"
 	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
+	"github.com/firebase/genkit/go/ai"
+	api "github.com/firebase/genkit/go/core/api"
 	"github.com/openai/openai-go"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type stubFlowController struct {
@@ -35,12 +37,13 @@ func (s *stubFlowController) Query(ctx context.Context, query string, onSolution
 }
 
 func installStubRules(t *testing.T, result core.RuleResult) {
-	original := Registry.Rules["mangle"]
-	Registry.Rules["mangle"] = func(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
+	manglekit.RegisterOptions("mangle", (*core.MangleOptions)(nil))
+	original := manglekit.Registry.Rules["mangle"]
+	manglekit.Registry.Rules["mangle"] = func(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
 		return &stubFlowController{preResult: result}, nil
 	}
 	t.Cleanup(func() {
-		Registry.Rules["mangle"] = original
+		manglekit.Registry.Rules["mangle"] = original
 	})
 }
 
@@ -95,11 +98,17 @@ var stubFactories struct {
 }
 
 func installStubProviders(t *testing.T) {
-	origRetriever := Registry.Retriever["in-memory"]
-	origReranker := Registry.Reranker["cosine"]
-	origEmbedder := Registry.Embedder["openai"]
-	origLLMOpenAI := Registry.LLM["openai"]
-	origLLMGroq := Registry.LLM["groq"]
+	manglekit.RegisterOptions("in-memory", (*retrieve.InMemoryOptions)(nil))
+	manglekit.RegisterOptions("cosine", (*rerank.CosineOptions)(nil))
+	manglekit.RegisterOptions("openai", (*llm.OpenAIOptions)(nil))
+	manglekit.RegisterOptions("groq", (*llm.OpenAIOptions)(nil))
+	manglekit.RegisterOptions("openai-embedder", (*embed.OpenAIEmbedderOptions)(nil))
+
+	origRetriever := manglekit.Registry.Retriever["in-memory"]
+	origReranker := manglekit.Registry.Reranker["cosine"]
+	origEmbedder := manglekit.Registry.Embedder["openai"]
+	origLLMOpenAI := manglekit.Registry.LLM["openai"]
+	origLLMGroq := manglekit.Registry.LLM["groq"]
 
 	stubFactories = struct {
 		retriever     *stubRetriever
@@ -110,17 +119,17 @@ func installStubProviders(t *testing.T) {
 		llmOpts       llm.OpenAIOptions
 	}{}
 
-	Registry.Retriever["in-memory"] = func(opts retrieve.InMemoryOptions) (retrieve.Retriever, error) {
+	manglekit.Registry.Retriever["in-memory"] = func(opts retrieve.InMemoryOptions) (retrieve.Retriever, error) {
 		stubFactories.retrieverOpts = opts
 		stubFactories.retriever = &stubRetriever{docs: append([]core.Doc(nil), opts.Documents...)}
 		return stubFactories.retriever, nil
 	}
-	Registry.Reranker["cosine"] = func(opts rerank.CosineOptions, _ ai.Embedder) (rerank.Reranker, error) {
+	manglekit.Registry.Reranker["cosine"] = func(opts rerank.CosineOptions, _ ai.Embedder) (rerank.Reranker, error) {
 		stubFactories.rerankerOpts = opts
 		stubFactories.reranker = &stubReranker{}
 		return stubFactories.reranker, nil
 	}
-	Registry.Embedder["openai"] = func(opts embed.OpenAIEmbedderOptions, _ *openai.Client) (ai.Embedder, error) {
+	manglekit.Registry.Embedder["openai"] = func(opts embed.OpenAIEmbedderOptions, _ *openai.Client) (ai.Embedder, error) {
 		return stubEmbedder{}, nil
 	}
 	llmStub := func(opts llm.OpenAIOptions, _ *openai.Client) (llm.Client, error) {
@@ -128,15 +137,16 @@ func installStubProviders(t *testing.T) {
 		stubFactories.llm = &stubOpenAILLM{model: opts.Model}
 		return stubFactories.llm, nil
 	}
-	Registry.LLM["openai"] = llmStub
-	Registry.LLM["groq"] = llmStub
+	manglekit.Registry.LLM["openai"] = llmStub
+	manglekit.Registry.LLM["groq"] = llmStub
+	manglekit.RegisterOptions("groq", (*llm.OpenAIOptions)(nil))
 
 	t.Cleanup(func() {
-		Registry.Retriever["in-memory"] = origRetriever
-		Registry.Reranker["cosine"] = origReranker
-		Registry.Embedder["openai"] = origEmbedder
-		Registry.LLM["openai"] = origLLMOpenAI
-		Registry.LLM["groq"] = origLLMGroq
+		manglekit.Registry.Retriever["in-memory"] = origRetriever
+		manglekit.Registry.Reranker["cosine"] = origReranker
+		manglekit.Registry.Embedder["openai"] = origEmbedder
+		manglekit.Registry.LLM["openai"] = origLLMOpenAI
+		manglekit.Registry.LLM["groq"] = origLLMGroq
 	})
 }
 
@@ -154,7 +164,7 @@ func TestNewBuilderFromYAML_SandwichHappyPath(t *testing.T) {
 	installStubRules(t, core.RuleResult{Allowed: true})
 	t.Setenv("OPENAI_API_KEY", "test-key")
 
-	builder, err := NewBuilderFromYAML("testdata/config_valid.yaml")
+	builder, err := manglekit.NewBuilderFromYAML("testdata/config_valid.yaml")
 	if err != nil {
 		t.Fatalf("NewBuilderFromYAML returned error: %v", err)
 	}
@@ -205,7 +215,7 @@ func TestNewBuilderFromYAML_InvalidProvider(t *testing.T) {
 	installStubRules(t, core.RuleResult{Allowed: true})
 	installStubProviders(t)
 
-	builder, err := NewBuilderFromYAML("testdata/config_invalid_provider.yaml")
+	builder, err := manglekit.NewBuilderFromYAML("testdata/config_invalid_provider.yaml")
 	if err != nil {
 		t.Fatalf("unexpected error loading config: %v", err)
 	}
@@ -220,7 +230,7 @@ func TestNewBuilderFromYAML_InvalidProvider(t *testing.T) {
 }
 
 func TestNewBuilderFromYAML_InvalidOptions(t *testing.T) {
-	_, err := NewBuilderFromYAML("testdata/config_invalid_options.yaml")
+	_, err := manglekit.NewBuilderFromYAML("testdata/config_invalid_options.yaml")
 	if err == nil {
 		t.Fatalf("expected error for invalid options")
 	}
@@ -241,7 +251,7 @@ func TestNewBuilderFromYAML_EnvOverrides(t *testing.T) {
 	t.Setenv("MAX_TOKENS", "128")
 	t.Setenv("TOPK", "4")
 
-	builder, err := NewBuilderFromYAML("testdata/config_env_base.yaml")
+	builder, err := manglekit.NewBuilderFromYAML("testdata/config_env_base.yaml")
 	if err != nil {
 		t.Fatalf("loading config failed: %v", err)
 	}
@@ -255,7 +265,7 @@ func TestNewBuilderFromYAML_EnvOverrides(t *testing.T) {
 	t.Setenv("LLM_PROVIDER", "groq")
 	t.Setenv("LLM_MODEL", "groq-mini")
 
-	builder, err = NewBuilderFromYAML("testdata/config_env_base.yaml")
+	builder, err = manglekit.NewBuilderFromYAML("testdata/config_env_base.yaml")
 	if err != nil {
 		t.Fatalf("reload failed: %v", err)
 	}
@@ -317,7 +327,7 @@ func TestNewBuilderFromEnv(t *testing.T) {
 	t.Setenv("MKT_MAX_TOKENS", "400")
 	t.Setenv("MKT_FALLBACK_THRESHOLD", "0.7")
 
-	builder, err := NewBuilderFromEnv()
+	builder, err := manglekit.NewBuilderFromEnv()
 	if err != nil {
 		t.Fatalf("NewBuilderFromEnv failed: %v", err)
 	}
@@ -353,276 +363,30 @@ func TestNewBuilderFromEnv(t *testing.T) {
 		t.Fatalf("expected MaxTokens 400 in LLM request, got calls=%v", stubFactories.llm.calls)
 	}
 }
-	"encoding/json"
-	"os"
-	"testing"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/embed"
-	"github.com/duynguyendang/manglekit/internal/providers/mock"
-	"github.com/duynguyendang/manglekit/llm"
-	"github.com/duynguyendang/manglekit/pipeline"
-	"github.com/duynguyendang/manglekit/rerank"
-	"github.com/duynguyendang/manglekit/retrieve"
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-)
+func TestBuilder_ProgrammaticAPI(t *testing.T) {
+	installStubProviders(t)
+	t.Setenv("OPENAI_API_KEY", "test-key")
 
-// TestMain sets up mock providers for use in all tests within this package.
-func TestMain(m *testing.M) {
-	RegisterRetriever("mock-retriever", func(options map[string]interface{}) (retrieve.Retriever, error) {
-		pairs := make(map[string]string)
-		if p, ok := options["pairs"].(map[string]interface{}); ok {
-			for k, v := range p {
-				if s, ok := v.(string); ok {
-					pairs[k] = s
-				}
-			}
-		}
-		return mock.NewRetriever(pairs), nil
-	})
-	RegisterReranker("mock-reranker", func(options map[string]interface{}) (rerank.Reranker, error) {
-		passthrough := make(map[string]bool)
-		if p, ok := options["passthrough"].(map[string]interface{}); ok {
-			for k, v := range p {
-				if b, ok := v.(bool); ok {
-					passthrough[k] = b
-				}
-			}
-		}
-		return mock.NewReranker(passthrough), nil
-	})
-	RegisterLLM("mock-llm", func(options map[string]interface{}) (llm.Client, error) {
-		model, _ := options["model"].(string)
-		return mock.NewLLM(model), nil
-	})
-	// A mock google embedder for testing.
-	RegisterEmbedder("google", func(opts embed.GoogleEmbedderOptions, g *genkit.Genkit) (ai.Embedder, error) {
-		return &mock.Embedder{}, nil
-	})
+	retrieverOpts := &retrieve.InMemoryOptions{Documents: []core.Doc{{ID: "doc1", Text: "text1"}}}
+	llmOpts := &llm.OpenAIOptions{Model: "gpt-4o-programmatic"}
+	rerankerOpts := &rerank.CosineOptions{TopK: 5}
 
-	RegisterOptions("mock-retriever", (*mock.RetrieverOptions)(nil))
-	RegisterOptions("mock-reranker", (*mock.RerankerOptions)(nil))
-	RegisterOptions("mock-llm", (*mock.LLMOptions)(nil))
-	RegisterOptions("google-embedder", (*embed.GoogleEmbedderOptions)(nil))
+	builder := manglekit.NewBuilder().
+		WithRetriever(retrieverOpts).
+		WithLLM(llmOpts).
+		WithReranker(rerankerOpts).
+		WithEmbedder(&embed.OpenAIEmbedderOptions{})
 
-	os.Exit(m.Run())
-}
+	orch, err := builder.Build(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, orch)
+	defer orch.Close(context.Background())
 
-func TestBuilderFromYAML(t *testing.T) {
-	t.Parallel()
+	_, ok := orch.(*pipeline.Sandwich)
+	require.True(t, ok)
 
-	testCases := []struct {
-		name         string
-		filename     string
-		validateFunc func(t *testing.T, orch core.Orchestrator)
-		expectErr    bool
-		errAssert    func(t *testing.T, err error)
-	}{
-		{
-			name:     "Valid sandwich config",
-			filename: "testdata/sandwich.yaml",
-			validateFunc: func(t *testing.T, orch core.Orchestrator) {
-				s, ok := orch.(*pipeline.Sandwich)
-				require.True(t, ok)
-
-				llmClient := s.LLM()
-				require.NotNil(t, llmClient)
-				mockLLM, ok := llmClient.(*mock.LLM)
-				require.True(t, ok)
-				assert.Equal(t, "foobar", mockLLM.Model())
-
-				retriever := s.Retriever()
-				require.NotNil(t, retriever)
-				mockRetriever, ok := retriever.(retrieve.Retriever)
-				require.True(t, ok)
-				res, err := mockRetriever.Retrieve(context.Background(), retrieve.Request{Query: "foo"})
-				require.NoError(t, err)
-				require.Len(t, res.Docs, 1)
-				assert.Equal(t, "bar", res.Docs[0].Text)
-			},
-		},
-		{
-			name:      "Invalid LLM provider",
-			filename:  "testdata/bad-llm-provider.yaml",
-			expectErr: true,
-			errAssert: func(t *testing.T, err error) {
-				assert.ErrorIs(t, err, core.ErrInvalidOptions)
-				assert.Contains(t, err.Error(), "unknown llm provider")
-			},
-		},
-		{
-			name:      "Invalid reranker options",
-			filename:  "testdata/bad-reranker-options.yaml",
-			expectErr: true,
-			errAssert: func(t *testing.T, err error) {
-				assert.ErrorIs(t, err, core.ErrInvalidOptions)
-			},
-		},
-		{
-			name:      "Non-existent file",
-			filename:  "testdata/non-existent.yaml",
-			expectErr: true, // This error happens at NewBuilderFromYAML time
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			builder, err := NewBuilderFromYAML(tc.filename)
-			if tc.name == "Non-existent file" {
-				require.Error(t, err)
-				return
-			}
-			if tc.name == "Invalid reranker options" {
-				require.Error(t, err)
-				tc.errAssert(t, err)
-				return
-			}
-			require.NoError(t, err)
-
-			orch, err := builder.Build(context.Background())
-
-			if tc.expectErr {
-				require.Error(t, err)
-				if tc.errAssert != nil {
-					tc.errAssert(t, err)
-				}
-			} else {
-				require.NoError(t, err)
-				require.NotNil(t, orch)
-				if tc.validateFunc != nil {
-					tc.validateFunc(t, orch)
-				}
-			}
-		})
-	}
-}
-
-func TestBuilderFromEnv(t *testing.T) {
-	// Do not run in parallel, as t.Setenv is not safe for concurrent use.
-	testCases := []struct {
-		name      string
-		envVars   map[string]string
-		yamlFile  string // Optional: for testing env override
-		validate  func(t *testing.T, orch core.Orchestrator)
-		expectErr bool
-	}{
-		{
-			name: "Basic build from env",
-			envVars: map[string]string{
-				"MANGLEKIT_LLM_PROVIDER": "mock-llm",
-				"MANGLEKIT_LLM_OPTIONS":  `{"model": "env-model"}`,
-			},
-			validate: func(t *testing.T, orch core.Orchestrator) {
-				s, ok := orch.(*pipeline.Sandwich)
-				require.True(t, ok)
-				llmClient := s.LLM()
-				require.NotNil(t, llmClient)
-				mockLLM, ok := llmClient.(*mock.LLM)
-				require.True(t, ok)
-				assert.Equal(t, "env-model", mockLLM.Model())
-				retriever := s.Retriever()
-				assert.Nil(t, retriever, "Retriever should not be configured from env")
-			},
-		},
-		{
-			name: "Env overrides YAML",
-			envVars: map[string]string{
-				"MANGLEKIT_LLM_PROVIDER": "mock-llm",
-				"MANGLEKIT_LLM_OPTIONS":  `{"model": "env-override-model"}`,
-			},
-			yamlFile: "testdata/sandwich.yaml", // This file has model: "foobar"
-			validate: func(t *testing.T, orch core.Orchestrator) {
-				s, ok := orch.(*pipeline.Sandwich)
-				require.True(t, ok)
-				// LLM should be from env
-				llmClient := s.LLM()
-				require.NotNil(t, llmClient)
-				mockLLM, ok := llmClient.(*mock.LLM)
-				require.True(t, ok)
-				assert.Equal(t, "env-override-model", mockLLM.Model())
-				// Retriever should be from the YAML file
-				retriever := s.Retriever()
-				require.NotNil(t, retriever)
-				_, ok = retriever.(retrieve.Retriever)
-				assert.True(t, ok)
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			for key, value := range tc.envVars {
-				t.Setenv(key, value)
-			}
-
-			var orch core.Orchestrator
-			var err error
-			if tc.yamlFile != "" {
-				builder, err := NewBuilderFromYAML(tc.yamlFile)
-				require.NoError(t, err)
-				orch, err = builder.Build(context.Background())
-			} else {
-				builder, err := NewBuilderFromEnv()
-				require.NoError(t, err)
-				orch, err = builder.Build(context.Background())
-			}
-
-			if tc.expectErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.NotNil(t, orch)
-				if tc.validate != nil {
-					tc.validate(t, orch)
-				}
-			}
-		})
-	}
-}
-
-func TestGoogleEmbedderAlias(t *testing.T) {
-	t.Setenv("GOOGLE_API_KEY", "test-key")
-
-	builder := NewBuilder()
-	builder.WithEmbedder(&embed.GoogleEmbedderOptions{Model: "embedding-001"})
-
-	// This would have failed before the alias normalization.
-	_, err := builder.Build(context.Background())
-	require.NoError(t, err, "should build successfully with google-embedder alias")
-}
-	t.Setenv("MKT_LLM_NAME", "mock-llm")
-	t.Setenv("MKT_LLM_PARAMS", string(llmParams))
-
-	builder, err := NewBuilderFromYAML(filepath.Join("testdata/sandwich.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := builder.Build(context.Background())
-	if err != nil {
-		t.Errorf("builder.Build() failed: %v", err)
-	}
-	if m == nil {
-		t.Fatal("builder.Build() returned nil")
-	}
-	res, err := m.Retriever().(*mock.Retriever).Retrieve(context.Background(), retrieve.Request{Query: "foo"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := res.Docs[0].Text, "bar"; got != want {
-		t.Errorf("m.Retriever().Retrieve() = %q, want %q", got, want)
-	}
-}
-
-func must(o core.Orchestrator, err error) core.Orchestrator {
-	if err != nil {
-		panic(err)
-	}
-	return o
+	assert.Equal(t, retrieverOpts.Documents[0].ID, stubFactories.retrieverOpts.Documents[0].ID)
+	assert.Equal(t, llmOpts.Model, stubFactories.llmOpts.Model)
+	assert.Equal(t, rerankerOpts.TopK, stubFactories.rerankerOpts.TopK)
 }

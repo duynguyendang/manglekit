@@ -16,6 +16,7 @@ import (
 func init() {
 	// Register the type-safe constructor with the MangleKit framework.
 	manglekit.RegisterRetriever("hybrid", New)
+	manglekit.RegisterOptions("hybrid", (*retrieve.HybridOptions)(nil))
 }
 
 // Retriever implements the `retrieve.Retriever` interface by combining results

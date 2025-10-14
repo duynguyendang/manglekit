@@ -12,8 +12,13 @@ import (
 	"github.com/knakk/rdf"
 )
 
+// Options defines the configuration for an RDFParser.
+// It is currently empty but is defined for future use and consistency.
+type Options struct{}
+
 func init() {
 	manglekit.RegisterSchemaParser("rdf", New)
+	manglekit.RegisterOptions("rdf", (*Options)(nil))
 }
 
 // RDFParser implements the `core.SchemaParser` interface for RDF files. It uses
