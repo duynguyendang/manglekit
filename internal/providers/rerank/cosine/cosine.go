@@ -16,6 +16,7 @@ import (
 func init() {
 	// Register the type-safe constructor with the MangleKit framework.
 	manglekit.RegisterReranker("cosine", New)
+	manglekit.RegisterOptions("cosine", (*rerank.CosineOptions)(nil))
 }
 
 // Reranker implements the `rerank.Reranker` interface. It re-scores documents

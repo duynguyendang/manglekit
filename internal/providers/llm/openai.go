@@ -12,6 +12,8 @@ import (
 func init() {
 	manglekit.RegisterLLM("openai", NewOpenAI)
 	manglekit.RegisterLLM("groq", NewOpenAI)
+	manglekit.RegisterOptions("openai", (*llm.OpenAIOptions)(nil))
+	manglekit.RegisterOptions("groq", (*llm.OpenAIOptions)(nil))
 }
 
 // openAIClient implements the llm.Client interface for OpenAI and other services

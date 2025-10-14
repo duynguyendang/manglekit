@@ -11,8 +11,13 @@ import (
 	"github.com/google/mangle/ast"
 )
 
+// Options defines the configuration for a JSONSchemaParser.
+// It is currently empty but is defined for future use and consistency.
+type Options struct{}
+
 func init() {
 	manglekit.RegisterSchemaParser("jsonschema", New)
+	manglekit.RegisterOptions("jsonschema", (*Options)(nil))
 }
 
 // JSONSchemaParser implements the `core.SchemaParser` interface for parsing

@@ -12,9 +12,16 @@ import (
 	"github.com/firebase/genkit/go/ai"
 )
 
+// Options defines the configuration for a Dense retriever.
+type Options struct {
+	Embedder    string `json:"embedder"`
+	VectorStore string `json:"vectorStore"`
+}
+
 func init() {
 	// Register the type-safe constructor with the MangleKit framework.
 	manglekit.RegisterRetriever("dense", New)
+	manglekit.RegisterOptions("dense", (*Options)(nil))
 }
 
 // Dense implements the `retrieve.Retriever` interface for dense, vector-based

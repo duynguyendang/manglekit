@@ -114,7 +114,7 @@ func NewBuilder() *Builder {
 // WithConfig applies a configuration object to the builder. This is the primary
 // way to use settings loaded from a YAML file. Settings from the config object
 // serve as a baseline, which can be overridden by individual `With...` calls.
-func (b *Builder) WithConfig(cfg *Config) *Builder {
+func (b *Builder) WithConfig(cfg *Config) BuilderAPI {
 	if cfg != nil {
 		b.config = cfg
 	}
@@ -125,7 +125,7 @@ func (b *Builder) WithConfig(cfg *Config) *Builder {
 // It accepts a pointer to a provider-specific options struct (e.g., `retrieve.BM25Options`),
 // infers the provider's name from the type, and stores the configuration for later use
 // during the `Build` process. If `opts` is nil, it clears any existing retriever configuration.
-func (b *Builder) WithRetriever(opts any) *Builder {
+func (b *Builder) WithRetriever(opts any) BuilderAPI {
 	if opts == nil {
 		b.retrieverName = ""
 		b.retrieverParams = nil
@@ -146,7 +146,7 @@ func (b *Builder) WithRetriever(opts any) *Builder {
 // for dense and hybrid retrievers. It accepts a pointer to a provider-specific options
 // struct (e.g., `core.LocalvecOptions`), infers the provider's name from the type,
 // and stores the configuration. If `opts` is nil, it clears any existing vector store configuration.
-func (b *Builder) WithVectorStore(opts any) *Builder {
+func (b *Builder) WithVectorStore(opts any) BuilderAPI {
 	if opts == nil {
 		b.vectorStoreName = ""
 		b.vectorStoreParams = nil
@@ -167,7 +167,7 @@ func (b *Builder) WithVectorStore(opts any) *Builder {
 // to a provider-specific options struct (e.g., `rerank.CosineOptions`), infers the
 // provider's name, and stores the configuration. If `opts` is nil, it clears any
 // existing reranker configuration.
-func (b *Builder) WithReranker(opts any) *Builder {
+func (b *Builder) WithReranker(opts any) BuilderAPI {
 	if opts == nil {
 		b.rerankerName = ""
 		b.rerankerParams = nil
@@ -188,7 +188,7 @@ func (b *Builder) WithReranker(opts any) *Builder {
 // provider-specific options struct (e.g., `core.MangleOptions`), infers the provider's
 // name, and stores the configuration. If `opts` is nil, it clears any existing rules
 // engine configuration.
-func (b *Builder) WithRules(opts any) *Builder {
+func (b *Builder) WithRules(opts any) BuilderAPI {
 	if opts == nil {
 		b.rulesName = ""
 		b.rulesParams = nil
@@ -209,7 +209,7 @@ func (b *Builder) WithRules(opts any) *Builder {
 // to a provider-specific options struct (e.g., `llm.GoogleOptions`), infers the provider's
 // name, and stores the configuration. If `opts` is nil, it clears any existing LLM
 // configuration.
-func (b *Builder) WithLLM(opts any) *Builder {
+func (b *Builder) WithLLM(opts any) BuilderAPI {
 	if opts == nil {
 		b.llmName = ""
 		b.llmParams = nil
@@ -229,7 +229,7 @@ func (b *Builder) WithLLM(opts any) *Builder {
 // WithFlow programmatically sets the flow name for the declarative orchestrator.
 // This is only used if the orchestrator type is set to "declarative" in the
 // main configuration.
-func (b *Builder) WithFlow(name string) *Builder {
+func (b *Builder) WithFlow(name string) BuilderAPI {
 	b.flowName = name
 	return b
 }
@@ -249,7 +249,7 @@ var embedderAlias = map[string]string{
 //     configured embedders.
 //
 // If `opts` is nil, any existing embedder configuration is cleared.
-func (b *Builder) WithEmbedder(opts any) *Builder {
+func (b *Builder) WithEmbedder(opts any) BuilderAPI {
 	if opts == nil {
 		b.embedderName = ""
 		b.embedderParams = nil
@@ -280,7 +280,7 @@ func (b *Builder) WithEmbedder(opts any) *Builder {
 // WithTopK programmatically sets the default number of documents to retrieve. This
 // value acts as a fallback if a more specific value is not provided in a
 // retriever's own configuration.
-func (b *Builder) WithTopK(k int) *Builder {
+func (b *Builder) WithTopK(k int) BuilderAPI {
 	b.opts.TopK = k
 	return b
 }
@@ -288,7 +288,7 @@ func (b *Builder) WithTopK(k int) *Builder {
 // WithMaxTokens programmatically sets the default maximum number of tokens for the
 // LLM response. This value acts as a fallback if a more specific value is not
 // provided in the LLM's own configuration.
-func (b *Builder) WithMaxTokens(n int) *Builder {
+func (b *Builder) WithMaxTokens(n int) BuilderAPI {
 	b.opts.MaxTokens = n
 	return b
 }
@@ -296,7 +296,7 @@ func (b *Builder) WithMaxTokens(n int) *Builder {
 // WithObservability programmatically sets the observability hooks (logger, tracer,
 // meter) for the entire pipeline, enabling integration with monitoring and
 // logging systems.
-func (b *Builder) WithObservability(obs core.Observability) *Builder {
+func (b *Builder) WithObservability(obs core.Observability) BuilderAPI {
 	b.opts.Obs = obs
 	return b
 }
@@ -304,7 +304,7 @@ func (b *Builder) WithObservability(obs core.Observability) *Builder {
 // WithFallbackThreshold programmatically sets the confidence score below which the
 // pipeline may exit early and return a fallback response instead of calling the
 // LLM. This is typically used with a reranker. A value of 0 disables this feature.
-func (b *Builder) WithFallbackThreshold(f float64) *Builder {
+func (b *Builder) WithFallbackThreshold(f float64) BuilderAPI {
 	b.opts.FallbackThreshold = f
 	return b
 }

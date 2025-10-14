@@ -17,6 +17,7 @@ import (
 
 func init() {
 	manglekit.RegisterLLM("google", NewGoogle)
+	manglekit.RegisterOptions("google", (*llm.GoogleOptions)(nil))
 }
 
 // googleClient implements the llm.Client interface for Google's generative models,

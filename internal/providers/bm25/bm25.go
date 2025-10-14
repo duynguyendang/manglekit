@@ -25,6 +25,7 @@ const (
 
 func init() {
 	manglekit.RegisterRetriever("bm25", New)
+	manglekit.RegisterOptions("bm25", (*retrieve.BM25Options)(nil))
 }
 
 // tfidfDoc is a wrapper for ai.Document to implement the tfidf.Document interface.
