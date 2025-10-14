@@ -59,15 +59,16 @@ type VectorStore interface {
 // of this interface, like the "Sandwich" or "Declarative" orchestrators, manage
 // the flow of data through the various components of the system.
 type Orchestrator interface {
-	// Run executes the full processing pipeline for a given query. This typically
+	// Execute executes the full processing pipeline for a given query. This typically
 	// involves pre-processing rules, document retrieval, reranking, LLM generation,
 	// and post-processing rules.
 	//
 	// ctx is the context for the entire operation.
+	// sessionID is the unique identifier for the session.
 	// q is the user's query to be processed.
 	// It returns a final Answer containing the generated text and citations,
 	// or an error if any part of the process fails.
-	Run(ctx context.Context, q Query) (Answer, error)
+	Execute(ctx context.Context, sessionID string, q Query) (Answer, error)
 
 	// Retriever returns the retriever instance configured for the orchestrator.
 	// This allows for runtime operations on the retriever, such as adding or updating
@@ -75,6 +76,9 @@ type Orchestrator interface {
 	// circular dependency with the `retrieve` package; the caller is expected to
 	// perform a type assertion to `retrieve.Retriever`.
 	Retriever() any
+
+	// StateProvider returns the state provider instance configured for the orchestrator.
+	StateProvider() StateProvider
 
 	// Close releases any resources (such as API clients) associated with the
 	// orchestrator. It should be invoked when the orchestrator is no longer needed.
@@ -139,6 +143,9 @@ type Options struct {
 	// LLM is the language model client used for generating the final answer.
 	// The builder ensures this is of type `llm.Client`.
 	LLM any
+	// StateProvider is the component responsible for persisting and retrieving session state.
+	// The builder ensures this is of type `core.StateProvider`.
+	StateProvider any
 	// Rules is the engine responsible for evaluating Mangle Datalog rules at
 	// different stages of the pipeline.
 	Rules RuleSet

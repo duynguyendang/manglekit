@@ -60,7 +60,7 @@ func main() {
 	}
 
 	// Run the pipeline.
-	answer, err := orch.Run(ctx, query)
+	answer, err := orch.Execute(ctx, "session-1", query)
 	if err != nil {
 		log.Fatalf("Pipeline run failed: %v", err)
 	}

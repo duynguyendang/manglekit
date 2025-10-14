@@ -1,0 +1,21 @@
+orchestrator:
+  type: sandwich
+
+llm:
+  name: google
+  params:
+    model: gemini-1.5-flash
+
+retriever:
+  name: in-memory
+  params:
+    documents:
+      - id: doc1
+        text: "Manglekit is a framework for building verifiable RAG applications."
+      - id: doc2
+        text: "It uses a declarative, rule-based approach to control the flow of information."
+      - id: doc3
+        text: "The capital of France is Paris."
+
+stateProvider:
+  name: inmemory

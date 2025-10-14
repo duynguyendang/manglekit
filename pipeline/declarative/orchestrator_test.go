@@ -74,7 +74,7 @@ func TestNewDeclarativeOrchestrator(t *testing.T) {
 	tools := map[string]any{
 		"mock-tool": &mockRetrieverTool{},
 	}
-	o, err := New(fc, tools, "test-flow", core.Observability{}, nil)
+	o, err := New(fc, tools, "test-flow", nil, core.Observability{}, nil)
 	if err != nil {
 		t.Fatalf("expected New to succeed, got %v", err)
 	}
@@ -95,15 +95,15 @@ func TestRun_Declarative(t *testing.T) {
 		"mock-retriever": &mockRetrieverTool{},
 		"mock-llm":       &mockLLMTool{},
 	}
-	o, err := New(fc, tools, "test-flow", core.Observability{}, nil)
+	o, err := New(fc, tools, "test-flow", nil, core.Observability{}, nil)
 	if err != nil {
 		t.Fatalf("expected New to succeed, got %v", err)
 	}
 
 	q := core.Query{Text: "test"}
-	a, err := o.Run(context.Background(), q)
+	a, err := o.Execute(context.Background(), "test-session", q)
 	if err != nil {
-		t.Fatalf("expected Run to succeed, got %v", err)
+		t.Fatalf("expected Execute to succeed, got %v", err)
 	}
 	if a.Text != "mock" {
 		t.Errorf("expected answer text to be mock, got %s", a.Text)
@@ -120,15 +120,15 @@ func TestRun_PreRulesDeny_Declarative(t *testing.T) {
 	tools := map[string]any{
 		"mock-retriever": &mockRetrieverTool{},
 	}
-	o, err := New(fc, tools, "test-flow", core.Observability{}, nil)
+	o, err := New(fc, tools, "test-flow", nil, core.Observability{}, nil)
 	if err != nil {
 		t.Fatalf("expected New to succeed, got %v", err)
 	}
 
 	q := core.Query{Text: "test"}
-	_, err = o.Run(context.Background(), q)
+	_, err = o.Execute(context.Background(), "test-session", q)
 	if err == nil {
-		t.Fatal("expected Run to fail")
+		t.Fatal("expected Execute to fail")
 	}
 	if !errors.Is(err, core.ErrDenied) {
 		t.Errorf("expected error to be of type ErrDenied, got %v", err)

@@ -55,7 +55,7 @@ func main() {
 
 	runQuery := func(label string, q core.Query) {
 		log.Printf("Executing %s: %q\n", label, q.Text)
-		answer, err := orchestrator.Run(ctx, q)
+		answer, err := orchestrator.Execute(ctx, "session-1", q)
 
 		switch {
 		case errors.Is(err, core.ErrDenied):

@@ -78,7 +78,7 @@ func main() {
 }
 
 func runTest(name string, ctx context.Context, orch core.Orchestrator, query core.Query, expectDeny bool) {
-	result, err := orch.Run(ctx, query)
+	result, err := orch.Execute(ctx, "session-1", query)
 	wasDenied := errors.Is(err, core.ErrDenied)
 
 	if wasDenied == expectDeny {

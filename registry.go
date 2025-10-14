@@ -39,15 +39,18 @@ var Registry = struct {
 	Component map[string]any
 	// Options holds registered options types for components.
 	Options map[string]reflect.Type
+	// StateProviders holds registered `core.StateProvider` constructors.
+	StateProviders map[string]any
 }{
-	Retriever:    make(map[string]any),
-	Reranker:     make(map[string]any),
-	Rules:        make(map[string]any),
-	LLM:          make(map[string]any),
-	Embedder:     make(map[string]any),
-	SchemaParser: make(map[string]any),
-	Component:    make(map[string]any),
-	Options:      make(map[string]reflect.Type),
+	Retriever:      make(map[string]any),
+	Reranker:       make(map[string]any),
+	Rules:          make(map[string]any),
+	LLM:            make(map[string]any),
+	Embedder:       make(map[string]any),
+	SchemaParser:   make(map[string]any),
+	Component:      make(map[string]any),
+	Options:        make(map[string]reflect.Type),
+	StateProviders: make(map[string]any),
 }
 
 // Bidirectional maps: provider name <-> options pointer type (*T)
@@ -113,3 +116,7 @@ func RegisterSchemaParser(name string, c any) { Registry.SchemaParser[name] = c 
 // global registry. This is typically called from an `init()` function in a
 // provider package.
 func Register(name string, c any) { Registry.Component[name] = c }
+
+// RegisterStateProvider adds a state provider constructor to the global registry.
+// This is typically called from an `init()` function in a provider package.
+func RegisterStateProvider(name string, c any) { Registry.StateProviders[name] = c }
