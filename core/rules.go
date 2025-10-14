@@ -34,9 +34,9 @@ type SchemaSource struct {
 
 // MangleOptions provides configuration for initializing the Mangle rule engine provider.
 type MangleOptions struct {
-	// Path is a slice of file paths or glob patterns pointing to Mangle Datalog
-	// (.dlog) rule files that should be loaded into the engine.
-	Path []string `yaml:"path" path:"resolve"`
+        // Path is a slice of file paths or glob patterns pointing to Mangle Datalog
+        // (.dlog) rule files that should be loaded into the engine.
+        Path []string `yaml:"path" path:"resolve"`
 	// SchemaSources is a slice of schemas to be loaded, which will be parsed
 	// into facts and added to the engine's knowledge base.
 	SchemaSources []SchemaSource `yaml:"schemaSources"`
@@ -45,12 +45,14 @@ type MangleOptions struct {
 	PreProcess []string `yaml:"preProcess"`
 	// PostProcess is a slice of Mangle transformer names to run in the "post" stage.
 	PostProcess []string `yaml:"postProcess"`
-	// DefaultConverters specifies whether to include the default set of built-in
-	// fact converters, which handle common data types.
-	DefaultConverters bool `yaml:"defaultConverters"`
-	// FileFirst, if true, indicates that facts from files should be loaded before
-	// facts from converters, which can affect rule evaluation if there are conflicts.
-	FileFirst bool `yaml:"fileFirst"`
+        // DefaultConverters specifies whether to include the default set of built-in
+        // fact converters, which handle common data types.
+        DefaultConverters bool `yaml:"defaultConverters"`
+        // FileFirst, if true, indicates that facts from files should be loaded before
+        // facts from converters, which can affect rule evaluation if there are conflicts.
+        FileFirst bool `yaml:"fileFirst"`
+        // Logger receives structured diagnostics from the rules engine while it boots.
+        Logger Logger `yaml:"-"`
 }
 
 // RuleSet defines the interface for a rules engine that can evaluate rules

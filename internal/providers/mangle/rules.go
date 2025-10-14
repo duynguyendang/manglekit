@@ -16,6 +16,7 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	obslogger "github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/providers/mangle/converters"
 	"github.com/google/mangle/analysis"
 	"github.com/google/mangle/ast"
@@ -68,6 +69,10 @@ type ruleSet struct {
 func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
 	if len(opts.Path) == 0 {
 		return nil, fmt.Errorf("mangle: at least one path in 'path' must be provided")
+	}
+	log := opts.Logger
+	if log == nil {
+		log = obslogger.NewStdLogger().With("component", "rules", "provider", "mangle")
 	}
 
 	// 1) Parse schemas (if any). We only take schema facts here; EDB declarations
@@ -127,16 +132,16 @@ func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
 		for _, decl := range schemaDecls {
 			edbDecls[decl] = ast.Decl{}
 		}
-		fmt.Println("[mangle] MODE: code-first; EDB declarations (from code):")
+		log.Infof("mangle rules boot", "mode", "code-first")
 		for p := range edbDecls {
-			fmt.Printf("  - %s/%d\n", p.Symbol, p.Arity)
+			log.Debugf("mangle predicate registered", "predicate", p.Symbol, "arity", p.Arity)
 		}
 	} else {
-		fmt.Println("[mangle] MODE: file-first (Decl comes from .dlog); edbDecls from code: <empty>")
+		log.Infof("mangle rules boot", "mode", "file-first")
 	}
 
 	// 4) Load program (rules + facts)
-	programInfo, strata, predToStratum, fileFacts, err := loadProgram(opts.Path, edbDecls)
+	programInfo, strata, predToStratum, fileFacts, err := loadProgram(opts.Path, edbDecls, log)
 	if err != nil {
 		return nil, fmt.Errorf("mangle: could not load program: %w", err)
 	}
@@ -730,7 +735,7 @@ func isFactFile(p string) bool {
 		strings.HasSuffix(p, ".data")
 }
 
-func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl) (*analysis.ProgramInfo, []analysis.Nodeset, map[ast.PredicateSym]int, []ast.Atom, error) {
+func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl, logger core.Logger) (*analysis.ProgramInfo, []analysis.Nodeset, map[ast.PredicateSym]int, []ast.Atom, error) {
 	var ruleFiles, factFiles []string
 	for _, path := range paths {
 		resolved, err := resolveFiles(path)
@@ -773,8 +778,7 @@ func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl) 
 		}
 	}
 
-	fmt.Println("[mangle] rule files:", ruleFiles)
-	fmt.Println("[mangle] fact  files:", factFiles)
+	logger.Debugf("mangle rule inputs", "rule_files", ruleFiles, "fact_files", factFiles)
 
 	programInfo, err := analysis.Analyze(units, edbDeclarations)
 	if err != nil {

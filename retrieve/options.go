@@ -9,6 +9,8 @@ type InMemoryOptions struct {
 	// Documents is a slice of core.Doc that will be pre-loaded into the
 	// retriever's memory store upon initialization.
 	Documents []core.Doc
+	// Logger provides structured logging for lifecycle events.
+	Logger core.Logger `yaml:"-"`
 }
 
 // BM25Options provides a type-safe way to configure the BM25 retriever, which

@@ -3,7 +3,7 @@ context_type: codebase_overview
 project: manglekit
 language: go
 version: 2025.10
-last_updated: 2025-10-14
+last_updated: 2025-10-15
 ---
 
 # Manglekit Project Context
@@ -48,8 +48,9 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
   - Returns `ErrNoEvidence` when no documents survive retrieval (or rerank fallback) and propagates wrapped errors for component failures.
 - ⚠️ **Declarative orchestrator (`pipeline/declarative/orchestrator.go`)**
   - `getFlowStages` queries Mangle facts (`flow_stage/3`, `stage_tool/2`) to assemble an ordered stage list.
+  - Derives a scoped logger from `core.Observability`, tagging `pipeline`/`flow` at construction and attaching a per-request UUID during `Run` so every record carries `request_id`.
   - Pre-rules (`RuleResult`) may deny or provide `SkippedStages` and metadata mutations. Execution context maps (`contextKeyQuery`, `contextKeyDocs`, etc.) carry state across stages.
-  - Stage dispatch handles retrievers, rerankers, `llm.Client`, and `core.PostRuleEvaluator` instances. Retrieves and reranks emit debug logs with `fmt.Printf`; post rules capture metrics via `Meter` when available.
+  - Stage dispatch handles retrievers, rerankers, `llm.Client`, and `core.PostRuleEvaluator` instances, emitting structured debug/info logs through the shared `core.Logger`; post rules capture metrics via `Meter` when available.
   - Post-rule stages filter/redact documents, enforce denials (`ErrDenied`), and prune citations to match surviving evidence. Final answers come from the shared context map.
 
 ---
@@ -98,9 +99,10 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 
 ---
 
-## Observability & Logging ⚠️
-- Builders always populate `core.Options.Obs.Logger`, defaulting to a structured stdout logger so pipeline code never checks for nil. YAML/env configs can pick zap level/format, and the sandwich orchestration attaches a per-request UUID via `Logger.With`.
-- Zap logging flows through `internal/logger.ZapAdapter`, while a deterministic stdlib logger remains available as a fallback. Latencies continue to land in `Meter.Record` metrics such as `manglekit.retrieve_ms`, `manglekit.rerank_ms`, `manglekit.llm_ms`, and `manglekit.rules_post_ms`.
+## Observability & Logging ✅
+- Builders always populate `core.Options.Obs.Logger`, defaulting to a structured stdout logger so pipeline code never checks for nil. YAML files may supply a `logging` block (level + format) and env deployments can set `MKT_LOG_LEVEL` / `MKT_LOG_FORMAT` to spin up the zap-backed adapter.
+- The zap adapter lives in `internal/logger.ZapAdapter`; a deterministic stdlib `StdLogger` remains available as a fallback. Latencies continue to land in `Meter.Record` metrics such as `manglekit.retrieve_ms`, `manglekit.rerank_ms`, `manglekit.llm_ms`, and `manglekit.rules_post_ms`.
+- Sandwich and declarative orchestrators fork a request-scoped logger with a UUID so every log line carries `request_id`, and providers such as the in-memory retriever and Mangle rules engine now emit through the shared logger.
 - Builders collect `ResourceClosers` from providers (Genkit clients, HTTP transports, vector stores) and unwind them LIFO on shutdown or build failure.
 - Trace integration is opt-in through `Tracer.StartSpan`; the Sandwich pipeline wraps the entire run in a span when available.
 
@@ -119,23 +121,19 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 | --- | --- | --- | --- |
 | High | CLI build targets | Makefile | `make build` and `make run` reference missing `./cmd/agent`, so default workflows fail. |
 | High | Empty provider stubs | llm/google.go, llm/openai.go | Root-level files are empty, indicating incomplete or dead code paths that confuse navigation and coverage. |
-| Medium | Logging consistency | pipeline/sandwich.go, pipeline/declarative/orchestrator.go, internal/providers/mangle/rules.go | Direct `fmt.Printf` calls bypass the optional logger, leading to noisy stdout in production. |
 | Medium | Context propagation | internal/vectorstores/localvec/localvec.go | `Search` requires `ctx.Value("query_text")` with a plain string key, creating a fragile dependency between retrievers and vector stores. |
 | Medium | Fallback behaviour | pipeline/sandwich.go | `FallbackThreshold` is enforced only when a reranker is configured, so non-reranked pipelines always proceed to the LLM. |
 | Medium | Provider family coverage | builder.go | `resolveProviderConfig` handles only `"google"`, `"openai"`, and `"groq"`, limiting extension to other provider families or aliases. |
 | Low | Heuristic constants | internal/providers/hybrid/hybrid.go, pipeline/sandwich.go | Values like the RRF constant (`k=60`) are hard-coded without configuration hooks. |
-| Low | In-memory retriever logging | internal/providers/retrievers/inmemory/inmemory.go | `Upsert` and `Replace` log counts directly with `fmt.Printf`, with no way to silence in quiet environments. |
 
 ---
 
 ## Known Gaps (detailed)
 - **High**: Makefile targets `./cmd/agent` for build/run even though no such package exists, so `make build`/`make run` fail out of the box (`Makefile`).
 - **High**: Root-level `llm/google.go` and `llm/openai.go` files are empty placeholders, signalling incomplete or dead code paths that can confuse readers and coverage tools (`llm/google.go`, `llm/openai.go`).
-- **Medium**: Several components print directly to stdout (`pipeline/sandwich.go`, `pipeline/declarative/orchestrator.go`, `internal/providers/mangle/rules.go`, `internal/providers/retrievers/inmemory/inmemory.go`), bypassing the optional logger and cluttering logs in production.
 - **Medium**: `FallbackThreshold` is only enforced when a reranker is configured; Sandwich pipelines without rerankers always call the LLM even when confidence should trigger a fallback (`pipeline/sandwich.go`).
 - **Medium**: `resolveProviderConfig` handles only `"google"`, `"openai"`, and `"groq"`; additional provider families (or hyphenated names) cannot pick up shared configuration without extending the switch (`builder.go`).
 - **Low**: Reciprocal Rank Fusion constant `k=60` and other heuristic values are hard-coded with no configuration hooks (`internal/providers/hybrid/hybrid.go`, `pipeline/sandwich.go`).
-- **Low**: In-memory retriever `Upsert`/`Replace` log counts via `fmt.Printf` with no way to disable them (`internal/providers/retrievers/inmemory/inmemory.go`).
 
 ---
 

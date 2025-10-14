@@ -98,14 +98,15 @@ var stubFactories struct {
 }
 
 func installStubProviders(t *testing.T) {
-	manglekit.RegisterOptions("in-memory", (*retrieve.InMemoryOptions)(nil))
-	manglekit.RegisterOptions("cosine", (*rerank.CosineOptions)(nil))
-	manglekit.RegisterOptions("openai", (*llm.OpenAIOptions)(nil))
-	manglekit.RegisterOptions("groq", (*llm.OpenAIOptions)(nil))
-	manglekit.RegisterOptions("openai-embedder", (*embed.OpenAIEmbedderOptions)(nil))
+        manglekit.RegisterOptions("in-memory", (*retrieve.InMemoryOptions)(nil))
+        manglekit.RegisterOptions("cosine", (*rerank.CosineOptions)(nil))
+        manglekit.RegisterOptions("openai", (*llm.OpenAIOptions)(nil))
+        manglekit.RegisterOptions("groq", (*llm.OpenAIOptions)(nil))
+        manglekit.RegisterOptions("openai-embedder", (*embed.OpenAIEmbedderOptions)(nil))
 
-	origRetriever := manglekit.Registry.Retriever["in-memory"]
-	origReranker := manglekit.Registry.Reranker["cosine"]
+        t.Setenv("GROQ_API_KEY", "test-key")
+        origRetriever := manglekit.Registry.Retriever["in-memory"]
+        origReranker := manglekit.Registry.Reranker["cosine"]
 	origEmbedder := manglekit.Registry.Embedder["openai"]
 	origLLMOpenAI := manglekit.Registry.LLM["openai"]
 	origLLMGroq := manglekit.Registry.LLM["groq"]
@@ -178,6 +179,12 @@ func TestNewBuilderFromYAML_SandwichHappyPath(t *testing.T) {
 	_ = requireSandwich(t, orch)
 	if stubFactories.retriever == nil {
 		t.Fatalf("stub retriever was not constructed")
+	}
+	if stubFactories.retrieverOpts.Logger == nil {
+		t.Fatalf("expected retriever logger to be injected")
+	}
+	if child := stubFactories.retrieverOpts.Logger.With("component", "test"); child == nil {
+		t.Fatalf("expected logger.With to return a logger instance")
 	}
 	if stubFactories.reranker == nil {
 		t.Fatalf("stub reranker was not constructed")
@@ -361,6 +368,9 @@ func TestNewBuilderFromEnv(t *testing.T) {
 	}
 	if stubFactories.llm.calls[0].MaxTokens != 400 {
 		t.Fatalf("expected MaxTokens 400 in LLM request, got calls=%v", stubFactories.llm.calls)
+	}
+	if stubFactories.retrieverOpts.Logger == nil {
+		t.Fatalf("expected retriever logger to be injected via env config")
 	}
 }
 

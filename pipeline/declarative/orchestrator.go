@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
+	obslogger "github.com/duynguyendang/manglekit/internal/logger"
+	"github.com/duynguyendang/manglekit/internal/providers/mock"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
-	"github.com/duynguyendang/manglekit/internal/providers/mock"
+	"github.com/google/uuid"
 )
 
 const (
@@ -85,6 +87,11 @@ func New(fc core.FlowController, tools map[string]any, flowName string, obs core
 	if flowName == "" {
 		return nil, fmt.Errorf("DeclarativeOrchestrator requires a flow name")
 	}
+	if obs.Logger == nil {
+		obs.Logger = obslogger.NewStdLogger()
+	}
+	obs.Logger = obs.Logger.With("pipeline", "declarative", "flow", flowName)
+
 	return &DeclarativeOrchestrator{
 		flowController: fc,
 		tools:          tools,
@@ -146,6 +153,9 @@ func (o *DeclarativeOrchestrator) Close(ctx context.Context) error {
 // It returns the final `core.Answer` or an error if the flow is undefined, a
 // tool is missing, or a tool fails during execution.
 func (o *DeclarativeOrchestrator) Run(ctx context.Context, q core.Query) (core.Answer, error) {
+	requestID := uuid.NewString()
+	logger := o.obs.Logger.With("request_id", requestID)
+	logger.Infof("pipeline run started", "query", q.Text)
 	// 1. Query the static execution plan.
 	stages, err := o.getFlowStages(ctx)
 	if err != nil {
@@ -182,10 +192,10 @@ func (o *DeclarativeOrchestrator) Run(ctx context.Context, q core.Query) (core.A
 		// Optional debug logs
 		if cq.Meta != nil {
 			if f, ok := cq.Meta["filters"]; ok {
-				fmt.Printf("[declarative] filters from pre-rules: %#v\n", f)
+				logger.Debugf("pre-rules filters applied", "filters", f)
 			}
 			if ex, ok := cq.Meta["expansion_terms"]; ok {
-				fmt.Printf("[declarative] expansions from pre-rules: %#v\n", ex)
+				logger.Debugf("pre-rules expansions applied", "expansions", ex)
 			}
 		}
 	}
@@ -204,7 +214,7 @@ func (o *DeclarativeOrchestrator) Run(ctx context.Context, q core.Query) (core.A
 		}
 
 		// c. Execute the tool.
-		if err := o.dispatchToTool(ctx, stage, tool, execContext); err != nil {
+		if err := o.dispatchToTool(ctx, logger, stage, tool, execContext); err != nil {
 			finalAnswer, _ := execContext[contextKeyAnswer].(core.Answer)
 			if errors.Is(err, core.ErrDenied) {
 				if reason, ok := execContext[contextKeyDenialReason].(string); ok && reason != "" {
@@ -224,6 +234,7 @@ func (o *DeclarativeOrchestrator) Run(ctx context.Context, q core.Query) (core.A
 	if !ok {
 		return core.Answer{}, fmt.Errorf("execution context ended without a valid answer object")
 	}
+	logger.Infof("pipeline run finished successfully")
 	return finalAnswer, nil
 }
 
@@ -277,7 +288,7 @@ func (o *DeclarativeOrchestrator) getFlowStages(ctx context.Context) ([]flowStag
 }
 
 // dispatchToTool executes the appropriate method on a tool based on its type.
-func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, stage flowStage, tool any, execContext map[string]any) error {
+func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, logger core.Logger, stage flowStage, tool any, execContext map[string]any) error {
 	query, ok := execContext[contextKeyQuery].(core.Query)
 	if !ok {
 		return fmt.Errorf("query not found in execution context")
@@ -300,16 +311,14 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, stage flow
 			query.Meta = map[string]any{}
 		}
 
-		// Debug logs for filters/expansions before retrieving
-		fmt.Printf("[declarative] calling retriever with filters=%#v expansions=%#v\n",
-			query.Meta["filters"], query.Meta["expansion_terms"])
+		logger.Debugf("calling retriever", "stage", stage.Name, "filters", query.Meta["filters"], "expansions", query.Meta["expansion_terms"])
 
 		req := retrieve.Request{Query: query.Text, Meta: query.Meta}
 		res, err := t.Retrieve(ctx, req)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("[declarative] retrieved %d docs\n", len(res.Docs))
+		logger.Infof("retriever returned documents", "stage", stage.Name, "count", len(res.Docs))
 
 		// Store docs for next stages
 		execContext[contextKeyDocs] = res.Docs
@@ -390,22 +399,11 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, stage flow
 			return err
 		}
 
-		if logger := o.obs.Logger; logger != nil {
-			fired := 0
-			if v, ok := result.Meta["fired_rules"].(int); ok {
-				fired = v
-			}
-			logger.Info("post-rules executed",
-				"stage", stage.Name,
-				"duration_ms", duration.Milliseconds(),
-				"fired_rules", fired,
-				"denied", result.Denied,
-				"reason", result.Reason,
-			)
-		} else {
-			fmt.Printf("[declarative] post-rules stage=%s ms=%d denied=%t reason=%q\n",
-				stage.Name, duration.Milliseconds(), result.Denied, result.Reason)
+		fired := 0
+		if v, ok := result.Meta["fired_rules"].(int); ok {
+			fired = v
 		}
+		logger.Infof("post-rules executed", "stage", stage.Name, "duration_ms", duration.Milliseconds(), "fired_rules", fired, "denied", result.Denied, "reason", result.Reason)
 
 		execContext[contextKeyDocs] = result.Filtered
 
