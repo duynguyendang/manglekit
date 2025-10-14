@@ -45,7 +45,7 @@ func main() {
 	// The Build() method now reads the orchestrator type from the config.
 	// It sees "declarative", builds the dependency graph of tools, and then
 	// instantiates the DeclarativeOrchestrator with the built tools and ruleset.
-	orchestrator, err := builder.Build(context.Background())
+	orchestrator, err := builder.Build(ctx)
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}

@@ -76,7 +76,7 @@ func main() {
 		panic(fmt.Errorf("failed to create builder from yaml: %w", err))
 	}
 
-	orch, err := builder.Build(context.Background())
+	orch, err := builder.Build(ctx)
 	if err != nil {
 		panic(fmt.Errorf("failed to build orchestrator: %w", err))
 	}
