@@ -6,6 +6,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/llm"
+	"github.com/duynguyendang/manglekit/pipeline"
 	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
@@ -132,5 +133,34 @@ func TestBuild(t *testing.T) {
 	}
 	if o == nil {
 		t.Fatal("expected orchestrator to be non-nil")
+	}
+}
+
+func TestBuildWithMockRerankerAndNoEmbedder(t *testing.T) {
+	t.Parallel()
+	builder := NewBuilder().
+		WithRetriever(&mockOptions{}).
+		WithReranker(&mockOptions{}).
+		WithLLM(&mockOptions{})
+
+	orch, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if orch == nil {
+		t.Fatal("Build() returned nil orchestrator")
+	}
+
+	// Verify that a reranker was actually set.
+	sandwich, ok := orch.(*pipeline.Sandwich)
+	if !ok {
+		t.Fatalf("Expected a Sandwich orchestrator, got %T", orch)
+	}
+	if sandwich.Reranker() == nil {
+		t.Error("Orchestrator's reranker is nil, but a mock reranker should have been built")
+	}
+
+	if err := orch.Close(context.Background()); err != nil {
+		t.Errorf("Close() error = %v", err)
 	}
 }

@@ -1060,37 +1060,52 @@ func (b *Builder) buildReranker() error {
 	if b.rerankerName == "" {
 		return nil
 	}
-	if b.embedder == nil {
-		return fmt.Errorf("reranker '%s' requires an embedder", b.rerankerName)
-	}
 	constructor, err := Get(Registry.Reranker, b.rerankerName)
 	if err != nil {
 		return err
 	}
-	newFn, ok := constructor.(func(rerank.CosineOptions, ai.Embedder) (rerank.Reranker, error))
-	if !ok {
-		return fmt.Errorf("invalid constructor type for reranker '%s'", b.rerankerName)
-	}
 
-	var opts rerank.CosineOptions
-	if o, ok := b.rerankerParams["typedConfig"].(*rerank.CosineOptions); ok && o != nil {
-		opts = *o
-	} else if o, ok := b.rerankerParams["typedConfig"].(rerank.CosineOptions); ok {
-		opts = o
-	} else {
-		if topK, ok := b.rerankerParams["topK"].(int); ok {
-			opts.TopK = topK
+	switch b.rerankerName {
+	case "cosine":
+		if b.embedder == nil {
+			return fmt.Errorf("reranker '%s' requires an embedder", b.rerankerName)
 		}
-	}
-	if opts.TopK == 0 && b.config.Reranker.Name == b.rerankerName {
-		if topK, ok := b.config.Reranker.Params["topK"].(int); ok {
-			opts.TopK = topK
+		newFn, ok := constructor.(func(rerank.CosineOptions, ai.Embedder) (rerank.Reranker, error))
+		if !ok {
+			return fmt.Errorf("invalid constructor type for reranker '%s'", b.rerankerName)
 		}
-	}
 
-	b.opts.Reranker, err = newFn(opts, b.embedder)
-	if err != nil {
-		return fmt.Errorf("failed to build reranker '%s': %w", b.rerankerName, err)
+		var opts rerank.CosineOptions
+		if o, ok := b.rerankerParams["typedConfig"].(*rerank.CosineOptions); ok && o != nil {
+			opts = *o
+		} else if o, ok := b.rerankerParams["typedConfig"].(rerank.CosineOptions); ok {
+			opts = o
+		} else {
+			if topK, ok := b.rerankerParams["topK"].(int); ok {
+				opts.TopK = topK
+			}
+		}
+		if opts.TopK == 0 && b.config.Reranker.Name == b.rerankerName {
+			if topK, ok := b.config.Reranker.Params["topK"].(int); ok {
+				opts.TopK = topK
+			}
+		}
+
+		b.opts.Reranker, err = newFn(opts, b.embedder)
+		if err != nil {
+			return fmt.Errorf("failed to build reranker '%s': %w", b.rerankerName, err)
+		}
+	case "mock":
+		newFn, ok := constructor.(func(any) (rerank.Reranker, error))
+		if !ok {
+			return fmt.Errorf("invalid constructor type for reranker 'mock'")
+		}
+		b.opts.Reranker, err = newFn(nil)
+		if err != nil {
+			return fmt.Errorf("failed to build reranker 'mock': %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported reranker type in builder: %s", b.rerankerName)
 	}
 	return nil
 }
