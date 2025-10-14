@@ -95,6 +95,10 @@ func (s *Sandwich) Reranker() any {
 }
 
 // Close releases any external resources held by the orchestrator (e.g., API clients).
+// It iterates over the resource closers in reverse order and calls them.
+//
+// ctx is the context for the close operation.
+// It returns a combined error if any of the closers fail.
 func (s *Sandwich) Close(ctx context.Context) error {
 	var combined error
 	for i := len(s.closers) - 1; i >= 0; i-- {
@@ -108,6 +112,14 @@ func (s *Sandwich) Close(ctx context.Context) error {
 	return combined
 }
 
+// Run executes the full processing pipeline for a given query. This typically
+// involves pre-processing rules, document retrieval, reranking, LLM generation,
+// and post-processing rules.
+//
+// ctx is the context for the entire operation.
+// q is the user's query to be processed.
+// It returns a final Answer containing the generated text and citations,
+// or an error if any part of the process fails.
 func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 	requestID := uuid.NewString()
 	logger := s.opts.Obs.Logger.With("request_id", requestID, "pipeline", "sandwich")
