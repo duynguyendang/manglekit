@@ -53,21 +53,27 @@ func NewSandwich(o core.Options) (core.Orchestrator, error) {
 	if o.Retriever != nil {
 		s.retriever, ok = o.Retriever.(retrieve.Retriever)
 		if !ok {
-			return nil, fmt.Errorf("invalid retriever type: %T", o.Retriever)
+			err := fmt.Errorf("invalid retriever type: %T", o.Retriever)
+			s.opts.Obs.Logger.Errorf(err.Error())
+			return nil, err
 		}
 	}
 
 	if o.LLM != nil {
 		s.llm, ok = o.LLM.(llm.Client)
 		if !ok {
-			return nil, fmt.Errorf("invalid llm type: %T", o.LLM)
+			err := fmt.Errorf("invalid llm type: %T", o.LLM)
+			s.opts.Obs.Logger.Errorf(err.Error())
+			return nil, err
 		}
 	}
 
 	if o.Reranker != nil {
 		s.reranker, ok = o.Reranker.(rerank.Reranker)
 		if !ok {
-			return nil, fmt.Errorf("invalid reranker type: %T", o.Reranker)
+			err := fmt.Errorf("invalid reranker type: %T", o.Reranker)
+			s.opts.Obs.Logger.Errorf(err.Error())
+			return nil, err
 		}
 	}
 	return s, nil
@@ -140,6 +146,7 @@ func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 	// 4. Prepare for LLM
 	passages, err := s.prepareLlmRequest(docs, &answer)
 	if err != nil {
+		logger.Errorf("prepare llm request failed", "error", err)
 		return answer, fmt.Errorf("prepare llm request failed: %w", err)
 	}
 

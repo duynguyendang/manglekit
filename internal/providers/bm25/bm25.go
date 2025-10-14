@@ -11,6 +11,7 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	obslogger "github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/go-nlp/bm25"
@@ -75,11 +76,17 @@ func New(opts retrieve.BM25Options) (retrieve.Retriever, error) {
 	if topK == 0 {
 		topK = 10 // default value
 	}
+	logger := opts.Logger
+	if logger == nil {
+		logger = obslogger.NewStdLogger()
+	}
 
-	docs, err := loadDocuments(opts.Path)
+	docs, err := loadDocuments(opts.Path, logger)
 	if err != nil {
+		logger.Errorf("failed to load documents for BM25: %v", err)
 		return nil, fmt.Errorf("failed to load documents for BM25: %w", err)
 	}
+	logger.Debugf("loaded %d documents from %s", len(docs), opts.Path)
 
 	vocab := make(map[string]int)
 	var tfDocs []tfidf.Document
@@ -172,7 +179,7 @@ func (b *BM25) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Res
 	return retrieve.Result{Docs: results}, nil
 }
 
-func parseFrontMatter(fileContent []byte) (map[string]any, string) {
+func parseFrontMatter(fileContent []byte, logger core.Logger) (map[string]any, string) {
 	const separator = "---\n"
 	if !bytes.HasPrefix(fileContent, []byte(separator)) {
 		return nil, string(fileContent)
@@ -183,13 +190,13 @@ func parseFrontMatter(fileContent []byte) (map[string]any, string) {
 	}
 	var metadata map[string]any
 	if err := yaml.Unmarshal(parts[1], &metadata); err != nil {
-		fmt.Fprintf(os.Stderr, "could not parse front matter: %v, file content will be used as is", err)
+		logger.Warnf("could not parse front matter: %v, file content will be used as is", err)
 		return nil, string(fileContent)
 	}
 	return metadata, string(parts[2])
 }
 
-func loadDocuments(path string) ([]*ai.Document, error) {
+func loadDocuments(path string, logger core.Logger) ([]*ai.Document, error) {
 	var documents []*ai.Document
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -200,7 +207,7 @@ func loadDocuments(path string) ([]*ai.Document, error) {
 			if err != nil {
 				return err
 			}
-			metadata, contentStr := parseFrontMatter(fileContent)
+			metadata, contentStr := parseFrontMatter(fileContent, logger)
 			trimmedContent := strings.TrimSpace(contentStr)
 			if trimmedContent == "" {
 				return nil

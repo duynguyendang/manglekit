@@ -77,19 +77,26 @@ type flowStage struct {
 // It returns a configured `core.Orchestrator` or an error if any of the
 // required parameters are invalid.
 func New(fc core.FlowController, tools map[string]any, flowName string, obs core.Observability, closers []core.ResourceCloser) (core.Orchestrator, error) {
-	if fc == nil {
-		return nil, fmt.Errorf("DeclarativeOrchestrator requires a non-nil FlowController")
-	}
-	if tools == nil {
-		return nil, fmt.Errorf("DeclarativeOrchestrator requires a non-nil tools map")
-	}
-	if flowName == "" {
-		return nil, fmt.Errorf("DeclarativeOrchestrator requires a flow name")
-	}
 	if obs.Logger == nil {
 		obs.Logger = obslogger.NewStdLogger()
 	}
 	obs.Logger = obs.Logger.With("pipeline", "declarative", "flow", flowName)
+
+	if fc == nil {
+		err := fmt.Errorf("DeclarativeOrchestrator requires a non-nil FlowController")
+		obs.Logger.Errorf(err.Error())
+		return nil, err
+	}
+	if tools == nil {
+		err := fmt.Errorf("DeclarativeOrchestrator requires a non-nil tools map")
+		obs.Logger.Errorf(err.Error())
+		return nil, err
+	}
+	if flowName == "" {
+		err := fmt.Errorf("DeclarativeOrchestrator requires a flow name")
+		obs.Logger.Errorf(err.Error())
+		return nil, err
+	}
 
 	return &DeclarativeOrchestrator{
 		flowController: fc,
@@ -158,16 +165,22 @@ func (o *DeclarativeOrchestrator) Run(ctx context.Context, q core.Query) (core.A
 	// 1. Query the static execution plan.
 	stages, err := o.getFlowStages(ctx)
 	if err != nil {
-		return core.Answer{}, fmt.Errorf("could not get flow stages for flow '%s': %w", o.flowName, err)
+		err = fmt.Errorf("could not get flow stages for flow '%s': %w", o.flowName, err)
+		logger.Errorf(err.Error())
+		return core.Answer{}, err
 	}
 	if len(stages) == 0 {
-		return core.Answer{}, fmt.Errorf("no stages found for flow '%s'", o.flowName)
+		err = fmt.Errorf("no stages found for flow '%s'", o.flowName)
+		logger.Errorf(err.Error())
+		return core.Answer{}, err
 	}
 
 	// 2. Evaluate pre-rules to get runtime information like which stages to skip.
 	preResult, err := o.flowController.Evaluate(core.Pre, q, nil)
 	if err != nil {
-		return core.Answer{}, fmt.Errorf("pre-rules evaluation failed: %w", err)
+		err = fmt.Errorf("pre-rules evaluation failed: %w", err)
+		logger.Errorf(err.Error())
+		return core.Answer{}, err
 	}
 	if !preResult.Allowed {
 		return core.Answer{Meta: map[string]any{"denial_reason": preResult.Reason}}, core.ErrDenied

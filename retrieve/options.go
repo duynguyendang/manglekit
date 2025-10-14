@@ -22,6 +22,9 @@ type BM25Options struct {
 	// TopK specifies the default number of documents to return if a different
 	// limit is not specified in the retrieval request.
 	TopK int `yaml:"topK"`
+	// Logger is the logger to be used by the retriever. If nil, a default
+	// logger will be used.
+	Logger core.Logger `yaml:"-"`
 }
 
 // DenseOptions provides a type-safe way to configure a dense (vector-based)
