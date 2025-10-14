@@ -3,7 +3,7 @@ context_type: codebase_overview
 project: manglekit
 language: go
 version: 2025.10
-last_updated: 2025-10-13
+last_updated: 2025-10-14
 ---
 
 # Manglekit Project Context
@@ -14,7 +14,7 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 ---
 
 ## Core Building Blocks
-- ⚠️ **Registry (`registry.go`)**: Global maps hold constructors for retrievers, rerankers, LLMs, embedders, schema parsers, and generic “components”. `RegisterOptions` maps provider names to option pointer types, but production providers do not currently call it.
+- ✅ **Registry (`registry.go`)**: Global maps hold constructors for retrievers, rerankers, LLMs, embedders, schema parsers, and generic “components”. `RegisterOptions` maps provider names to option pointer types, and production providers register their options at init.
 - ✅ **Core types (`core/types.go`)**: `Query`, `Answer`, `Doc`, `Citation`, and `Options` structure pipeline data. `Options` embeds `Observability` hooks plus `ResourceClosers`. Errors surface as sentinel values (`ErrInvalidOptions`, `ErrNoEvidence`, `ErrDenied`).
 - ✅ **Observability contracts**: `Logger` (Info/Error), `Tracer` (`StartSpan`), and `Meter` (`Record`) let pipelines instrument work without binding to specific libraries.
 - ✅ **SDK entry point (`sdk.go`)**: `New` validates that retriever and LLM are present, fills defaults (`TopK=8`, `MaxTokens=512`), type-asserts concrete interfaces, and delegates to `pipeline.NewSandwich`.
@@ -115,13 +115,9 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 ## Known Gaps (machine-readable)
 | Severity | Component | File | Description |
 | --- | --- | --- | --- |
-| Critical | Provider options registry | builder.go, registry.go | Production providers never call `RegisterOptions`, so `optionsTypeToName` remains empty and builder lookups fail for real option structs. |
-| Critical | OpenAI client wiring | builder.go | `buildSingleTool` asserts `openai.Client` by value, but `resolveProviderConfig` stores `*openai.Client`, causing panic when instantiating OpenAI/Groq tools. |
-| High | Google embedder aliasing | builder.go, internal/embedders/google/google.go | Builder expects provider `"google"` while the embedder registers `"google-embedder"`, preventing automatic Google embedder construction. |
 | High | CLI build targets | Makefile | `make build` and `make run` reference missing `./cmd/agent`, so default workflows fail. |
 | High | Empty provider stubs | llm/google.go, llm/openai.go | Root-level files are empty, indicating incomplete or dead code paths that confuse navigation and coverage. |
 | Medium | Logging consistency | pipeline/sandwich.go, pipeline/declarative/orchestrator.go, internal/providers/mangle/rules.go | Direct `fmt.Printf` calls bypass the optional logger, leading to noisy stdout in production. |
-| Medium | Context propagation | internal/vectorstores/localvec/localvec.go | `Search` requires `ctx.Value("query_text")` with a plain string key, creating a fragile dependency between retrievers and vector stores. |
 | Medium | Fallback behaviour | pipeline/sandwich.go | `FallbackThreshold` is enforced only when a reranker is configured, so non-reranked pipelines always proceed to the LLM. |
 | Medium | Provider family coverage | builder.go | `resolveProviderConfig` handles only `"google"`, `"openai"`, and `"groq"`, limiting extension to other provider families or aliases. |
 | Low | Heuristic constants | internal/providers/hybrid/hybrid.go, pipeline/sandwich.go | Values like the RRF constant (`k=60`) are hard-coded without configuration hooks. |
@@ -130,13 +126,9 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 ---
 
 ## Known Gaps (detailed)
-- **Critical**: No production provider calls `RegisterOptions`, leaving `optionsTypeToName` empty. Any `With*` call with real option structs (or YAML/env load) yields “unregistered options type” errors (`builder.go`, `registry.go`).
-- **Critical**: `buildSingleTool` asserts `openai.Client` (value) while `resolveProviderConfig` stores `*openai.Client`, causing a panic when wiring OpenAI/Groq tools (`builder.go`).
-- **High**: Embedder names are inconsistent—`internal/embedders/google` registers `"google-embedder"`, but the builder expects `"google"` and resolves provider config only for `"google"`, so Google embedders cannot be instantiated without manual overrides (`builder.go`, `internal/embedders/google/google.go`).
 - **High**: Makefile targets `./cmd/agent` for build/run even though no such package exists, so `make build`/`make run` fail out of the box (`Makefile`).
 - **High**: Root-level `llm/google.go` and `llm/openai.go` files are empty placeholders, signalling incomplete or dead code paths that can confuse readers and coverage tools (`llm/google.go`, `llm/openai.go`).
 - **Medium**: Several components print directly to stdout (`pipeline/sandwich.go`, `pipeline/declarative/orchestrator.go`, `internal/providers/mangle/rules.go`, `internal/providers/retrievers/inmemory/inmemory.go`), bypassing the optional logger and cluttering logs in production.
-- **Medium**: `localvec.Search` depends on `ctx.Value("query_text")` with a raw string key, creating a fragile contract between retrievers and vector stores (`internal/vectorstores/localvec/localvec.go`).
 - **Medium**: `FallbackThreshold` is only enforced when a reranker is configured; Sandwich pipelines without rerankers always call the LLM even when confidence should trigger a fallback (`pipeline/sandwich.go`).
 - **Medium**: `resolveProviderConfig` handles only `"google"`, `"openai"`, and `"groq"`; additional provider families (or hyphenated names) cannot pick up shared configuration without extending the switch (`builder.go`).
 - **Low**: Reciprocal Rank Fusion constant `k=60` and other heuristic values are hard-coded with no configuration hooks (`internal/providers/hybrid/hybrid.go`, `pipeline/sandwich.go`).
