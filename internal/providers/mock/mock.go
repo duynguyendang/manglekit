@@ -126,14 +126,19 @@ type LLMOptions struct {
 	Model string `json:"model"`
 }
 
-// Tool is a mock tool.
+// Tool is a mock tool that can be used in tests.
 type Tool struct {
-	Name       string
-	Fn         func(Params) (Object, error)
+	// Name is the name of the tool.
+	Name string
+	// Fn is the function that the tool executes.
+	Fn func(Params) (Object, error)
+	// lastParams is the last parameters that the tool was called with.
 	lastParams Params
-	mu         sync.Mutex
+	// mu is a mutex to protect lastParams.
+	mu sync.Mutex
 }
 
+// GetLastParams returns the last parameters that the tool was called with.
 func (t *Tool) GetLastParams() Params {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -145,14 +150,17 @@ func (t *Tool) GetLastParams() Params {
 	return p
 }
 
+// GetName returns the name of the tool.
 func (t *Tool) GetName() string {
 	return t.Name
 }
 
+// GetDescription returns the description of the tool.
 func (t *Tool) GetDescription() string {
 	return "mock tool"
 }
 
+// GetFn returns the function that the tool executes.
 func (t *Tool) GetFn() func(args []ast.Constant) (ast.Constant, error) {
 	return func(args []ast.Constant) (ast.Constant, error) {
 		params, err := ConstantsToParams(args)
