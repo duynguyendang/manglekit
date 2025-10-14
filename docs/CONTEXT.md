@@ -16,7 +16,7 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 ## Core Building Blocks
 - ⚠️ **Registry (`registry.go`)**: Global maps hold constructors for retrievers, rerankers, LLMs, embedders, schema parsers, and generic “components”. `RegisterOptions` maps provider names to option pointer types, but production providers do not currently call it.
 - ✅ **Core types (`core/types.go`)**: `Query`, `Answer`, `Doc`, `Citation`, and `Options` structure pipeline data. `Options` embeds `Observability` hooks plus `ResourceClosers`. Errors surface as sentinel values (`ErrInvalidOptions`, `ErrNoEvidence`, `ErrDenied`).
-- ✅ **Observability contracts**: `Logger` (Info/Error), `Tracer` (`StartSpan`), and `Meter` (`Record`) let pipelines instrument work without binding to specific libraries.
+- ✅ **Observability contracts**: `Logger` now exposes `Debugf`/`Infof`/`Warnf`/`Errorf` plus `With` for contextual fields, `Tracer` provides `StartSpan`, and `Meter` keeps `Record` so pipelines stay vendor-neutral.
 - ✅ **SDK entry point (`sdk.go`)**: `New` validates that retriever and LLM are present, fills defaults (`TopK=8`, `MaxTokens=512`), type-asserts concrete interfaces, and delegates to `pipeline.NewSandwich`.
 
 ---
@@ -33,12 +33,13 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
   - `Config` captures orchestrator selection plus component slots (`embedder`, `retriever`, `vectorStore`, `reranker`, `rules`, `llm`) and provider family defaults (`google`, `openai`, `groq`, `mangle`).
   - `NewBuilderFromYAML` expands env vars, unmarshals into `Config`, resolves `path:"resolve"` struct tags relative to the file, and invokes the builder’s `With*` methods using typed options (requires prior `RegisterOptions` calls).
   - `NewBuilderFromEnv` mirrors the YAML flow using `MKT_*` environment variables, again depending on registered option types.
+  - A `logging` block (and `MKT_LOG_LEVEL` / `MKT_LOG_FORMAT`) configures the zap-backed adapter; invalid values fail fast.
 
 ---
 
 ## Execution Pipelines
 - ⚠️ **Sandwich orchestrator (`pipeline/sandwich.go`)**
-  - Bootstraps logging/tracing/metrics via `core.Observability`, defaulting to `fmt.Printf` when no logger is provided.
+  - Bootstraps logging/tracing/metrics via `core.Observability`, creating a request-scoped logger with a UUID so every log line carries a `request_id`. A stdlib fallback logger is auto-injected when none is configured.
   - **Pre rules**: Executes `Rules.Evaluate(core.Pre, q, nil)`, recording latency and applying policy-driven mutations through `RuleResult.Mutate`. Denials short-circuit with `ErrDenied`.
   - **Retrieval**: Calls `retrieve.Retriever.Retrieve`, stores latency in `Answer.Meta["retrieve_ms"]`, and snapshots the raw docs in `Answer.Meta["original_docs"]`.
   - **Rerank & fallback**: When a reranker is present, rescoring populates `Answer.Citations`, `Answer.Meta["best_score"]`, and metrics. `FallbackThreshold` is enforced only inside this reranker branch.
@@ -67,7 +68,7 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
   - ✅ `internal/providers/bm25`: Walks Markdown files (parsing YAML front matter), builds TF-IDF vocabulary, applies Okapi BM25 scoring (default `TopK=10`), and annotates scores in document metadata.
   - ⚠️ `internal/providers/dense`: Couples an `ai.Embedder` with a `core.VectorStore`; embeds the query, passes vectors plus `Meta["filters"]` to the store, and relies on `context.WithValue(ctx, "query_text", ...)` for LocalVec compatibility.
   - ⚠️ `internal/providers/hybrid`: Executes sparse and dense retrievers in parallel (`errgroup`), fuses results with Reciprocal Rank Fusion (`k=60`), and trims to `TopK`.
-  - ⚠️ `internal/providers/retrievers/inmemory`: Thread-safe map-backed retriever implementing `retrieve.Updatable`; `Upsert`/`Replace` emit `fmt.Printf` diagnostics.
+  - ⚠️ `internal/providers/retrievers/inmemory`: Thread-safe map-backed retriever implementing `retrieve.Updatable`; logging now flows through the shared `core.Logger` fallback instead of raw `fmt.Printf`.
 - ⚠️ **Vector store**
   - ⚠️ `internal/vectorstores/localvec`: Spins up Genkit’s LocalVec retriever with a managed context, indexes Markdown documents at startup, filters matches via metadata equality checks, and exposes `Close` to cancel the Genkit background context. `Search` requires the original query text via `ctx.Value("query_text")` (string key).
 - ✅ **Rerank**
@@ -98,7 +99,8 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 ---
 
 ## Observability & Logging ⚠️
-- Pipelines emit structured logs when a `Logger` is provided and fall back to `fmt.Printf` otherwise. Latencies are recorded via `Meter.Record` under metric names like `manglekit.retrieve_ms`, `manglekit.rerank_ms`, `manglekit.llm_ms`, and `manglekit.rules_post_ms`.
+- Builders always populate `core.Options.Obs.Logger`, defaulting to a structured stdout logger so pipeline code never checks for nil. YAML/env configs can pick zap level/format, and the sandwich orchestration attaches a per-request UUID via `Logger.With`.
+- Zap logging flows through `internal/logger.ZapAdapter`, while a deterministic stdlib logger remains available as a fallback. Latencies continue to land in `Meter.Record` metrics such as `manglekit.retrieve_ms`, `manglekit.rerank_ms`, `manglekit.llm_ms`, and `manglekit.rules_post_ms`.
 - Builders collect `ResourceClosers` from providers (Genkit clients, HTTP transports, vector stores) and unwind them LIFO on shutdown or build failure.
 - Trace integration is opt-in through `Tracer.StartSpan`; the Sandwich pipeline wraps the entire run in a span when available.
 
@@ -120,7 +122,7 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 | High | Google embedder aliasing | builder.go, internal/embedders/google/google.go | Builder expects provider `"google"` while the embedder registers `"google-embedder"`, preventing automatic Google embedder construction. |
 | High | CLI build targets | Makefile | `make build` and `make run` reference missing `./cmd/agent`, so default workflows fail. |
 | High | Empty provider stubs | llm/google.go, llm/openai.go | Root-level files are empty, indicating incomplete or dead code paths that confuse navigation and coverage. |
-| Medium | Logging consistency | pipeline/sandwich.go, pipeline/declarative/orchestrator.go, internal/providers/mangle/rules.go | Direct `fmt.Printf` calls bypass the optional logger, leading to noisy stdout in production. |
+| Low (resolved) | Logging consistency | pipeline/sandwich.go, pipeline/declarative/orchestrator.go, internal/providers/mangle/rules.go | Structured logging adapter now wraps zap/stdlib loggers, injects request IDs, and removes direct `fmt.Printf` usage. |
 | Medium | Context propagation | internal/vectorstores/localvec/localvec.go | `Search` requires `ctx.Value("query_text")` with a plain string key, creating a fragile dependency between retrievers and vector stores. |
 | Medium | Fallback behaviour | pipeline/sandwich.go | `FallbackThreshold` is enforced only when a reranker is configured, so non-reranked pipelines always proceed to the LLM. |
 | Medium | Provider family coverage | builder.go | `resolveProviderConfig` handles only `"google"`, `"openai"`, and `"groq"`, limiting extension to other provider families or aliases. |

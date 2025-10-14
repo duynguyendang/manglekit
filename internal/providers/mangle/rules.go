@@ -16,6 +16,7 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	ilogger "github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/providers/mangle/converters"
 	"github.com/google/mangle/analysis"
 	"github.com/google/mangle/ast"
@@ -46,6 +47,7 @@ type ruleSet struct {
 	baseFactStore         factstore.SimpleInMemoryStore
 	preProcessConverters  []core.FactConverter
 	postProcessConverters []core.FactConverter
+	logger                core.Logger
 }
 
 // New is the constructor for the Mangle `ruleSet`. It is registered with the
@@ -66,6 +68,11 @@ type ruleSet struct {
 // It returns a fully initialized `core.RuleSet` (which also satisfies `core.FlowController`)
 // or an error if any part of the initialization fails.
 func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
+	log := opts.Logger
+	if log == nil {
+		log = ilogger.NewStdLogger()
+	}
+
 	if len(opts.Path) == 0 {
 		return nil, fmt.Errorf("mangle: at least one path in 'path' must be provided")
 	}
@@ -127,16 +134,16 @@ func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
 		for _, decl := range schemaDecls {
 			edbDecls[decl] = ast.Decl{}
 		}
-		fmt.Println("[mangle] MODE: code-first; EDB declarations (from code):")
+		log.Infof("Mangle mode: code-first")
 		for p := range edbDecls {
-			fmt.Printf("  - %s/%d\n", p.Symbol, p.Arity)
+			log.Debugf("EDB declaration registered", "predicate", fmt.Sprintf("%s/%d", p.Symbol, p.Arity))
 		}
 	} else {
-		fmt.Println("[mangle] MODE: file-first (Decl comes from .dlog); edbDecls from code: <empty>")
+		log.Infof("Mangle mode: file-first; no code-level EDB declarations")
 	}
 
 	// 4) Load program (rules + facts)
-	programInfo, strata, predToStratum, fileFacts, err := loadProgram(opts.Path, edbDecls)
+	programInfo, strata, predToStratum, fileFacts, err := loadProgram(opts.Path, edbDecls, log)
 	if err != nil {
 		return nil, fmt.Errorf("mangle: could not load program: %w", err)
 	}
@@ -159,6 +166,7 @@ func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
 		baseFactStore:         baseStore,
 		preProcessConverters:  preConverters,
 		postProcessConverters: postConverters,
+		logger:                log,
 	}, nil
 }
 
@@ -730,7 +738,7 @@ func isFactFile(p string) bool {
 		strings.HasSuffix(p, ".data")
 }
 
-func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl) (*analysis.ProgramInfo, []analysis.Nodeset, map[ast.PredicateSym]int, []ast.Atom, error) {
+func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl, logger core.Logger) (*analysis.ProgramInfo, []analysis.Nodeset, map[ast.PredicateSym]int, []ast.Atom, error) {
 	var ruleFiles, factFiles []string
 	for _, path := range paths {
 		resolved, err := resolveFiles(path)
@@ -773,8 +781,7 @@ func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl) 
 		}
 	}
 
-	fmt.Println("[mangle] rule files:", ruleFiles)
-	fmt.Println("[mangle] fact  files:", factFiles)
+	logger.Debugf("Resolved rule assets", "rule_files", ruleFiles, "fact_files", factFiles)
 
 	programInfo, err := analysis.Analyze(units, edbDeclarations)
 	if err != nil {

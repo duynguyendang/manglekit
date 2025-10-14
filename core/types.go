@@ -172,11 +172,34 @@ type Observability struct {
 // Logger defines a basic interface for structured logging, allowing for the
 // integration of various logging libraries like slog, zap, or logrus.
 type Logger interface {
-	// Info logs an informational message with a series of key-value pairs
-	// providing context.
-	Info(msg string, kv ...any)
-	// Error logs an error message with a series of key-value pairs.
-	Error(msg string, kv ...any)
+	// Debugf logs verbose diagnostic information. The template follows the
+	// semantics of fmt.Sprintf when it contains formatting verbs. When no
+	// verbs are present, the variadic args are interpreted as structured
+	// key/value pairs.
+	Debugf(template string, args ...any)
+	// Infof logs informational messages about high-level pipeline
+	// milestones. Like Debugf, args can either satisfy formatting verbs or
+	// provide structured key/value context when no verbs are present.
+	Infof(template string, args ...any)
+	// Warnf captures recoverable issues or degraded behaviour while keeping
+	// the pipeline running.
+	Warnf(template string, args ...any)
+	// Errorf reports failures and terminal errors. Structured context is
+	// encouraged for observability back-ends to index.
+	Errorf(template string, args ...any)
+	// With enriches the logger with persistent structured context that will
+	// be attached to all subsequent log entries.
+	With(args ...any) Logger
+}
+
+// EnsureLogger guarantees that the logger embedded in the options is never
+// nil by assigning the provided fallback when necessary. Builders and
+// orchestrators should call this prior to emitting any logs so the rest of the
+// codebase can assume a logger is present.
+func (o *Options) EnsureLogger(fallback Logger) {
+	if o.Obs.Logger == nil {
+		o.Obs.Logger = fallback
+	}
 }
 
 // Tracer defines a basic interface for creating spans for distributed tracing.

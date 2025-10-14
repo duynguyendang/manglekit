@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/duynguyendang/manglekit/core"
+	ilogger "github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
@@ -43,6 +46,7 @@ func NewSandwich(o core.Options) (core.Orchestrator, error) {
 		opts:    o,
 		closers: o.ResourceClosers,
 	}
+	s.opts.EnsureLogger(ilogger.NewStdLogger())
 	var ok bool
 
 	if o.Retriever != nil {
@@ -93,13 +97,9 @@ func (s *Sandwich) Close(ctx context.Context) error {
 }
 
 func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
-	// 0. Setup observability
-	logger := s.opts.Obs.Logger
-	if logger != nil {
-		logger.Info("pipeline run started", "query", q.Text)
-	} else {
-		fmt.Printf("[sandwich] pipeline run started query=%q\n", q.Text)
-	}
+	requestID := uuid.New().String()
+	logger := s.opts.Obs.Logger.With("request_id", requestID)
+	logger.Infof("Pipeline run started", "query", q.Text)
 
 	if s.opts.Obs.Tracer != nil {
 		endTrace := s.opts.Obs.Tracer.StartSpan("manglekit.Run")
@@ -111,13 +111,13 @@ func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 
 	// 1. Pre-Rules
 	var err error
-	q, err = s.runPreRules(ctx, q, &answer)
+	q, err = s.runPreRules(ctx, logger, q, &answer)
 	if err != nil {
 		return answer, err
 	}
 
 	// 2. Retrieve
-	docs, err := s.runRetrieve(ctx, q, &answer)
+	docs, err := s.runRetrieve(ctx, logger, q, &answer)
 	if err != nil {
 		return answer, err
 	}
@@ -126,40 +126,35 @@ func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
 	}
 
 	// 3. Rerank / Fallback
-	docs, err = s.runRerank(ctx, q, docs, &answer)
+	docs, err = s.runRerank(ctx, logger, q, docs, &answer)
 	if err != nil {
 		return answer, err
 	}
 
 	// 4. Prepare for LLM
-	passages, err := s.prepareLlmRequest(docs, &answer)
+	passages, err := s.prepareLlmRequest(logger, docs, &answer)
 	if err != nil {
 		return answer, fmt.Errorf("prepare llm request failed: %w", err)
 	}
 
 	// 5. LLM
-	if err := s.runLlm(ctx, q, passages, &answer); err != nil {
+	if err := s.runLlm(ctx, logger, q, passages, &answer); err != nil {
 		return answer, err
 	}
 
 	// 6. Post-Rules
-	if err := s.runPostRules(ctx, q, &answer); err != nil {
+	if err := s.runPostRules(ctx, logger, q, &answer); err != nil {
 		return answer, err
 	}
 
-	if logger != nil {
-		logger.Info("pipeline run finished successfully")
-	} else {
-		fmt.Printf("[sandwich] pipeline run finished successfully\n")
-	}
+	logger.Infof("Pipeline run finished successfully")
 	return answer, nil
 }
 
-func (s *Sandwich) runPreRules(ctx context.Context, q core.Query, a *core.Answer) (core.Query, error) {
+func (s *Sandwich) runPreRules(ctx context.Context, logger core.Logger, q core.Query, a *core.Answer) (core.Query, error) {
 	if s.opts.Rules == nil {
 		return q, nil
 	}
-	logger := s.opts.Obs.Logger
 	meter := s.opts.Obs.Meter
 
 	tPreRulesStart := time.Now()
@@ -168,31 +163,19 @@ func (s *Sandwich) runPreRules(ctx context.Context, q core.Query, a *core.Answer
 		meter.Record("manglekit.rules_pre_ms", float64(time.Since(tPreRulesStart).Milliseconds()))
 	}
 	if err != nil {
-		if logger != nil {
-			logger.Error("pre-rules failed", "error", err)
-		} else {
-			fmt.Printf("[sandwich] pre-rules failed: %v\n", err)
-		}
+		logger.Errorf("Pre-rules failed", "error", err)
 		return q, fmt.Errorf("pre-rules failed: %w", err)
 	}
 	if !res.Allowed {
 		if res.Mutate != nil {
 			res.Mutate(&q, a)
 		}
-		if logger != nil {
-			logger.Info("request denied by pre-rule", "reason", res.Reason)
-		} else {
-			fmt.Printf("[sandwich] request denied by pre-rule reason=%q\n", res.Reason)
-		}
+		logger.Warnf("Request denied by pre-rule", "reason", res.Reason)
 		return q, fmt.Errorf("%w: %s", core.ErrDenied, res.Reason)
 	}
 	if res.Mutate != nil {
 		res.Mutate(&q, a)
-		if logger != nil {
-			logger.Info("query mutated by pre-rule")
-		} else {
-			fmt.Printf("[sandwich] query mutated by pre-rule\n")
-		}
+		logger.Debugf("Query mutated by pre-rule")
 	}
 
 	var filters any
@@ -201,54 +184,39 @@ func (s *Sandwich) runPreRules(ctx context.Context, q core.Query, a *core.Answer
 		filters = q.Meta["filters"]
 		expansions = q.Meta["expansion_terms"]
 	}
-	if logger != nil {
-		logger.Info("pre-rules outputs", "filters", filters, "expansions", expansions)
-	} else {
-		fmt.Printf("[sandwich] pre-rules outputs filters=%#v expansions=%#v\n", filters, expansions)
-	}
+	logger.Debugf("Pre-rules outputs", "filters", filters, "expansions", expansions)
 	return q, nil
 }
 
-func (s *Sandwich) runRetrieve(ctx context.Context, q core.Query, a *core.Answer) ([]core.Doc, error) {
-	logger := s.opts.Obs.Logger
+func (s *Sandwich) runRetrieve(ctx context.Context, logger core.Logger, q core.Query, a *core.Answer) ([]core.Doc, error) {
 	meter := s.opts.Obs.Meter
 
 	tRetrieveStart := time.Now()
 	retrReq := retrieve.Request{Query: q.Text, TopK: s.opts.TopK, Meta: q.Meta}
-	if logger == nil {
-		fmt.Printf("[sandwich] calling retriever with filters=%#v expansions=%#v\n",
-			q.Meta["filters"], q.Meta["expansion_terms"])
-	}
+	logger.Infof("Calling retriever", "filters", q.Meta["filters"], "expansions", q.Meta["expansion_terms"])
+
 	retrRes, err := s.retriever.Retrieve(ctx, retrReq)
 	if err != nil {
-		if logger != nil {
-			logger.Error("retrieve failed", "error", err)
-		} else {
-			fmt.Printf("[sandwich] retrieve failed: %v\n", err)
-		}
+		logger.Errorf("Retrieve failed", "error", err)
 		return nil, fmt.Errorf("retrieve failed: %w", err)
 	}
+
 	retrieveMs := time.Since(tRetrieveStart).Milliseconds()
 	a.Meta["retrieve_ms"] = retrieveMs
 	if meter != nil {
 		meter.Record("manglekit.retrieve_ms", float64(retrieveMs))
 	}
+
 	docs := retrRes.Docs
 	a.Meta["original_docs"] = docs
-
-	if logger != nil {
-		logger.Info("retrieved documents", "count", len(docs))
-	} else {
-		fmt.Printf("[sandwich] retrieved %d docs\n", len(docs))
-	}
+	logger.Infof("Retrieved documents", "count", len(docs))
 	return docs, nil
 }
 
-func (s *Sandwich) runRerank(ctx context.Context, q core.Query, docs []core.Doc, a *core.Answer) ([]core.Doc, error) {
+func (s *Sandwich) runRerank(ctx context.Context, logger core.Logger, q core.Query, docs []core.Doc, a *core.Answer) ([]core.Doc, error) {
 	if s.reranker == nil {
 		return docs, nil
 	}
-	logger := s.opts.Obs.Logger
 	meter := s.opts.Obs.Meter
 
 	tRerankStart := time.Now()
@@ -259,18 +227,10 @@ func (s *Sandwich) runRerank(ctx context.Context, q core.Query, docs []core.Doc,
 		meter.Record("manglekit.rerank_ms", float64(rerankMs))
 	}
 	if err != nil {
-		if logger != nil {
-			logger.Error("rerank failed", "error", err)
-		} else {
-			fmt.Printf("[sandwich] rerank failed: %v\n", err)
-		}
+		logger.Errorf("Rerank failed", "error", err)
 		return nil, fmt.Errorf("rerank failed: %w", err)
 	}
-	if logger != nil {
-		logger.Info("reranked documents", "count", len(rerankedDocs))
-	} else {
-		fmt.Printf("[sandwich] reranked documents count=%d\n", len(rerankedDocs))
-	}
+	logger.Infof("Reranked documents", "count", len(rerankedDocs))
 	a.Meta["reranked_docs"] = rerankedDocs
 
 	d := make([]core.Doc, len(rerankedDocs))
@@ -284,17 +244,14 @@ func (s *Sandwich) runRerank(ctx context.Context, q core.Query, docs []core.Doc,
 	a.Meta["best_score"] = bestScore
 
 	if s.opts.FallbackThreshold > 0 && bestScore < s.opts.FallbackThreshold {
-		if logger != nil {
-			logger.Info("fallback threshold not met", "best_score", bestScore, "threshold", s.opts.FallbackThreshold)
-		} else {
-			fmt.Printf("[sandwich] fallback threshold not met best_score=%.4f threshold=%.4f\n", bestScore, s.opts.FallbackThreshold)
-		}
+		logger.Warnf("Fallback threshold not met", "best_score", bestScore, "threshold", s.opts.FallbackThreshold)
 		return nil, core.ErrNoEvidence
 	}
 	return d, nil
 }
 
-func (s *Sandwich) prepareLlmRequest(docs []core.Doc, a *core.Answer) ([]string, error) {
+func (s *Sandwich) prepareLlmRequest(logger core.Logger, docs []core.Doc, a *core.Answer) ([]string, error) {
+	logger.Debugf("Preparing LLM request", "doc_count", len(docs))
 	passages := make([]string, len(docs))
 	for i, d := range docs {
 		passages[i] = d.Text
@@ -328,8 +285,7 @@ func (s *Sandwich) prepareLlmRequest(docs []core.Doc, a *core.Answer) ([]string,
 	return passages, nil
 }
 
-func (s *Sandwich) runLlm(ctx context.Context, q core.Query, passages []string, a *core.Answer) error {
-	logger := s.opts.Obs.Logger
+func (s *Sandwich) runLlm(ctx context.Context, logger core.Logger, q core.Query, passages []string, a *core.Answer) error {
 	meter := s.opts.Obs.Meter
 
 	tLlmStart := time.Now()
@@ -340,11 +296,7 @@ func (s *Sandwich) runLlm(ctx context.Context, q core.Query, passages []string, 
 		Data:      q.Meta,
 	})
 	if err != nil {
-		if logger != nil {
-			logger.Error("llm failed", "error", err)
-		} else {
-			fmt.Printf("[sandwich] llm failed: %v\n", err)
-		}
+		logger.Errorf("LLM failed", "error", err)
 		return fmt.Errorf("llm failed: %w", err)
 	}
 	llmMs := time.Since(tLlmStart).Milliseconds()
@@ -354,14 +306,14 @@ func (s *Sandwich) runLlm(ctx context.Context, q core.Query, passages []string, 
 	if meter != nil {
 		meter.Record("manglekit.llm_ms", float64(llmMs))
 	}
+	logger.Infof("LLM completed", "duration_ms", llmMs)
 	return nil
 }
 
-func (s *Sandwich) runPostRules(ctx context.Context, q core.Query, a *core.Answer) error {
+func (s *Sandwich) runPostRules(ctx context.Context, logger core.Logger, q core.Query, a *core.Answer) error {
 	if s.opts.Rules == nil {
 		return nil
 	}
-	logger := s.opts.Obs.Logger
 	meter := s.opts.Obs.Meter
 
 	tPostRulesStart := time.Now()
@@ -370,27 +322,15 @@ func (s *Sandwich) runPostRules(ctx context.Context, q core.Query, a *core.Answe
 		meter.Record("manglekit.rules_post_ms", float64(time.Since(tPostRulesStart).Milliseconds()))
 	}
 	if err != nil {
-		if logger != nil {
-			logger.Error("post-rules failed", "error", err)
-		} else {
-			fmt.Printf("[sandwich] post-rules failed: %v\n", err)
-		}
+		logger.Errorf("Post-rules failed", "error", err)
 		return fmt.Errorf("post-rules failed: %w", err)
 	}
 	if !res.Allowed {
-		if logger != nil {
-			logger.Info("request denied by post-rule", "reason", res.Reason)
-		} else {
-			fmt.Printf("[sandwich] request denied by post-rule reason=%q\n", res.Reason)
-		}
+		logger.Warnf("Request denied by post-rule", "reason", res.Reason)
 		return fmt.Errorf("%w: %s", core.ErrDenied, res.Reason)
 	}
 	if res.Mutate != nil {
-		if logger != nil {
-			logger.Info("answer mutated by post-rule")
-		} else {
-			fmt.Printf("[sandwich] answer mutated by post-rule\n")
-		}
+		logger.Debugf("Answer mutated by post-rule")
 		res.Mutate(&q, a)
 	}
 	return nil

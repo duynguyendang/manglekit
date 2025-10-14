@@ -3,12 +3,13 @@ package manglekit
 import (
 	"context"
 	"encoding/json"
-
-	"github.com/duynguyendang/manglekit/core"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+
+	"github.com/duynguyendang/manglekit/core"
+	ilogger "github.com/duynguyendang/manglekit/internal/logger"
 
 	"gopkg.in/yaml.v3"
 )
@@ -88,6 +89,8 @@ type Config struct {
 	// Providers holds global configurations for provider families, such as API keys,
 	// which can be shared across multiple components.
 	Providers ProviderConfigs `yaml:"providers"`
+	// Logging configures the SDK logger when loading from YAML or environment values.
+	Logging LoggingConfig `yaml:"logging"`
 	// Embedder specifies the text embedding component for the "sandwich" orchestrator.
 	Embedder componentCfg `yaml:"embedder"`
 	// Retriever specifies the document retrieval component for the "sandwich" orchestrator.
@@ -124,6 +127,13 @@ type ProviderConfigs struct {
 	OpenAICompatible *OpenAICompatibleConfig `yaml:"openaiCompatible,omitempty"`
 	// Mangle holds global settings for the Mangle rules engine.
 	Mangle *MangleConfig `yaml:"mangle,omitempty"`
+}
+
+// LoggingConfig describes the knobs available for configuring logging when using
+// YAML or environment-based configuration.
+type LoggingConfig struct {
+	Level  string `yaml:"level"`
+	Format string `yaml:"format"`
 }
 
 // MangleConfig holds global or default configuration for the Mangle rules engine provider.
@@ -214,6 +224,14 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 		WithTopK(cfg.TopK).
 		WithMaxTokens(cfg.MaxTokens).
 		WithFallbackThreshold(cfg.FallbackThreshold)
+
+	if cfg.Logging.Level != "" || cfg.Logging.Format != "" {
+		zapLogger, err := ilogger.New(ilogger.Options{Level: cfg.Logging.Level, Format: cfg.Logging.Format})
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure logger: %w", err)
+		}
+		builder = builder.WithObservability(core.Observability{Logger: zapLogger})
+	}
 
 	// Helper function to create and configure a component from the YAML config.
 	configureComponent := func(name string, params map[string]any, setter func(any) BuilderAPI) error {
@@ -373,6 +391,17 @@ func NewBuilderFromEnv() (BuilderAPI, error) {
 		if _, err := fmt.Sscanf(fallbackStr, "%f", &fallback); err == nil {
 			baseBuilder.WithFallbackThreshold(fallback)
 		}
+	}
+
+	logLevel := os.Getenv("MKT_LOG_LEVEL")
+	logFormat := os.Getenv("MKT_LOG_FORMAT")
+	if logLevel != "" || logFormat != "" {
+		zapLogger, err := ilogger.New(ilogger.Options{Level: logLevel, Format: logFormat})
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure logger: %w", err)
+		}
+		baseBuilder.WithObservability(core.Observability{Logger: zapLogger})
+		baseBuilder.config.Logging = LoggingConfig{Level: logLevel, Format: logFormat}
 	}
 
 	return baseBuilder, nil
