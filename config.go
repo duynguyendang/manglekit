@@ -221,11 +221,7 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 	baseBuilder.configDir = configDir
 
 	if cfg.Logging != nil {
-		logImpl, err := logger.New(logger.Config{Level: cfg.Logging.Level, Format: cfg.Logging.Format})
-		if err != nil {
-			return nil, fmt.Errorf("failed to configure logger: %w", err)
-		}
-		baseBuilder.WithObservability(core.Observability{Logger: logImpl})
+		baseBuilder.WithObservability(core.Observability{Logger: logger.NewStdLogger()})
 	}
 
 	builder := baseBuilder.
@@ -332,11 +328,7 @@ func NewBuilderFromEnv() (BuilderAPI, error) {
 	level := os.Getenv("MKT_LOG_LEVEL")
 	format := os.Getenv("MKT_LOG_FORMAT")
 	if level != "" || format != "" {
-		logImpl, err := logger.New(logger.Config{Level: level, Format: format})
-		if err != nil {
-			return nil, fmt.Errorf("failed to configure logger from environment: %w", err)
-		}
-		baseBuilder.WithObservability(core.Observability{Logger: logImpl})
+		baseBuilder.WithObservability(core.Observability{Logger: logger.NewStdLogger()})
 	}
 
 	// Helper to read an env var and configure a component

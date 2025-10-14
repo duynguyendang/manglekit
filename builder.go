@@ -103,13 +103,15 @@ type googleClients struct {
 // configured. This is the primary entry point for programmatically constructing a
 // MangleKit orchestrator.
 func NewBuilder() *Builder {
-	return &Builder{
+	b := &Builder{
 		config:        &Config{},
 		clients:       make(map[string]any),
 		resolvedCfgs:  make(map[string]any),
 		providerNames: make(map[string]string),
 		tools:         make(map[string]any),
 	}
+	b.opts.Obs.Logger = logger.NewStdLogger()
+	return b
 }
 
 // WithConfig applies a configuration object to the builder. This is the primary
@@ -135,7 +137,9 @@ func (b *Builder) WithRetriever(opts any) BuilderAPI {
 	optsType := reflect.TypeOf(opts)
 	name, ok := optionsTypeToName[optsType]
 	if !ok {
-		b.errs = append(b.errs, fmt.Errorf("unregistered options type for retriever: %T", opts))
+		err := fmt.Errorf("unregistered options type for retriever: %T", opts)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		b.errs = append(b.errs, err)
 		return b
 	}
 	b.retrieverName = name
@@ -156,7 +160,9 @@ func (b *Builder) WithVectorStore(opts any) BuilderAPI {
 	optsType := reflect.TypeOf(opts)
 	name, ok := optionsTypeToName[optsType]
 	if !ok {
-		b.errs = append(b.errs, fmt.Errorf("unregistered options type for vector store: %T", opts))
+		err := fmt.Errorf("unregistered options type for vector store: %T", opts)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		b.errs = append(b.errs, err)
 		return b
 	}
 	b.vectorStoreName = name
@@ -177,7 +183,9 @@ func (b *Builder) WithReranker(opts any) BuilderAPI {
 	optsType := reflect.TypeOf(opts)
 	name, ok := optionsTypeToName[optsType]
 	if !ok {
-		b.errs = append(b.errs, fmt.Errorf("unregistered options type for reranker: %T", opts))
+		err := fmt.Errorf("unregistered options type for reranker: %T", opts)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		b.errs = append(b.errs, err)
 		return b
 	}
 	b.rerankerName = name
@@ -198,7 +206,9 @@ func (b *Builder) WithRules(opts any) BuilderAPI {
 	optsType := reflect.TypeOf(opts)
 	name, ok := optionsTypeToName[optsType]
 	if !ok {
-		b.errs = append(b.errs, fmt.Errorf("unregistered options type for rules engine: %T", opts))
+		err := fmt.Errorf("unregistered options type for rules engine: %T", opts)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		b.errs = append(b.errs, err)
 		return b
 	}
 	b.rulesName = name
@@ -219,7 +229,9 @@ func (b *Builder) WithLLM(opts any) BuilderAPI {
 	optsType := reflect.TypeOf(opts)
 	name, ok := optionsTypeToName[optsType]
 	if !ok {
-		b.errs = append(b.errs, fmt.Errorf("unregistered options type for LLM: %T", opts))
+		err := fmt.Errorf("unregistered options type for LLM: %T", opts)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		b.errs = append(b.errs, err)
 		return b
 	}
 	b.llmName = name
@@ -269,7 +281,9 @@ func (b *Builder) WithEmbedder(opts any) BuilderAPI {
 	optsType := reflect.TypeOf(opts)
 	name, ok := optionsTypeToName[optsType]
 	if !ok {
-		b.errs = append(b.errs, fmt.Errorf("unregistered options type for embedder: %T", opts))
+		err := fmt.Errorf("unregistered options type for embedder: %T", opts)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		b.errs = append(b.errs, err)
 		return b
 	}
 	b.embedderName = name
@@ -328,7 +342,9 @@ func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, provi
 			apiKey = os.Getenv("GOOGLE_API_KEY")
 		}
 		if apiKey == "" {
-			return fmt.Errorf("missing apiKey for provider 'google': please provide it via config or GOOGLE_API_KEY env var")
+			err := fmt.Errorf("missing apiKey for provider 'google': please provide it via config or GOOGLE_API_KEY env var")
+			b.opts.Obs.Logger.Errorf(err.Error())
+			return err
 		}
 		if existing, ok := b.clients["google"].(googleClients); ok && existing.genkit != nil && existing.genai != nil {
 			b.resolvedCfgs[key] = cfg
@@ -338,6 +354,7 @@ func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, provi
 		g, err := genai.NewClient(gCtx, googleapi.WithAPIKey(apiKey))
 		if err != nil {
 			cancel()
+			b.opts.Obs.Logger.Errorf("failed to create genai client: %v", err)
 			return fmt.Errorf("failed to create genai client: %w", err)
 		}
 		gkit := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: apiKey}))
@@ -374,7 +391,9 @@ func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, provi
 			apiKey = os.Getenv("OPENAI_API_KEY")
 		}
 		if apiKey == "" {
-			return fmt.Errorf("missing apiKey for provider 'openai': please provide it via config or OPENAI_API_KEY env var")
+			err := fmt.Errorf("missing apiKey for provider 'openai': please provide it via config or OPENAI_API_KEY env var")
+			b.opts.Obs.Logger.Errorf(err.Error())
+			return err
 		}
 		transport := &http.Transport{
 			IdleConnTimeout: 30 * time.Second,
@@ -402,7 +421,9 @@ func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, provi
 			apiKey = os.Getenv("GROQ_API_KEY")
 		}
 		if apiKey == "" {
-			return fmt.Errorf("missing apiKey for provider 'groq': please provide it via config or GROQ_API_KEY env var")
+			err := fmt.Errorf("missing apiKey for provider 'groq': please provide it via config or GROQ_API_KEY env var")
+			b.opts.Obs.Logger.Errorf(err.Error())
+			return err
 		}
 		baseURL := cfg.BaseURL
 		if baseURL == "" {
@@ -449,42 +470,48 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, error) {
 	if b.config.Orchestrator.Type != "" {
 		orchestratorType = b.config.Orchestrator.Type
 	}
-
-	b.ensureObservabilityDefaults()
+	b.opts.Obs.Logger.Infof("starting build for orchestrator type %q", orchestratorType)
 
 	if len(b.errs) > 0 {
-		return nil, errors.Join(b.errs...)
+		err := errors.Join(b.errs...)
+		b.opts.Obs.Logger.Errorf("pre-build validation failed: %v", err)
+		return nil, err
 	}
 
 	switch orchestratorType {
 	case "declarative":
-		// The declarative orchestrator requires a rules engine.
-		// Note: The main rules engine for the orchestrator is built here,
-		// separate from any "rules" tools that might be defined.
+		b.opts.Obs.Logger.Debugf("building declarative orchestrator")
 		if err := b.buildRules(ctx); err != nil {
 			closeErr := b.closeResources(ctx)
-			return nil, errors.Join(fmt.Errorf("failed to build rules for declarative orchestrator: %w", err), closeErr)
+			err = fmt.Errorf("failed to build rules for declarative orchestrator: %w", err)
+			b.opts.Obs.Logger.Errorf(err.Error())
+			return nil, errors.Join(err, closeErr)
 		}
 		if b.opts.Rules == nil {
 			closeErr := b.closeResources(ctx)
-			return nil, errors.Join(errors.New("declarative orchestrator requires a rules engine, but none was configured"), closeErr)
-		}
-
-		// Build all the tools defined in the config.
-		if err := b.buildTools(ctx); err != nil {
-			closeErr := b.closeResources(ctx)
+			err := errors.New("declarative orchestrator requires a rules engine, but none was configured")
+			b.opts.Obs.Logger.Errorf(err.Error())
 			return nil, errors.Join(err, closeErr)
 		}
 
-		// Get the flow name from the builder or the config.
+		b.opts.Obs.Logger.Debugf("building tools for declarative orchestrator")
+		if err := b.buildTools(ctx); err != nil {
+			closeErr := b.closeResources(ctx)
+			b.opts.Obs.Logger.Errorf("failed to build tools: %v", err)
+			return nil, errors.Join(err, closeErr)
+		}
+
 		flowName := b.flowName
 		if flowName == "" {
 			flowName = b.config.Orchestrator.FlowName
 		}
+		b.opts.Obs.Logger.Debugf("using flow %q", flowName)
 
 		flowController, ok := b.opts.Rules.(core.FlowController)
 		if !ok {
-			return nil, fmt.Errorf("rules engine for declarative orchestrator must be a FlowController, but got %T", b.opts.Rules)
+			err := fmt.Errorf("rules engine for declarative orchestrator must be a FlowController, but got %T", b.opts.Rules)
+			b.opts.Obs.Logger.Errorf(err.Error())
+			return nil, err
 		}
 		if _, ok := b.tools["mangle_rules"]; !ok {
 			b.tools["mangle_rules"] = flowController
@@ -493,35 +520,38 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, error) {
 		orchestrator, err := declarative.New(flowController, b.tools, flowName, b.opts.Obs, b.opts.ResourceClosers)
 		if err != nil {
 			closeErr := b.closeResources(ctx)
+			b.opts.Obs.Logger.Errorf("failed to create new declarative orchestrator: %v", err)
 			return nil, errors.Join(err, closeErr)
 		}
+		b.opts.Obs.Logger.Infof("successfully built declarative orchestrator")
 		return orchestrator, nil
 
 	case "sandwich":
+		b.opts.Obs.Logger.Debugf("building sandwich orchestrator")
 		if err := b.resolveDependencies(ctx); err != nil {
 			closeErr := b.closeResources(ctx)
+			b.opts.Obs.Logger.Errorf("failed to resolve dependencies: %v", err)
 			return nil, errors.Join(err, closeErr)
 		}
 		if err := b.buildComponents(ctx); err != nil {
 			closeErr := b.closeResources(ctx)
+			b.opts.Obs.Logger.Errorf("failed to build components: %v", err)
 			return nil, errors.Join(err, closeErr)
 		}
 		orchestrator, err := pipeline.NewSandwich(b.opts)
 		if err != nil {
 			closeErr := b.closeResources(ctx)
+			b.opts.Obs.Logger.Errorf("failed to create new sandwich pipeline: %v", err)
 			return nil, errors.Join(err, closeErr)
 		}
+		b.opts.Obs.Logger.Infof("successfully built sandwich orchestrator")
 		return orchestrator, nil
 
 	default:
 		closeErr := b.closeResources(ctx)
-		return nil, errors.Join(fmt.Errorf("unknown orchestrator type: %q", orchestratorType), closeErr)
-	}
-}
-
-func (b *Builder) ensureObservabilityDefaults() {
-	if b.opts.Obs.Logger == nil {
-		b.opts.Obs.Logger = logger.NewStdLogger()
+		err := fmt.Errorf("unknown orchestrator type: %q", orchestratorType)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		return nil, errors.Join(err, closeErr)
 	}
 }
 
@@ -533,7 +563,6 @@ func (b *Builder) buildTools(ctx context.Context) error {
 		toBuild[name] = cfg
 	}
 
-	// Create a set of all tool names for efficient lookup.
 	allToolNames := make(map[string]struct{})
 	for name := range toBuild {
 		allToolNames[name] = struct{}{}
@@ -552,8 +581,10 @@ func (b *Builder) buildTools(ctx context.Context) error {
 			}
 
 			if allDepsMet {
+				b.opts.Obs.Logger.Debugf("building tool %q", name)
 				tool, err := b.buildSingleTool(ctx, name, cfg)
 				if err != nil {
+					b.opts.Obs.Logger.Errorf("failed to build tool %q: %v", name, err)
 					return fmt.Errorf("failed to build tool %q: %w", name, err)
 				}
 				if c, ok := tool.(closer); ok {
@@ -566,12 +597,13 @@ func (b *Builder) buildTools(ctx context.Context) error {
 		}
 
 		if builtInThisPass == 0 && len(toBuild) > 0 {
-			// If we went through a whole pass without building anything, there's a circular dependency.
 			var remaining []string
 			for name := range toBuild {
 				remaining = append(remaining, name)
 			}
-			return fmt.Errorf("circular dependency detected or missing tools. cannot build: %v", remaining)
+			err := fmt.Errorf("circular dependency detected or missing tools. cannot build: %v", remaining)
+			b.opts.Obs.Logger.Errorf(err.Error())
+			return err
 		}
 	}
 	return nil
@@ -585,8 +617,6 @@ func getToolDependencies(cfg ToolConfig, allToolNames map[string]struct{}) []str
 	if cfg.Params == nil {
 		return deps
 	}
-	// This simple heuristic assumes any string value in the params map could be a dependency.
-	// The build loop is robust enough to ignore strings that aren't actual tool names.
 	for _, param := range cfg.Params {
 		if depName, ok := param.(string); ok {
 			if _, isTool := allToolNames[depName]; isTool {
@@ -599,7 +629,6 @@ func getToolDependencies(cfg ToolConfig, allToolNames map[string]struct{}) []str
 
 // buildSingleTool is a dispatcher that constructs a single tool instance based on its provider type.
 func (b *Builder) buildSingleTool(ctx context.Context, name string, cfg ToolConfig) (any, error) {
-	// 1. Resolve provider-level config (e.g., API keys)
 	providerFamily := cfg.Provider
 	if family, ok := providerToFamily[providerFamily]; ok {
 		providerFamily = family
@@ -608,32 +637,34 @@ func (b *Builder) buildSingleTool(ctx context.Context, name string, cfg ToolConf
 	if norm, ok := embedderAlias[providerFamily]; ok {
 		providerFamily = norm
 	}
-
-	// The resolveProviderConfig function will only return an error if a provider
-	// that requires external configuration (e.g., an API key) is missing it.
-	// For other providers (like bm25), it will do nothing and return nil.
 	if err := b.resolveProviderConfig(ctx, "tool", providerFamily); err != nil {
-		return nil, fmt.Errorf("failed to resolve provider config for %q: %w", providerFamily, err)
+		err = fmt.Errorf("failed to resolve provider config for %q: %w", providerFamily, err)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		return nil, err
 	}
 
-	// 2. Unmarshal the tool's parameters into the correct options struct
 	optsType, hasOpts := nameToOptionsType[cfg.Provider]
 	var optsPtr any
 	if hasOpts {
 		optsPtr = reflect.New(optsType.Elem()).Interface()
 		jsonParams, err := json.Marshal(cfg.Params)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal params for %q: %w", name, err)
+			err = fmt.Errorf("failed to marshal params for %q: %w", name, err)
+			b.opts.Obs.Logger.Errorf(err.Error())
+			return nil, err
 		}
 		if err := json.Unmarshal(jsonParams, optsPtr); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal params for %q: %w", name, err)
+			err = fmt.Errorf("failed to unmarshal params for %q: %w", name, err)
+			b.opts.Obs.Logger.Errorf(err.Error())
+			return nil, err
 		}
 		if err := resolvePathsInStruct(optsPtr, b.configDir); err != nil {
-			return nil, fmt.Errorf("failed to resolve paths for tool %q: %w", name, err)
+			err = fmt.Errorf("failed to resolve paths for tool %q: %w", name, err)
+			b.opts.Obs.Logger.Errorf(err.Error())
+			return nil, err
 		}
 	}
 
-	// 3. Get the constructor from the registry and call it with dependencies
 	switch cfg.Provider {
 	case "openai-embedder", "google-embedder":
 		constructor, err := Get(Registry.Embedder, cfg.Provider)
@@ -669,10 +700,10 @@ func (b *Builder) buildSingleTool(ctx context.Context, name string, cfg ToolConf
 		embedderToolName := cfg.Params["embedder"].(string)
 		embedder, ok := b.tools[embedderToolName].(ai.Embedder)
 		if !ok {
-			return nil, fmt.Errorf("dependency '%s' for tool '%s' is not a valid embedder", embedderToolName, name)
+			err := fmt.Errorf("dependency '%s' for tool '%s' is not a valid embedder", embedderToolName, name)
+			b.opts.Obs.Logger.Errorf(err.Error())
+			return nil, err
 		}
-		// We pass a background context here because the tool's lifecycle is managed
-		// by the main application context, which is not available here.
 		return newFn(ctx, *optsPtr.(*core.LocalvecOptions), embedder)
 
 	case "dense":
@@ -732,7 +763,6 @@ var providerToFamily = map[string]string{
 
 // resolveDependencies handles identifying required providers and initializing API clients.
 func (b *Builder) resolveDependencies(ctx context.Context) error {
-	// Infer embedder from components that need it, only if one is not already provided or configured.
 	if b.embedder == nil && b.embedderName == "" {
 		if b.vectorStoreName != "" {
 			if name, ok := b.vectorStoreParams["embedder"].(string); ok {
@@ -755,11 +785,9 @@ func (b *Builder) resolveDependencies(ctx context.Context) error {
 		}
 	}
 
-	// Collect all required provider names to resolve their configs (e.g., API keys).
 	if b.llmName != "" {
 		b.providerNames["llm"] = b.llmName
 	}
-	// Only resolve embedder provider if we are building it from a name, not if it's pre-built.
 	if b.embedder == nil && b.embedderName != "" {
 		if norm, ok := embedderAlias[b.embedderName]; ok {
 			b.embedderName = norm
@@ -777,9 +805,6 @@ func (b *Builder) resolveDependencies(ctx context.Context) error {
 
 // buildComponents calls the individual component builders in the correct order.
 func (b *Builder) buildComponents(ctx context.Context) error {
-	// The order is important due to dependencies:
-	// Embedder -> VectorStore -> Retriever
-	// Embedder -> Reranker
 	if err := b.buildEmbedder(); err != nil {
 		return err
 	}
@@ -802,13 +827,13 @@ func (b *Builder) buildComponents(ctx context.Context) error {
 }
 
 func (b *Builder) buildEmbedder() error {
-	// If an embedder is already built and provided, do nothing.
 	if b.embedder != nil {
 		return nil
 	}
 	if b.embedderName == "" {
 		return nil
 	}
+	b.opts.Obs.Logger.Debugf("building embedder %q", b.embedderName)
 	constructor, err := Get(Registry.Embedder, b.embedderName)
 	if err != nil {
 		return err
@@ -860,11 +885,14 @@ func (b *Builder) buildEmbedder() error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to build embedder '%s': %w", b.embedderName, err)
+		err = fmt.Errorf("failed to build embedder '%s': %w", b.embedderName, err)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		return err
 	}
 	if c, ok := b.embedder.(closer); ok {
 		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
 	}
+	b.opts.Obs.Logger.Infof("initialized component embedder with provider %s", b.embedderName)
 	return nil
 }
 
@@ -873,8 +901,11 @@ func (b *Builder) buildVectorStore(ctx context.Context) error {
 		return nil
 	}
 	if b.embedder == nil {
-		return fmt.Errorf("vector store '%s' requires an embedder, but none was configured", b.vectorStoreName)
+		err := fmt.Errorf("vector store '%s' requires an embedder, but none was configured", b.vectorStoreName)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		return err
 	}
+	b.opts.Obs.Logger.Debugf("building vector store %q", b.vectorStoreName)
 
 	constructor, err := Get(Registry.Component, b.vectorStoreName)
 	if err != nil {
@@ -901,16 +932,16 @@ func (b *Builder) buildVectorStore(ctx context.Context) error {
 		}
 	}
 
-	// We pass a background context here because the vector store's lifecycle is managed
-	// by the main application context, which is not available here. The Close()
-	// method on the vector store will handle the shutdown.
 	b.vectorStore, err = newFn(ctx, opts, b.embedder)
 	if err != nil {
-		return fmt.Errorf("failed to build vector store '%s': %w", b.vectorStoreName, err)
+		err = fmt.Errorf("failed to build vector store '%s': %w", b.vectorStoreName, err)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		return err
 	}
 	if c, ok := b.vectorStore.(closer); ok {
 		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
 	}
+	b.opts.Obs.Logger.Infof("initialized component vectorStore with provider %s", b.vectorStoreName)
 	return nil
 }
 
@@ -918,6 +949,7 @@ func (b *Builder) buildRetriever() error {
 	if b.retrieverName == "" {
 		return nil
 	}
+	b.opts.Obs.Logger.Debugf("building retriever %q", b.retrieverName)
 	var retriever retrieve.Retriever
 	var err error
 
@@ -943,15 +975,20 @@ func (b *Builder) buildRetriever() error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to build retriever '%s': %w", b.retrieverName, err)
+		err = fmt.Errorf("failed to build retriever '%s': %w", b.retrieverName, err)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		return err
 	}
 	b.opts.Retriever = retriever
+	b.opts.Obs.Logger.Infof("initialized component retriever with provider %s", b.retrieverName)
 	return nil
 }
 
 func (b *Builder) buildDenseRetriever() (retrieve.Retriever, error) {
 	if b.embedder == nil || b.vectorStore == nil {
-		return nil, fmt.Errorf("retriever 'dense' requires an embedder and a vector store")
+		err := fmt.Errorf("retriever 'dense' requires an embedder and a vector store")
+		b.opts.Obs.Logger.Errorf(err.Error())
+		return nil, err
 	}
 	constructor, err := Get(Registry.Retriever, "dense")
 	if err != nil {
@@ -976,14 +1013,18 @@ func (b *Builder) buildHybridRetriever() (retrieve.Retriever, error) {
 
 	bm25Retriever, err := b.buildMapBasedRetriever("bm25")
 	if err != nil {
-		return nil, fmt.Errorf("failed to build bm25 child for hybrid: %w", err)
+		err = fmt.Errorf("failed to build bm25 child for hybrid: %w", err)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		return nil, err
 	}
 
 	var denseRetriever retrieve.Retriever
 	if _, hasDense := b.retrieverParams["dense"]; hasDense {
 		denseRetriever, err = b.buildDenseRetriever()
 		if err != nil {
-			return nil, fmt.Errorf("failed to build dense child for hybrid: %w", err)
+			err = fmt.Errorf("failed to build dense child for hybrid: %w", err)
+			b.opts.Obs.Logger.Errorf(err.Error())
+			return nil, err
 		}
 	}
 
@@ -1000,8 +1041,6 @@ func (b *Builder) buildMapBasedRetriever(name string) (retrieve.Retriever, error
 		return nil, err
 	}
 
-	// Logic to extract the correct parameters whether we are building a standalone retriever
-	// or a child of a hybrid retriever.
 	var sourceParams map[string]any
 	if b.retrieverName == name && b.retrieverParams != nil {
 		sourceParams = b.retrieverParams
@@ -1051,7 +1090,9 @@ func (b *Builder) buildMapBasedRetriever(name string) (retrieve.Retriever, error
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to build retriever '%s': %w", name, err)
+		err = fmt.Errorf("failed to build retriever '%s': %w", name, err)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		return nil, err
 	}
 	return retriever, nil
 }
@@ -1060,6 +1101,7 @@ func (b *Builder) buildReranker() error {
 	if b.rerankerName == "" {
 		return nil
 	}
+	b.opts.Obs.Logger.Debugf("building reranker %q", b.rerankerName)
 	constructor, err := Get(Registry.Reranker, b.rerankerName)
 	if err != nil {
 		return err
@@ -1093,7 +1135,9 @@ func (b *Builder) buildReranker() error {
 
 		b.opts.Reranker, err = newFn(opts, b.embedder)
 		if err != nil {
-			return fmt.Errorf("failed to build reranker '%s': %w", b.rerankerName, err)
+			err = fmt.Errorf("failed to build reranker '%s': %w", b.rerankerName, err)
+			b.opts.Obs.Logger.Errorf(err.Error())
+			return err
 		}
 	case "mock":
 		newFn, ok := constructor.(func(any) (rerank.Reranker, error))
@@ -1102,23 +1146,25 @@ func (b *Builder) buildReranker() error {
 		}
 		b.opts.Reranker, err = newFn(nil)
 		if err != nil {
-			return fmt.Errorf("failed to build reranker 'mock': %w", err)
+			err = fmt.Errorf("failed to build reranker 'mock': %w", err)
+			b.opts.Obs.Logger.Errorf(err.Error())
+			return err
 		}
 	default:
 		return fmt.Errorf("unsupported reranker type in builder: %s", b.rerankerName)
 	}
+	b.opts.Obs.Logger.Infof("initialized component reranker with provider %s", b.rerankerName)
 	return nil
 }
 
 func (b *Builder) buildRules(ctx context.Context) error {
 	if b.rulesName == "" {
-		// If a declarative orchestrator is being used, a rules engine is required.
-		// This check is handled in the main Build method.
 		return nil
 	}
 	if b.rulesName != "mangle" {
 		return fmt.Errorf("rules engine '%s' not supported in this builder path", b.rulesName)
 	}
+	b.opts.Obs.Logger.Debugf("building rules engine %q", b.rulesName)
 
 	constructor, err := Get(Registry.Rules, b.rulesName)
 	if err != nil {
@@ -1146,9 +1192,12 @@ func (b *Builder) buildRules(ctx context.Context) error {
 
 	ruleset, err := newFn(ctx, opts)
 	if err != nil {
-		return fmt.Errorf("failed to build rules '%s': %w", b.rulesName, err)
+		err = fmt.Errorf("failed to build rules '%s': %w", b.rulesName, err)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		return err
 	}
-	b.opts.Rules = ruleset // Store it in the options for sandwich mode.
+	b.opts.Rules = ruleset
+	b.opts.Obs.Logger.Infof("initialized component rules with provider %s", b.rulesName)
 	return nil
 }
 
@@ -1156,6 +1205,7 @@ func (b *Builder) buildLLM() error {
 	if b.llmName == "" {
 		return nil
 	}
+	b.opts.Obs.Logger.Debugf("building llm %q", b.llmName)
 	constructor, err := Get(Registry.LLM, b.llmName)
 	if err != nil {
 		return err
@@ -1207,11 +1257,14 @@ func (b *Builder) buildLLM() error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to build llm '%s': %w", b.llmName, err)
+		err = fmt.Errorf("failed to build llm '%s': %w", b.llmName, err)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		return err
 	}
 	if c, ok := b.opts.LLM.(closer); ok {
 		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
 	}
+	b.opts.Obs.Logger.Infof("initialized component llm with provider %s", b.llmName)
 	return nil
 }
 
