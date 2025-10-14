@@ -51,6 +51,8 @@ type DeclarativeOrchestrator struct {
 	// flowName is the name of the specific flow to execute, corresponding to the
 	// first argument in the `flow_stage/3` Datalog facts.
 	flowName string
+	// stateProvider is the component responsible for persisting and retrieving session state.
+	stateProvider core.StateProvider
 	// obs holds the observability configuration (logger, meter, tracer).
 	obs core.Observability
 	// closers holds cleanup callbacks for external resources.
@@ -76,7 +78,7 @@ type flowStage struct {
 //
 // It returns a configured `core.Orchestrator` or an error if any of the
 // required parameters are invalid.
-func New(fc core.FlowController, tools map[string]any, flowName string, obs core.Observability, closers []core.ResourceCloser) (core.Orchestrator, error) {
+func New(fc core.FlowController, tools map[string]any, flowName string, sp core.StateProvider, obs core.Observability, closers []core.ResourceCloser) (core.Orchestrator, error) {
 	if obs.Logger == nil {
 		obs.Logger = obslogger.NewStdLogger()
 	}
@@ -102,6 +104,7 @@ func New(fc core.FlowController, tools map[string]any, flowName string, obs core
 		flowController: fc,
 		tools:          tools,
 		flowName:       flowName,
+		stateProvider:  sp,
 		obs:            obs,
 		closers:        closers,
 	}, nil
@@ -121,6 +124,11 @@ func (o *DeclarativeOrchestrator) Retriever() any {
 		}
 	}
 	return nil
+}
+
+// StateProvider returns the state provider component configured for the orchestrator.
+func (o *DeclarativeOrchestrator) StateProvider() core.StateProvider {
+	return o.stateProvider
 }
 
 // Close releases any external resources held by the orchestrator.
@@ -158,9 +166,9 @@ func (o *DeclarativeOrchestrator) Close(ctx context.Context) error {
 // q is the user's incoming query.
 // It returns the final `core.Answer` or an error if the flow is undefined, a
 // tool is missing, or a tool fails during execution.
-func (o *DeclarativeOrchestrator) Run(ctx context.Context, q core.Query) (core.Answer, error) {
+func (o *DeclarativeOrchestrator) Execute(ctx context.Context, sessionID string, q core.Query) (core.Answer, error) {
 	requestID := uuid.NewString()
-	logger := o.obs.Logger.With("request_id", requestID)
+	logger := o.obs.Logger.With("request_id", requestID, "session_id", sessionID)
 	logger.Infof("pipeline run started", "query", q.Text)
 	// 1. Query the static execution plan.
 	stages, err := o.getFlowStages(ctx)

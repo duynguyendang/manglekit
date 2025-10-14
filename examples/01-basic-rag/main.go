@@ -45,7 +45,7 @@ func main() {
 	defer pipeline.Close(ctx)
 
 	// Run the pipeline.
-	resp, err := pipeline.Run(ctx, core.Query{Text: "what is the features of mangle?"})
+	resp, err := pipeline.Execute(ctx, "session-1", core.Query{Text: "what is the features of mangle?"})
 	if err != nil {
 		log.Fatalf("failed to run pipeline: %v", err)
 	}

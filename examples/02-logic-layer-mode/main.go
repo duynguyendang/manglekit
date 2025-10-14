@@ -87,7 +87,7 @@ func main() {
 		},
 	}
 
-	resp, err := pipeline.Run(ctx, query)
+	resp, err := pipeline.Execute(ctx, "session-1", query)
 	if err != nil {
 		log.Fatalf("failed to run pipeline: %v", err)
 	}

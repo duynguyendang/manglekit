@@ -30,6 +30,7 @@ type BuilderAPI interface {
 	WithMaxTokens(int) BuilderAPI
 	WithObservability(core.Observability) BuilderAPI
 	WithFallbackThreshold(float64) BuilderAPI
+	WithStateProvider(any) BuilderAPI
 	Build(context.Context) (core.Orchestrator, error)
 }
 
@@ -111,6 +112,8 @@ type Config struct {
 	Rules componentCfg `yaml:"rules"`
 	// LLM specifies the language model component for the "sandwich" orchestrator.
 	LLM componentCfg `yaml:"llm"`
+	// StateProvider specifies the state management component for the "sandwich" orchestrator.
+	StateProvider componentCfg `yaml:"stateProvider"`
 	// TopK is the default number of documents to retrieve in the "sandwich" orchestrator.
 	TopK int `yaml:"topK"`
 	// MaxTokens is the default maximum number of tokens for the LLM response in the
@@ -274,6 +277,8 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 			baseBuilder.rulesName = name
 		case "llm":
 			baseBuilder.llmName = name
+		case "stateProvider":
+			baseBuilder.stateProviderName = name
 		}
 		return nil
 	}
@@ -294,6 +299,10 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 		return nil, err
 	}
 	if err := configureComponent("llm", cfg.LLM.Name, cfg.LLM.Params, builder.WithLLM); err != nil {
+		return nil, err
+	}
+
+	if err := configureComponent("stateProvider", cfg.StateProvider.Name, cfg.StateProvider.Params, builder.WithStateProvider); err != nil {
 		return nil, err
 	}
 

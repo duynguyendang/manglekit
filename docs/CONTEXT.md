@@ -18,19 +18,20 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 - ✅ **Core types (`core/types.go`)**: `Query`, `Answer`, `Doc`, `Citation`, and `Options` structure pipeline data. `Options` embeds `Observability` hooks plus `ResourceClosers`. Errors surface as sentinel values (`ErrInvalidOptions`, `ErrNoEvidence`, `ErrDenied`).
 - ✅ **Observability contracts**: `Logger` now exposes `Debugf`/`Infof`/`Warnf`/`Errorf` plus `With` for contextual fields, `Tracer` provides `StartSpan`, and `Meter` keeps `Record` so pipelines stay vendor-neutral.
 - ✅ **SDK entry point (`sdk.go`)**: `New` validates that retriever and LLM are present, fills defaults (`TopK=8`, `MaxTokens=512`), type-asserts concrete interfaces, and delegates to `pipeline.NewSandwich`.
+- ✅ **State Management (`core/state.go`)**: `StateProvider` interface defines `Get`, `Set`, `Delete`, and `Close` methods for session state persistence.
 
 ---
 
 ## Orchestrator Construction
 - ⚠️ **Fluent builder (`builder.go`)**
   - `NewBuilder` seeds state, including `providerNames`, `clients`, and `ResourceClosers`.
-  - `With*` methods accept typed option pointers; `WithEmbedder` also accepts a pre-built `ai.Embedder`. Methods stash config and accumulate errors if the options type was not registered via `RegisterOptions`.
+  - `With*` methods accept typed option pointers; `WithEmbedder` also accepts a pre-built `ai.Embedder`. `WithStateProvider` configures the state management component. Methods stash config and accumulate errors if the options type was not registered via `RegisterOptions`.
   - `resolveProviderConfig` lazily creates shared clients for `"google"` (Genkit + Generative AI), `"openai"`, and `"groq"`, wiring shutdown callbacks that close transports or cancel contexts.
   - `resolveDependencies` infers missing embedder names from retriever/reranker requests before resolving provider configs.
-  - `buildComponents` executes in dependency order (Embedder → VectorStore → Retriever → Reranker → Rules → LLM) and appends closers when instances expose `Close(context.Context) error`.
+  - `buildComponents` executes in dependency order (Embedder → VectorStore → Retriever → Reranker → Rules → LLM → StateProvider) and appends closers when instances expose `Close(context.Context) error`.
   - `Build` chooses the orchestrator (`sandwich` default, `declarative` optional). Declarative builds a `core.FlowController`, materialises all declared tools, and hands them to `declarative.New`.
 - ⚠️ **Configuration (`config.go`)**
-  - `Config` captures orchestrator selection plus component slots (`embedder`, `retriever`, `vectorStore`, `reranker`, `rules`, `llm`) and provider family defaults (`google`, `openai`, `groq`, `mangle`).
+  - `Config` captures orchestrator selection plus component slots (`embedder`, `retriever`, `vectorStore`, `reranker`, `rules`, `llm`, `stateProvider`) and provider family defaults (`google`, `openai`, `groq`, `mangle`).
   - `NewBuilderFromYAML` expands env vars, unmarshals into `Config`, resolves `path:"resolve"` struct tags relative to the file, and invokes the builder’s `With*` methods using typed options (requires prior `RegisterOptions` calls).
   - `NewBuilderFromEnv` mirrors the YAML flow using `MKT_*` environment variables, again depending on registered option types.
   - A `logging` block (and `MKT_LOG_LEVEL` / `MKT_LOG_FORMAT`) configures the zap-backed adapter; invalid values fail fast.
@@ -39,6 +40,7 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 
 ## Execution Pipelines
 - ⚠️ **Sandwich orchestrator (`pipeline/sandwich.go`)**
+  - The `Execute` method now accepts a `sessionID` to support stateful operations.
   - Bootstraps logging/tracing/metrics via `core.Observability`, creating a request-scoped logger with a UUID so every log line carries a `request_id`. A stdlib fallback logger is auto-injected when none is configured.
   - **Pre rules**: Executes `Rules.Evaluate(core.Pre, q, nil)`, recording latency and applying policy-driven mutations through `RuleResult.Mutate`. Denials short-circuit with `ErrDenied`.
   - **Retrieval**: Calls `retrieve.Retriever.Retrieve`, stores latency in `Answer.Meta["retrieve_ms"]`, and snapshots the raw docs in `Answer.Meta["original_docs"]`.
@@ -47,8 +49,9 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
   - **Post rules**: Re-runs `Rules.Evaluate(core.Post, q, &answer)` for policy enforcement, allowing additional mutations or denials.
   - Returns `ErrNoEvidence` when no documents survive retrieval (or rerank fallback) and propagates wrapped errors for component failures.
 - ⚠️ **Declarative orchestrator (`pipeline/declarative/orchestrator.go`)**
+  - The `Execute` method now accepts a `sessionID` to support stateful operations.
   - `getFlowStages` queries Mangle facts (`flow_stage/3`, `stage_tool/2`) to assemble an ordered stage list.
-  - Derives a scoped logger from `core.Observability`, tagging `pipeline`/`flow` at construction and attaching a per-request UUID during `Run` so every record carries `request_id`.
+  - Derives a scoped logger from `core.Observability`, tagging `pipeline`/`flow` at construction and attaching a per-request UUID during `Execute` so every record carries `request_id`.
   - Pre-rules (`RuleResult`) may deny or provide `SkippedStages` and metadata mutations. Execution context maps (`contextKeyQuery`, `contextKeyDocs`, etc.) carry state across stages.
   - Stage dispatch handles retrievers, rerankers, `llm.Client`, and `core.PostRuleEvaluator` instances, emitting structured debug/info logs through the shared `core.Logger`; post rules capture metrics via `Meter` when available.
   - Post-rule stages filter/redact documents, enforce denials (`ErrDenied`), and prune citations to match surviving evidence. Final answers come from the shared context map.
@@ -83,6 +86,9 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 - ✅ **Schema parsers**
   - ✅ `internal/providers/schemaparsers/jsonschema`: Converts JSON Schema documents into `schema/1`, `field/3`, and constraint facts.
   - ✅ `internal/providers/schemaparsers/rdf`: Decodes Turtle RDF triples into `triple/3` facts with smart IRI handling.
+- ✅ **State Providers**
+  - ✅ `internal/providers/state/inmemory`: A thread-safe, map-based implementation of `core.StateProvider` for development and testing.
+  - ✅ `internal/providers/state/redis`: A production-ready `core.StateProvider` implementation using a Redis client for persistence.
 - ⚠️ **Mocks (`internal/providers/mock`)**: Lightweight retriever, reranker, LLM, and tool implementations for tests, alongside helpers to convert between Datalog constants and Go objects.
 - ⚠️ **Catch-all import (`providers/all/all.go`)**: Blank-importing registers every bundled provider family.
 

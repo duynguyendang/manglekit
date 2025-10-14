@@ -59,7 +59,27 @@ func (m *mockVectorStore) Close(context.Context) error {
 	return nil
 }
 
+type mockStateProvider struct {
+	closed bool
+}
+
+func (m *mockStateProvider) Get(ctx context.Context, sessionID string) (interface{}, error) {
+	return nil, nil
+}
+func (m *mockStateProvider) Set(ctx context.Context, sessionID string, state interface{}) error {
+	return nil
+}
+func (m *mockStateProvider) Delete(ctx context.Context, sessionID string) error {
+	return nil
+}
+func (m *mockStateProvider) Close(ctx context.Context) error {
+	m.closed = true
+	return nil
+}
+
 type mockOptions struct{}
+
+type mockStateProviderOptions struct{}
 
 func TestMain(m *testing.M) {
 	RegisterRetriever("mock", func(opts any) (retrieve.Retriever, error) {
@@ -83,6 +103,10 @@ func TestMain(m *testing.M) {
 
 	RegisterOptions("mock", (*mockOptions)(nil))
 	RegisterOptions("mock-vs", (*core.LocalvecOptions)(nil))
+	RegisterStateProvider("mock-sp", func(opts any) (core.StateProvider, error) {
+		return &mockStateProvider{}, nil
+	})
+	RegisterOptions("mock-sp", (*mockStateProviderOptions)(nil))
 
 	m.Run()
 }
@@ -162,5 +186,31 @@ func TestBuildWithMockRerankerAndNoEmbedder(t *testing.T) {
 
 	if err := orch.Close(context.Background()); err != nil {
 		t.Errorf("Close() error = %v", err)
+	}
+}
+
+func TestBuilderWithStateProvider(t *testing.T) {
+	b := NewBuilder()
+	b.WithStateProvider(&mockStateProviderOptions{})
+	if b.stateProviderName != "mock-sp" {
+		t.Errorf("expected state provider name to be mock-sp, got %s", b.stateProviderName)
+	}
+	b.WithRetriever(&mockOptions{})
+	b.WithLLM(&mockOptions{})
+	o, err := b.Build(context.Background())
+	if err != nil {
+		t.Fatalf("expected build to succeed, got %v", err)
+	}
+	if o == nil {
+		t.Fatal("expected orchestrator to be non-nil")
+	}
+	// a bit of a hack to check if the closer was called
+	p := o.(*pipeline.Sandwich)
+	sp := p.StateProvider().(*mockStateProvider)
+	if err := o.Close(context.Background()); err != nil {
+		t.Errorf("Close() error = %v", err)
+	}
+	if !sp.closed {
+		t.Error("expected state provider to be closed")
 	}
 }

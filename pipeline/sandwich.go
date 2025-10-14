@@ -24,11 +24,12 @@ import (
 // 3.  **LLM Call**: Synthesize an answer based on the evidence.
 // 4.  **Post-retrieval rules**: Filter the final answer and citations for compliance.
 type Sandwich struct {
-	opts      core.Options
-	retriever retrieve.Retriever
-	reranker  rerank.Reranker
-	llm       llm.Client
-	closers   []core.ResourceCloser
+	opts          core.Options
+	retriever     retrieve.Retriever
+	reranker      rerank.Reranker
+	llm           llm.Client
+	stateProvider core.StateProvider
+	closers       []core.ResourceCloser
 }
 
 // NewSandwich creates a new Sandwich orchestrator from a set of options.
@@ -76,6 +77,16 @@ func NewSandwich(o core.Options) (core.Orchestrator, error) {
 			return nil, err
 		}
 	}
+
+	if o.StateProvider != nil {
+		s.stateProvider, ok = o.StateProvider.(core.StateProvider)
+		if !ok {
+			err := fmt.Errorf("invalid state provider type: %T", o.StateProvider)
+			s.opts.Obs.Logger.Errorf(err.Error())
+			return nil, err
+		}
+	}
+
 	return s, nil
 }
 
@@ -92,6 +103,11 @@ func (s *Sandwich) Retriever() any {
 // Reranker returns the reranker component configured for the orchestrator.
 func (s *Sandwich) Reranker() any {
 	return s.reranker
+}
+
+// StateProvider returns the state provider component configured for the orchestrator.
+func (s *Sandwich) StateProvider() core.StateProvider {
+	return s.stateProvider
 }
 
 // Close releases any external resources held by the orchestrator (e.g., API clients).
@@ -112,7 +128,7 @@ func (s *Sandwich) Close(ctx context.Context) error {
 	return combined
 }
 
-// Run executes the full processing pipeline for a given query. This typically
+// Execute executes the full processing pipeline for a given query. This typically
 // involves pre-processing rules, document retrieval, reranking, LLM generation,
 // and post-processing rules.
 //
@@ -120,13 +136,13 @@ func (s *Sandwich) Close(ctx context.Context) error {
 // q is the user's query to be processed.
 // It returns a final Answer containing the generated text and citations,
 // or an error if any part of the process fails.
-func (s *Sandwich) Run(ctx context.Context, q core.Query) (core.Answer, error) {
+func (s *Sandwich) Execute(ctx context.Context, sessionID string, q core.Query) (core.Answer, error) {
 	requestID := uuid.NewString()
-	logger := s.opts.Obs.Logger.With("request_id", requestID, "pipeline", "sandwich")
+	logger := s.opts.Obs.Logger.With("request_id", requestID, "pipeline", "sandwich", "session_id", sessionID)
 	logger.Infof("pipeline run started", "query", q.Text)
 
 	if s.opts.Obs.Tracer != nil {
-		endTrace := s.opts.Obs.Tracer.StartSpan("manglekit.Run")
+		endTrace := s.opts.Obs.Tracer.StartSpan("manglekit.Execute")
 		defer endTrace()
 	}
 	answer := core.Answer{

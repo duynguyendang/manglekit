@@ -73,7 +73,7 @@ func main() {
 				return "", fmt.Errorf("mangle orchestrator is not initialized")
 			}
 
-			answer, err := mangleOrch.Run(toolCtx, core.Query{Text: query})
+			answer, err := mangleOrch.Execute(toolCtx, "session-1", core.Query{Text: query})
 			if err != nil {
 				return "", fmt.Errorf("mangle orchestrator failed: %w", err)
 			}

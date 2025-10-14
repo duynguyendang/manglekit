@@ -102,7 +102,7 @@ func main() {
 			Meta: map[string]any{"request_body": tc.requestBody},
 		}
 
-		result, err := orch.Run(ctx, query)
+		result, err := orch.Execute(ctx, "session-1", query)
 		wasDenied := errors.Is(err, core.ErrDenied)
 
 		if wasDenied == tc.expectDeny {

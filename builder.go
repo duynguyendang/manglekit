@@ -19,6 +19,7 @@ import (
 	"github.com/duynguyendang/manglekit/pipeline/declarative"
 	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
+	"github.com/duynguyendang/manglekit/state"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
@@ -80,8 +81,12 @@ type Builder struct {
 	providerNames map[string]string
 
 	// Built components are stored here during the build process.
-	embedder    ai.Embedder
-	vectorStore core.VectorStore
+	embedder      ai.Embedder
+	vectorStore   core.VectorStore
+	stateProvider core.StateProvider
+
+	stateProviderName   string
+	stateProviderParams map[string]any
 }
 
 // closer is a local interface used for type assertions. It ensures that any
@@ -324,6 +329,29 @@ func (b *Builder) WithFallbackThreshold(f float64) BuilderAPI {
 	return b
 }
 
+// WithStateProvider programmatically configures the state provider. It accepts a
+// pointer to a provider-specific options struct (e.g., `redis.Options`), infers
+// the provider's name from the type, and stores the configuration for later use
+// during the `Build` process.
+func (b *Builder) WithStateProvider(opts any) BuilderAPI {
+	if opts == nil {
+		b.stateProviderName = ""
+		b.stateProviderParams = nil
+		return b
+	}
+	optsType := reflect.TypeOf(opts)
+	name, ok := optionsTypeToName[optsType]
+	if !ok {
+		err := fmt.Errorf("unregistered options type for state provider: %T", opts)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		b.errs = append(b.errs, err)
+		return b
+	}
+	b.stateProviderName = name
+	b.stateProviderParams = map[string]any{"typedConfig": opts}
+	return b
+}
+
 // resolveProviderConfig finds the configuration for a given provider by checking params, config object, and env vars.
 func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, providerName string) error {
 	key := fmt.Sprintf("%s.%s", providerType, providerName)
@@ -517,7 +545,7 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, error) {
 			b.tools["mangle_rules"] = flowController
 		}
 
-		orchestrator, err := declarative.New(flowController, b.tools, flowName, b.opts.Obs, b.opts.ResourceClosers)
+		orchestrator, err := declarative.New(flowController, b.tools, flowName, b.stateProvider, b.opts.Obs, b.opts.ResourceClosers)
 		if err != nil {
 			closeErr := b.closeResources(ctx)
 			b.opts.Obs.Logger.Errorf("failed to create new declarative orchestrator: %v", err)
@@ -538,6 +566,7 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, error) {
 			b.opts.Obs.Logger.Errorf("failed to build components: %v", err)
 			return nil, errors.Join(err, closeErr)
 		}
+		b.opts.StateProvider = b.stateProvider
 		orchestrator, err := pipeline.NewSandwich(b.opts)
 		if err != nil {
 			closeErr := b.closeResources(ctx)
@@ -821,6 +850,9 @@ func (b *Builder) buildComponents(ctx context.Context) error {
 		return err
 	}
 	if err := b.buildLLM(); err != nil {
+		return err
+	}
+	if err := b.buildStateProvider(); err != nil {
 		return err
 	}
 	return nil
@@ -1288,4 +1320,56 @@ func (b *Builder) closeResources(ctx context.Context) error {
 		}
 	}
 	return combined
+}
+
+func (b *Builder) buildStateProvider() error {
+	if b.stateProviderName == "" {
+		return nil
+	}
+	b.opts.Obs.Logger.Debugf("building state provider %q", b.stateProviderName)
+	constructor, err := Get(Registry.StateProviders, b.stateProviderName)
+	if err != nil {
+		return err
+	}
+
+	var opts any
+	if o, ok := b.stateProviderParams["typedConfig"]; ok {
+		opts = o
+	}
+
+	var provider core.StateProvider
+	switch b.stateProviderName {
+	case "inmemory":
+		newFn, ok := constructor.(func(state.InMemoryOptions) (core.StateProvider, error))
+		if !ok {
+			return fmt.Errorf("invalid constructor type for state provider '%s'", b.stateProviderName)
+		}
+		provider, err = newFn(*opts.(*state.InMemoryOptions))
+	case "redis":
+		newFn, ok := constructor.(func(state.RedisOptions) (core.StateProvider, error))
+		if !ok {
+			return fmt.Errorf("invalid constructor type for state provider '%s'", b.stateProviderName)
+		}
+		provider, err = newFn(*opts.(*state.RedisOptions))
+	case "mock-sp":
+		newFn, ok := constructor.(func(any) (core.StateProvider, error))
+		if !ok {
+			return fmt.Errorf("invalid constructor type for state provider '%s'", b.stateProviderName)
+		}
+		provider, err = newFn(opts)
+	default:
+		return fmt.Errorf("unsupported state provider type in builder: %s", b.stateProviderName)
+	}
+
+	if err != nil {
+		err = fmt.Errorf("failed to build state provider '%s': %w", b.stateProviderName, err)
+		b.opts.Obs.Logger.Errorf(err.Error())
+		return err
+	}
+	b.stateProvider = provider
+	if c, ok := provider.(closer); ok {
+		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
+	}
+	b.opts.Obs.Logger.Infof("initialized component stateProvider with provider %s", b.stateProviderName)
+	return nil
 }
