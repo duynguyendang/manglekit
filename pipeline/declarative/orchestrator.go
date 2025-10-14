@@ -10,7 +10,6 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	obslogger "github.com/duynguyendang/manglekit/internal/logger"
-	"github.com/duynguyendang/manglekit/internal/providers/mock"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
@@ -447,8 +446,6 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, logger cor
 	case core.RuleSet:
 		// Rule sets are invoked explicitly via pre/post stages outside the dispatch loop.
 		// Treat declarative invocations that reference the rules engine directly as no-ops.
-		return nil
-	case *mock.Tool:
 		return nil
 
 	default:

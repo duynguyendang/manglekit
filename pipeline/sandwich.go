@@ -83,6 +83,11 @@ func (s *Sandwich) Retriever() any {
 	return s.retriever
 }
 
+// Reranker returns the reranker component configured for the orchestrator.
+func (s *Sandwich) Reranker() any {
+	return s.reranker
+}
+
 // Close releases any external resources held by the orchestrator (e.g., API clients).
 func (s *Sandwich) Close(ctx context.Context) error {
 	var combined error
