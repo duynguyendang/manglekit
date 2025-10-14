@@ -13,6 +13,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/embed"
+	ilogger "github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/pipeline"
 	"github.com/duynguyendang/manglekit/pipeline/declarative"
@@ -452,6 +453,8 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, error) {
 	if len(b.errs) > 0 {
 		return nil, errors.Join(b.errs...)
 	}
+
+	b.opts.EnsureLogger(ilogger.NewStdLogger())
 
 	switch orchestratorType {
 	case "declarative":
@@ -1097,6 +1100,8 @@ func (b *Builder) buildRules(ctx context.Context) error {
 			opts = m
 		}
 	}
+
+	opts.Logger = b.opts.Obs.Logger
 
 	ruleset, err := newFn(ctx, opts)
 	if err != nil {

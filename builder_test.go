@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -148,6 +150,16 @@ func installStubProviders(t *testing.T) {
 		manglekit.Registry.LLM["openai"] = origLLMOpenAI
 		manglekit.Registry.LLM["groq"] = origLLMGroq
 	})
+}
+
+func TestNewBuilderFromYAML_InvalidLoggingFormat(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	yamlConfig := "logging:\n  format: invalid\n"
+	require.NoError(t, os.WriteFile(configPath, []byte(yamlConfig), 0o600))
+
+	_, err := manglekit.NewBuilderFromYAML(configPath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported format")
 }
 
 func requireSandwich(t *testing.T, orch core.Orchestrator) *pipeline.Sandwich {

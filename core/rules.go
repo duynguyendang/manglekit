@@ -51,6 +51,10 @@ type MangleOptions struct {
 	// FileFirst, if true, indicates that facts from files should be loaded before
 	// facts from converters, which can affect rule evaluation if there are conflicts.
 	FileFirst bool `yaml:"fileFirst"`
+	// Logger injects the SDK-wide logger so the provider can emit structured
+	// diagnostics during initialisation. It is excluded from config marshaling
+	// because it is set programmatically by the builder.
+	Logger Logger `yaml:"-" json:"-"`
 }
 
 // RuleSet defines the interface for a rules engine that can evaluate rules
