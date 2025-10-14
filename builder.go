@@ -13,6 +13,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/embed"
+	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/pipeline"
 	"github.com/duynguyendang/manglekit/pipeline/declarative"
@@ -449,6 +450,8 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, error) {
 		orchestratorType = b.config.Orchestrator.Type
 	}
 
+	b.ensureObservabilityDefaults()
+
 	if len(b.errs) > 0 {
 		return nil, errors.Join(b.errs...)
 	}
@@ -513,6 +516,12 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, error) {
 	default:
 		closeErr := b.closeResources(ctx)
 		return nil, errors.Join(fmt.Errorf("unknown orchestrator type: %q", orchestratorType), closeErr)
+	}
+}
+
+func (b *Builder) ensureObservabilityDefaults() {
+	if b.opts.Obs.Logger == nil {
+		b.opts.Obs.Logger = logger.NewStdLogger()
 	}
 }
 
@@ -1016,6 +1025,9 @@ func (b *Builder) buildMapBasedRetriever(name string) (retrieve.Retriever, error
 		} else if d, ok := sourceParams["documents"].([]core.Doc); ok {
 			opts.Documents = d
 		}
+		if opts.Logger == nil {
+			opts.Logger = b.opts.Obs.Logger.With("component", "retriever", "provider", name)
+		}
 		retriever, err = newFn(opts)
 
 	default:
@@ -1096,6 +1108,9 @@ func (b *Builder) buildRules(ctx context.Context) error {
 		if m, ok := b.config.Rules.Params["typedConfig"].(core.MangleOptions); ok {
 			opts = m
 		}
+	}
+	if opts.Logger == nil {
+		opts.Logger = b.opts.Obs.Logger.With("component", "rules", "provider", b.rulesName)
 	}
 
 	ruleset, err := newFn(ctx, opts)

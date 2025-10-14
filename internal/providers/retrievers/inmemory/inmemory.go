@@ -6,11 +6,11 @@ package inmemory
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	obslogger "github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/retrieve"
 )
 
@@ -21,6 +21,7 @@ import (
 type InMemoryRetriever struct {
 	mu   sync.RWMutex
 	docs map[string]core.Doc // Use a map for efficient operations by document ID.
+	log  core.Logger
 }
 
 // New is the constructor for the InMemoryRetriever. It is registered with the
@@ -41,8 +42,14 @@ func New(opts retrieve.InMemoryOptions) (retrieve.Retriever, error) {
 		}
 	}
 
+	log := opts.Logger
+	if log == nil {
+		log = obslogger.NewStdLogger().With("component", "retriever", "provider", "in-memory")
+	}
+
 	return &InMemoryRetriever{
 		docs: docMap,
+		log:  log,
 	}, nil
 }
 
@@ -84,7 +91,7 @@ func (r *InMemoryRetriever) Upsert(ctx context.Context, docs []core.Doc) error {
 		}
 		r.docs[doc.ID] = doc
 	}
-	fmt.Printf("Upserted %d documents. Total documents: %d\n", len(docs), len(r.docs))
+	r.log.Infof("in-memory retriever upsert", "count", len(docs), "total", len(r.docs))
 	return nil
 }
 
@@ -104,7 +111,7 @@ func (r *InMemoryRetriever) Replace(ctx context.Context, docs []core.Doc) error 
 		}
 		r.docs[doc.ID] = doc
 	}
-	fmt.Printf("Replaced all documents. New total: %d\n", len(r.docs))
+	r.log.Infof("in-memory retriever replace", "total", len(r.docs))
 	return nil
 }
 

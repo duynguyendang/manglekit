@@ -1,5 +1,8 @@
 orchestrator:
   type: sandwich
+logging:
+  level: debug
+  format: console
 embedder:
   name: openai
   params:

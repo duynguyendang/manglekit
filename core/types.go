@@ -169,14 +169,25 @@ type Observability struct {
 	Meter Meter
 }
 
-// Logger defines a basic interface for structured logging, allowing for the
-// integration of various logging libraries like slog, zap, or logrus.
+// Logger defines a vendor-neutral interface for structured logging. The
+// methods follow a "message + key/value" calling convention so callers can
+// attach context without committing to any specific backend semantics.
 type Logger interface {
-	// Info logs an informational message with a series of key-value pairs
-	// providing context.
-	Info(msg string, kv ...any)
-	// Error logs an error message with a series of key-value pairs.
-	Error(msg string, kv ...any)
+	// Debugf records verbose diagnostic information about control flow or
+	// intermediate state. Arguments are interpreted as key/value pairs.
+	Debugf(msg string, kv ...any)
+	// Infof records high-level lifecycle events such as component start or
+	// stop. Arguments are interpreted as key/value pairs.
+	Infof(msg string, kv ...any)
+	// Warnf records recoverable issues that deserve operator attention but
+	// do not stop execution.
+	Warnf(msg string, kv ...any)
+	// Errorf records failures. Implementations should treat the "error"
+	// key specially when present.
+	Errorf(msg string, kv ...any)
+	// With returns a child logger that automatically appends the supplied
+	// key/value pairs to every log record.
+	With(kv ...any) Logger
 }
 
 // Tracer defines a basic interface for creating spans for distributed tracing.

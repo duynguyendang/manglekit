@@ -3,12 +3,13 @@ package manglekit
 import (
 	"context"
 	"encoding/json"
-
-	"github.com/duynguyendang/manglekit/core"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/logger"
 
 	"gopkg.in/yaml.v3"
 )
@@ -69,6 +70,14 @@ type OrchestratorConfig struct {
 	FlowName string `yaml:"flowName,omitempty"`
 }
 
+// LoggingConfig defines runtime logging behavior for the SDK.
+type LoggingConfig struct {
+	// Level controls the minimum log level emitted by the zap adapter.
+	Level string `yaml:"level"`
+	// Format controls the encoder used by the zap adapter ("json" or "console").
+	Format string `yaml:"format"`
+}
+
 // Config is the top-level struct for loading a MangleKit orchestrator's
 // configuration from a YAML file. It supports two primary modes of operation,
 // controlled by the `Orchestrator.Type` field.
@@ -81,6 +90,8 @@ type OrchestratorConfig struct {
 type Config struct {
 	// Orchestrator selects and configures the workflow engine.
 	Orchestrator OrchestratorConfig `yaml:"orchestrator"`
+	// Logging defines global logging behavior for the orchestrator runtime.
+	Logging *LoggingConfig `yaml:"logging,omitempty"`
 	// Tools defines a map of named components that can be referenced as dependencies
 	// in declarative flows. The map key is the tool's name. This is used only
 	// by the "declarative" orchestrator.
@@ -209,14 +220,22 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 	baseBuilder := NewBuilder()
 	baseBuilder.configDir = configDir
 
+	if cfg.Logging != nil {
+		logImpl, err := logger.New(logger.Config{Level: cfg.Logging.Level, Format: cfg.Logging.Format})
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure logger: %w", err)
+		}
+		baseBuilder.WithObservability(core.Observability{Logger: logImpl})
+	}
+
 	builder := baseBuilder.
 		WithConfig(&cfg). // Pass the full config to the builder
 		WithTopK(cfg.TopK).
 		WithMaxTokens(cfg.MaxTokens).
 		WithFallbackThreshold(cfg.FallbackThreshold)
 
-	// Helper function to create and configure a component from the YAML config.
-	configureComponent := func(name string, params map[string]any, setter func(any) BuilderAPI) error {
+		// Helper function to create and configure a component from the YAML config.
+	configureComponent := func(componentType, name string, params map[string]any, setter func(any) BuilderAPI) error {
 		if name == "" {
 			return nil
 		}
@@ -246,25 +265,39 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 
 		// Call the appropriate With... method on the builder.
 		setter(optsPtr)
+		switch componentType {
+		case "embedder":
+			baseBuilder.embedderName = name
+		case "retriever":
+			baseBuilder.retrieverName = name
+		case "vectorStore":
+			baseBuilder.vectorStoreName = name
+		case "reranker":
+			baseBuilder.rerankerName = name
+		case "rules":
+			baseBuilder.rulesName = name
+		case "llm":
+			baseBuilder.llmName = name
+		}
 		return nil
 	}
 
-	if err := configureComponent(cfg.Embedder.Name, cfg.Embedder.Params, builder.WithEmbedder); err != nil {
+	if err := configureComponent("embedder", cfg.Embedder.Name, cfg.Embedder.Params, builder.WithEmbedder); err != nil {
 		return nil, err
 	}
-	if err := configureComponent(cfg.Retriever.Name, cfg.Retriever.Params, builder.WithRetriever); err != nil {
+	if err := configureComponent("retriever", cfg.Retriever.Name, cfg.Retriever.Params, builder.WithRetriever); err != nil {
 		return nil, err
 	}
-	if err := configureComponent(cfg.VectorStore.Name, cfg.VectorStore.Params, builder.WithVectorStore); err != nil {
+	if err := configureComponent("vectorStore", cfg.VectorStore.Name, cfg.VectorStore.Params, builder.WithVectorStore); err != nil {
 		return nil, err
 	}
-	if err := configureComponent(cfg.Reranker.Name, cfg.Reranker.Params, builder.WithReranker); err != nil {
+	if err := configureComponent("reranker", cfg.Reranker.Name, cfg.Reranker.Params, builder.WithReranker); err != nil {
 		return nil, err
 	}
-	if err := configureComponent(cfg.Rules.Name, cfg.Rules.Params, builder.WithRules); err != nil {
+	if err := configureComponent("rules", cfg.Rules.Name, cfg.Rules.Params, builder.WithRules); err != nil {
 		return nil, err
 	}
-	if err := configureComponent(cfg.LLM.Name, cfg.LLM.Params, builder.WithLLM); err != nil {
+	if err := configureComponent("llm", cfg.LLM.Name, cfg.LLM.Params, builder.WithLLM); err != nil {
 		return nil, err
 	}
 
@@ -296,8 +329,19 @@ func NewBuilderFromEnv() (BuilderAPI, error) {
 	}
 	baseBuilder.configDir = configDir
 
+	level := os.Getenv("MKT_LOG_LEVEL")
+	format := os.Getenv("MKT_LOG_FORMAT")
+	if level != "" || format != "" {
+		logImpl, err := logger.New(logger.Config{Level: level, Format: format})
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure logger from environment: %w", err)
+		}
+		baseBuilder.WithObservability(core.Observability{Logger: logImpl})
+	}
+
 	// Helper to read an env var and configure a component
 	configureComponentFromEnv := func(
+		componentType string,
 		componentName string,
 		setter func(any) BuilderAPI,
 	) error {
@@ -332,26 +376,40 @@ func NewBuilderFromEnv() (BuilderAPI, error) {
 		}
 
 		setter(optsPtr)
+		switch componentType {
+		case "embedder":
+			baseBuilder.embedderName = name
+		case "retriever":
+			baseBuilder.retrieverName = name
+		case "vectorStore":
+			baseBuilder.vectorStoreName = name
+		case "reranker":
+			baseBuilder.rerankerName = name
+		case "rules":
+			baseBuilder.rulesName = name
+		case "llm":
+			baseBuilder.llmName = name
+		}
 		return nil
 	}
 
 	// Configure each component
-	if err := configureComponentFromEnv("LLM", baseBuilder.WithLLM); err != nil {
+	if err := configureComponentFromEnv("llm", "LLM", baseBuilder.WithLLM); err != nil {
 		return nil, err
 	}
-	if err := configureComponentFromEnv("EMBEDDER", baseBuilder.WithEmbedder); err != nil {
+	if err := configureComponentFromEnv("embedder", "EMBEDDER", baseBuilder.WithEmbedder); err != nil {
 		return nil, err
 	}
-	if err := configureComponentFromEnv("RETRIEVER", baseBuilder.WithRetriever); err != nil {
+	if err := configureComponentFromEnv("retriever", "RETRIEVER", baseBuilder.WithRetriever); err != nil {
 		return nil, err
 	}
-	if err := configureComponentFromEnv("VECTORSTORE", baseBuilder.WithVectorStore); err != nil {
+	if err := configureComponentFromEnv("vectorStore", "VECTORSTORE", baseBuilder.WithVectorStore); err != nil {
 		return nil, err
 	}
-	if err := configureComponentFromEnv("RERANKER", baseBuilder.WithReranker); err != nil {
+	if err := configureComponentFromEnv("reranker", "RERANKER", baseBuilder.WithReranker); err != nil {
 		return nil, err
 	}
-	if err := configureComponentFromEnv("RULES", baseBuilder.WithRules); err != nil {
+	if err := configureComponentFromEnv("rules", "RULES", baseBuilder.WithRules); err != nil {
 		return nil, err
 	}
 
