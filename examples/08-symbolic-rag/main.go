@@ -38,7 +38,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	orch, err := builder.Build(context.Background())
+	orch, err := builder.Build(ctx)
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}

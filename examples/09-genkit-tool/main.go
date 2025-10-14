@@ -47,7 +47,7 @@ func main() {
 		log.Fatalf("[Init] failed to create builder from YAML: %v", err)
 	}
 
-	orch, err := builder.Build(context.Background())
+	orch, err := builder.Build(ctx)
 	if err != nil {
 		log.Fatalf("[Init] failed to build orchestrator: %v", err)
 	}
@@ -58,7 +58,7 @@ func main() {
 	}()
 	mangleOrch = orch
 
-	if err := seedSampleDocuments(orch); err != nil {
+	if err := seedSampleDocuments(ctx, orch); err != nil {
 		log.Fatalf("[Init] failed to seed sample documents: %v", err)
 	}
 
@@ -145,7 +145,7 @@ func resolveConfigPath() (string, error) {
 	return "", fmt.Errorf("config.yaml not found when searching upward from %s", currentFile)
 }
 
-func seedSampleDocuments(orch core.Orchestrator) error {
+func seedSampleDocuments(ctx context.Context, orch core.Orchestrator) error {
 	retriever := orch.Retriever()
 	if retriever == nil {
 		return fmt.Errorf("orchestrator does not expose a retriever")
@@ -179,7 +179,7 @@ func seedSampleDocuments(orch core.Orchestrator) error {
 	}
 
 	log.Printf("[Init] seeding %d sample documents into the in-memory retriever", len(docs))
-	if err := updatable.Upsert(context.Background(), docs); err != nil {
+	if err := updatable.Upsert(ctx, docs); err != nil {
 		return fmt.Errorf("failed to upsert sample documents: %w", err)
 	}
 	return nil
