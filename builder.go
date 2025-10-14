@@ -848,6 +848,12 @@ func (b *Builder) buildEmbedder() error {
 			return fmt.Errorf("invalid client type for %s embedder, expected *openai.Client but got %T", b.embedderName, b.clients[b.embedderName])
 		}
 		b.embedder, err = newFn(opts, clientVal)
+	case "mock":
+		newFn, ok := constructor.(func(any) (ai.Embedder, error))
+		if !ok {
+			return fmt.Errorf("invalid constructor type for embedder '%s'", b.embedderName)
+		}
+		b.embedder, err = newFn(nil)
 
 	default:
 		return fmt.Errorf("unsupported embedder type in builder: %s", b.embedderName)
@@ -922,6 +928,16 @@ func (b *Builder) buildRetriever() error {
 		retriever, err = b.buildHybridRetriever()
 	case "bm25", "in-memory":
 		retriever, err = b.buildMapBasedRetriever(b.retrieverName)
+	case "mock":
+		constructor, err := Get(Registry.Retriever, "mock")
+		if err != nil {
+			return err
+		}
+		newFn, ok := constructor.(func(any) (retrieve.Retriever, error))
+		if !ok {
+			return fmt.Errorf("invalid constructor type for retriever 'mock'")
+		}
+		retriever, err = newFn(nil)
 	default:
 		return fmt.Errorf("unsupported retriever type in builder: %s", b.retrieverName)
 	}
@@ -1164,6 +1180,12 @@ func (b *Builder) buildLLM() error {
 			return fmt.Errorf("invalid client type for %s llm, expected *openai.Client but got %T", b.llmName, b.clients[b.llmName])
 		}
 		b.opts.LLM, err = newFn(opts, clientVal)
+	case "mock":
+		newFn, ok := constructor.(func(any) (llm.Client, error))
+		if !ok {
+			return fmt.Errorf("invalid constructor type for llm '%s'", b.llmName)
+		}
+		b.opts.LLM, err = newFn(nil)
 
 	default:
 		return fmt.Errorf("unsupported llm type in builder: %s", b.llmName)
