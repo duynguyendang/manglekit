@@ -34,6 +34,12 @@ type VectorStoreFactory func(ctx context.Context, opts any, deps FactoryDeps) (c
 // RuleSetFactory defines the contract for a ruleset constructor.
 type RuleSetFactory func(ctx context.Context, opts any, deps FactoryDeps) (core.RuleSet, error)
 
+// FactConverterFactory defines the contract for a fact converter constructor.
+type FactConverterFactory func(ctx context.Context, opts any, deps FactoryDeps) (core.FactConverter, error)
+
+// SchemaParserFactory defines the contract for a schema parser constructor.
+type SchemaParserFactory func(ctx context.Context, opts any, deps FactoryDeps) (core.SchemaParser, error)
+
 // ComponentFactory is a generic function signature for component constructors.
 // It accepts a provider-specific options struct (`options`) and a map of
 // resolved dependencies (`deps`), returning the initialized component as `any`.

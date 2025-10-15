@@ -19,7 +19,7 @@ import (
 type Options struct{}
 
 func Register(r *manglekit.Registry) {
-	r.RegisterSchemaParser("rdf", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+	r.RegisterSchemaParser("rdf", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.SchemaParser, error) {
 		return New(nil)
 	})
 	r.RegisterOptions("rdf", (*Options)(nil))

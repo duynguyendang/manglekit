@@ -1,7 +1,6 @@
 package manglekit
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,26 +12,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
-
-// BuilderAPI defines the fluent interface for the MangleKit builder.
-// It is used by the YAML and environment variable constructors to provide a
-// consistent, chainable API for configuration.
-type BuilderAPI interface {
-	WithConfig(*Config) BuilderAPI
-	WithRetriever(any) BuilderAPI
-	WithVectorStore(any) BuilderAPI
-	WithReranker(any) BuilderAPI
-	WithRules(any) BuilderAPI
-	WithLLM(any) BuilderAPI
-	WithFlow(string) BuilderAPI
-	WithEmbedder(any) BuilderAPI
-	WithTopK(int) BuilderAPI
-	WithMaxTokens(int) BuilderAPI
-	WithObservability(core.Observability) BuilderAPI
-	WithFallbackThreshold(float64) BuilderAPI
-	WithStateProvider(any) BuilderAPI
-	Build(context.Context) (core.Orchestrator, error)
-}
 
 // componentCfg is a generic configuration for a named component with parameters.
 // It is used in the "sandwich" orchestrator configuration to define which

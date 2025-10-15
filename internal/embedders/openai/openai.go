@@ -15,19 +15,24 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	factory := func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
-		opts, ok := options.(embed.OpenAIEmbedderOptions)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected embed.OpenAIEmbedderOptions, got %T", options)
+	factory := func(ctx context.Context, options any, deps manglekit.FactoryDeps) (ai.Embedder, error) {
+		var opts embed.OpenAIEmbedderOptions
+		if options != nil {
+			if typedOpts, ok := options.(*embed.OpenAIEmbedderOptions); ok {
+				opts = *typedOpts
+			} else {
+				return nil, fmt.Errorf("invalid options type, expected *embed.OpenAIEmbedderOptions, got %T", options)
+			}
 		}
+
 		client, ok := deps["client"].(*openai.Client)
 		if !ok {
 			return nil, fmt.Errorf("invalid client type, expected *openai.Client, got %T", deps["client"])
 		}
 		return New(opts, client)
 	}
-	r.Register("openai-embedder", factory)
-	r.Register("groq-embedder", factory)
+	r.RegisterEmbedder("openai-embedder", factory)
+	r.RegisterEmbedder("groq-embedder", factory)
 	r.RegisterOptions("openai-embedder", (*embed.OpenAIEmbedderOptions)(nil))
 	r.RegisterOptions("groq-embedder", (*embed.OpenAIEmbedderOptions)(nil))
 }

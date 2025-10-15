@@ -21,11 +21,16 @@ const (
 )
 
 func Register(r *manglekit.Registry) {
-	r.Register("google-embedder", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
-		opts, ok := options.(embed.GoogleEmbedderOptions)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected embed.GoogleEmbedderOptions, got %T", options)
+	r.RegisterEmbedder("google-embedder", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (ai.Embedder, error) {
+		var opts embed.GoogleEmbedderOptions
+		if options != nil {
+			if typedOpts, ok := options.(*embed.GoogleEmbedderOptions); ok {
+				opts = *typedOpts
+			} else {
+				return nil, fmt.Errorf("invalid options type, expected *embed.GoogleEmbedderOptions, got %T", options)
+			}
 		}
+
 		g, ok := deps["client"].(*genkit.Genkit)
 		if !ok {
 			return nil, fmt.Errorf("invalid client type, expected *genkit.Genkit, got %T", deps["client"])

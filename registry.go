@@ -18,9 +18,8 @@ type Registry struct {
 	StateProviders map[string]StateProviderFactory
 	VectorStores   map[string]VectorStoreFactory
 	RuleSets       map[string]RuleSetFactory
-	SchemaParsers  map[string]ComponentFactory // Keep generic for now
-	// Component holds registered generic component constructors, such as `core.VectorStore`.
-	Component map[string]ComponentFactory
+	SchemaParsers  map[string]SchemaParserFactory
+	FactConverters map[string]FactConverterFactory
 	// Options holds registered options types for components.
 	Options map[string]reflect.Type
 	// ClientFactories holds registered client factory functions.
@@ -37,8 +36,8 @@ func NewRegistry() *Registry {
 		StateProviders: make(map[string]StateProviderFactory),
 		VectorStores:   make(map[string]VectorStoreFactory),
 		RuleSets:       make(map[string]RuleSetFactory),
-		SchemaParsers:  make(map[string]ComponentFactory),
-		Component:      make(map[string]ComponentFactory),
+		SchemaParsers:  make(map[string]SchemaParserFactory),
+		FactConverters: make(map[string]FactConverterFactory),
 		Options:        make(map[string]reflect.Type),
 		ClientFactories: make(map[string]any),
 	}
@@ -86,13 +85,13 @@ func (r *Registry) RegisterLLM(name string, c LLMFactory) { r.LLMs[name] = c }
 func (r *Registry) RegisterEmbedder(name string, c EmbedderFactory) { r.Embedders[name] = c }
 
 // RegisterSchemaParser adds a schema parser constructor to the registry.
-func (r *Registry) RegisterSchemaParser(name string, c ComponentFactory) { r.SchemaParsers[name] = c }
+func (r *Registry) RegisterSchemaParser(name string, c SchemaParserFactory) { r.SchemaParsers[name] = c }
 
 // RegisterVectorStore adds a vector store constructor to the registry.
 func (r *Registry) RegisterVectorStore(name string, c VectorStoreFactory) { r.VectorStores[name] = c }
 
-// Register adds a generic component constructor (e.g., a vector store) to the registry.
-func (r *Registry) Register(name string, c ComponentFactory) { r.Component[name] = c }
+// RegisterFactConverter adds a fact converter constructor to the registry.
+func (r *Registry) RegisterFactConverter(name string, c FactConverterFactory) { r.FactConverters[name] = c }
 
 // RegisterStateProvider adds a state provider constructor to the registry.
 func (r *Registry) RegisterStateProvider(name string, c StateProviderFactory) {
