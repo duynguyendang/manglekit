@@ -2,7 +2,6 @@ package redis
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"github.com/duynguyendang/manglekit"
@@ -40,31 +39,24 @@ func New(opts state.RedisOptions) (core.StateProvider, error) {
 	return &Provider{client: rdb}, nil
 }
 
-// Get retrieves the state for a session ID from Redis. It fetches the JSON
-// string and unmarshals it into an `interface{}`. If the key does not exist,
-// it returns (nil, nil) as per the interface contract.
+// Get retrieves the state for a session ID from Redis. It fetches the raw bytes.
+// If the key does not exist, it returns (nil, nil) as per the interface contract.
 func (p *Provider) Get(ctx context.Context, sessionID string) (interface{}, error) {
-	val, err := p.client.Get(ctx, sessionID).Result()
+	val, err := p.client.Get(ctx, sessionID).Bytes()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return nil, nil // Key does not exist, not an error.
 		}
 		return nil, err
 	}
-
-	var state interface{}
-	if err := json.Unmarshal([]byte(val), &state); err != nil {
-		return nil, err
-	}
-	return state, nil
+	return val, nil
 }
 
-// Set saves the state for a session ID to Redis. It marshals the state object
-// into a JSON string before storing it.
+// Set saves the state for a session ID to Redis. It expects the state to be []byte.
 func (p *Provider) Set(ctx context.Context, sessionID string, state interface{}) error {
-	val, err := json.Marshal(state)
-	if err != nil {
-		return err
+	val, ok := state.([]byte)
+	if !ok {
+		return errors.New("redis provider expects state to be []byte")
 	}
 	return p.client.Set(ctx, sessionID, val, 0).Err()
 }

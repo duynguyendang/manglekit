@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
@@ -24,9 +25,13 @@ func TestRedisStateProvider(t *testing.T) {
 
 	sessionID := "test-session"
 	state := map[string]interface{}{"key": "value"}
+	stateBytes, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("failed to marshal state: %v", err)
+	}
 
 	// Test Set
-	if err := provider.Set(ctx, sessionID, state); err != nil {
+	if err := provider.Set(ctx, sessionID, stateBytes); err != nil {
 		t.Errorf("Set failed: %v", err)
 	}
 
@@ -38,11 +43,17 @@ func TestRedisStateProvider(t *testing.T) {
 	if retrievedState == nil {
 		t.Errorf("Get returned nil state")
 	}
-	retrievedMap, ok := retrievedState.(map[string]interface{})
+
+	var retrievedMap map[string]interface{}
+	retrievedBytes, ok := retrievedState.([]byte)
 	if !ok {
-		t.Errorf("retrieved state is not a map, but %T", retrievedState)
+		t.Fatalf("retrieved state is not []byte, but %T", retrievedState)
 	}
-	if retrievedMap["key"] != "value" {
+	if err := json.Unmarshal(retrievedBytes, &retrievedMap); err != nil {
+		t.Fatalf("failed to unmarshal retrieved state: %v", err)
+	}
+
+	if val, ok := retrievedMap["key"].(string); !ok || val != "value" {
 		t.Errorf("retrieved state has wrong value")
 	}
 

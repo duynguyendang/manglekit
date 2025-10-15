@@ -5,6 +5,17 @@ import (
 	"errors"
 )
 
+// Message represents a single message in a conversation from a specific role.
+type Message struct {
+	Role    string `json:"role"` // "user" or "model"
+	Content string `json:"content"`
+}
+
+// ConversationHistory stores the list of messages for a session.
+type ConversationHistory struct {
+	Messages []Message `json:"messages"`
+}
+
 // Doc represents a single document chunk, which is the fundamental unit of
 // information for retrieval and generation. It contains the content as well as
 // metadata about its origin.

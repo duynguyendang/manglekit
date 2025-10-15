@@ -14,18 +14,30 @@ import (
 // answer a user's question based solely on the provided context documents.
 // This template is designed to reduce hallucinations by forcing the model to
 // admit when the answer is not present in the context.
-const DefaultRAGTemplate = `System: You are a helpful AI assistant. Your task is to answer the user's question based ONLY on the provided context. If the context does not contain the answer, say "I do not have enough information to answer this question."
+const DefaultRAGTemplate = `
+{{- if .history -}}
+You are a helpful AI assistant. Below is the conversation history.
+Use it to inform your answer if relevant.
 
-Context:
+BEGIN HISTORY
+{{- range .history }}
+{{ .Role }}: {{ .Content }}
+{{- end }}
+END HISTORY
+
 ---
-{{- range .Context }}
-{{ . }}
----
+{{ end }}
+
+Please answer the following query based ONLY on the provided context.
+If the context does not contain the answer, say "I do not have enough information to answer."
+
+CONTEXT:
+{{- range $i, $doc := .documents }}
+[doc-{{$i}}] {{ truncate .Text 1024 }}
 {{- end }}
 
-User Question: {{ .Query }}
-
-Answer:`
+QUERY: {{ .query }}
+`
 
 // PromptBuilder is a thread-safe, high-performance utility responsible for
 // compiling and executing Go templates to generate final prompt strings. It

@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -149,6 +150,27 @@ func (s *Sandwich) Execute(ctx context.Context, sessionID string, q core.Query) 
 		Meta: map[string]any{},
 	}
 
+	var history core.ConversationHistory
+
+	// 1. RETRIEVE STATE: If a state provider and sessionID are available, get the history.
+	if s.stateProvider != nil && sessionID != "" {
+		rawState, err := s.stateProvider.Get(ctx, sessionID)
+		if err != nil {
+			logger.Warnf("Failed to retrieve state for session %s: %v", sessionID, err)
+			// Do not fail the request, just proceed without history.
+		}
+
+		if rawState != nil {
+			// Use a type assertion or a helper function to convert the state.
+			// For simplicity, we assume the state is stored as a JSON string.
+			if stateBytes, ok := rawState.([]byte); ok {
+				if err := json.Unmarshal(stateBytes, &history); err != nil {
+					logger.Warnf("Failed to unmarshal state for session %s: %v", sessionID, err)
+				}
+			}
+		}
+	}
+
 	// 1. Pre-Rules
 	var err error
 	q, err = s.runPreRules(ctx, logger, q, &answer)
@@ -178,9 +200,33 @@ func (s *Sandwich) Execute(ctx context.Context, sessionID string, q core.Query) 
 		return answer, fmt.Errorf("prepare llm request failed: %w", err)
 	}
 
+	if q.Meta == nil {
+		q.Meta = make(map[string]any)
+	}
+	q.Meta["history"] = history.Messages
+
 	// 5. LLM
-	if err := s.runLlm(ctx, logger, q, passages, &answer); err != nil {
-		return answer, err
+	llmErr := s.runLlm(ctx, logger, q, passages, &answer)
+
+	// 3. UPDATE AND SAVE STATE: After a successful LLM call, update and save the history.
+	if s.stateProvider != nil && sessionID != "" && llmErr == nil {
+		// Append the user's query and the model's answer to the history.
+		history.Messages = append(history.Messages, core.Message{Role: "user", Content: q.Text})
+		history.Messages = append(history.Messages, core.Message{Role: "model", Content: answer.Text})
+
+		// Marshal the updated history to JSON before saving.
+		updatedStateBytes, err := json.Marshal(history)
+		if err != nil {
+			logger.Errorf("Failed to marshal updated state for session %s: %v", sessionID, err)
+		} else {
+			if err := s.stateProvider.Set(ctx, sessionID, updatedStateBytes); err != nil {
+				logger.Errorf("Failed to save state for session %s: %v", sessionID, err)
+			}
+		}
+	}
+
+	if llmErr != nil {
+		return answer, llmErr
 	}
 
 	// 6. Post-Rules
@@ -326,12 +372,22 @@ func (s *Sandwich) prepareLlmRequest(docs []core.Doc, a *core.Answer) ([]string,
 func (s *Sandwich) runLlm(ctx context.Context, logger core.Logger, q core.Query, passages []string, a *core.Answer) error {
 	meter := s.opts.Obs.Meter
 
+	promptData := map[string]interface{}{
+		"query":     q.Text,
+		"documents": passages,
+	}
+	if q.Meta != nil {
+		for k, v := range q.Meta {
+			promptData[k] = v
+		}
+	}
+
 	tLlmStart := time.Now()
 	llmRes, err := s.llm.Complete(ctx, llm.Request{
 		Prompt:    q.Text,
 		Context:   passages,
 		MaxTokens: s.opts.MaxTokens,
-		Data:      q.Meta,
+		Data:      promptData,
 	})
 	if err != nil {
 		logger.Errorf("llm failed", "error", err)
