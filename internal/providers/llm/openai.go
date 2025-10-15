@@ -20,39 +20,11 @@ func init() {
 	manglekit.RegisterOptions("openai", (*llm.OpenAIOptions)(nil))
 	manglekit.RegisterOptions("groq", (*llm.OpenAIOptions)(nil))
 	manglekit.RegisterClientFactory("openai", openAIClientFactory)
-	manglekit.RegisterClientFactory("groq", openAIClientFactory)
+	manglekit.RegisterClientFactory("groq", groqClientFactory)
 }
 
-func openAIClientFactory(options any) (any, core.ResourceCloser, error) {
-	var apiKey, baseURL string
-	var apiKeyEnvVar string
-
-	switch opts := options.(type) {
-	case *manglekit.OpenAIConfig:
-		apiKey = opts.APIKey
-		apiKeyEnvVar = "OPENAI_API_KEY"
-	case *manglekit.OpenAICompatibleConfig:
-		apiKey = opts.APIKey
-		baseURL = opts.BaseURL
-		apiKeyEnvVar = "GROQ_API_KEY" // As an example for groq
-	default:
-		return nil, nil, fmt.Errorf("unsupported options type for openai client factory: %T", options)
-	}
-
-	if apiKey == "" {
-		apiKey = os.Getenv(apiKeyEnvVar)
-	}
-	if apiKey == "" {
-		return nil, nil, fmt.Errorf("missing apiKey for provider: please provide it via config or %s env var", apiKeyEnvVar)
-	}
-
-	if baseURL == "" {
-		if _, ok := options.(*manglekit.OpenAICompatibleConfig); ok {
-			// Default for groq
-			baseURL = "https://api.groq.com/openai/v1"
-		}
-	}
-
+// newOpenAICompatibleClient is a helper that creates a client for any OpenAI-compatible API.
+func newOpenAICompatibleClient(apiKey, baseURL string) (any, core.ResourceCloser, error) {
 	transport := &http.Transport{
 		IdleConnTimeout: 30 * time.Second,
 	}
@@ -74,6 +46,46 @@ func openAIClientFactory(options any) (any, core.ResourceCloser, error) {
 	}
 
 	return &client, closer, nil
+}
+
+func openAIClientFactory(cfg *manglekit.Config) (any, core.ResourceCloser, error) {
+	if cfg.Providers.OpenAI == nil {
+		return nil, nil, fmt.Errorf("missing providers.openai config for openai client factory")
+	}
+	openAICfg := cfg.Providers.OpenAI
+
+	apiKey := openAICfg.APIKey
+	if apiKey == "" {
+		apiKey = os.Getenv("OPENAI_API_KEY")
+	}
+	if apiKey == "" {
+		return nil, nil, fmt.Errorf("missing apiKey for provider 'openai': please provide it via config or OPENAI_API_KEY env var")
+	}
+
+	// OpenAI doesn't need a BaseURL unless it's a custom deployment, which is not handled here.
+	return newOpenAICompatibleClient(apiKey, "")
+}
+
+func groqClientFactory(cfg *manglekit.Config) (any, core.ResourceCloser, error) {
+	if cfg.Providers.Groq == nil {
+		return nil, nil, fmt.Errorf("missing providers.groq config for groq client factory")
+	}
+	groqCfg := cfg.Providers.Groq
+
+	apiKey := groqCfg.APIKey
+	if apiKey == "" {
+		apiKey = os.Getenv("GROQ_API_KEY")
+	}
+	if apiKey == "" {
+		return nil, nil, fmt.Errorf("missing apiKey for provider 'groq': please provide it via config or GROQ_API_KEY env var")
+	}
+
+	baseURL := groqCfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://api.groq.com/openai/v1"
+	}
+
+	return newOpenAICompatibleClient(apiKey, baseURL)
 }
 
 // openAIClient implements the llm.Client interface for OpenAI and other services
