@@ -5,19 +5,75 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
+	"sync"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"github.com/google/generative-ai-go/genai"
+	"google.golang.org/api/option"
 )
 
 func init() {
 	manglekit.RegisterLLM("google", NewGoogle)
 	manglekit.RegisterOptions("google", (*llm.GoogleOptions)(nil))
+	manglekit.RegisterClientFactory("google", googleClientFactory)
+}
+
+func googleClientFactory(options any) (any, core.ResourceCloser, error) {
+	cfg, ok := options.(*manglekit.GoogleConfig)
+	if !ok {
+		return nil, nil, fmt.Errorf("unsupported options type for google client factory: %T", options)
+	}
+
+	apiKey := cfg.APIKey
+	if apiKey == "" {
+		apiKey = os.Getenv("GOOGLE_API_KEY")
+	}
+	if apiKey == "" {
+		return nil, nil, fmt.Errorf("missing apiKey for provider 'google': please provide it via config or GOOGLE_API_KEY env var")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	g, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("failed to create genai client: %w", err)
+	}
+
+	gkit := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: apiKey}))
+
+	clients := llm.GoogleClients{
+		Genkit: gkit,
+		Genai:  g,
+		Cancel: cancel,
+	}
+
+	var once sync.Once
+	var closeErr error
+	closer := func(closeCtx context.Context) error {
+		once.Do(func() {
+			if clients.Cancel != nil {
+				clients.Cancel()
+			}
+			if clients.Genai != nil {
+				if err := clients.Genai.Close(); err != nil {
+					closeErr = errors.Join(closeErr, err)
+				}
+			}
+		})
+		return closeErr
+	}
+
+	return clients, closer, nil
 }
 
 // googleClient implements the llm.Client interface for Google's generative models,

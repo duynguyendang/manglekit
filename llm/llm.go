@@ -1,6 +1,11 @@
 package llm
 
-import "context"
+import (
+	"context"
+
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/google/generative-ai-go/genai"
+)
 
 // Request encapsulates the input for a large language model (LLM) completion
 // request. It provides a structured way to define the prompt, context, and
@@ -43,4 +48,11 @@ type Client interface {
 	// It returns a Response containing the generated text and usage data,
 	// or an error if the API call or processing fails.
 	Complete(ctx context.Context, req Request) (Response, error)
+}
+
+// GoogleClients is a struct to hold the initialized clients for Google services.
+type GoogleClients struct {
+	Genkit *genkit.Genkit
+	Genai  *genai.Client
+	Cancel context.CancelFunc
 }

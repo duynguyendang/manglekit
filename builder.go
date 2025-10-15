@@ -5,10 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"os"
 	"reflect"
-	"sync"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -22,11 +19,8 @@ import (
 	"github.com/duynguyendang/manglekit/state"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/google/generative-ai-go/genai"
 	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	googleapi "google.golang.org/api/option"
 )
 
 // Builder provides a fluent, chainable interface for constructing a MangleKit
@@ -95,13 +89,6 @@ type Builder struct {
 // public `Closer` interface in the `core` package, keeping the API clean.
 type closer interface {
 	Close(context.Context) error
-}
-
-// googleClients is a private struct to hold the initialized clients for Google services.
-type googleClients struct {
-	genkit *genkit.Genkit
-	genai  *genai.Client
-	cancel context.CancelFunc
 }
 
 // NewBuilder returns a new, empty instance of the fluent builder, ready to be
@@ -355,124 +342,57 @@ func (b *Builder) WithStateProvider(opts any) BuilderAPI {
 // resolveProviderConfig finds the configuration for a given provider by checking params, config object, and env vars.
 func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, providerName string) error {
 	key := fmt.Sprintf("%s.%s", providerType, providerName)
-	if _, exists := b.resolvedCfgs[key]; exists {
+	if _, exists := b.clients[providerName]; exists {
 		return nil // Already resolved.
 	}
 
+	factory, err := Get(Registry.ClientFactories, providerName)
+	if err != nil {
+		// Not all providers have client factories, so this is not an error.
+		return nil
+	}
+
+	clientFactory, ok := factory.(ClientFactory)
+	if !ok {
+		return fmt.Errorf("invalid client factory type for provider '%s'", providerName)
+	}
+
+	var providerConfig any
 	switch providerName {
 	case "google":
 		cfg := b.config.Providers.Google
 		if cfg == nil {
 			cfg = &GoogleConfig{}
 		}
-		apiKey := cfg.APIKey
-		if apiKey == "" {
-			apiKey = os.Getenv("GOOGLE_API_KEY")
-		}
-		if apiKey == "" {
-			err := fmt.Errorf("missing apiKey for provider 'google': please provide it via config or GOOGLE_API_KEY env var")
-			b.opts.Obs.Logger.Errorf(err.Error())
-			return err
-		}
-		if existing, ok := b.clients["google"].(googleClients); ok && existing.genkit != nil && existing.genai != nil {
-			b.resolvedCfgs[key] = cfg
-			return nil
-		}
-		gCtx, cancel := context.WithCancel(ctx)
-		g, err := genai.NewClient(gCtx, googleapi.WithAPIKey(apiKey))
-		if err != nil {
-			cancel()
-			b.opts.Obs.Logger.Errorf("failed to create genai client: %v", err)
-			return fmt.Errorf("failed to create genai client: %w", err)
-		}
-		gkit := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: apiKey}))
-		clients := googleClients{
-			genkit: gkit,
-			genai:  g,
-			cancel: cancel,
-		}
-		var once sync.Once
-		var closeErr error
-		b.opts.ResourceClosers = append(b.opts.ResourceClosers, func(closeCtx context.Context) error {
-			once.Do(func() {
-				if clients.cancel != nil {
-					clients.cancel()
-				}
-				if clients.genai != nil {
-					if err := clients.genai.Close(); err != nil {
-						closeErr = errors.Join(closeErr, err)
-					}
-				}
-			})
-			return closeErr
-		})
-		b.clients["google"] = clients
-		b.resolvedCfgs[key] = cfg
-
+		providerConfig = cfg
 	case "openai":
 		cfg := b.config.Providers.OpenAI
 		if cfg == nil {
 			cfg = &OpenAIConfig{}
 		}
-		apiKey := cfg.APIKey
-		if apiKey == "" {
-			apiKey = os.Getenv("OPENAI_API_KEY")
-		}
-		if apiKey == "" {
-			err := fmt.Errorf("missing apiKey for provider 'openai': please provide it via config or OPENAI_API_KEY env var")
-			b.opts.Obs.Logger.Errorf(err.Error())
-			return err
-		}
-		transport := &http.Transport{
-			IdleConnTimeout: 30 * time.Second,
-		}
-		httpClient := &http.Client{
-			Transport: transport,
-			Timeout:   120 * time.Second,
-		}
-		client := openai.NewClient(option.WithAPIKey(apiKey), option.WithHTTPClient(httpClient))
-		clientPtr := client
-		b.clients["openai"] = &clientPtr
-		b.resolvedCfgs[key] = cfg
-		b.opts.ResourceClosers = append(b.opts.ResourceClosers, func(ctx context.Context) error {
-			transport.CloseIdleConnections()
-			return nil
-		})
-
+		providerConfig = cfg
 	case "groq":
 		cfg := b.config.Providers.Groq
 		if cfg == nil {
 			cfg = &OpenAICompatibleConfig{}
 		}
-		apiKey := cfg.APIKey
-		if apiKey == "" {
-			apiKey = os.Getenv("GROQ_API_KEY")
-		}
-		if apiKey == "" {
-			err := fmt.Errorf("missing apiKey for provider 'groq': please provide it via config or GROQ_API_KEY env var")
-			b.opts.Obs.Logger.Errorf(err.Error())
-			return err
-		}
-		baseURL := cfg.BaseURL
-		if baseURL == "" {
-			baseURL = "https://api.groq.com/openai/v1"
-		}
-		transport := &http.Transport{
-			IdleConnTimeout: 30 * time.Second,
-		}
-		httpClient := &http.Client{
-			Transport: transport,
-			Timeout:   120 * time.Second,
-		}
-		client := openai.NewClient(option.WithAPIKey(apiKey), option.WithBaseURL(baseURL), option.WithHTTPClient(httpClient))
-		clientPtr := client
-		b.clients["groq"] = &clientPtr
-		b.resolvedCfgs[key] = cfg
-		b.opts.ResourceClosers = append(b.opts.ResourceClosers, func(ctx context.Context) error {
-			transport.CloseIdleConnections()
-			return nil
-		})
+		providerConfig = cfg
+	default:
+		// This provider doesn't have a shared client configuration.
+		return nil
 	}
+
+	client, closer, err := clientFactory(providerConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create client for provider '%s': %w", providerName, err)
+	}
+
+	b.clients[providerName] = client
+	if closer != nil {
+		b.opts.ResourceClosers = append(b.opts.ResourceClosers, closer)
+	}
+	b.resolvedCfgs[key] = providerConfig // Keep track of resolved configs.
+
 	return nil
 }
 
@@ -706,11 +626,11 @@ func (b *Builder) buildSingleTool(ctx context.Context, name string, cfg ToolConf
 			if !ok {
 				return nil, fmt.Errorf("invalid constructor type for google-embedder")
 			}
-			client, ok := b.clients["google"].(googleClients)
+			client, ok := b.clients["google"].(llm.GoogleClients)
 			if !ok {
 				return nil, fmt.Errorf("google client not initialized")
 			}
-			return newFn(*optsPtr.(*embed.GoogleEmbedderOptions), client.genai)
+			return newFn(*optsPtr.(*embed.GoogleEmbedderOptions), client.Genai)
 		case "openai-embedder":
 			newFn, ok := constructor.(func(embed.OpenAIEmbedderOptions, *openai.Client) (ai.Embedder, error))
 			if !ok {
@@ -769,8 +689,8 @@ func (b *Builder) buildSingleTool(ctx context.Context, name string, cfg ToolConf
 		switch cfg.Provider {
 		case "google":
 			newFn := constructor.(func(llm.GoogleOptions, *genkit.Genkit) (llm.Client, error))
-			client := b.clients["google"].(googleClients)
-			return newFn(*optsPtr.(*llm.GoogleOptions), client.genkit)
+			client := b.clients["google"].(llm.GoogleClients)
+			return newFn(*optsPtr.(*llm.GoogleOptions), client.Genkit)
 		case "openai", "groq":
 			newFn := constructor.(func(llm.OpenAIOptions, *openai.Client) (llm.Client, error))
 			client := b.clients[cfg.Provider].(*openai.Client)
@@ -883,11 +803,11 @@ func (b *Builder) buildEmbedder() error {
 		} else if o, ok := b.embedderParams["typedConfig"].(embed.GoogleEmbedderOptions); ok {
 			opts = o
 		}
-		client, ok := b.clients["google"].(googleClients)
+		client, ok := b.clients["google"].(llm.GoogleClients)
 		if !ok {
 			return fmt.Errorf("invalid client type for google embedder")
 		}
-		b.embedder, err = newFn(opts, client.genai)
+		b.embedder, err = newFn(opts, client.Genai)
 
 	case "openai", "groq":
 		newFn, ok := constructor.(func(embed.OpenAIEmbedderOptions, *openai.Client) (ai.Embedder, error))
@@ -1255,11 +1175,11 @@ func (b *Builder) buildLLM() error {
 		} else if o, ok := b.llmParams["typedConfig"].(llm.GoogleOptions); ok {
 			opts = o
 		}
-		client, ok := b.clients["google"].(googleClients)
+		client, ok := b.clients["google"].(llm.GoogleClients)
 		if !ok {
 			return fmt.Errorf("invalid client type for google llm")
 		}
-		b.opts.LLM, err = newFn(opts, client.genkit)
+		b.opts.LLM, err = newFn(opts, client.Genkit)
 
 	case "openai", "groq":
 		newFn, ok := constructor.(func(llm.OpenAIOptions, *openai.Client) (llm.Client, error))
