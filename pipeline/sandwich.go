@@ -217,10 +217,10 @@ func (s *Sandwich) Execute(ctx context.Context, sessionID string, q core.Query) 
 		// Marshal the updated history to JSON before saving.
 		updatedStateBytes, err := json.Marshal(history)
 		if err != nil {
-			logger.Errorf("Failed to marshal updated state for session %s: %v", sessionID, err)
+			logger.Warnf("Failed to marshal updated state for session %s: %v", sessionID, err)
 		} else {
 			if err := s.stateProvider.Set(ctx, sessionID, updatedStateBytes); err != nil {
-				logger.Errorf("Failed to save state for session %s: %v", sessionID, err)
+				logger.Warnf("Failed to save state for session %s: %v", sessionID, err)
 			}
 		}
 	}

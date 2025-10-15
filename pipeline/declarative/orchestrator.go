@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"encoding/json"
 	"sort"
 	"strconv"
 	"time"
@@ -170,7 +171,28 @@ func (o *DeclarativeOrchestrator) Execute(ctx context.Context, sessionID string,
 	requestID := uuid.NewString()
 	logger := o.obs.Logger.With("request_id", requestID, "session_id", sessionID)
 	logger.Infof("pipeline run started", "query", q.Text)
-	// 1. Query the static execution plan.
+
+	var history core.ConversationHistory
+	var llmErr error
+
+	// 1. RETRIEVE STATE: If a state provider and sessionID are available, get the history.
+	if o.stateProvider != nil && sessionID != "" {
+		rawState, err := o.stateProvider.Get(ctx, sessionID)
+		if err != nil {
+			logger.Warnf("Failed to retrieve state for session %s: %v", sessionID, err)
+			// Do not fail the request, just proceed without history.
+		}
+
+		if rawState != nil {
+			if stateBytes, ok := rawState.([]byte); ok {
+				if err := json.Unmarshal(stateBytes, &history); err != nil {
+					logger.Warnf("Failed to unmarshal state for session %s: %v", sessionID, err)
+				}
+			}
+		}
+	}
+
+	// 2. Query the static execution plan.
 	stages, err := o.getFlowStages(ctx)
 	if err != nil {
 		err = fmt.Errorf("could not get flow stages for flow '%s': %w", o.flowName, err)
@@ -200,6 +222,13 @@ func (o *DeclarativeOrchestrator) Execute(ctx context.Context, sessionID string,
 		contextKeyAnswer: core.Answer{Meta: map[string]any{}},
 		contextKeyMeta:   map[string]any{},
 	}
+
+	// Pass history to the prompt.
+	if q.Meta == nil {
+		q.Meta = make(map[string]any)
+	}
+	q.Meta["history"] = history.Messages
+	execContext[contextKeyQuery] = q
 
 	// 3b. Apply mutations from pre-rules so filters/expansions are present in Query.Meta.
 	if preResult.Mutate != nil {
@@ -254,6 +283,28 @@ func (o *DeclarativeOrchestrator) Execute(ctx context.Context, sessionID string,
 	if !ok {
 		return core.Answer{}, fmt.Errorf("execution context ended without a valid answer object")
 	}
+
+	// 6. UPDATE AND SAVE STATE: After a successful LLM call, update and save the history.
+	if o.stateProvider != nil && sessionID != "" && llmErr == nil {
+		// Append the user's query and the model's answer to the history.
+		history.Messages = append(history.Messages, core.Message{Role: "user", Content: q.Text})
+		history.Messages = append(history.Messages, core.Message{Role: "model", Content: finalAnswer.Text})
+
+		// Marshal the updated history to JSON before saving.
+		updatedStateBytes, err := json.Marshal(history)
+		if err != nil {
+			logger.Warnf("Failed to marshal updated state for session %s: %v", sessionID, err)
+		} else {
+			if err := o.stateProvider.Set(ctx, sessionID, updatedStateBytes); err != nil {
+				logger.Warnf("Failed to save state for session %s: %v", sessionID, err)
+			}
+		}
+	}
+
+	if llmErr != nil {
+		return finalAnswer, llmErr
+	}
+
 	logger.Infof("pipeline run finished successfully")
 	return finalAnswer, nil
 }
