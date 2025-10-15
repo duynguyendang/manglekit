@@ -20,8 +20,8 @@ const (
 	collectionName = "manglekit-localvec-collection"
 )
 
-func init() {
-	manglekit.Register("localvec", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+func Register(r *manglekit.Registry) {
+	r.Register("localvec", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(core.LocalvecOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected core.LocalvecOptions, got %T", options)
@@ -32,7 +32,7 @@ func init() {
 		}
 		return New(ctx, opts, embedder)
 	})
-	manglekit.RegisterOptions("localvec", (*core.LocalvecOptions)(nil))
+	r.RegisterOptions("localvec", (*core.LocalvecOptions)(nil))
 }
 
 // LocalVecStore implements the core.VectorStore interface using Genkit's localvec.

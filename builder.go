@@ -39,12 +39,10 @@ import (
 //		log.Fatalf("Failed to build orchestrator: %v", err)
 //	}
 type Builder struct {
-	opts   core.Options
-	config *Config
-	errs   []error
-	// configDir captures the directory where a YAML configuration file was loaded
-	// from. It allows relative paths in tool params to be resolved lazily during
-	// buildSingleTool.
+	opts      core.Options
+	config    *Config
+	errs      []error
+	registry  *Registry
 	configDir string
 
 	// Declarative flow fields
@@ -89,9 +87,10 @@ type closer interface {
 // NewBuilder returns a new, empty instance of the fluent builder, ready to be
 // configured. This is the primary entry point for programmatically constructing a
 // MangleKit orchestrator.
-func NewBuilder() *Builder {
+func NewBuilder(r *Registry) *Builder {
 	b := &Builder{
 		config:        &Config{},
+		registry:      r,
 		clients:       make(map[string]any),
 		resolvedCfgs:  make(map[string]any),
 		providerNames: make(map[string]string),
@@ -340,7 +339,7 @@ func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, provi
 		return nil // Already resolved.
 	}
 
-	factory, err := Get(Registry.ClientFactories, providerName)
+	factory, err := Get(b.registry.ClientFactories, providerName)
 	if err != nil {
 		// Not all providers have client factories, so this is not an error.
 		return nil
@@ -599,11 +598,11 @@ func (b *Builder) buildSingleTool(ctx context.Context, name string, cfg ToolConf
 		deps["dense"] = dense
 	}
 
-	factory, err := Get(Registry.Component, cfg.Provider)
+	factory, err := Get(b.registry.Component, cfg.Provider)
 	if err != nil {
 		// Try to fall back to the state provider registry for state-related tools.
 		// This is a temporary workaround until state providers are fully unified.
-		stateFactory, err := Get(Registry.StateProviders, cfg.Provider)
+		stateFactory, err := Get(b.registry.StateProviders, cfg.Provider)
 		if err != nil {
 			return nil, fmt.Errorf("unsupported tool provider: %q", cfg.Provider)
 		}
@@ -698,7 +697,7 @@ func (b *Builder) buildEmbedder() error {
 
 	b.opts.Obs.Logger.Debugf("building embedder %q", b.embedderName)
 
-	factory, err := Get(Registry.Component, b.embedderName)
+	factory, err := Get(b.registry.Component, b.embedderName)
 	if err != nil {
 		return fmt.Errorf("failed to get factory for embedder '%s': %w", b.embedderName, err)
 	}
@@ -739,7 +738,7 @@ func (b *Builder) buildVectorStore(ctx context.Context) error {
 
 	b.opts.Obs.Logger.Debugf("building vector store %q", b.vectorStoreName)
 
-	factory, err := Get(Registry.Component, b.vectorStoreName)
+	factory, err := Get(b.registry.Component, b.vectorStoreName)
 	if err != nil {
 		return fmt.Errorf("failed to get factory for vector store '%s': %w", b.vectorStoreName, err)
 	}
@@ -772,7 +771,7 @@ func (b *Builder) buildVectorStore(ctx context.Context) error {
 }
 
 func (b *Builder) buildRetrieverComponent(name string, params map[string]any) (retrieve.Retriever, error) {
-	factory, err := Get(Registry.Component, name)
+	factory, err := Get(b.registry.Component, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get factory for retriever '%s': %w", name, err)
 	}
@@ -813,7 +812,7 @@ func (b *Builder) buildRetriever() error {
 		deps["bm25"] = bm25Retriever
 		deps["dense"] = denseRetriever
 
-		factory, err := Get(Registry.Component, "hybrid")
+		factory, err := Get(b.registry.Component, "hybrid")
 		if err != nil {
 			return fmt.Errorf("failed to get factory for retriever 'hybrid': %w", err)
 		}
@@ -844,7 +843,7 @@ func (b *Builder) buildReranker() error {
 
 	b.opts.Obs.Logger.Debugf("building reranker %q", b.rerankerName)
 
-	factory, err := Get(Registry.Component, b.rerankerName)
+	factory, err := Get(b.registry.Component, b.rerankerName)
 	if err != nil {
 		return fmt.Errorf("failed to get factory for reranker '%s': %w", b.rerankerName, err)
 	}
@@ -876,7 +875,7 @@ func (b *Builder) buildRules(ctx context.Context) error {
 	}
 	b.opts.Obs.Logger.Debugf("building rules engine %q", b.rulesName)
 
-	factory, err := Get(Registry.Component, b.rulesName)
+	factory, err := Get(b.registry.Component, b.rulesName)
 	if err != nil {
 		return err
 	}
@@ -895,8 +894,10 @@ func (b *Builder) buildRules(ctx context.Context) error {
 	if opts.Logger == nil {
 		opts.Logger = b.opts.Obs.Logger.With("component", "rules", "provider", b.rulesName)
 	}
+	deps := make(FactoryDeps)
+	deps["registry"] = b.registry
 
-	ruleset, err := factory(ctx, opts, nil)
+	ruleset, err := factory(ctx, opts, deps)
 	if err != nil {
 		err = fmt.Errorf("failed to build rules '%s': %w", b.rulesName, err)
 		b.opts.Obs.Logger.Errorf(err.Error())
@@ -914,7 +915,7 @@ func (b *Builder) buildLLM() error {
 
 	b.opts.Obs.Logger.Debugf("building llm %q", b.llmName)
 
-	factory, err := Get(Registry.Component, b.llmName)
+	factory, err := Get(b.registry.Component, b.llmName)
 	if err != nil {
 		return fmt.Errorf("failed to get factory for llm '%s': %w", b.llmName, err)
 	}
@@ -972,7 +973,7 @@ func (b *Builder) buildStateProvider(ctx context.Context) error {
 
 	b.opts.Obs.Logger.Debugf("building state provider %q", b.stateProviderName)
 
-	factory, err := Get(Registry.StateProviders, b.stateProviderName)
+	factory, err := Get(b.registry.StateProviders, b.stateProviderName)
 	if err != nil {
 		return fmt.Errorf("failed to get factory for state provider '%s': %w", b.stateProviderName, err)
 	}

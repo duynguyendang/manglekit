@@ -1,73 +1,69 @@
-// Package main for 03-custom-prompt demonstrates how to override the default
-// RAG prompt template with a custom one.
-//
-// The `config.yaml` file specifies a `promptTemplate` for the LLM component.
-// This allows you to change the instructions given to the language model to
-// better suit a specific task, such as asking it to adopt a certain persona
-// or to format its output in a particular way (e.g., as JSON).
 package main
 
 import (
 	"context"
-	"fmt"
+	"flag"
 	"log"
-	"path/filepath"
-	"runtime"
 
 	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/core"
-	_ "github.com/duynguyendang/manglekit/providers/all"
+	"github.com/duynguyendang/manglekit/internal/embedders/google"
+	"github.com/duynguyendang/manglekit/internal/embedders/openai"
+	"github.com/duynguyendang/manglekit/internal/providers/bm25"
+	"github.com/duynguyendang/manglekit/internal/providers/dense"
+	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
+	"github.com/duynguyendang/manglekit/internal/providers/llm"
+	"github.com/duynguyendang/manglekit/internal/providers/mangle"
+	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
+	inmemory "github.com/duynguyendang/manglekit/internal/providers/retrievers/inmemory"
+	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
+	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
 	"github.com/duynguyendang/manglekit/retrieve"
-	"github.com/joho/godotenv"
 )
 
-// This example demonstrates how to use a custom prompt.
-//
-// In this example, we'll create an in-memory retriever and then use a custom
-// prompt to generate the answer.
+func registerAllProviders(r *manglekit.Registry) {
+	// LLM Providers
+	llm.RegisterGoogle(r)
+	llm.RegisterOpenAI(r)
+
+	// Embedder Providers
+	google.Register(r)
+	openai.Register(r)
+
+	// Retriever Providers
+	inmemory.Register(r)
+	bm25.Register(r)
+	dense.Register(r)
+	hybrid.Register(r)
+
+	// Reranker Providers
+	cosine.Register(r)
+
+	// Rules Providers
+	mangle.Register(r)
+
+	// Schema Parser Providers
+	jsonschema.Register(r)
+	rdf.Register(r)
+
+	// Options
+	r.RegisterOptions("bm25", (*retrieve.BM25Options)(nil))
+}
+
 func main() {
-	_ = godotenv.Load()
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		log.Fatalf("failed to get current file path")
-	}
-	dir := filepath.Dir(currentFile)
-	configPath := filepath.Join(dir, "config.yaml")
+	configFile := flag.String("config", "config.yaml", "Path to the configuration file")
+	flag.Parse()
 
-	// 1. Load the base configuration from YAML.
-	// This will set up the Mangle rules and the LLM.
-	builder, err := manglekit.NewBuilderFromYAML(configPath)
+	registry := manglekit.NewRegistry()
+	registerAllProviders(registry)
+
+	builder, err := manglekit.NewBuilderFromYAML(*configFile, registry)
 	if err != nil {
-		log.Fatalf("failed to create builder from yaml: %v", err)
+		log.Fatalf("failed to create builder: %v", err)
 	}
-
-	// 2. Programmatically configure the in-memory retriever with documents.
-	builder.WithRetriever(&retrieve.InMemoryOptions{
-		Documents: []core.Doc{
-			{
-				ID:   "doc1",
-				Text: "Mangle is a tool for building and running RAG pipelines.",
-			},
-			{
-				ID:   "doc2",
-				Text: "Mangle is easy to use, flexible, and extensible.",
-			},
-		},
-	})
-
-	// 3. Build the pipeline.
 	ctx := context.Background()
-	pipeline, err := builder.Build(ctx)
+	orch, err := builder.Build(ctx)
 	if err != nil {
-		log.Fatalf("failed to build pipeline: %v", err)
+		log.Fatalf("failed to build orchestrator: %v", err)
 	}
-	defer pipeline.Close(ctx)
-
-	// 4. Run the pipeline.
-	resp, err := pipeline.Execute(ctx, "session-1", core.Query{Text: "what is mangle?"})
-	if err != nil {
-		log.Fatalf("failed to run pipeline: %v", err)
-	}
-
-	fmt.Println(resp.Text)
+	defer orch.Close(ctx)
 }

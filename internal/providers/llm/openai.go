@@ -14,7 +14,7 @@ import (
 	"github.com/openai/openai-go/option"
 )
 
-func init() {
+func RegisterOpenAI(r *manglekit.Registry) {
 	factory := func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(llm.OpenAIOptions)
 		if !ok {
@@ -26,12 +26,12 @@ func init() {
 		}
 		return NewOpenAI(opts, client)
 	}
-	manglekit.Register("openai", factory)
-	manglekit.Register("groq", factory)
-	manglekit.RegisterOptions("openai", (*llm.OpenAIOptions)(nil))
-	manglekit.RegisterOptions("groq", (*llm.OpenAIOptions)(nil))
-	manglekit.RegisterClientFactory("openai", openAIClientFactory)
-	manglekit.RegisterClientFactory("groq", groqClientFactory)
+	r.Register("openai", factory)
+	r.Register("groq", factory)
+	r.RegisterOptions("openai", (*llm.OpenAIOptions)(nil))
+	r.RegisterOptions("groq", (*llm.OpenAIOptions)(nil))
+	r.RegisterClientFactory("openai", openAIClientFactory)
+	r.RegisterClientFactory("groq", groqClientFactory)
 }
 
 // newOpenAICompatibleClient is a helper that creates a client for any OpenAI-compatible API.

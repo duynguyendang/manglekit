@@ -24,15 +24,15 @@ const (
 	b_param = 0.75
 )
 
-func init() {
-	manglekit.Register("bm25", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+func Register(r *manglekit.Registry) {
+	r.Register("bm25", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(retrieve.BM25Options)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected retrieve.BM25Options, got %T", options)
 		}
 		return New(opts)
 	})
-	manglekit.RegisterOptions("bm25", (*retrieve.BM25Options)(nil))
+	r.RegisterOptions("bm25", (*retrieve.BM25Options)(nil))
 }
 
 // tfidfDoc is a wrapper for ai.Document to implement the tfidf.Document interface.

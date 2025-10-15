@@ -21,8 +21,8 @@ import (
 	"google.golang.org/api/option"
 )
 
-func init() {
-	manglekit.Register("google", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+func RegisterGoogle(r *manglekit.Registry) {
+	r.Register("google", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(llm.GoogleOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type for google llm: expected llm.GoogleOptions, got %T", options)
@@ -33,8 +33,8 @@ func init() {
 		}
 		return NewGoogle(opts, client)
 	})
-	manglekit.RegisterOptions("google", (*llm.GoogleOptions)(nil))
-	manglekit.RegisterClientFactory("google", googleClientFactory)
+	r.RegisterOptions("google", (*llm.GoogleOptions)(nil))
+	r.RegisterClientFactory("google", googleClientFactory)
 }
 
 func googleClientFactory(ctx context.Context, cfg *manglekit.Config) (any, core.ResourceCloser, error) {

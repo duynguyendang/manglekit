@@ -17,11 +17,11 @@ import (
 // It is currently empty but is defined for future use and consistency.
 type Options struct{}
 
-func init() {
-	manglekit.Register("rdf", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+func Register(r *manglekit.Registry) {
+	r.Register("rdf", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		return New(nil)
 	})
-	manglekit.RegisterOptions("rdf", (*Options)(nil))
+	r.RegisterOptions("rdf", (*Options)(nil))
 }
 
 // RDFParser implements the `core.SchemaParser` interface for RDF files. It uses

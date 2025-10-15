@@ -18,8 +18,8 @@ type Options struct {
 	VectorStore string `json:"vectorStore"`
 }
 
-func init() {
-	manglekit.Register("dense", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+func Register(r *manglekit.Registry) {
+	r.Register("dense", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		_, ok := options.(Options)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected dense.Options, got %T", options)
@@ -34,7 +34,7 @@ func init() {
 		}
 		return New(embedder, vectorStore)
 	})
-	manglekit.RegisterOptions("dense", (*Options)(nil))
+	r.RegisterOptions("dense", (*Options)(nil))
 }
 
 // Dense implements the `retrieve.Retriever` interface for dense, vector-based

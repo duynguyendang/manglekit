@@ -84,42 +84,43 @@ type mockRulesOptions struct{}
 type mockEmbedderOptions struct{}
 type mockStateProviderOptions struct{}
 
-func TestMain(m *testing.M) {
-	Register("mock-retriever", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
+func registerTestComponents(r *Registry) {
+	r.Register("mock-retriever", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
 		return &mockRetriever{}, nil
 	})
-	Register("mock-reranker", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
+	r.Register("mock-reranker", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
 		return &mockReranker{}, nil
 	})
-	Register("mock-llm", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
+	r.Register("mock-llm", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
 		return &mockLLM{}, nil
 	})
-	Register("mock-rules", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
+	r.Register("mock-rules", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
 		return &mockRules{}, nil
 	})
-	Register("mock-embedder", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
+	r.Register("mock-embedder", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
 		return &mockEmbedder{}, nil
 	})
-	Register("mock-vs", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
+	r.Register("mock-vs", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
 		return &mockVectorStore{}, nil
 	})
 
-	RegisterOptions("mock-retriever", (*mockRetrieverOptions)(nil))
-	RegisterOptions("mock-reranker", (*mockRerankerOptions)(nil))
-	RegisterOptions("mock-llm", (*mockLLMOptions)(nil))
-	RegisterOptions("mock-rules", (*mockRulesOptions)(nil))
-	RegisterOptions("mock-embedder", (*mockEmbedderOptions)(nil))
-	RegisterOptions("mock-vs", (*core.LocalvecOptions)(nil))
-	RegisterStateProvider("mock-sp", func(ctx context.Context, opts any, deps FactoryDeps) (core.StateProvider, error) {
+	r.RegisterOptions("mock-retriever", (*mockRetrieverOptions)(nil))
+	r.RegisterOptions("mock-reranker", (*mockRerankerOptions)(nil))
+	r.RegisterOptions("mock-llm", (*mockLLMOptions)(nil))
+	r.RegisterOptions("mock-rules", (*mockRulesOptions)(nil))
+	r.RegisterOptions("mock-embedder", (*mockEmbedderOptions)(nil))
+	r.RegisterOptions("mock-vs", (*core.LocalvecOptions)(nil))
+	r.RegisterStateProvider("mock-sp", func(ctx context.Context, opts any, deps FactoryDeps) (core.StateProvider, error) {
 		return &mockStateProvider{}, nil
 	})
-	RegisterOptions("mock-sp", (*mockStateProviderOptions)(nil))
-
-	m.Run()
+	r.RegisterOptions("mock-sp", (*mockStateProviderOptions)(nil))
 }
 
 func TestBuilder(t *testing.T) {
-	b := NewBuilder()
+	r := NewRegistry()
+	registerTestComponents(r)
+
+	b := NewBuilder(r)
 	if b == nil {
 		t.Fatal("expected builder to be non-nil")
 	}
@@ -152,7 +153,10 @@ func TestBuilder(t *testing.T) {
 }
 
 func TestBuild(t *testing.T) {
-	b := NewBuilder()
+	r := NewRegistry()
+	registerTestComponents(r)
+
+	b := NewBuilder(r)
 	b.WithRetriever(&mockRetrieverOptions{})
 	b.WithLLM(&mockLLMOptions{})
 	b.WithEmbedder(&mockEmbedderOptions{})
@@ -169,7 +173,10 @@ func TestBuild(t *testing.T) {
 
 func TestBuildWithMockRerankerAndNoEmbedder(t *testing.T) {
 	t.Parallel()
-	builder := NewBuilder().
+	r := NewRegistry()
+	registerTestComponents(r)
+
+	builder := NewBuilder(r).
 		WithRetriever(&mockRetrieverOptions{}).
 		WithReranker(&mockRerankerOptions{}).
 		WithLLM(&mockLLMOptions{})
@@ -197,7 +204,10 @@ func TestBuildWithMockRerankerAndNoEmbedder(t *testing.T) {
 }
 
 func TestBuilderWithStateProvider(t *testing.T) {
-	b := NewBuilder()
+	r := NewRegistry()
+	registerTestComponents(r)
+
+	b := NewBuilder(r)
 	b.WithStateProvider(&mockStateProviderOptions{})
 	if b.stateProviderName != "mock-sp" {
 		t.Errorf("expected state provider name to be mock-sp, got %s", b.stateProviderName)

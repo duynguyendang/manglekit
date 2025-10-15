@@ -1,110 +1,69 @@
-// Package main for 04-declarative-flow demonstrates the power of the declarative
-// orchestrator. In this mode, the execution logic of the pipeline is not defined
-// in Go code but is instead described by Datalog facts in a `.dlog` file.
-//
-// This example defines a `main_flow` in `rules/flow.dlog` that includes stages
-// for retrieval and LLM generation. It also shows how pre-rules can dynamically
-// skip stages of the flow based on the incoming query, providing a level of
-// flexibility not possible with the linear "sandwich" orchestrator.
 package main
 
 import (
 	"context"
-	"errors"
-	"fmt"
+	"flag"
 	"log"
-	"path/filepath"
-	"runtime"
 
 	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/core"
-	_ "github.com/duynguyendang/manglekit/providers/all"
-	"github.com/joho/godotenv"
+	"github.com/duynguyendang/manglekit/internal/embedders/google"
+	"github.com/duynguyendang/manglekit/internal/embedders/openai"
+	"github.com/duynguyendang/manglekit/internal/providers/bm25"
+	"github.com/duynguyendang/manglekit/internal/providers/dense"
+	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
+	"github.com/duynguyendang/manglekit/internal/providers/llm"
+	"github.com/duynguyendang/manglekit/internal/providers/mangle"
+	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
+	inmemory "github.com/duynguyendang/manglekit/internal/providers/retrievers/inmemory"
+	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
+	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
+	"github.com/duynguyendang/manglekit/retrieve"
 )
 
+func registerAllProviders(r *manglekit.Registry) {
+	// LLM Providers
+	llm.RegisterGoogle(r)
+	llm.RegisterOpenAI(r)
+
+	// Embedder Providers
+	google.Register(r)
+	openai.Register(r)
+
+	// Retriever Providers
+	inmemory.Register(r)
+	bm25.Register(r)
+	dense.Register(r)
+	hybrid.Register(r)
+
+	// Reranker Providers
+	cosine.Register(r)
+
+	// Rules Providers
+	mangle.Register(r)
+
+	// Schema Parser Providers
+	jsonschema.Register(r)
+	rdf.Register(r)
+
+	// Options
+	r.RegisterOptions("bm25", (*retrieve.BM25Options)(nil))
+}
+
 func main() {
-	_ = godotenv.Load() // Load .env file if present.
+	configFile := flag.String("config", "config.yaml", "Path to the configuration file")
+	flag.Parse()
+
+	registry := manglekit.NewRegistry()
+	registerAllProviders(registry)
+
+	builder, err := manglekit.NewBuilderFromYAML(*configFile, registry)
+	if err != nil {
+		log.Fatalf("failed to create builder: %v", err)
+	}
 	ctx := context.Background()
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		log.Fatalf("failed to get current file path")
-	}
-	dir := filepath.Dir(currentFile)
-	configPath := filepath.Join(dir, "config.yaml")
-
-	// 1. Load the base configuration from YAML.
-	// This will set up the Mangle rules and the LLM.
-	builder, err := manglekit.NewBuilderFromYAML(configPath)
+	orch, err := builder.Build(ctx)
 	if err != nil {
-		log.Fatalf("Failed to create builder from yaml: %v", err)
+		log.Fatalf("failed to build orchestrator: %v", err)
 	}
-	log.Println("Successfully created builder from YAML.")
-
-	// 2. Build the orchestrator.
-
-	// The Build() method now reads the orchestrator type from the config.
-	// It sees "declarative", builds the dependency graph of tools, and then
-	// instantiates the DeclarativeOrchestrator with the built tools and ruleset.
-	orchestrator, err := builder.Build(ctx)
-	if err != nil {
-		log.Fatalf("Failed to build orchestrator: %v", err)
-	}
-	defer orchestrator.Close(ctx)
-
-	log.Println("Successfully built declarative orchestrator.")
-
-	runQuery := func(label string, q core.Query) {
-		log.Printf("Executing %s: %q\n", label, q.Text)
-		answer, err := orchestrator.Execute(ctx, "session-1", q)
-
-		switch {
-		case errors.Is(err, core.ErrDenied):
-			fmt.Println("--------------------")
-			fmt.Printf("%s denied: %v\n", label, answer.Meta["denial_reason"])
-			if ruleResults, ok := answer.Meta["rule_results"]; ok {
-				fmt.Printf("Rule results: %#v\n", ruleResults)
-			}
-			fmt.Println("--------------------")
-			return
-		case err != nil:
-			log.Fatalf("Orchestrator run failed: %v", err)
-		}
-
-		fmt.Println("--------------------")
-		fmt.Printf("%s Answer: %s\n", label, answer.Text)
-		if len(answer.Citations) > 0 {
-			fmt.Println("Citations:")
-			for _, c := range answer.Citations {
-				fmt.Printf(" - %s (%s)\n", c.ID, c.Source)
-			}
-		}
-		if ruleResults, ok := answer.Meta["rule_results"]; ok {
-			fmt.Printf("Rule results: %#v\n", ruleResults)
-		}
-		if redactions, ok := answer.Meta["redactions"]; ok {
-			fmt.Printf("Redactions applied: %#v\n", redactions)
-		}
-		fmt.Println("--------------------")
-	}
-
-	runQuery("Employee", core.Query{
-		Text: "What is the capital of France?",
-		Meta: map[string]any{
-			"user_context": map[string]any{"role": "employee"},
-		},
-	})
-
-	runQuery("Guest", core.Query{
-		Text: "What is the capital of France?",
-		Meta: map[string]any{
-			"user_context": map[string]any{"role": "guest"},
-		},
-	})
-
-	runQuery("No LLM", core.Query{
-		Text: "What is the capital of France? (no_llm)",
-		Meta: map[string]any{
-			"user_context": map[string]any{"role": "guest"},
-		},
-	})
+	defer orch.Close(ctx)
 }

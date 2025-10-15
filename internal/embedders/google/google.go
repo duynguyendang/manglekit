@@ -20,8 +20,8 @@ const (
 	defaultDim            = 768
 )
 
-func init() {
-	manglekit.Register("google-embedder", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+func Register(r *manglekit.Registry) {
+	r.Register("google-embedder", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(embed.GoogleEmbedderOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected embed.GoogleEmbedderOptions, got %T", options)
@@ -32,7 +32,7 @@ func init() {
 		}
 		return New(opts, g)
 	})
-	manglekit.RegisterOptions("google-embedder", (*embed.GoogleEmbedderOptions)(nil))
+	r.RegisterOptions("google-embedder", (*embed.GoogleEmbedderOptions)(nil))
 }
 
 // GoogleEmbedder implements the `ai.Embedder` interface from Genkit, providing
