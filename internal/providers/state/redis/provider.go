@@ -12,12 +12,12 @@ import (
 )
 
 func init() {
-	manglekit.RegisterStateProvider("redis", func(options any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
+	manglekit.RegisterStateProvider("redis", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
 		opts, ok := options.(state.RedisOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected state.RedisOptions, got %T", options)
 		}
-		return New(opts)
+		return New(ctx, opts)
 	})
 	manglekit.RegisterOptions("redis", (*state.RedisOptions)(nil))
 }
@@ -31,7 +31,7 @@ type Provider struct {
 // New creates a new Redis state provider. It initializes a connection to the
 // Redis server using the provided options and pings the server to ensure
 // connectivity before returning the provider instance.
-func New(opts state.RedisOptions) (core.StateProvider, error) {
+func New(ctx context.Context, opts state.RedisOptions) (core.StateProvider, error) {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     opts.Addr,
 		Password: opts.Password,
@@ -39,7 +39,7 @@ func New(opts state.RedisOptions) (core.StateProvider, error) {
 	})
 
 	// Verify the connection.
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
+	if err := rdb.Ping(ctx).Err(); err != nil {
 		return nil, err
 	}
 

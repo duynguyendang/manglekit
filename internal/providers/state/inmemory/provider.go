@@ -11,7 +11,7 @@ import (
 )
 
 func init() {
-	manglekit.RegisterStateProvider("inmemory", func(options any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
+	manglekit.RegisterStateProvider("inmemory", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
 		opts, ok := options.(state.InMemoryOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected state.InMemoryOptions, got %T", options)

@@ -17,7 +17,7 @@ func TestRedisStateProvider(t *testing.T) {
 	defer s.Close()
 
 	ctx := context.Background()
-	provider, err := New(state.RedisOptions{Addr: s.Addr()})
+	provider, err := New(ctx, state.RedisOptions{Addr: s.Addr()})
 	if err != nil {
 		t.Fatalf("failed to create redis state provider: %v", err)
 	}

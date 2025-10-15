@@ -37,7 +37,7 @@ func init() {
 	manglekit.RegisterClientFactory("google", googleClientFactory)
 }
 
-func googleClientFactory(cfg *manglekit.Config) (any, core.ResourceCloser, error) {
+func googleClientFactory(ctx context.Context, cfg *manglekit.Config) (any, core.ResourceCloser, error) {
 	if cfg.Providers.Google == nil {
 		return nil, nil, errors.New("missing providers.google config for google client factory")
 	}
@@ -51,11 +51,8 @@ func googleClientFactory(cfg *manglekit.Config) (any, core.ResourceCloser, error
 		return nil, nil, fmt.Errorf("missing apiKey for provider 'google': please provide it via config or GOOGLE_API_KEY env var")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
 	g, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
 	if err != nil {
-		cancel()
 		return nil, nil, fmt.Errorf("failed to create genai client: %w", err)
 	}
 
@@ -64,16 +61,12 @@ func googleClientFactory(cfg *manglekit.Config) (any, core.ResourceCloser, error
 	clients := llm.GoogleClients{
 		Genkit: gkit,
 		Genai:  g,
-		Cancel: cancel,
 	}
 
 	var once sync.Once
 	var closeErr error
 	closer := func(closeCtx context.Context) error {
 		once.Do(func() {
-			if clients.Cancel != nil {
-				clients.Cancel()
-			}
 			if clients.Genai != nil {
 				if err := clients.Genai.Close(); err != nil {
 					closeErr = errors.Join(closeErr, err)
