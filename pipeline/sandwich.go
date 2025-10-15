@@ -2,13 +2,13 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
 	obslogger "github.com/duynguyendang/manglekit/internal/logger"
+	"github.com/duynguyendang/manglekit/internal/statehelper"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
@@ -25,12 +25,13 @@ import (
 // 3.  **LLM Call**: Synthesize an answer based on the evidence.
 // 4.  **Post-retrieval rules**: Filter the final answer and citations for compliance.
 type Sandwich struct {
-	opts          core.Options
-	retriever     retrieve.Retriever
-	reranker      rerank.Reranker
-	llm           llm.Client
-	stateProvider core.StateProvider
-	closers       []core.ResourceCloser
+	opts                core.Options
+	retriever           retrieve.Retriever
+	reranker            rerank.Reranker
+	llm                 llm.Client
+	stateProvider       core.StateProvider
+	closers             []core.ResourceCloser
+	conversationManager *statehelper.ConversationManager
 }
 
 // NewSandwich creates a new Sandwich orchestrator from a set of options.
@@ -44,8 +45,9 @@ type Sandwich struct {
 // component is missing or has an invalid type.
 func NewSandwich(o core.Options) (core.Orchestrator, error) {
 	s := &Sandwich{
-		opts:    o,
-		closers: o.ResourceClosers,
+		opts:                o,
+		closers:             o.ResourceClosers,
+		conversationManager: statehelper.NewConversationManager(),
 	}
 	if s.opts.Obs.Logger == nil {
 		s.opts.Obs.Logger = obslogger.NewStdLogger()
@@ -150,26 +152,8 @@ func (s *Sandwich) Execute(ctx context.Context, sessionID string, q core.Query) 
 		Meta: map[string]any{},
 	}
 
-	var history core.ConversationHistory
-
 	// 1. RETRIEVE STATE: If a state provider and sessionID are available, get the history.
-	if s.stateProvider != nil && sessionID != "" {
-		rawState, err := s.stateProvider.Get(ctx, sessionID)
-		if err != nil {
-			logger.Warnf("Failed to retrieve state for session %s: %v", sessionID, err)
-			// Do not fail the request, just proceed without history.
-		}
-
-		if rawState != nil {
-			// Use a type assertion or a helper function to convert the state.
-			// For simplicity, we assume the state is stored as a JSON string.
-			if stateBytes, ok := rawState.([]byte); ok {
-				if err := json.Unmarshal(stateBytes, &history); err != nil {
-					logger.Warnf("Failed to unmarshal state for session %s: %v", sessionID, err)
-				}
-			}
-		}
-	}
+	history := s.conversationManager.LoadHistory(ctx, sessionID, s.stateProvider, logger)
 
 	// 1. Pre-Rules
 	var err error
@@ -209,20 +193,8 @@ func (s *Sandwich) Execute(ctx context.Context, sessionID string, q core.Query) 
 	llmErr := s.runLlm(ctx, logger, q, passages, &answer)
 
 	// 3. UPDATE AND SAVE STATE: After a successful LLM call, update and save the history.
-	if s.stateProvider != nil && sessionID != "" && llmErr == nil {
-		// Append the user's query and the model's answer to the history.
-		history.Messages = append(history.Messages, core.Message{Role: "user", Content: q.Text})
-		history.Messages = append(history.Messages, core.Message{Role: "model", Content: answer.Text})
-
-		// Marshal the updated history to JSON before saving.
-		updatedStateBytes, err := json.Marshal(history)
-		if err != nil {
-			logger.Warnf("Failed to marshal updated state for session %s: %v", sessionID, err)
-		} else {
-			if err := s.stateProvider.Set(ctx, sessionID, updatedStateBytes); err != nil {
-				logger.Warnf("Failed to save state for session %s: %v", sessionID, err)
-			}
-		}
+	if llmErr == nil {
+		s.conversationManager.UpdateAndSaveHistory(ctx, sessionID, s.stateProvider, logger, history, q, answer)
 	}
 
 	if llmErr != nil {
