@@ -1,65 +1,62 @@
-// Package main for 10_chatbot demonstrates the conversational capabilities
-// of the Sandwich orchestrator when paired with a state provider. It simulates
-// a multi-turn conversation with a fixed session ID, showing how the system
-// can maintain context across multiple interactions.
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/llm"
-	_ "github.com/duynguyendang/manglekit/providers/all"
-	"github.com/duynguyendang/manglekit/retrieve"
-	"github.com/duynguyendang/manglekit/state"
-	"github.com/joho/godotenv"
+	"github.com/google/uuid"
 )
 
 func main() {
-	_ = godotenv.Load()
-
-	// Programmatically configure the builder with an in-memory state provider.
-	builder := manglekit.NewBuilder().
-		WithStateProvider(&state.InMemoryOptions{}).
-		WithRetriever(&retrieve.InMemoryOptions{
-			Documents: []core.Doc{
-				{Text: "Mangle is a framework for building RAG applications."},
-				{Text: "It is written in Go."},
-			},
-		}).
-		WithLLM(&llm.OpenAIOptions{}) // Assumes OPENAI_API_KEY is in the environment.
-
 	ctx := context.Background()
-	pipeline, err := builder.Build(ctx)
+	// This example uses the default in-memory state provider.
+	// For production, you would configure a persistent provider (e.g., Redis).
+	builder, err := manglekit.NewBuilderFromYAML("examples/10_chatbot/testdata/config.yaml")
 	if err != nil {
-		log.Fatalf("failed to build pipeline: %v", err)
+		log.Fatalf("Error initializing builder: %v", err)
 	}
-	defer pipeline.Close(ctx)
 
-	sessionID := "chat-session-123"
-
-	// --- Turn 1 ---
-	fmt.Println("--- Turn 1 ---")
-	query1 := core.Query{Text: "What is Mangle?"}
-	fmt.Printf("User: %s\n", query1.Text)
-
-	resp1, err := pipeline.Execute(ctx, sessionID, query1)
+	orchestrator, err := builder.Build(ctx)
 	if err != nil {
-		log.Fatalf("failed to run pipeline (turn 1): %v", err)
+		log.Fatalf("Error building orchestrator: %v", err)
 	}
-	fmt.Printf("LLM: %s\n\n", resp1.Text)
+	defer orchestrator.Close(ctx)
 
-	// --- Turn 2 ---
-	fmt.Println("--- Turn 2 ---")
-	query2 := core.Query{Text: "What language is it written in?"}
-	fmt.Printf("User: %s\n", query2.Text)
+	// Generate a unique session ID for this conversation.
+	sessionID := uuid.NewString()
 
-	resp2, err := pipeline.Execute(ctx, sessionID, query2)
-	if err != nil {
-		log.Fatalf("failed to run pipeline (turn 2): %v", err)
+	fmt.Println("Chatbot session started. Type 'exit' to end.")
+	fmt.Println("=============================================")
+
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		fmt.Print("You: ")
+		userInput, _ := reader.ReadString('\n')
+		userInput = strings.TrimSpace(userInput)
+
+		if strings.ToLower(userInput) == "exit" {
+			fmt.Println("Chatbot session ended.")
+			break
+		}
+
+		if userInput == "" {
+			continue
+		}
+
+		query := core.Query{Text: userInput}
+		answer, err := orchestrator.Execute(ctx, sessionID, query)
+		if err != nil {
+			log.Printf("Error executing query: %v", err)
+			continue
+		}
+
+		fmt.Printf("Bot: %s\n", answer.Text)
 	}
-	fmt.Printf("LLM: %s\n", resp2.Text)
 }
