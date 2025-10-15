@@ -341,7 +341,6 @@ func (b *Builder) WithStateProvider(opts any) BuilderAPI {
 
 // resolveProviderConfig finds the configuration for a given provider by checking params, config object, and env vars.
 func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, providerName string) error {
-	key := fmt.Sprintf("%s.%s", providerType, providerName)
 	if _, exists := b.clients[providerName]; exists {
 		return nil // Already resolved.
 	}
@@ -357,32 +356,7 @@ func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, provi
 		return fmt.Errorf("invalid client factory type for provider '%s'", providerName)
 	}
 
-	var providerConfig any
-	switch providerName {
-	case "google":
-		cfg := b.config.Providers.Google
-		if cfg == nil {
-			cfg = &GoogleConfig{}
-		}
-		providerConfig = cfg
-	case "openai":
-		cfg := b.config.Providers.OpenAI
-		if cfg == nil {
-			cfg = &OpenAIConfig{}
-		}
-		providerConfig = cfg
-	case "groq":
-		cfg := b.config.Providers.Groq
-		if cfg == nil {
-			cfg = &OpenAICompatibleConfig{}
-		}
-		providerConfig = cfg
-	default:
-		// This provider doesn't have a shared client configuration.
-		return nil
-	}
-
-	client, closer, err := clientFactory(providerConfig)
+	client, closer, err := clientFactory(b.config)
 	if err != nil {
 		return fmt.Errorf("failed to create client for provider '%s': %w", providerName, err)
 	}
@@ -391,7 +365,6 @@ func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, provi
 	if closer != nil {
 		b.opts.ResourceClosers = append(b.opts.ResourceClosers, closer)
 	}
-	b.resolvedCfgs[key] = providerConfig // Keep track of resolved configs.
 
 	return nil
 }

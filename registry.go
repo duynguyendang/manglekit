@@ -59,10 +59,11 @@ var Registry = struct {
 }
 
 // ClientFactory defines the contract for a function that creates a shared client
-// for a provider family (e.g., Google, OpenAI). It takes a provider-family-specific
-// config struct (e.g., `config.GoogleConfig`) and returns the initialized client,
-// a `core.ResourceCloser` for graceful shutdown, and an error.
-type ClientFactory func(options any) (client any, closer core.ResourceCloser, err error)
+// for a provider family (e.g., Google, OpenAI). It takes the global `*Config`
+// object and is responsible for extracting its own provider-specific settings.
+// It returns the initialized client, a `core.ResourceCloser` for graceful shutdown,
+// and an error.
+type ClientFactory func(cfg *Config) (client any, closer core.ResourceCloser, err error)
 
 // Bidirectional maps: provider name <-> options pointer type (*T)
 var (

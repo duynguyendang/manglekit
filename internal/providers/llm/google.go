@@ -27,13 +27,13 @@ func init() {
 	manglekit.RegisterClientFactory("google", googleClientFactory)
 }
 
-func googleClientFactory(options any) (any, core.ResourceCloser, error) {
-	cfg, ok := options.(*manglekit.GoogleConfig)
-	if !ok {
-		return nil, nil, fmt.Errorf("unsupported options type for google client factory: %T", options)
+func googleClientFactory(cfg *manglekit.Config) (any, core.ResourceCloser, error) {
+	if cfg.Providers.Google == nil {
+		return nil, nil, errors.New("missing providers.google config for google client factory")
 	}
+	googleCfg := cfg.Providers.Google
 
-	apiKey := cfg.APIKey
+	apiKey := googleCfg.APIKey
 	if apiKey == "" {
 		apiKey = os.Getenv("GOOGLE_API_KEY")
 	}
