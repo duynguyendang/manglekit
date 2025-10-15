@@ -14,8 +14,19 @@ import (
 )
 
 func init() {
-	// Register the type-safe constructor with the MangleKit framework.
-	manglekit.RegisterRetriever("hybrid", New)
+	manglekit.RegisterRetriever("hybrid", func(options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
+		opts, ok := options.(retrieve.HybridOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type, expected retrieve.HybridOptions, got %T", options)
+		}
+		if bm25, ok := deps["bm25"].(retrieve.Retriever); ok {
+			opts.BM25Retriever = bm25
+		}
+		if dense, ok := deps["dense"].(retrieve.Retriever); ok {
+			opts.DenseRetriever = dense
+		}
+		return New(opts)
+	})
 	manglekit.RegisterOptions("hybrid", (*retrieve.HybridOptions)(nil))
 }
 

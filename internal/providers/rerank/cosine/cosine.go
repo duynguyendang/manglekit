@@ -14,8 +14,17 @@ import (
 )
 
 func init() {
-	// Register the type-safe constructor with the MangleKit framework.
-	manglekit.RegisterReranker("cosine", New)
+	manglekit.RegisterReranker("cosine", func(options any, deps manglekit.FactoryDeps) (rerank.Reranker, error) {
+		opts, ok := options.(rerank.CosineOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type, expected rerank.CosineOptions, got %T", options)
+		}
+		embedder, ok := deps["embedder"].(ai.Embedder)
+		if !ok {
+			return nil, fmt.Errorf("missing required dependency 'embedder' of type ai.Embedder")
+		}
+		return New(opts, embedder)
+	})
 	manglekit.RegisterOptions("cosine", (*rerank.CosineOptions)(nil))
 }
 

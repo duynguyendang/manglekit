@@ -25,5 +25,7 @@ func (r *MockReranker) Rerank(ctx context.Context, req rerank.Request) ([]rerank
 }
 
 func init() {
-	manglekit.RegisterReranker("mock", NewMockReranker)
+	manglekit.RegisterReranker("mock", func(options any, deps manglekit.FactoryDeps) (rerank.Reranker, error) {
+		return NewMockReranker(options)
+	})
 }

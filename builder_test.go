@@ -82,28 +82,28 @@ type mockOptions struct{}
 type mockStateProviderOptions struct{}
 
 func TestMain(m *testing.M) {
-	RegisterRetriever("mock", func(opts any) (retrieve.Retriever, error) {
+	RegisterRetriever("mock", func(opts any, deps FactoryDeps) (retrieve.Retriever, error) {
 		return &mockRetriever{}, nil
 	})
-	RegisterReranker("mock", func(opts any) (rerank.Reranker, error) {
+	RegisterReranker("mock", func(opts any, deps FactoryDeps) (rerank.Reranker, error) {
 		return &mockReranker{}, nil
 	})
-	RegisterLLM("mock", func(opts any) (llm.Client, error) {
+	RegisterLLM("mock", func(opts any, deps FactoryDeps) (llm.Client, error) {
 		return &mockLLM{}, nil
 	})
 	RegisterRules("mock", func(opts any) (core.RuleSet, error) {
 		return &mockRules{}, nil
 	})
-	RegisterEmbedder("mock", func(opts any) (ai.Embedder, error) {
+	RegisterEmbedder("mock", func(opts any, deps FactoryDeps) (ai.Embedder, error) {
 		return &mockEmbedder{}, nil
 	})
-	Register("mock-vs", func(ctx context.Context, opts core.LocalvecOptions, embedder ai.Embedder) (core.VectorStore, error) {
+	Register("mock-vs", func(opts any, deps FactoryDeps) (any, error) {
 		return &mockVectorStore{}, nil
 	})
 
 	RegisterOptions("mock", (*mockOptions)(nil))
 	RegisterOptions("mock-vs", (*core.LocalvecOptions)(nil))
-	RegisterStateProvider("mock-sp", func(opts any) (core.StateProvider, error) {
+	RegisterStateProvider("mock-sp", func(opts any, deps FactoryDeps) (core.StateProvider, error) {
 		return &mockStateProvider{}, nil
 	})
 	RegisterOptions("mock-sp", (*mockStateProviderOptions)(nil))

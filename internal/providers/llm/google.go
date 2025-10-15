@@ -22,7 +22,17 @@ import (
 )
 
 func init() {
-	manglekit.RegisterLLM("google", NewGoogle)
+	manglekit.RegisterLLM("google", func(options any, deps manglekit.FactoryDeps) (llm.Client, error) {
+		opts, ok := options.(llm.GoogleOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type for google llm: expected llm.GoogleOptions, got %T", options)
+		}
+		client, ok := deps["client"].(*genkit.Genkit)
+		if !ok {
+			return nil, fmt.Errorf("invalid client type for google llm: expected *genkit.Genkit, got %T", client)
+		}
+		return NewGoogle(opts, client)
+	})
 	manglekit.RegisterOptions("google", (*llm.GoogleOptions)(nil))
 	manglekit.RegisterClientFactory("google", googleClientFactory)
 }

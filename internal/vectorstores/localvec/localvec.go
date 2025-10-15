@@ -21,9 +21,18 @@ const (
 )
 
 func init() {
-	// Register the type-safe constructor directly.
-	// The builder will be responsible for providing the typed dependencies.
-	manglekit.Register("localvec", New)
+	manglekit.Register("localvec", func(options any, deps manglekit.FactoryDeps) (any, error) {
+		opts, ok := options.(core.LocalvecOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type, expected core.LocalvecOptions, got %T", options)
+		}
+		embedder, ok := deps["embedder"].(ai.Embedder)
+		if !ok {
+			return nil, fmt.Errorf("missing required dependency 'embedder' of type ai.Embedder")
+		}
+		return New(context.Background(), opts, embedder)
+	})
+	manglekit.RegisterOptions("localvec", (*core.LocalvecOptions)(nil))
 }
 
 // LocalVecStore implements the core.VectorStore interface using Genkit's localvec.

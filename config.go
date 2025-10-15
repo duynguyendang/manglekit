@@ -50,6 +50,8 @@ type componentCfg struct {
 // provider (e.g., a specific retriever or LLM with its own settings) that can
 // be referenced by name in Datalog rules.
 type ToolConfig struct {
+	// Type is the type of the tool (e.g., "retriever", "llm", "embedder").
+	Type string `yaml:"type"`
 	// Provider is the registered name of the component provider (e.g., "openai", "bm25", "google-embedder").
 	Provider string `yaml:"provider"`
 	// Params is a map of parameters used to configure the tool instance. The

@@ -19,8 +19,21 @@ type Options struct {
 }
 
 func init() {
-	// Register the type-safe constructor with the MangleKit framework.
-	manglekit.RegisterRetriever("dense", New)
+	manglekit.RegisterRetriever("dense", func(options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
+		_, ok := options.(Options)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type, expected dense.Options, got %T", options)
+		}
+		embedder, ok := deps["embedder"].(ai.Embedder)
+		if !ok {
+			return nil, fmt.Errorf("missing required dependency 'embedder' of type ai.Embedder")
+		}
+		vectorStore, ok := deps["vectorStore"].(core.VectorStore)
+		if !ok {
+			return nil, fmt.Errorf("missing required dependency 'vectorStore' of type core.VectorStore")
+		}
+		return New(embedder, vectorStore)
+	})
 	manglekit.RegisterOptions("dense", (*Options)(nil))
 }
 

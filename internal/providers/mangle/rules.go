@@ -170,15 +170,13 @@ func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
 // loadConverter looks up a converter by name from the registry, instantiates it,
 // and returns it as a core.FactConverter.
 func loadConverter(name string) (core.FactConverter, error) {
-	constructor, err := manglekit.Get(manglekit.Registry.Component, name)
+	factory, err := manglekit.Get(manglekit.Registry.Component, name)
 	if err != nil {
 		return nil, err
 	}
-	constructorFn, ok := constructor.(func(map[string]any) (any, error))
-	if !ok {
-		return nil, fmt.Errorf("invalid constructor type for converter '%s'", name)
-	}
-	instance, err := constructorFn(nil) // Assuming no params for now
+	// The factory is now strongly-typed.
+	// The old code assumed no params for converters. We'll pass nil for options and deps.
+	instance, err := factory(nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct converter '%s': %w", name, err)
 	}
@@ -199,22 +197,18 @@ func parseSchemas(sources []core.SchemaSource) ([]ast.Atom, []ast.PredicateSym, 
 	var allDecls []ast.PredicateSym
 
 	for _, source := range sources {
-		// 1. Lookup parser constructor
-		parserConstructor, err := manglekit.Get(manglekit.Registry.SchemaParser, source.Type)
+		// 1. Lookup parser factory
+		factory, err := manglekit.Get(manglekit.Registry.Component, source.Type)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get schema parser constructor '%s': %w", source.Type, err)
+			return nil, nil, fmt.Errorf("failed to get schema parser factory '%s': %w", source.Type, err)
 		}
 
 		// 2. Construct parser
-		constructorFn, ok := parserConstructor.(func(map[string]any) (any, error))
-		if !ok {
-			return nil, nil, fmt.Errorf("invalid constructor type for schema parser '%s'", source.Type)
-		}
-		parserAny, err := constructorFn(nil) // Assume no params for now.
+		instance, err := factory(nil, nil) // Assume no params for now.
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to construct schema parser '%s': %w", source.Type, err)
 		}
-		parser, ok := parserAny.(core.SchemaParser)
+		parser, ok := instance.(core.SchemaParser)
 		if !ok {
 			return nil, nil, fmt.Errorf("constructed parser for '%s' is not a core.SchemaParser", source.Type)
 		}

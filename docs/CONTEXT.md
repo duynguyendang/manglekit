@@ -3,18 +3,19 @@ context_type: codebase_overview
 project: manglekit
 language: go
 version: 2025.10
-last_updated: 2025-10-16
+last_updated: 2025-10-14
 ---
 
 # Manglekit Project Context
 
 ## Overview
-Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine with retrieval, reranking, and LLM calls. The default “Sandwich” pipeline runs **Mangle-Pre → Retrieval → optional Rerank → LLM → Mangle-Post**; an alternate declarative orchestrator drives stage ordering from Mangle facts. Providers are registered at init-time and wired at runtime through the global registry in `registry.go`.
+Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine with retrieval, reranking, and LLM calls. The default “Sandwich” pipeline runs **Mangle-Pre → Retrieval → optional Rerank → LLM → Mangle-Post**; an alternate declarative orchestrator drives stage ordering from Mangle facts. Providers are registered at init-time as factory functions and wired at runtime through the global registry.
 
 ---
 
 ## Core Building Blocks
-- ✅ **Registry (`registry.go`)**: Global maps store constructors for retrievers, rerankers, rules, LLMs, embedders, schema parsers, generic components, and state providers. `RegisterOptions` records typed-nil option pointers for reverse lookups, and `Registry.ClientFactories` lets providers register shared client builders (e.g., OpenAI, Google) that also emit `ResourceCloser`s.
+- ✅ **Registry (`registry.go`)**: Global maps store strongly-typed **factory functions** for retrievers, rerankers, LLMs, embedders, and other components. `Registry.ClientFactories` lets providers register shared client builders (e.g., OpenAI, Google) that also emit `ResourceCloser`s.
+- ✅ **Type Mapping (`typemap.go`)**: Manages the bidirectional mapping between provider names and their option types using `RegisterOptions`.
 - ✅ **Core types & contracts (`core/types.go`, `core/rules.go`)**: `Query`, `Answer`, `Doc`, and `Citation` model pipeline payloads; `Options` now carries the configured `StateProvider`, observability hooks, and a LIFO stack of `ResourceClosers`. Sentinel errors (`ErrInvalidOptions`, `ErrNoEvidence`, `ErrDenied`) and rule interfaces (`RuleSet`, `FlowController`, `PostRuleEvaluator`) gate Sandwich and declarative orchestrators.
 - ✅ **Observability contracts**: `Logger` exposes `{Debug,Info,Warn,Error}f` plus `With` for scoped fields, `Tracer.StartSpan` supplies optional spans, and `Meter.Record` captures latency metrics with arbitrary attributes.
 - ✅ **SDK entry point (`sdk.go`)**: `New` enforces that a retriever and LLM are present, defaults `TopK` to 8 and `MaxTokens` to 512, asserts concrete interfaces, and hands control to `pipeline.NewSandwich`.
@@ -23,11 +24,11 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 ---
 
 ## Orchestrator Construction
-- ⚠️ **Fluent builder (`builder.go`)**
+- ✅ **Fluent builder (`builder.go`)**
   - `NewBuilder` initialises `clients`, `providerNames`, a typed `tools` map for declarative mode, and installs a `StdLogger` so component constructors always receive a non-nil logger.
   - `With*` methods expect registered option pointers (via `RegisterOptions`); they log and accrue errors if unregistered types are supplied. `WithEmbedder` can also inject a pre-built `ai.Embedder`.
   - `resolveDependencies` infers missing embedder names from vector store, dense, hybrid, or cosine options before invoking `resolveProviderConfig`, which currently knows how to bootstrap shared clients for `"google"`, `"openai"`, and `"groq"` using `Registry.ClientFactories` and records any returned closers.
-  - `buildComponents` runs in dependency order (Embedder → VectorStore → Retriever → Reranker → Rules → LLM → StateProvider), asserts constructor signatures per provider, and pushes `Close(context.Context) error` implementations onto `ResourceClosers`. Rule construction only supports the `"mangle"` provider today.
+  - **Component Construction**: The `buildComponents` method now iterates through configured providers and invokes their registered factory functions. It is responsible for assembling a dependency map (`FactoryDeps`) for each component, injecting shared clients (e.g., OpenAI, Google) and other components (e.g., an `ai.Embedder` for a dense retriever). This registry-driven approach eliminates the large `switch` statements, adhering to the Open/Closed Principle.
   - Declarative builds iterate until tool dependencies are satisfied: `buildSingleTool` rehydrates typed options via JSON round-trips, resolves families (`google-embedder`, `openai-embedder`, `localvec`, `dense`, `hybrid`, `bm25`, `openai`, `google`, `groq`), and hands over pre-built dependencies from the `tools` map. Closers surfaced by tools are tracked alongside orchestrator-level closers.
   - `Build` selects `"sandwich"` by default, wiring the assembled components into `pipeline.NewSandwich` and copying the state provider. Declarative mode insists on a `core.FlowController`, adds the rule engine under `mangle_rules` if missing, and calls `declarative.New` with the tool graph, state provider, observability, and closers.
 - ⚠️ **Configuration (`config.go`)**
@@ -73,7 +74,7 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 - ⚠️ **Rerank**
   - ⚠️ `internal/providers/rerank/cosine`: Shares the configured embedder across query/doc embeddings (concurrently via `errgroup`), computes cosine similarity with a custom float32 `sqrt`, sorts results descending, and respects either the options or per-request `TopK`.
 - ⚠️ **Embedders**
-  - ⚠️ `internal/embedders/openai`: Registers as `"openai"` and `"groq"`, builds embeddings through the OpenAI API with optional `Dimensions`, casts float64 responses to float32, and exposes a no-op `Close`.
+  - ⚠️ `internal/embedders/openai`: Registers as `"openai-embedder"` and `"groq-embedder"`, builds embeddings through the OpenAI API with optional `Dimensions`, casts float64 responses to float32, and exposes a no-op `Close`.
   - ⚠️ `internal/embedders/google`: Registers `"google-embedder"`, wraps Genkit’s GoogleAI embedder (default `"embedding-001"`); the builder normalises this alias back to the `"google"` client family.
 - ⚠️ **LLM clients**
   - ⚠️ `internal/providers/llm/google`: Uses Genkit `Model.Generate`, assembles prompts with `llm.PromptBuilder`, concatenates text parts, and returns usage counters keyed `"prompt"`/`"completion"`.
@@ -125,11 +126,9 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 | High | Empty provider stubs | llm/google.go, llm/openai.go | Root-level files are empty, indicating incomplete or dead code paths that confuse navigation and coverage. |
 | Medium | Logging config unused | config.go | YAML/env logging fields flip the logger on but never apply level/format or wire zap, leaving configuration knobs ineffective. |
 | Medium | Fallback behaviour | pipeline/sandwich.go | `FallbackThreshold` is enforced only when a reranker is configured, so non-reranked pipelines always proceed to the LLM. |
-| Medium | Provider family coverage | builder.go | `resolveProviderConfig` handles only `"google"`, `"openai"`, and `"groq"`, limiting extension to other provider families or aliases. |
 | Medium | MaxTokens ignored | internal/providers/llm/openai.go, internal/providers/llm/google.go | LLM clients discard `req.MaxTokens`, so orchestrator defaults cannot constrain response length. |
 | Low | Declarative state | pipeline/declarative/orchestrator.go | The declarative orchestrator stores a `StateProvider` but never reads or writes session state, leaving the feature unused. |
 | Low | Heuristic constants | internal/providers/hybrid/hybrid.go | Reciprocal Rank Fusion uses a hard-coded `k=60` without configuration hooks.
-| High | OCP Violation | builder.go | The builder uses large `switch` statements, violating the Open/Closed Principle and hindering extensibility. See `docs/code-review.md`. |
 | Medium | Duplicated Logic | pipeline/sandwich.go, pipeline/declarative/orchestrator.go | Conversational state management logic is duplicated across both orchestrators. See `docs/code-review.md`. |
 | Low | Inconsistent Context | internal/providers/ | `context.Context` is not consistently propagated by all providers making external calls. See `docs/code-review.md`. |
 
@@ -137,14 +136,14 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 
 ## Code Review Findings (2025-10-14)
 
-A comprehensive code review was conducted and the detailed findings are available in `docs/code-review.md`. The review identified several key areas for improvement that align with the known gaps and architectural principles of the project.
+A comprehensive code review was conducted and the detailed findings are available in `docs/code-review.md`. The review identified several key areas for improvement that align with the known gaps and architectural principles of the project. A recent refactoring has addressed some of these findings.
 
 **Key Findings Summary:**
-- **Violation of Open/Closed Principle:** The core `builder.go` file requires modification to add new providers, making the system less extensible.
+- **Violation of Open/Closed Principle:** ✅ **(Resolved)** The core `builder.go` file has been refactored to use a registry-driven factory pattern, eliminating `switch` statements and allowing new providers to be added without modifying the core builder logic.
 - **Duplicated State Management Logic:** The `Sandwich` and `Declarative` orchestrators share nearly identical code for handling conversational history, which should be centralized.
 - **Hard-coded Configuration:** The hybrid retriever uses a hard-coded "magic number" for its fusion algorithm, which should be configurable.
 - **Inconsistent Context Propagation:** Some provider implementations do not properly propagate `context.Context`, which is a known issue that impacts resilience.
-- **Minor Organizational Issues:** The `typemap.go` file is unused, with its intended logic located in `registry.go`.
+- **Minor Organizational Issues:** ✅ **(Resolved)** The type registration logic has been consolidated from `registry.go` into `typemap.go`.
 
 For detailed analysis and refactoring suggestions, please refer to the full [Code Review Document](./code-review.md).
 
@@ -156,7 +155,6 @@ For detailed analysis and refactoring suggestions, please refer to the full [Cod
 - **High**: Root-level `llm/google.go` and `llm/openai.go` remain empty stubs, signalling unfinished provider rewrites and confusing code search (`llm/google.go`, `llm/openai.go`).
 - **Medium**: Logging configuration knobs (`logging.level`, `logging.format`, `MKT_LOG_LEVEL`, `MKT_LOG_FORMAT`) are parsed but never applied; zap is not auto-wired, so runtime log settings are effectively ignored (`config.go`).
 - **Medium**: `FallbackThreshold` only executes when a reranker is configured, leaving non-reranked Sandwich flows unable to short-circuit on low confidence (`pipeline/sandwich.go`).
-- **Medium**: `resolveProviderConfig` recognises only `"google"`, `"openai"`, and `"groq"`, so additional provider families cannot share client factories without extending the switch (`builder.go`).
 - **Medium**: Neither the OpenAI nor Google LLM clients propagate `req.MaxTokens`, so orchestrator-level `MaxTokens` defaults never reach provider APIs (`internal/providers/llm/openai.go`, `internal/providers/llm/google.go`).
 - **Low**: Declarative orchestration accepts a `StateProvider` but never loads or persists session state, leaving the feature unused (`pipeline/declarative/orchestrator.go`).
 - **Low**: Reciprocal Rank Fusion relies on a hard-coded constant (`k=60`) that cannot be tuned per deployment (`internal/providers/hybrid/hybrid.go`).
