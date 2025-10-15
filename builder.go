@@ -16,6 +16,28 @@ import (
 	"github.com/firebase/genkit/go/ai"
 )
 
+// BuilderAPI defines the fluent interface for the MangleKit orchestrator builder.
+// It is the primary API for programmatically configuring and constructing a pipeline.
+// This interface is returned by all chained `With...` methods to allow for a
+// seamless and readable configuration flow.
+type BuilderAPI interface {
+	WithConfig(cfg *Config) BuilderAPI
+	WithRetriever(opts any) BuilderAPI
+	WithVectorStore(opts any) BuilderAPI
+	WithReranker(opts any) BuilderAPI
+	WithRules(opts any) BuilderAPI
+	WithLLM(opts any) BuilderAPI
+	WithFlow(name string) BuilderAPI
+	WithEmbedder(opts any) BuilderAPI
+	WithTopK(k int) BuilderAPI
+	WithMaxTokens(n int) BuilderAPI
+	WithObservability(obs core.Observability) BuilderAPI
+	WithFallbackThreshold(f float64) BuilderAPI
+	WithStateProvider(opts any) BuilderAPI
+	Build(ctx context.Context) (core.Orchestrator, error)
+	BuildRetrieverComponent(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error)
+}
+
 // Builder provides a fluent, chainable interface for constructing a MangleKit
 // Orchestrator. It is the recommended way to assemble a pipeline, as it handles
 // dependency injection, component construction, and configuration resolution
@@ -596,18 +618,60 @@ func (b *Builder) buildSingleTool(ctx context.Context, name string, cfg ToolConf
 		deps["dense"] = dense
 	}
 
-	factory, err := Get(b.registry.Component, cfg.Provider)
-	if err != nil {
-		// Try to fall back to the state provider registry for state-related tools.
-		// This is a temporary workaround until state providers are fully unified.
-		stateFactory, err := Get(b.registry.StateProviders, cfg.Provider)
+	var component any
+	var err error
+
+	switch cfg.Type {
+	case "retriever":
+		factory, err := Get(b.registry.Retrievers, cfg.Provider)
 		if err != nil {
-			return nil, fmt.Errorf("unsupported tool provider: %q", cfg.Provider)
+			return nil, err
 		}
-		// The state factory has a different signature.
-		return stateFactory(ctx, optsPtr, deps)
+		component, err = factory(ctx, optsPtr, deps)
+	case "llm":
+		factory, err := Get(b.registry.LLMs, cfg.Provider)
+		if err != nil {
+			return nil, err
+		}
+		component, err = factory(ctx, optsPtr, deps)
+	case "embedder":
+		factory, err := Get(b.registry.Embedders, cfg.Provider)
+		if err != nil {
+			return nil, err
+		}
+		component, err = factory(ctx, optsPtr, deps)
+	case "reranker":
+		factory, err := Get(b.registry.Rerankers, cfg.Provider)
+		if err != nil {
+			return nil, err
+		}
+		component, err = factory(ctx, optsPtr, deps)
+	case "vectorStore":
+		factory, err := Get(b.registry.VectorStores, cfg.Provider)
+		if err != nil {
+			return nil, err
+		}
+		component, err = factory(ctx, optsPtr, deps)
+	case "rules":
+		factory, err := Get(b.registry.RuleSets, cfg.Provider)
+		if err != nil {
+			return nil, err
+		}
+		component, err = factory(ctx, optsPtr, deps)
+	case "stateProvider":
+		factory, err := Get(b.registry.StateProviders, cfg.Provider)
+		if err != nil {
+			return nil, err
+		}
+		component, err = factory(ctx, optsPtr, deps)
+	default:
+		return nil, fmt.Errorf("unsupported tool type: %q", cfg.Type)
 	}
-	return factory(ctx, optsPtr, deps)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to build tool %q of type %q: %w", name, cfg.Type, err)
+	}
+	return component, nil
 }
 
 // providerToFamily maps a specific provider name (like openai-embedder) to its
@@ -783,20 +847,7 @@ func (b *Builder) buildRetriever(ctx context.Context) error {
 	deps := make(FactoryDeps)
 	deps["embedder"] = b.embedder
 	deps["vectorStore"] = b.vectorStore
-
-	// Special case for hybrid retriever
-	if b.retrieverName == "hybrid" {
-		bm25Retriever, err := b.buildRetrieverComponent(ctx, "bm25", b.retrieverParams)
-		if err != nil {
-			return fmt.Errorf("failed to build bm25 component for hybrid retriever: %w", err)
-		}
-		denseRetriever, err := b.buildRetrieverComponent(ctx, "dense", b.retrieverParams)
-		if err != nil {
-			return fmt.Errorf("failed to build dense component for hybrid retriever: %w", err)
-		}
-		deps["bm25"] = bm25Retriever
-		deps["dense"] = denseRetriever
-	}
+	deps["builder"] = b // Pass the builder itself for callbacks.
 
 	retriever, err := factory(ctx, opts, deps)
 	if err != nil {
@@ -808,7 +859,7 @@ func (b *Builder) buildRetriever(ctx context.Context) error {
 	return nil
 }
 
-func (b *Builder) buildRetrieverComponent(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error) {
+func (b *Builder) BuildRetrieverComponent(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error) {
 	factory, err := Get(b.registry.Retrievers, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get factory for retriever '%s': %w", name, err)

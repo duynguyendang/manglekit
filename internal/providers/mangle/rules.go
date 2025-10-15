@@ -187,7 +187,7 @@ func New(ctx context.Context, opts core.MangleOptions, r *manglekit.Registry) (c
 // loadConverter looks up a converter by name from the registry, instantiates it,
 // and returns it as a core.FactConverter.
 func loadConverter(name string, r *manglekit.Registry) (core.FactConverter, error) {
-	factory, err := manglekit.Get(r.Component, name)
+	factory, err := manglekit.Get(r.FactConverters, name)
 	if err != nil {
 		return nil, err
 	}
@@ -197,11 +197,7 @@ func loadConverter(name string, r *manglekit.Registry) (core.FactConverter, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct converter '%s': %w", name, err)
 	}
-	converter, ok := instance.(core.FactConverter)
-	if !ok {
-		return nil, fmt.Errorf("constructed component '%s' is not a core.FactConverter", name)
-	}
-	return converter, nil
+	return instance, nil
 }
 
 // parseSchemas handles reading and parsing schema definition files.
@@ -215,19 +211,15 @@ func parseSchemas(sources []core.SchemaSource, r *manglekit.Registry) ([]ast.Ato
 
 	for _, source := range sources {
 		// 1. Lookup parser factory
-		factory, err := manglekit.Get(r.Component, source.Type)
+		factory, err := manglekit.Get(r.SchemaParsers, source.Type)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get schema parser factory '%s': %w", source.Type, err)
 		}
 
 		// 2. Construct parser
-		instance, err := factory(context.Background(), nil, nil) // Assume no params for now.
+		parser, err := factory(context.Background(), nil, nil) // Assume no params for now.
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to construct schema parser '%s': %w", source.Type, err)
-		}
-		parser, ok := instance.(core.SchemaParser)
-		if !ok {
-			return nil, nil, fmt.Errorf("constructed parser for '%s' is not a core.SchemaParser", source.Type)
 		}
 
 		// 3. Collect predicate declarations from the parser.
