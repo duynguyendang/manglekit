@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
@@ -11,7 +12,13 @@ import (
 )
 
 func init() {
-	manglekit.RegisterStateProvider("redis", New)
+	manglekit.RegisterStateProvider("redis", func(options any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
+		opts, ok := options.(state.RedisOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type, expected state.RedisOptions, got %T", options)
+		}
+		return New(opts)
+	})
 	manglekit.RegisterOptions("redis", (*state.RedisOptions)(nil))
 }
 

@@ -21,7 +21,18 @@ const (
 )
 
 func init() {
-	manglekit.RegisterEmbedder("google-embedder", New)
+	manglekit.RegisterEmbedder("google-embedder", func(options any, deps manglekit.FactoryDeps) (ai.Embedder, error) {
+		opts, ok := options.(embed.GoogleEmbedderOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type, expected embed.GoogleEmbedderOptions, got %T", options)
+		}
+		g, ok := deps["client"].(*genkit.Genkit)
+		if !ok {
+			return nil, fmt.Errorf("invalid client type, expected *genkit.Genkit, got %T", deps["client"])
+		}
+		return New(opts, g)
+	})
+	manglekit.RegisterOptions("google-embedder", (*embed.GoogleEmbedderOptions)(nil))
 }
 
 // GoogleEmbedder implements the `ai.Embedder` interface from Genkit, providing

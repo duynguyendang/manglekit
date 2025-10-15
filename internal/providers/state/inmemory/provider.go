@@ -2,6 +2,7 @@ package inmemory
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/duynguyendang/manglekit"
@@ -10,7 +11,13 @@ import (
 )
 
 func init() {
-	manglekit.RegisterStateProvider("inmemory", New)
+	manglekit.RegisterStateProvider("inmemory", func(options any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
+		opts, ok := options.(state.InMemoryOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type, expected state.InMemoryOptions, got %T", options)
+		}
+		return New(opts)
+	})
 	manglekit.RegisterOptions("inmemory", (*state.InMemoryOptions)(nil))
 }
 

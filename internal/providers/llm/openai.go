@@ -15,8 +15,19 @@ import (
 )
 
 func init() {
-	manglekit.RegisterLLM("openai", NewOpenAI)
-	manglekit.RegisterLLM("groq", NewOpenAI)
+	factory := func(options any, deps manglekit.FactoryDeps) (llm.Client, error) {
+		opts, ok := options.(llm.OpenAIOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type, expected llm.OpenAIOptions, got %T", options)
+		}
+		client, ok := deps["client"].(*openai.Client)
+		if !ok {
+			return nil, fmt.Errorf("invalid client type, expected *openai.Client, got %T", client)
+		}
+		return NewOpenAI(opts, client)
+	}
+	manglekit.RegisterLLM("openai", factory)
+	manglekit.RegisterLLM("groq", factory)
 	manglekit.RegisterOptions("openai", (*llm.OpenAIOptions)(nil))
 	manglekit.RegisterOptions("groq", (*llm.OpenAIOptions)(nil))
 	manglekit.RegisterClientFactory("openai", openAIClientFactory)

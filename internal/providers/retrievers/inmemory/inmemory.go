@@ -116,5 +116,12 @@ func (r *InMemoryRetriever) Replace(ctx context.Context, docs []core.Doc) error 
 }
 
 func init() {
-	manglekit.RegisterRetriever("in-memory", New)
+	manglekit.RegisterRetriever("in-memory", func(options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
+		opts, ok := options.(retrieve.InMemoryOptions)
+		if !ok {
+			return nil, errors.New("invalid options type for in-memory retriever")
+		}
+		return New(opts)
+	})
+	manglekit.RegisterOptions("in-memory", (*retrieve.InMemoryOptions)(nil))
 }

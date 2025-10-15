@@ -9,18 +9,11 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/embed"
 	"github.com/duynguyendang/manglekit/internal/logger"
-	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/pipeline"
 	"github.com/duynguyendang/manglekit/pipeline/declarative"
-	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
-	"github.com/duynguyendang/manglekit/state"
 	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
-	"github.com/google/generative-ai-go/genai"
-	"github.com/openai/openai-go"
 )
 
 // Builder provides a fluent, chainable interface for constructing a MangleKit
@@ -587,93 +580,51 @@ func (b *Builder) buildSingleTool(ctx context.Context, name string, cfg ToolConf
 		}
 	}
 
-	switch cfg.Provider {
-	case "openai-embedder", "google-embedder":
-		constructor, err := Get(Registry.Embedder, cfg.Provider)
+	deps := make(FactoryDeps)
+	if client, ok := b.clients[providerFamily]; ok {
+		deps["client"] = client
+	}
+	if embedder, ok := b.tools[cfg.Params["embedder"].(string)].(ai.Embedder); ok {
+		deps["embedder"] = embedder
+	}
+	if vs, ok := b.tools[cfg.Params["vectorStore"].(string)].(core.VectorStore); ok {
+		deps["vectorStore"] = vs
+	}
+	if bm25, ok := b.tools[cfg.Params["bm25"].(string)].(retrieve.Retriever); ok {
+		deps["bm25"] = bm25
+	}
+	if dense, ok := b.tools[cfg.Params["dense"].(string)].(retrieve.Retriever); ok {
+		deps["dense"] = dense
+	}
+
+	switch cfg.Type {
+	case "embedder":
+		factory, err := Get(Registry.Embedder, cfg.Provider)
 		if err != nil {
 			return nil, err
 		}
-		switch cfg.Provider {
-		case "google-embedder":
-			newFn, ok := constructor.(func(embed.GoogleEmbedderOptions, *genai.Client) (ai.Embedder, error))
-			if !ok {
-				return nil, fmt.Errorf("invalid constructor type for google-embedder")
-			}
-			client, ok := b.clients["google"].(llm.GoogleClients)
-			if !ok {
-				return nil, fmt.Errorf("google client not initialized")
-			}
-			return newFn(*optsPtr.(*embed.GoogleEmbedderOptions), client.Genai)
-		case "openai-embedder":
-			newFn, ok := constructor.(func(embed.OpenAIEmbedderOptions, *openai.Client) (ai.Embedder, error))
-			if !ok {
-				return nil, fmt.Errorf("invalid constructor type for openai-embedder")
-			}
-			client, ok := b.clients["openai"].(*openai.Client)
-			if !ok {
-				return nil, fmt.Errorf("invalid client type for openai-embedder")
-			}
-			return newFn(*optsPtr.(*embed.OpenAIEmbedderOptions), client)
-		}
-
-	case "localvec":
-		constructor, _ := Get(Registry.Component, cfg.Provider)
-		newFn := constructor.(func(context.Context, core.LocalvecOptions, ai.Embedder) (core.VectorStore, error))
-		embedderToolName := cfg.Params["embedder"].(string)
-		embedder, ok := b.tools[embedderToolName].(ai.Embedder)
-		if !ok {
-			err := fmt.Errorf("dependency '%s' for tool '%s' is not a valid embedder", embedderToolName, name)
-			b.opts.Obs.Logger.Errorf(err.Error())
+		return factory(optsPtr, deps)
+	case "retriever":
+		factory, err := Get(Registry.Retriever, cfg.Provider)
+		if err != nil {
 			return nil, err
 		}
-		return newFn(ctx, *optsPtr.(*core.LocalvecOptions), embedder)
-
-	case "dense":
-		constructor, _ := Get(Registry.Retriever, "dense")
-		newFn := constructor.(func(ai.Embedder, core.VectorStore) (retrieve.Retriever, error))
-		embedderToolName := cfg.Params["embedder"].(string)
-		embedder := b.tools[embedderToolName].(ai.Embedder)
-		vsToolName := cfg.Params["vectorStore"].(string)
-		vs := b.tools[vsToolName].(core.VectorStore)
-		return newFn(embedder, vs)
-
-	case "bm25":
-		constructor, _ := Get(Registry.Retriever, "bm25")
-		newFn := constructor.(func(retrieve.BM25Options) (retrieve.Retriever, error))
-		return newFn(*optsPtr.(*retrieve.BM25Options))
-
-	case "hybrid":
-		constructor, _ := Get(Registry.Retriever, "hybrid")
-		newFn := constructor.(func(retrieve.HybridOptions) (retrieve.Retriever, error))
-		bm25ToolName := cfg.Params["bm25"].(string)
-		bm25Retriever, ok := b.tools[bm25ToolName].(retrieve.Retriever)
-		if !ok {
-			return nil, fmt.Errorf("dependency '%s' for tool '%s' is not a valid retriever", bm25ToolName, name)
+		return factory(optsPtr, deps)
+	case "llm":
+		factory, err := Get(Registry.LLM, cfg.Provider)
+		if err != nil {
+			return nil, err
 		}
-		denseToolName := cfg.Params["dense"].(string)
-		denseRetriever, ok := b.tools[denseToolName].(retrieve.Retriever)
-		if !ok {
-			return nil, fmt.Errorf("dependency '%s' for tool '%s' is not a valid retriever", denseToolName, name)
+		return factory(optsPtr, deps)
+	case "vectorStore":
+		factory, err := Get(Registry.Component, cfg.Provider)
+		if err != nil {
+			return nil, err
 		}
-		return newFn(retrieve.HybridOptions{BM25Retriever: bm25Retriever, DenseRetriever: denseRetriever})
-
-	case "openai", "google", "groq":
-		constructor, _ := Get(Registry.LLM, cfg.Provider)
-		switch cfg.Provider {
-		case "google":
-			newFn := constructor.(func(llm.GoogleOptions, *genkit.Genkit) (llm.Client, error))
-			client := b.clients["google"].(llm.GoogleClients)
-			return newFn(*optsPtr.(*llm.GoogleOptions), client.Genkit)
-		case "openai", "groq":
-			newFn := constructor.(func(llm.OpenAIOptions, *openai.Client) (llm.Client, error))
-			client := b.clients[cfg.Provider].(*openai.Client)
-			return newFn(*optsPtr.(*llm.OpenAIOptions), client)
-		}
-
+		return factory(optsPtr, deps)
 	default:
-		return nil, fmt.Errorf("unsupported provider type for tool building: %q", cfg.Provider)
+		return nil, fmt.Errorf("unsupported tool type: %q", cfg.Type)
 	}
-	return nil, fmt.Errorf("unhandled provider in buildSingleTool: %s", cfg.Provider)
 }
 
 // providerToFamily maps a specific provider name (like openai-embedder) to its
@@ -758,65 +709,36 @@ func (b *Builder) buildEmbedder() error {
 	if b.embedderName == "" {
 		return nil
 	}
+
 	b.opts.Obs.Logger.Debugf("building embedder %q", b.embedderName)
-	constructor, err := Get(Registry.Embedder, b.embedderName)
+
+	factory, err := Get(Registry.Embedder, b.embedderName)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get factory for embedder '%s': %w", b.embedderName, err)
 	}
 
-	switch b.embedderName {
-	case "google":
-		newFn, ok := constructor.(func(embed.GoogleEmbedderOptions, *genai.Client) (ai.Embedder, error))
-		if !ok {
-			return fmt.Errorf("invalid constructor type for embedder '%s'", b.embedderName)
-		}
-		var opts embed.GoogleEmbedderOptions
-		if o, ok := b.embedderParams["typedConfig"].(*embed.GoogleEmbedderOptions); ok && o != nil {
-			opts = *o
-		} else if o, ok := b.embedderParams["typedConfig"].(embed.GoogleEmbedderOptions); ok {
-			opts = o
-		}
-		client, ok := b.clients["google"].(llm.GoogleClients)
-		if !ok {
-			return fmt.Errorf("invalid client type for google embedder")
-		}
-		b.embedder, err = newFn(opts, client.Genai)
-
-	case "openai", "groq":
-		newFn, ok := constructor.(func(embed.OpenAIEmbedderOptions, *openai.Client) (ai.Embedder, error))
-		if !ok {
-			return fmt.Errorf("invalid constructor type for embedder '%s'", b.embedderName)
-		}
-		var opts embed.OpenAIEmbedderOptions
-		if o, ok := b.embedderParams["typedConfig"].(*embed.OpenAIEmbedderOptions); ok && o != nil {
-			opts = *o
-		} else if o, ok := b.embedderParams["typedConfig"].(embed.OpenAIEmbedderOptions); ok {
-			opts = o
-		}
-		clientVal, ok := b.clients[b.embedderName].(*openai.Client)
-		if !ok {
-			return fmt.Errorf("invalid client type for %s embedder, expected *openai.Client but got %T", b.embedderName, b.clients[b.embedderName])
-		}
-		b.embedder, err = newFn(opts, clientVal)
-	case "mock":
-		newFn, ok := constructor.(func(any) (ai.Embedder, error))
-		if !ok {
-			return fmt.Errorf("invalid constructor type for embedder '%s'", b.embedderName)
-		}
-		b.embedder, err = newFn(nil)
-
-	default:
-		return fmt.Errorf("unsupported embedder type in builder: %s", b.embedderName)
+	var opts any
+	if o, ok := b.embedderParams["typedConfig"]; ok {
+		opts = o
 	}
 
+	deps := make(FactoryDeps)
+	if client, ok := b.clients[b.embedderName]; ok {
+		deps["client"] = client
+	} else if client, ok := b.clients[providerToFamily[b.embedderName]]; ok {
+		deps["client"] = client
+	}
+
+	embedder, err := factory(opts, deps)
 	if err != nil {
-		err = fmt.Errorf("failed to build embedder '%s': %w", b.embedderName, err)
-		b.opts.Obs.Logger.Errorf(err.Error())
-		return err
+		return fmt.Errorf("failed to build embedder '%s': %w", b.embedderName, err)
 	}
+
+	b.embedder = embedder
 	if c, ok := b.embedder.(closer); ok {
 		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
 	}
+
 	b.opts.Obs.Logger.Infof("initialized component embedder with provider %s", b.embedderName)
 	return nil
 }
@@ -826,258 +748,131 @@ func (b *Builder) buildVectorStore(ctx context.Context) error {
 		return nil
 	}
 	if b.embedder == nil {
-		err := fmt.Errorf("vector store '%s' requires an embedder, but none was configured", b.vectorStoreName)
-		b.opts.Obs.Logger.Errorf(err.Error())
-		return err
+		return fmt.Errorf("vector store '%s' requires an embedder, but none was configured", b.vectorStoreName)
 	}
+
 	b.opts.Obs.Logger.Debugf("building vector store %q", b.vectorStoreName)
 
-	constructor, err := Get(Registry.Component, b.vectorStoreName)
+	factory, err := Get(Registry.Component, b.vectorStoreName)
 	if err != nil {
-		return err
-	}
-	newFn, ok := constructor.(func(context.Context, core.LocalvecOptions, ai.Embedder) (core.VectorStore, error))
-	if !ok {
-		return fmt.Errorf("invalid constructor type for vector store '%s'", b.vectorStoreName)
+		return fmt.Errorf("failed to get factory for vector store '%s': %w", b.vectorStoreName, err)
 	}
 
-	var opts core.LocalvecOptions
-	if o, ok := b.vectorStoreParams["typedConfig"].(*core.LocalvecOptions); ok && o != nil {
-		opts = *o
-	} else if o, ok := b.vectorStoreParams["typedConfig"].(core.LocalvecOptions); ok {
+	var opts any
+	if o, ok := b.vectorStoreParams["typedConfig"]; ok {
 		opts = o
-	} else {
-		if path, ok := b.vectorStoreParams["path"].(string); ok {
-			opts.Path = path
-		}
-	}
-	if opts.Path == "" && b.config.VectorStore.Name == b.vectorStoreName {
-		if path, ok := b.config.VectorStore.Params["path"].(string); ok {
-			opts.Path = path
-		}
 	}
 
-	b.vectorStore, err = newFn(ctx, opts, b.embedder)
+	deps := make(FactoryDeps)
+	deps["embedder"] = b.embedder
+
+	vectorStore, err := factory(opts, deps)
 	if err != nil {
-		err = fmt.Errorf("failed to build vector store '%s': %w", b.vectorStoreName, err)
-		b.opts.Obs.Logger.Errorf(err.Error())
-		return err
+		return fmt.Errorf("failed to build vector store '%s': %w", b.vectorStoreName, err)
 	}
+
+	vs, ok := vectorStore.(core.VectorStore)
+	if !ok {
+		return fmt.Errorf("component factory for '%s' did not return a core.VectorStore", b.vectorStoreName)
+	}
+
+	b.vectorStore = vs
 	if c, ok := b.vectorStore.(closer); ok {
 		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
 	}
+
 	b.opts.Obs.Logger.Infof("initialized component vectorStore with provider %s", b.vectorStoreName)
 	return nil
+}
+
+func (b *Builder) buildRetrieverComponent(name string, params map[string]any) (retrieve.Retriever, error) {
+	factory, err := Get(Registry.Retriever, name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get factory for retriever '%s': %w", name, err)
+	}
+
+	var opts any
+	if o, ok := params["typedConfig"]; ok {
+		opts = o
+	}
+
+	deps := make(FactoryDeps)
+	deps["embedder"] = b.embedder
+	deps["vectorStore"] = b.vectorStore
+
+	return factory(opts, deps)
 }
 
 func (b *Builder) buildRetriever() error {
 	if b.retrieverName == "" {
 		return nil
 	}
-	b.opts.Obs.Logger.Debugf("building retriever %q", b.retrieverName)
-	var retriever retrieve.Retriever
-	var err error
 
-	switch b.retrieverName {
-	case "dense":
-		retriever, err = b.buildDenseRetriever()
-	case "hybrid":
-		retriever, err = b.buildHybridRetriever()
-	case "bm25", "in-memory":
-		retriever, err = b.buildMapBasedRetriever(b.retrieverName)
-	case "mock":
-		constructor, err := Get(Registry.Retriever, "mock")
+	b.opts.Obs.Logger.Debugf("building retriever %q", b.retrieverName)
+
+	if b.retrieverName == "hybrid" {
+		bm25Retriever, err := b.buildRetrieverComponent("bm25", b.retrieverParams)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to build bm25 component for hybrid retriever: %w", err)
 		}
-		newFn, ok := constructor.(func(any) (retrieve.Retriever, error))
-		if !ok {
-			return fmt.Errorf("invalid constructor type for retriever 'mock'")
+		denseRetriever, err := b.buildRetrieverComponent("dense", b.retrieverParams)
+		if err != nil {
+			return fmt.Errorf("failed to build dense component for hybrid retriever: %w", err)
 		}
-		retriever, err = newFn(nil)
-	default:
-		return fmt.Errorf("unsupported retriever type in builder: %s", b.retrieverName)
+		deps := make(FactoryDeps)
+		deps["bm25"] = bm25Retriever
+		deps["dense"] = denseRetriever
+
+		factory, err := Get(Registry.Retriever, "hybrid")
+		if err != nil {
+			return fmt.Errorf("failed to get factory for retriever 'hybrid': %w", err)
+		}
+		retriever, err := factory(nil, deps)
+		if err != nil {
+			return fmt.Errorf("failed to build hybrid retriever: %w", err)
+		}
+		b.opts.Retriever = retriever
+		b.opts.Obs.Logger.Infof("initialized component retriever with provider %s", b.retrieverName)
+		return nil
 	}
 
+	retriever, err := b.buildRetrieverComponent(b.retrieverName, b.retrieverParams)
 	if err != nil {
-		err = fmt.Errorf("failed to build retriever '%s': %w", b.retrieverName, err)
-		b.opts.Obs.Logger.Errorf(err.Error())
 		return err
 	}
+
 	b.opts.Retriever = retriever
 	b.opts.Obs.Logger.Infof("initialized component retriever with provider %s", b.retrieverName)
 	return nil
 }
 
-func (b *Builder) buildDenseRetriever() (retrieve.Retriever, error) {
-	if b.embedder == nil || b.vectorStore == nil {
-		err := fmt.Errorf("retriever 'dense' requires an embedder and a vector store")
-		b.opts.Obs.Logger.Errorf(err.Error())
-		return nil, err
-	}
-	constructor, err := Get(Registry.Retriever, "dense")
-	if err != nil {
-		return nil, err
-	}
-	newFn, ok := constructor.(func(ai.Embedder, core.VectorStore) (retrieve.Retriever, error))
-	if !ok {
-		return nil, fmt.Errorf("invalid constructor type for retriever 'dense'")
-	}
-	return newFn(b.embedder, b.vectorStore)
-}
-
-func (b *Builder) buildHybridRetriever() (retrieve.Retriever, error) {
-	constructor, err := Get(Registry.Retriever, "hybrid")
-	if err != nil {
-		return nil, err
-	}
-	newFn, ok := constructor.(func(retrieve.HybridOptions) (retrieve.Retriever, error))
-	if !ok {
-		return nil, fmt.Errorf("invalid constructor type for hybrid retriever")
-	}
-
-	bm25Retriever, err := b.buildMapBasedRetriever("bm25")
-	if err != nil {
-		err = fmt.Errorf("failed to build bm25 child for hybrid: %w", err)
-		b.opts.Obs.Logger.Errorf(err.Error())
-		return nil, err
-	}
-
-	var denseRetriever retrieve.Retriever
-	if _, hasDense := b.retrieverParams["dense"]; hasDense {
-		denseRetriever, err = b.buildDenseRetriever()
-		if err != nil {
-			err = fmt.Errorf("failed to build dense child for hybrid: %w", err)
-			b.opts.Obs.Logger.Errorf(err.Error())
-			return nil, err
-		}
-	}
-
-	hybridOpts := retrieve.HybridOptions{
-		BM25Retriever:  bm25Retriever,
-		DenseRetriever: denseRetriever,
-	}
-	return newFn(hybridOpts)
-}
-
-func (b *Builder) buildMapBasedRetriever(name string) (retrieve.Retriever, error) {
-	constructor, err := Get(Registry.Retriever, name)
-	if err != nil {
-		return nil, err
-	}
-
-	var sourceParams map[string]any
-	if b.retrieverName == name && b.retrieverParams != nil {
-		sourceParams = b.retrieverParams
-	} else if b.retrieverName == "hybrid" {
-		if childParams, ok := b.retrieverParams[name].(map[string]any); ok {
-			sourceParams = childParams
-		}
-	}
-
-	var retriever retrieve.Retriever
-	switch name {
-	case "bm25":
-		newFn, ok := constructor.(func(retrieve.BM25Options) (retrieve.Retriever, error))
-		if !ok {
-			return nil, fmt.Errorf("invalid constructor type for retriever '%s'", name)
-		}
-		var opts retrieve.BM25Options
-		if o, ok := sourceParams["typedConfig"].(*retrieve.BM25Options); ok && o != nil {
-			opts = *o
-		} else if o, ok := sourceParams["typedConfig"].(retrieve.BM25Options); ok {
-			opts = o
-		} else if p, ok := sourceParams["path"].(string); ok {
-			opts.Path = p
-		}
-		retriever, err = newFn(opts)
-
-	case "in-memory":
-		newFn, ok := constructor.(func(retrieve.InMemoryOptions) (retrieve.Retriever, error))
-		if !ok {
-			return nil, fmt.Errorf("invalid constructor type for retriever '%s'", name)
-		}
-		var opts retrieve.InMemoryOptions
-		if o, ok := sourceParams["typedConfig"].(*retrieve.InMemoryOptions); ok && o != nil {
-			opts = *o
-		} else if o, ok := sourceParams["typedConfig"].(retrieve.InMemoryOptions); ok {
-			opts = o
-		} else if d, ok := sourceParams["documents"].([]core.Doc); ok {
-			opts.Documents = d
-		}
-		if opts.Logger == nil {
-			opts.Logger = b.opts.Obs.Logger.With("component", "retriever", "provider", name)
-		}
-		retriever, err = newFn(opts)
-
-	default:
-		return nil, fmt.Errorf("unsupported map-based retriever in builder: %s", name)
-	}
-
-	if err != nil {
-		err = fmt.Errorf("failed to build retriever '%s': %w", name, err)
-		b.opts.Obs.Logger.Errorf(err.Error())
-		return nil, err
-	}
-	return retriever, nil
-}
 
 func (b *Builder) buildReranker() error {
 	if b.rerankerName == "" {
 		return nil
 	}
+
 	b.opts.Obs.Logger.Debugf("building reranker %q", b.rerankerName)
-	constructor, err := Get(Registry.Reranker, b.rerankerName)
+
+	factory, err := Get(Registry.Reranker, b.rerankerName)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get factory for reranker '%s': %w", b.rerankerName, err)
 	}
 
-	switch b.rerankerName {
-	case "cosine":
-		if b.embedder == nil {
-			return fmt.Errorf("reranker '%s' requires an embedder", b.rerankerName)
-		}
-		newFn, ok := constructor.(func(rerank.CosineOptions, ai.Embedder) (rerank.Reranker, error))
-		if !ok {
-			return fmt.Errorf("invalid constructor type for reranker '%s'", b.rerankerName)
-		}
-
-		var opts rerank.CosineOptions
-		if o, ok := b.rerankerParams["typedConfig"].(*rerank.CosineOptions); ok && o != nil {
-			opts = *o
-		} else if o, ok := b.rerankerParams["typedConfig"].(rerank.CosineOptions); ok {
-			opts = o
-		} else {
-			if topK, ok := b.rerankerParams["topK"].(int); ok {
-				opts.TopK = topK
-			}
-		}
-		if opts.TopK == 0 && b.config.Reranker.Name == b.rerankerName {
-			if topK, ok := b.config.Reranker.Params["topK"].(int); ok {
-				opts.TopK = topK
-			}
-		}
-
-		b.opts.Reranker, err = newFn(opts, b.embedder)
-		if err != nil {
-			err = fmt.Errorf("failed to build reranker '%s': %w", b.rerankerName, err)
-			b.opts.Obs.Logger.Errorf(err.Error())
-			return err
-		}
-	case "mock":
-		newFn, ok := constructor.(func(any) (rerank.Reranker, error))
-		if !ok {
-			return fmt.Errorf("invalid constructor type for reranker 'mock'")
-		}
-		b.opts.Reranker, err = newFn(nil)
-		if err != nil {
-			err = fmt.Errorf("failed to build reranker 'mock': %w", err)
-			b.opts.Obs.Logger.Errorf(err.Error())
-			return err
-		}
-	default:
-		return fmt.Errorf("unsupported reranker type in builder: %s", b.rerankerName)
+	var opts any
+	if o, ok := b.rerankerParams["typedConfig"]; ok {
+		opts = o
 	}
+
+	deps := make(FactoryDeps)
+	deps["embedder"] = b.embedder
+
+	reranker, err := factory(opts, deps)
+	if err != nil {
+		return fmt.Errorf("failed to build reranker '%s': %w", b.rerankerName, err)
+	}
+
+	b.opts.Reranker = reranker
 	b.opts.Obs.Logger.Infof("initialized component reranker with provider %s", b.rerankerName)
 	return nil
 }
@@ -1130,65 +925,34 @@ func (b *Builder) buildLLM() error {
 	if b.llmName == "" {
 		return nil
 	}
+
 	b.opts.Obs.Logger.Debugf("building llm %q", b.llmName)
-	constructor, err := Get(Registry.LLM, b.llmName)
+
+	factory, err := Get(Registry.LLM, b.llmName)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get factory for llm '%s': %w", b.llmName, err)
 	}
 
-	switch b.llmName {
-	case "google":
-		newFn, ok := constructor.(func(llm.GoogleOptions, *genkit.Genkit) (llm.Client, error))
-		if !ok {
-			return fmt.Errorf("invalid constructor type for llm '%s'", b.llmName)
-		}
-		var opts llm.GoogleOptions
-		if o, ok := b.llmParams["typedConfig"].(*llm.GoogleOptions); ok && o != nil {
-			opts = *o
-		} else if o, ok := b.llmParams["typedConfig"].(llm.GoogleOptions); ok {
-			opts = o
-		}
-		client, ok := b.clients["google"].(llm.GoogleClients)
-		if !ok {
-			return fmt.Errorf("invalid client type for google llm")
-		}
-		b.opts.LLM, err = newFn(opts, client.Genkit)
-
-	case "openai", "groq":
-		newFn, ok := constructor.(func(llm.OpenAIOptions, *openai.Client) (llm.Client, error))
-		if !ok {
-			return fmt.Errorf("invalid constructor type for llm '%s'", b.llmName)
-		}
-		var opts llm.OpenAIOptions
-		if o, ok := b.llmParams["typedConfig"].(*llm.OpenAIOptions); ok && o != nil {
-			opts = *o
-		} else if o, ok := b.llmParams["typedConfig"].(llm.OpenAIOptions); ok {
-			opts = o
-		}
-		clientVal, ok := b.clients[b.llmName].(*openai.Client)
-		if !ok {
-			return fmt.Errorf("invalid client type for %s llm, expected *openai.Client but got %T", b.llmName, b.clients[b.llmName])
-		}
-		b.opts.LLM, err = newFn(opts, clientVal)
-	case "mock":
-		newFn, ok := constructor.(func(any) (llm.Client, error))
-		if !ok {
-			return fmt.Errorf("invalid constructor type for llm '%s'", b.llmName)
-		}
-		b.opts.LLM, err = newFn(nil)
-
-	default:
-		return fmt.Errorf("unsupported llm type in builder: %s", b.llmName)
+	var opts any
+	if o, ok := b.llmParams["typedConfig"]; ok {
+		opts = o
 	}
 
+	deps := make(FactoryDeps)
+	if client, ok := b.clients[b.llmName]; ok {
+		deps["client"] = client
+	}
+
+	llmClient, err := factory(opts, deps)
 	if err != nil {
-		err = fmt.Errorf("failed to build llm '%s': %w", b.llmName, err)
-		b.opts.Obs.Logger.Errorf(err.Error())
-		return err
+		return fmt.Errorf("failed to build llm '%s': %w", b.llmName, err)
 	}
+
+	b.opts.LLM = llmClient
 	if c, ok := b.opts.LLM.(closer); ok {
 		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
 	}
+
 	b.opts.Obs.Logger.Infof("initialized component llm with provider %s", b.llmName)
 	return nil
 }
@@ -1219,10 +983,12 @@ func (b *Builder) buildStateProvider() error {
 	if b.stateProviderName == "" {
 		return nil
 	}
+
 	b.opts.Obs.Logger.Debugf("building state provider %q", b.stateProviderName)
-	constructor, err := Get(Registry.StateProviders, b.stateProviderName)
+
+	factory, err := Get(Registry.StateProviders, b.stateProviderName)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get factory for state provider '%s': %w", b.stateProviderName, err)
 	}
 
 	var opts any
@@ -1230,39 +996,16 @@ func (b *Builder) buildStateProvider() error {
 		opts = o
 	}
 
-	var provider core.StateProvider
-	switch b.stateProviderName {
-	case "inmemory":
-		newFn, ok := constructor.(func(state.InMemoryOptions) (core.StateProvider, error))
-		if !ok {
-			return fmt.Errorf("invalid constructor type for state provider '%s'", b.stateProviderName)
-		}
-		provider, err = newFn(*opts.(*state.InMemoryOptions))
-	case "redis":
-		newFn, ok := constructor.(func(state.RedisOptions) (core.StateProvider, error))
-		if !ok {
-			return fmt.Errorf("invalid constructor type for state provider '%s'", b.stateProviderName)
-		}
-		provider, err = newFn(*opts.(*state.RedisOptions))
-	case "mock-sp":
-		newFn, ok := constructor.(func(any) (core.StateProvider, error))
-		if !ok {
-			return fmt.Errorf("invalid constructor type for state provider '%s'", b.stateProviderName)
-		}
-		provider, err = newFn(opts)
-	default:
-		return fmt.Errorf("unsupported state provider type in builder: %s", b.stateProviderName)
+	provider, err := factory(opts, nil) // State providers currently don't have dependencies.
+	if err != nil {
+		return fmt.Errorf("failed to build state provider '%s': %w", b.stateProviderName, err)
 	}
 
-	if err != nil {
-		err = fmt.Errorf("failed to build state provider '%s': %w", b.stateProviderName, err)
-		b.opts.Obs.Logger.Errorf(err.Error())
-		return err
-	}
 	b.stateProvider = provider
 	if c, ok := provider.(closer); ok {
 		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
 	}
+
 	b.opts.Obs.Logger.Infof("initialized component stateProvider with provider %s", b.stateProviderName)
 	return nil
 }

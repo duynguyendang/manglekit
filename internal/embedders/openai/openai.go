@@ -15,9 +15,21 @@ import (
 )
 
 func init() {
-	// Register the same constructor for multiple provider names.
-	manglekit.RegisterEmbedder("openai", New)
-	manglekit.RegisterEmbedder("groq", New)
+	factory := func(options any, deps manglekit.FactoryDeps) (ai.Embedder, error) {
+		opts, ok := options.(embed.OpenAIEmbedderOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type, expected embed.OpenAIEmbedderOptions, got %T", options)
+		}
+		client, ok := deps["client"].(*openai.Client)
+		if !ok {
+			return nil, fmt.Errorf("invalid client type, expected *openai.Client, got %T", deps["client"])
+		}
+		return New(opts, client)
+	}
+	manglekit.RegisterEmbedder("openai-embedder", factory)
+	manglekit.RegisterEmbedder("groq-embedder", factory)
+	manglekit.RegisterOptions("openai-embedder", (*embed.OpenAIEmbedderOptions)(nil))
+	manglekit.RegisterOptions("groq-embedder", (*embed.OpenAIEmbedderOptions)(nil))
 }
 
 // New is the constructor for the OpenAI-compatible embedder. It is registered
