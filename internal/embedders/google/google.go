@@ -21,7 +21,7 @@ const (
 )
 
 func init() {
-	manglekit.RegisterEmbedder("google-embedder", func(options any, deps manglekit.FactoryDeps) (ai.Embedder, error) {
+	manglekit.Register("google-embedder", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(embed.GoogleEmbedderOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected embed.GoogleEmbedderOptions, got %T", options)

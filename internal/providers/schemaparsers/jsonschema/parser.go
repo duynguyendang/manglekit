@@ -3,6 +3,7 @@
 package jsonschema
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,7 +17,9 @@ import (
 type Options struct{}
 
 func init() {
-	manglekit.RegisterSchemaParser("jsonschema", New)
+	manglekit.Register("jsonschema", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+		return New(nil)
+	})
 	manglekit.RegisterOptions("jsonschema", (*Options)(nil))
 }
 

@@ -11,14 +11,14 @@ import (
 )
 
 func init() {
-	manglekit.RegisterStateProvider("inmemory", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
+	manglekit.Register("state-inmemory", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(state.InMemoryOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected state.InMemoryOptions, got %T", options)
 		}
 		return New(opts)
 	})
-	manglekit.RegisterOptions("inmemory", (*state.InMemoryOptions)(nil))
+	manglekit.RegisterOptions("state-inmemory", (*state.InMemoryOptions)(nil))
 }
 
 // Provider is a thread-safe, in-memory implementation of the core.StateProvider

@@ -15,7 +15,7 @@ import (
 )
 
 func init() {
-	factory := func(options any, deps manglekit.FactoryDeps) (ai.Embedder, error) {
+	factory := func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(embed.OpenAIEmbedderOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected embed.OpenAIEmbedderOptions, got %T", options)
@@ -26,8 +26,8 @@ func init() {
 		}
 		return New(opts, client)
 	}
-	manglekit.RegisterEmbedder("openai-embedder", factory)
-	manglekit.RegisterEmbedder("groq-embedder", factory)
+	manglekit.Register("openai-embedder", factory)
+	manglekit.Register("groq-embedder", factory)
 	manglekit.RegisterOptions("openai-embedder", (*embed.OpenAIEmbedderOptions)(nil))
 	manglekit.RegisterOptions("groq-embedder", (*embed.OpenAIEmbedderOptions)(nil))
 }

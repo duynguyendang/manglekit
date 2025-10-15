@@ -28,7 +28,7 @@ type requestConverter struct{}
 
 // This init function registers our custom converter with the Manglekit registry.
 func init() {
-	manglekit.Register("requestConverter", func(options any, deps manglekit.FactoryDeps) (any, error) {
+	manglekit.Register("requestConverter", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		return &requestConverter{}, nil
 	})
 }

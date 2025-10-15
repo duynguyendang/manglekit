@@ -27,7 +27,23 @@ import (
 
 func init() {
 	// Register the constructor with the MangleKit framework.
-	manglekit.RegisterRules("mangle", New)
+	manglekit.Register("mangle", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+		// The New function for mangle has a different signature (takes context),
+		// so we can't pass it directly. This adapter is needed.
+		// For now, we assume the context can be created here.
+		// A better long-term solution might be to pass context through the factory deps.
+		opts, ok := options.(core.MangleOptions)
+		if !ok {
+			// Also handle the pointer case, which is common.
+			if o, ok := options.(*core.MangleOptions); ok && o != nil {
+				opts = *o
+			} else {
+				return nil, fmt.Errorf("invalid options type, expected core.MangleOptions, got %T", options)
+			}
+		}
+		return New(ctx, opts)
+	})
+	manglekit.RegisterOptions("mangle", (*core.MangleOptions)(nil))
 }
 
 var builtinRedactions = map[string]*regexp.Regexp{
@@ -176,7 +192,7 @@ func loadConverter(name string) (core.FactConverter, error) {
 	}
 	// The factory is now strongly-typed.
 	// The old code assumed no params for converters. We'll pass nil for options and deps.
-	instance, err := factory(nil, nil)
+	instance, err := factory(context.Background(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct converter '%s': %w", name, err)
 	}
@@ -204,7 +220,7 @@ func parseSchemas(sources []core.SchemaSource) ([]ast.Atom, []ast.PredicateSym, 
 		}
 
 		// 2. Construct parser
-		instance, err := factory(nil, nil) // Assume no params for now.
+		instance, err := factory(context.Background(), nil, nil) // Assume no params for now.
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to construct schema parser '%s': %w", source.Type, err)
 		}

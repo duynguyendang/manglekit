@@ -3,7 +3,7 @@ context_type: codebase_overview
 project: manglekit
 language: go
 version: 2025.10
-last_updated: 2025-10-14
+last_updated: 2025-10-15
 ---
 
 # Manglekit Project Context
@@ -14,7 +14,7 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 ---
 
 ## Core Building Blocks
-- ✅ **Registry (`registry.go`)**: Global maps store strongly-typed **factory functions** for retrievers, rerankers, LLMs, embedders, and other components. `Registry.ClientFactories` lets providers register shared client builders (e.g., OpenAI, Google) that also emit `ResourceCloser`s.
+- ✅ **Registry (`registry.go`)**: A global `Component` map stores strongly-typed **factory functions** for all components. `Registry.ClientFactories` lets providers register shared client builders (e.g., OpenAI, Google) that also emit `ResourceCloser`s.
 - ✅ **Type Mapping (`typemap.go`)**: Manages the bidirectional mapping between provider names and their option types using `RegisterOptions`.
 - ✅ **Core types & contracts (`core/types.go`, `core/rules.go`)**: `Query`, `Answer`, `Doc`, and `Citation` model pipeline payloads; `Options` now carries the configured `StateProvider`, observability hooks, and a LIFO stack of `ResourceClosers`. Sentinel errors (`ErrInvalidOptions`, `ErrNoEvidence`, `ErrDenied`) and rule interfaces (`RuleSet`, `FlowController`, `PostRuleEvaluator`) gate Sandwich and declarative orchestrators.
 - ✅ **Observability contracts**: `Logger` exposes `{Debug,Info,Warn,Error}f` plus `With` for scoped fields, `Tracer.StartSpan` supplies optional spans, and `Meter.Record` captures latency metrics with arbitrary attributes.
@@ -28,7 +28,7 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
   - `NewBuilder` initialises `clients`, `providerNames`, a typed `tools` map for declarative mode, and installs a `StdLogger` so component constructors always receive a non-nil logger.
   - `With*` methods expect registered option pointers (via `RegisterOptions`); they log and accrue errors if unregistered types are supplied. `WithEmbedder` can also inject a pre-built `ai.Embedder`.
   - `resolveDependencies` infers missing embedder names from vector store, dense, hybrid, or cosine options before invoking `resolveProviderConfig`, which currently knows how to bootstrap shared clients for `"google"`, `"openai"`, and `"groq"` using `Registry.ClientFactories` and records any returned closers.
-  - **Component Construction**: The `buildComponents` method now iterates through configured providers and invokes their registered factory functions. It is responsible for assembling a dependency map (`FactoryDeps`) for each component, injecting shared clients (e.g., OpenAI, Google) and other components (e.g., an `ai.Embedder` for a dense retriever). This registry-driven approach eliminates the large `switch` statements, adhering to the Open/Closed Principle.
+  - **Component Construction**: The `buildComponents` method now iterates through configured providers and invokes their registered factory functions from the unified `Registry.Component` map. It is responsible for assembling a dependency map (`FactoryDeps`) for each component, injecting shared clients (e.g., OpenAI, Google) and other components (e.g., an `ai.Embedder` for a dense retriever). This registry-driven approach eliminates the large `switch` statements, adhering to the Open/Closed Principle.
   - Declarative builds iterate until tool dependencies are satisfied: `buildSingleTool` rehydrates typed options via JSON round-trips, resolves families (`google-embedder`, `openai-embedder`, `localvec`, `dense`, `hybrid`, `bm25`, `openai`, `google`, `groq`), and hands over pre-built dependencies from the `tools` map. Closers surfaced by tools are tracked alongside orchestrator-level closers.
   - `Build` selects `"sandwich"` by default, wiring the assembled components into `pipeline.NewSandwich` and copying the state provider. Declarative mode insists on a `core.FlowController`, adds the rule engine under `mangle_rules` if missing, and calls `declarative.New` with the tool graph, state provider, observability, and closers.
 - ⚠️ **Configuration (`config.go`)**

@@ -12,14 +12,14 @@ import (
 )
 
 func init() {
-	manglekit.RegisterStateProvider("redis", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
+	manglekit.Register("state-redis", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(state.RedisOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected state.RedisOptions, got %T", options)
 		}
 		return New(ctx, opts)
 	})
-	manglekit.RegisterOptions("redis", (*state.RedisOptions)(nil))
+	manglekit.RegisterOptions("state-redis", (*state.RedisOptions)(nil))
 }
 
 // Provider is a production-ready implementation of the core.StateProvider that
