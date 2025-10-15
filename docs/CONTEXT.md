@@ -24,7 +24,7 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 ---
 
 ## Orchestrator Construction
-- ✅ **Fluent builder (`builder.go`)**
+- ⚠️ **Fluent builder (`builder.go`)**
   - `NewBuilder` initialises `clients`, `providerNames`, a typed `tools` map for declarative mode, and installs a `StdLogger` so component constructors always receive a non-nil logger.
   - `With*` methods expect registered option pointers (via `RegisterOptions`); they log and accrue errors if unregistered types are supplied. `WithEmbedder` can also inject a pre-built `ai.Embedder`.
   - `resolveDependencies` infers missing embedder names from vector store, dense, hybrid, or cosine options before invoking `resolveProviderConfig`, which currently knows how to bootstrap shared clients for `"google"`, `"openai"`, and `"groq"` using `Registry.ClientFactories` and records any returned closers.
@@ -64,7 +64,7 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 ---
 
 ## Providers & Components
-- ✅ **Retrieval**
+- ⚠️ **Retrieval**
   - ✅ `internal/providers/bm25`: Walks Markdown files (parsing YAML front matter), builds a TF-IDF vocabulary, applies Okapi BM25 scoring with a default `TopK=10`, and mirrors scores in document metadata.
   - ⚠️ `internal/providers/dense`: Couples an `ai.Embedder` with a `core.VectorStore`, embeds the query, forwards `req.Meta["filters"]` to the store’s `Search`, and requires both dependencies to be injected by the builder.
   - ⚠️ `internal/providers/hybrid`: Runs sparse and dense retrievers concurrently via `errgroup`, fuses results with Reciprocal Rank Fusion (`k=60`), and trims the fused list to the request’s `TopK`.
@@ -136,29 +136,14 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 
 ## Code Review Findings (2025-10-14)
 
-A comprehensive code review was conducted and the detailed findings are available in `docs/code-review.md`. The review identified several key areas for improvement that align with the known gaps and architectural principles of the project. A recent refactoring has addressed some of these findings.
+A comprehensive code review was conducted and the detailed findings are available in `docs/code-review.md`. The review identified several key areas for improvement that align with the known gaps and architectural principles of the project.
 
 **Key Findings Summary:**
-- **Violation of Open/Closed Principle:** ✅ **(Resolved)** The core `builder.go` file has been refactored to use a registry-driven factory pattern, eliminating `switch` statements and allowing new providers to be added without modifying the core builder logic.
-- **Duplicated State Management Logic:** The `Sandwich` and `Declarative` orchestrators share nearly identical code for handling conversational history, which should be centralized.
-- **Hard-coded Configuration:** The hybrid retriever uses a hard-coded "magic number" for its fusion algorithm, which should be configurable.
-- **Inconsistent Context Propagation:** Some provider implementations do not properly propagate `context.Context`, which is a known issue that impacts resilience.
-- **Minor Organizational Issues:** ✅ **(Resolved)** The type registration logic has been consolidated from `registry.go` into `typemap.go`.
+- **SOLID Principles Violations:** The review identified several violations of SOLID principles, including the Open/Closed Principle in the builder and declarative orchestrator, and the Single Responsibility Principle in the Sandwich orchestrator.
+- **Inconsistent Design:** The codebase exhibits inconsistencies in dependency injection and the use of "magic strings" for map keys.
+- **Tight Coupling:** There is tight coupling between the configuration loading and builder instantiation, and between the builder and the specific dependency requirements of different components.
+- **Lack of Type Safety:** The use of `any` and reflection for factory functions and provider options compromises type safety.
+- **Configuration & Magic Numbers:** A hard-coded "magic number" was found in the hybrid retriever's fusion algorithm.
+- **Dead Code:** The `core` package contains a deprecated `LocalvecOptions` struct that should be removed.
 
 For detailed analysis and refactoring suggestions, please refer to the full [Code Review Document](./code-review.md).
-
----
-
-## Known Gaps (detailed)
-- **High**: `make build` / `make run` still target a non-existent `./cmd/agent`, so stock Makefile workflows fail (`Makefile`).
-- **High**: The default RAG template expects `.documents[*].Text`, yet `Sandwich.prepareLlmRequest` passes `[]string`, resulting in template execution errors unless callers provide a custom template (`llm/prompt.go`, `pipeline/sandwich.go`).
-- **High**: Root-level `llm/google.go` and `llm/openai.go` remain empty stubs, signalling unfinished provider rewrites and confusing code search (`llm/google.go`, `llm/openai.go`).
-- **Medium**: Logging configuration knobs (`logging.level`, `logging.format`, `MKT_LOG_LEVEL`, `MKT_LOG_FORMAT`) are parsed but never applied; zap is not auto-wired, so runtime log settings are effectively ignored (`config.go`).
-- **Medium**: `FallbackThreshold` only executes when a reranker is configured, leaving non-reranked Sandwich flows unable to short-circuit on low confidence (`pipeline/sandwich.go`).
-- **Medium**: Neither the OpenAI nor Google LLM clients propagate `req.MaxTokens`, so orchestrator-level `MaxTokens` defaults never reach provider APIs (`internal/providers/llm/openai.go`, `internal/providers/llm/google.go`).
-- **Low**: Declarative orchestration accepts a `StateProvider` but never loads or persists session state, leaving the feature unused (`pipeline/declarative/orchestrator.go`).
-- **Low**: Reciprocal Rank Fusion relies on a hard-coded constant (`k=60`) that cannot be tuned per deployment (`internal/providers/hybrid/hybrid.go`).
-
----
-
-This file is designed to help coding agents understand Manglekit’s architecture, dependencies, and current implementation state.
