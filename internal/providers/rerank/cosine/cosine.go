@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	manglekit.RegisterReranker("cosine", func(options any, deps manglekit.FactoryDeps) (rerank.Reranker, error) {
+	manglekit.Register("cosine", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(rerank.CosineOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected rerank.CosineOptions, got %T", options)

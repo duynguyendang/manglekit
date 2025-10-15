@@ -21,7 +21,7 @@ const (
 )
 
 func init() {
-	manglekit.Register("localvec", func(options any, deps manglekit.FactoryDeps) (any, error) {
+	manglekit.Register("localvec", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(core.LocalvecOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected core.LocalvecOptions, got %T", options)
@@ -30,7 +30,7 @@ func init() {
 		if !ok {
 			return nil, fmt.Errorf("missing required dependency 'embedder' of type ai.Embedder")
 		}
-		return New(context.Background(), opts, embedder)
+		return New(ctx, opts, embedder)
 	})
 	manglekit.RegisterOptions("localvec", (*core.LocalvecOptions)(nil))
 }

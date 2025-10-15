@@ -19,7 +19,7 @@ type Options struct {
 }
 
 func init() {
-	manglekit.RegisterRetriever("dense", func(options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
+	manglekit.Register("dense", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		_, ok := options.(Options)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected dense.Options, got %T", options)

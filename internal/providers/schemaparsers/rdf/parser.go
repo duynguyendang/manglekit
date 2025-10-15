@@ -3,6 +3,7 @@
 package rdf
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -17,7 +18,9 @@ import (
 type Options struct{}
 
 func init() {
-	manglekit.RegisterSchemaParser("rdf", New)
+	manglekit.Register("rdf", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+		return New(nil)
+	})
 	manglekit.RegisterOptions("rdf", (*Options)(nil))
 }
 

@@ -25,7 +25,7 @@ const (
 )
 
 func init() {
-	manglekit.RegisterRetriever("bm25", func(options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
+	manglekit.Register("bm25", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(retrieve.BM25Options)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected retrieve.BM25Options, got %T", options)

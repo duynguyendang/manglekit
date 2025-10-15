@@ -22,7 +22,7 @@ import (
 )
 
 func init() {
-	manglekit.RegisterLLM("google", func(options any, deps manglekit.FactoryDeps) (llm.Client, error) {
+	manglekit.Register("google", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(llm.GoogleOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type for google llm: expected llm.GoogleOptions, got %T", options)

@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	manglekit.RegisterRetriever("hybrid", func(options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
+	manglekit.Register("hybrid", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(retrieve.HybridOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected retrieve.HybridOptions, got %T", options)

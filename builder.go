@@ -10,8 +10,10 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/logger"
+	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/pipeline"
 	"github.com/duynguyendang/manglekit/pipeline/declarative"
+	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 )
@@ -597,34 +599,18 @@ func (b *Builder) buildSingleTool(ctx context.Context, name string, cfg ToolConf
 		deps["dense"] = dense
 	}
 
-	switch cfg.Type {
-	case "embedder":
-		factory, err := Get(Registry.Embedder, cfg.Provider)
+	factory, err := Get(Registry.Component, cfg.Provider)
+	if err != nil {
+		// Try to fall back to the state provider registry for state-related tools.
+		// This is a temporary workaround until state providers are fully unified.
+		stateFactory, err := Get(Registry.StateProviders, cfg.Provider)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("unsupported tool provider: %q", cfg.Provider)
 		}
-		return factory(optsPtr, deps)
-	case "retriever":
-		factory, err := Get(Registry.Retriever, cfg.Provider)
-		if err != nil {
-			return nil, err
-		}
-		return factory(optsPtr, deps)
-	case "llm":
-		factory, err := Get(Registry.LLM, cfg.Provider)
-		if err != nil {
-			return nil, err
-		}
-		return factory(optsPtr, deps)
-	case "vectorStore":
-		factory, err := Get(Registry.Component, cfg.Provider)
-		if err != nil {
-			return nil, err
-		}
-		return factory(optsPtr, deps)
-	default:
-		return nil, fmt.Errorf("unsupported tool type: %q", cfg.Type)
+		// The state factory has a different signature.
+		return stateFactory(ctx, optsPtr, deps)
 	}
+	return factory(ctx, optsPtr, deps)
 }
 
 // providerToFamily maps a specific provider name (like openai-embedder) to its
@@ -712,7 +698,7 @@ func (b *Builder) buildEmbedder() error {
 
 	b.opts.Obs.Logger.Debugf("building embedder %q", b.embedderName)
 
-	factory, err := Get(Registry.Embedder, b.embedderName)
+	factory, err := Get(Registry.Component, b.embedderName)
 	if err != nil {
 		return fmt.Errorf("failed to get factory for embedder '%s': %w", b.embedderName, err)
 	}
@@ -729,12 +715,12 @@ func (b *Builder) buildEmbedder() error {
 		deps["client"] = client
 	}
 
-	embedder, err := factory(opts, deps)
+	embedder, err := factory(context.Background(), opts, deps)
 	if err != nil {
 		return fmt.Errorf("failed to build embedder '%s': %w", b.embedderName, err)
 	}
 
-	b.embedder = embedder
+	b.embedder = embedder.(ai.Embedder)
 	if c, ok := b.embedder.(closer); ok {
 		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
 	}
@@ -766,7 +752,7 @@ func (b *Builder) buildVectorStore(ctx context.Context) error {
 	deps := make(FactoryDeps)
 	deps["embedder"] = b.embedder
 
-	vectorStore, err := factory(opts, deps)
+	vectorStore, err := factory(ctx, opts, deps)
 	if err != nil {
 		return fmt.Errorf("failed to build vector store '%s': %w", b.vectorStoreName, err)
 	}
@@ -786,7 +772,7 @@ func (b *Builder) buildVectorStore(ctx context.Context) error {
 }
 
 func (b *Builder) buildRetrieverComponent(name string, params map[string]any) (retrieve.Retriever, error) {
-	factory, err := Get(Registry.Retriever, name)
+	factory, err := Get(Registry.Component, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get factory for retriever '%s': %w", name, err)
 	}
@@ -800,7 +786,11 @@ func (b *Builder) buildRetrieverComponent(name string, params map[string]any) (r
 	deps["embedder"] = b.embedder
 	deps["vectorStore"] = b.vectorStore
 
-	return factory(opts, deps)
+	retriever, err := factory(context.Background(), opts, deps)
+	if err != nil {
+		return nil, err
+	}
+	return retriever.(retrieve.Retriever), nil
 }
 
 func (b *Builder) buildRetriever() error {
@@ -823,11 +813,11 @@ func (b *Builder) buildRetriever() error {
 		deps["bm25"] = bm25Retriever
 		deps["dense"] = denseRetriever
 
-		factory, err := Get(Registry.Retriever, "hybrid")
+		factory, err := Get(Registry.Component, "hybrid")
 		if err != nil {
 			return fmt.Errorf("failed to get factory for retriever 'hybrid': %w", err)
 		}
-		retriever, err := factory(nil, deps)
+		retriever, err := factory(context.Background(), nil, deps)
 		if err != nil {
 			return fmt.Errorf("failed to build hybrid retriever: %w", err)
 		}
@@ -854,7 +844,7 @@ func (b *Builder) buildReranker() error {
 
 	b.opts.Obs.Logger.Debugf("building reranker %q", b.rerankerName)
 
-	factory, err := Get(Registry.Reranker, b.rerankerName)
+	factory, err := Get(Registry.Component, b.rerankerName)
 	if err != nil {
 		return fmt.Errorf("failed to get factory for reranker '%s': %w", b.rerankerName, err)
 	}
@@ -867,12 +857,12 @@ func (b *Builder) buildReranker() error {
 	deps := make(FactoryDeps)
 	deps["embedder"] = b.embedder
 
-	reranker, err := factory(opts, deps)
+	reranker, err := factory(context.Background(), opts, deps)
 	if err != nil {
 		return fmt.Errorf("failed to build reranker '%s': %w", b.rerankerName, err)
 	}
 
-	b.opts.Reranker = reranker
+	b.opts.Reranker = reranker.(rerank.Reranker)
 	b.opts.Obs.Logger.Infof("initialized component reranker with provider %s", b.rerankerName)
 	return nil
 }
@@ -886,13 +876,9 @@ func (b *Builder) buildRules(ctx context.Context) error {
 	}
 	b.opts.Obs.Logger.Debugf("building rules engine %q", b.rulesName)
 
-	constructor, err := Get(Registry.Rules, b.rulesName)
+	factory, err := Get(Registry.Component, b.rulesName)
 	if err != nil {
 		return err
-	}
-	newFn, ok := constructor.(func(context.Context, core.MangleOptions) (core.RuleSet, error))
-	if !ok {
-		return fmt.Errorf("invalid constructor type for rules '%s'", b.rulesName)
 	}
 
 	var opts core.MangleOptions
@@ -910,13 +896,13 @@ func (b *Builder) buildRules(ctx context.Context) error {
 		opts.Logger = b.opts.Obs.Logger.With("component", "rules", "provider", b.rulesName)
 	}
 
-	ruleset, err := newFn(ctx, opts)
+	ruleset, err := factory(ctx, opts, nil)
 	if err != nil {
 		err = fmt.Errorf("failed to build rules '%s': %w", b.rulesName, err)
 		b.opts.Obs.Logger.Errorf(err.Error())
 		return err
 	}
-	b.opts.Rules = ruleset
+	b.opts.Rules = ruleset.(core.RuleSet)
 	b.opts.Obs.Logger.Infof("initialized component rules with provider %s", b.rulesName)
 	return nil
 }
@@ -928,7 +914,7 @@ func (b *Builder) buildLLM() error {
 
 	b.opts.Obs.Logger.Debugf("building llm %q", b.llmName)
 
-	factory, err := Get(Registry.LLM, b.llmName)
+	factory, err := Get(Registry.Component, b.llmName)
 	if err != nil {
 		return fmt.Errorf("failed to get factory for llm '%s': %w", b.llmName, err)
 	}
@@ -943,12 +929,12 @@ func (b *Builder) buildLLM() error {
 		deps["client"] = client
 	}
 
-	llmClient, err := factory(opts, deps)
+	llmClient, err := factory(context.Background(), opts, deps)
 	if err != nil {
 		return fmt.Errorf("failed to build llm '%s': %w", b.llmName, err)
 	}
 
-	b.opts.LLM = llmClient
+	b.opts.LLM = llmClient.(llm.Client)
 	if c, ok := b.opts.LLM.(closer); ok {
 		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
 	}

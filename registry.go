@@ -6,10 +6,6 @@ import (
 	"reflect"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/llm"
-	"github.com/duynguyendang/manglekit/rerank"
-	"github.com/duynguyendang/manglekit/retrieve"
-	"github.com/firebase/genkit/go/ai"
 )
 
 // Registry is the global, central store for all registered component constructors.
@@ -30,18 +26,8 @@ import (
 // is responsible for retrieving a constructor and performing a type assertion to
 // the expected function signature before calling it.
 var Registry = struct {
-	// Retriever holds registered `retrieve.Retriever` constructors.
-	Retriever map[string]RetrieverFactory
-	// Reranker holds registered `rerank.Reranker` constructors.
-	Reranker map[string]RerankerFactory
 	// Rules holds registered `core.RuleSet` constructors.
 	Rules map[string]any
-	// LLM holds registered `llm.Client` constructors.
-	LLM map[string]LLMFactory
-	// Embedder holds registered `ai.Embedder` constructors.
-	Embedder map[string]EmbedderFactory
-	// SchemaParser holds registered `core.SchemaParser` constructors.
-	SchemaParser map[string]any
 	// Component holds registered generic component constructors, such as `core.VectorStore`.
 	Component map[string]ComponentFactory
 	// Options holds registered options types for components.
@@ -51,12 +37,7 @@ var Registry = struct {
 	// ClientFactories holds registered client factory functions.
 	ClientFactories map[string]any
 }{
-	Retriever:       make(map[string]RetrieverFactory),
-	Reranker:        make(map[string]RerankerFactory),
 	Rules:           make(map[string]any),
-	LLM:             make(map[string]LLMFactory),
-	Embedder:        make(map[string]EmbedderFactory),
-	SchemaParser:    make(map[string]any),
 	Component:       make(map[string]ComponentFactory),
 	Options:         make(map[string]reflect.Type),
 	StateProviders:  make(map[string]StateProviderFactory),
@@ -74,12 +55,19 @@ type ClientFactory func(ctx context.Context, cfg *Config) (client any, closer co
 // helper used by the Builder to find and instantiate components.
 type FactoryDeps map[string]any
 
-type RetrieverFactory func(options any, deps FactoryDeps) (retrieve.Retriever, error)
-type RerankerFactory func(options any, deps FactoryDeps) (rerank.Reranker, error)
-type LLMFactory func(options any, deps FactoryDeps) (llm.Client, error)
-type EmbedderFactory func(options any, deps FactoryDeps) (ai.Embedder, error)
+// StateProviderFactory defines the contract for a state provider constructor,
+// which requires a `context.Context` for initialization.
 type StateProviderFactory func(ctx context.Context, options any, deps FactoryDeps) (core.StateProvider, error)
-type ComponentFactory func(options any, deps FactoryDeps) (any, error)
+
+// ComponentFactory is a generic function signature for component constructors.
+// It accepts a provider-specific options struct (`options`) and a map of
+// resolved dependencies (`deps`), returning the initialized component as `any`.
+type ComponentFactory func(ctx context.Context, options any, deps FactoryDeps) (any, error)
+
+// ToolFactory is a specialized factory for declarative tools, which may have
+// a different dependency injection mechanism.
+type ToolFactory func(options any, deps FactoryDeps) (any, error)
+
 //
 // registry is the specific component map to search in (e.g., `Registry.Retriever`).
 // name is the string name under which the component was registered.
@@ -95,11 +83,11 @@ func Get[T any](registry map[string]T, name string) (T, error) {
 
 // RegisterRetriever adds a retriever constructor to the global registry. This
 // is typically called from an `init()` function in a provider package.
-func RegisterRetriever(name string, c RetrieverFactory) { Registry.Retriever[name] = c }
+func RegisterRetriever(name string, c ComponentFactory) { Registry.Component[name] = c }
 
 // RegisterReranker adds a reranker constructor to the global registry. This
 // is typically called from an `init()` function in a provider package.
-func RegisterReranker(name string, c RerankerFactory) { Registry.Reranker[name] = c }
+func RegisterReranker(name string, c ComponentFactory) { Registry.Component[name] = c }
 
 // RegisterRules adds a rules engine constructor to the global registry. This
 // is typically called from an `init()` function in a provider package.
@@ -107,15 +95,15 @@ func RegisterRules(name string, c any) { Registry.Rules[name] = c }
 
 // RegisterLLM adds a language model constructor to the global registry. This
 // is typically called from an `init()` function in a provider package.
-func RegisterLLM(name string, c LLMFactory) { Registry.LLM[name] = c }
+func RegisterLLM(name string, c ComponentFactory) { Registry.Component[name] = c }
 
 // RegisterEmbedder adds a text embedder constructor to the global registry. This
 // is typically called from an `init()` function in a provider package.
-func RegisterEmbedder(name string, c EmbedderFactory) { Registry.Embedder[name] = c }
+func RegisterEmbedder(name string, c ComponentFactory) { Registry.Component[name] = c }
 
 // RegisterSchemaParser adds a schema parser constructor to the global registry.
 // This is typically called from an `init()` function in a provider package.
-func RegisterSchemaParser(name string, c any) { Registry.SchemaParser[name] = c }
+func RegisterSchemaParser(name string, c ComponentFactory) { Registry.Component[name] = c }
 
 // Register adds a generic component constructor (e.g., a vector store) to the
 // global registry. This is typically called from an `init()` function in a
