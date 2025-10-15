@@ -1,0 +1,15 @@
+orchestrator:
+  type: sandwich
+
+llm:
+  provider: mock-llm # Use a mock LLM that doesn't call an external API.
+  params:
+    responses:
+      - "This is a mock response."
+
+retriever:
+  provider: in-memory
+  params:
+    docs:
+      - "This is the first document."
+      - "This is the second document."
