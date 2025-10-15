@@ -11,14 +11,18 @@ import (
 // Registry is the central store for all registered component constructors.
 // It is the primary mechanism for extending MangleKit with new providers.
 type Registry struct {
-	// Rules holds registered `core.RuleSet` constructors.
-	Rules map[string]any
+	Retrievers     map[string]RetrieverFactory
+	LLMs           map[string]LLMFactory
+	Embedders      map[string]EmbedderFactory
+	Rerankers      map[string]RerankerFactory
+	StateProviders map[string]StateProviderFactory
+	VectorStores   map[string]VectorStoreFactory
+	RuleSets       map[string]RuleSetFactory
+	SchemaParsers  map[string]ComponentFactory // Keep generic for now
 	// Component holds registered generic component constructors, such as `core.VectorStore`.
 	Component map[string]ComponentFactory
 	// Options holds registered options types for components.
 	Options map[string]reflect.Type
-	// StateProviders holds registered `core.StateProvider` constructors.
-	StateProviders map[string]StateProviderFactory
 	// ClientFactories holds registered client factory functions.
 	ClientFactories map[string]any
 }
@@ -26,10 +30,16 @@ type Registry struct {
 // NewRegistry creates and returns a new, fully initialized Registry struct.
 func NewRegistry() *Registry {
 	return &Registry{
-		Rules:           make(map[string]any),
-		Component:       make(map[string]ComponentFactory),
-		Options:         make(map[string]reflect.Type),
-		StateProviders:  make(map[string]StateProviderFactory),
+		Retrievers:     make(map[string]RetrieverFactory),
+		LLMs:           make(map[string]LLMFactory),
+		Embedders:      make(map[string]EmbedderFactory),
+		Rerankers:      make(map[string]RerankerFactory),
+		StateProviders: make(map[string]StateProviderFactory),
+		VectorStores:   make(map[string]VectorStoreFactory),
+		RuleSets:       make(map[string]RuleSetFactory),
+		SchemaParsers:  make(map[string]ComponentFactory),
+		Component:      make(map[string]ComponentFactory),
+		Options:        make(map[string]reflect.Type),
 		ClientFactories: make(map[string]any),
 	}
 }
@@ -40,17 +50,6 @@ func NewRegistry() *Registry {
 // It returns the initialized client, a `core.ResourceCloser` for graceful shutdown,
 // and an error.
 type ClientFactory func(ctx context.Context, cfg *Config) (client any, closer core.ResourceCloser, err error)
-
-type FactoryDeps map[string]any
-
-// StateProviderFactory defines the contract for a state provider constructor,
-// which requires a `context.Context` for initialization.
-type StateProviderFactory func(ctx context.Context, options any, deps FactoryDeps) (core.StateProvider, error)
-
-// ComponentFactory is a generic function signature for component constructors.
-// It accepts a provider-specific options struct (`options`) and a map of
-// resolved dependencies (`deps`), returning the initialized component as `any`.
-type ComponentFactory func(ctx context.Context, options any, deps FactoryDeps) (any, error)
 
 // ToolFactory is a specialized factory for declarative tools, which may have
 // a different dependency injection mechanism.
@@ -72,22 +71,25 @@ func Get[T any](registry map[string]T, name string) (T, error) {
 }
 
 // RegisterRetriever adds a retriever constructor to the registry.
-func (r *Registry) RegisterRetriever(name string, c ComponentFactory) { r.Component[name] = c }
+func (r *Registry) RegisterRetriever(name string, c RetrieverFactory) { r.Retrievers[name] = c }
 
 // RegisterReranker adds a reranker constructor to the registry.
-func (r *Registry) RegisterReranker(name string, c ComponentFactory) { r.Component[name] = c }
+func (r *Registry) RegisterReranker(name string, c RerankerFactory) { r.Rerankers[name] = c }
 
-// RegisterRules adds a rules engine constructor to the registry.
-func (r *Registry) RegisterRules(name string, c any) { r.Rules[name] = c }
+// RegisterRuleSet adds a rules engine constructor to the registry.
+func (r *Registry) RegisterRuleSet(name string, c RuleSetFactory) { r.RuleSets[name] = c }
 
 // RegisterLLM adds a language model constructor to the registry.
-func (r *Registry) RegisterLLM(name string, c ComponentFactory) { r.Component[name] = c }
+func (r *Registry) RegisterLLM(name string, c LLMFactory) { r.LLMs[name] = c }
 
 // RegisterEmbedder adds a text embedder constructor to the registry.
-func (r *Registry) RegisterEmbedder(name string, c ComponentFactory) { r.Component[name] = c }
+func (r *Registry) RegisterEmbedder(name string, c EmbedderFactory) { r.Embedders[name] = c }
 
 // RegisterSchemaParser adds a schema parser constructor to the registry.
-func (r *Registry) RegisterSchemaParser(name string, c ComponentFactory) { r.Component[name] = c }
+func (r *Registry) RegisterSchemaParser(name string, c ComponentFactory) { r.SchemaParsers[name] = c }
+
+// RegisterVectorStore adds a vector store constructor to the registry.
+func (r *Registry) RegisterVectorStore(name string, c VectorStoreFactory) { r.VectorStores[name] = c }
 
 // Register adds a generic component constructor (e.g., a vector store) to the registry.
 func (r *Registry) Register(name string, c ComponentFactory) { r.Component[name] = c }

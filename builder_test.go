@@ -10,6 +10,7 @@ import (
 	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/core/api"
 )
 
 // mockRetriever is a simple mock implementation of the retrieve.Retriever interface.
@@ -22,8 +23,12 @@ func (m *mockRetriever) Retrieve(_ context.Context, _ retrieve.Request) (retriev
 // mockReranker is a simple mock implementation of the rerank.Reranker interface.
 type mockReranker struct{}
 
-func (m *mockReranker) Rerank(_ context.Context, _ rerank.Request) ([]rerank.ScoredDoc, error) {
-	return []rerank.ScoredDoc{{Doc: core.Doc{Text: "mock"}}}, nil
+func (m *mockReranker) Rerank(_ context.Context, req rerank.Request) ([]rerank.ScoredDoc, error) {
+	var scoredDocs []rerank.ScoredDoc
+	for _, doc := range req.Docs {
+		scoredDocs = append(scoredDocs, rerank.ScoredDoc{Doc: doc, Score: 1.0})
+	}
+	return scoredDocs, nil
 }
 
 // mockLLM is a simple mock implementation of the llm.Client interface.
@@ -34,7 +39,9 @@ func (m *mockLLM) Complete(_ context.Context, _ llm.Request) (llm.Response, erro
 }
 
 // mockRules is a simple mock implementation of the core.RuleSet interface.
-type mockRules struct{}
+type mockRules struct {
+	core.RuleSet
+}
 
 func (m *mockRules) Evaluate(_ core.Stage, _ core.Query, _ *core.Answer) (core.RuleResult, error) {
 	return core.RuleResult{Allowed: true}, nil
@@ -42,7 +49,17 @@ func (m *mockRules) Evaluate(_ core.Stage, _ core.Query, _ *core.Answer) (core.R
 
 // mockEmbedder is a simple mock implementation of the ai.Embedder interface.
 type mockEmbedder struct {
-	ai.Embedder
+}
+
+func (m *mockEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.EmbedResponse, error) {
+	return &ai.EmbedResponse{}, nil
+}
+
+func (m *mockEmbedder) Name() string {
+	return "mock-embedder"
+}
+
+func (m *mockEmbedder) Register(r api.Registry) {
 }
 
 // mockVectorStore is a simple mock implementation of the core.VectorStore interface.
@@ -85,22 +102,22 @@ type mockEmbedderOptions struct{}
 type mockStateProviderOptions struct{}
 
 func registerTestComponents(r *Registry) {
-	r.Register("mock-retriever", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
+	r.RegisterRetriever("mock-retriever", func(ctx context.Context, opts any, deps FactoryDeps) (retrieve.Retriever, error) {
 		return &mockRetriever{}, nil
 	})
-	r.Register("mock-reranker", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
+	r.RegisterReranker("mock-reranker", func(ctx context.Context, opts any, deps FactoryDeps) (rerank.Reranker, error) {
 		return &mockReranker{}, nil
 	})
-	r.Register("mock-llm", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
+	r.RegisterLLM("mock-llm", func(ctx context.Context, opts any, deps FactoryDeps) (llm.Client, error) {
 		return &mockLLM{}, nil
 	})
-	r.Register("mock-rules", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
+	r.RegisterRuleSet("mock-rules", func(ctx context.Context, opts any, deps FactoryDeps) (core.RuleSet, error) {
 		return &mockRules{}, nil
 	})
-	r.Register("mock-embedder", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
+	r.RegisterEmbedder("mock-embedder", func(ctx context.Context, opts any, deps FactoryDeps) (ai.Embedder, error) {
 		return &mockEmbedder{}, nil
 	})
-	r.Register("mock-vs", func(ctx context.Context, opts any, deps FactoryDeps) (any, error) {
+	r.RegisterVectorStore("mock-vs", func(ctx context.Context, opts any, deps FactoryDeps) (core.VectorStore, error) {
 		return &mockVectorStore{}, nil
 	})
 

@@ -25,10 +25,14 @@ const (
 )
 
 func Register(r *manglekit.Registry) {
-	r.Register("bm25", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
-		opts, ok := options.(retrieve.BM25Options)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected retrieve.BM25Options, got %T", options)
+	r.RegisterRetriever("bm25", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
+		var opts retrieve.BM25Options
+		if options != nil {
+			if typedOpts, ok := options.(*retrieve.BM25Options); ok {
+				opts = *typedOpts
+			} else {
+				return nil, fmt.Errorf("invalid options type, expected *retrieve.BM25Options, got %T", options)
+			}
 		}
 		return New(opts)
 	})
@@ -185,21 +189,21 @@ func (b *BM25) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Res
 	return retrieve.Result{Docs: results}, nil
 }
 
-func parseFrontMatter(fileContent []byte, logger core.Logger) (map[string]any, string) {
+func parseFrontMatter(fileContent []byte, logger core.Logger) (map[string]any, []byte) {
 	const separator = "---\n"
 	if !bytes.HasPrefix(fileContent, []byte(separator)) {
-		return nil, string(fileContent)
+		return nil, fileContent
 	}
 	parts := bytes.SplitN(fileContent, []byte(separator), 3)
 	if len(parts) < 3 {
-		return nil, string(fileContent)
+		return nil, fileContent
 	}
 	var metadata map[string]any
 	if err := yaml.Unmarshal(parts[1], &metadata); err != nil {
 		logger.Warnf("could not parse front matter: %v, file content will be used as is", err)
-		return nil, string(fileContent)
+		return nil, fileContent
 	}
-	return metadata, string(parts[2])
+	return metadata, parts[2]
 }
 
 func loadDocuments(path string, logger core.Logger) ([]*ai.Document, error) {
@@ -213,7 +217,8 @@ func loadDocuments(path string, logger core.Logger) ([]*ai.Document, error) {
 			if err != nil {
 				return err
 			}
-			metadata, contentStr := parseFrontMatter(fileContent, logger)
+			metadata, contentBytes := parseFrontMatter(fileContent, logger)
+			contentStr := string(contentBytes)
 			trimmedContent := strings.TrimSpace(contentStr)
 			if trimmedContent == "" {
 				return nil

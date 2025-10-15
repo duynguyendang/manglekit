@@ -11,14 +11,18 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	r.Register("state-inmemory", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
-		opts, ok := options.(state.InMemoryOptions)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected state.InMemoryOptions, got %T", options)
+	r.RegisterStateProvider("inmemory", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
+		var opts state.InMemoryOptions
+		if options != nil {
+			if typedOpts, ok := options.(*state.InMemoryOptions); ok {
+				opts = *typedOpts
+			} else {
+				return nil, fmt.Errorf("invalid options type, expected *state.InMemoryOptions, got %T", options)
+			}
 		}
 		return New(opts)
 	})
-	r.RegisterOptions("state-inmemory", (*state.InMemoryOptions)(nil))
+	r.RegisterOptions("inmemory", (*state.InMemoryOptions)(nil))
 }
 
 // Provider is a thread-safe, in-memory implementation of the core.StateProvider

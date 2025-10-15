@@ -22,16 +22,21 @@ import (
 )
 
 func RegisterGoogle(r *manglekit.Registry) {
-	r.Register("google", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
-		opts, ok := options.(llm.GoogleOptions)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type for google llm: expected llm.GoogleOptions, got %T", options)
+	r.RegisterLLM("google", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (llm.Client, error) {
+		var opts llm.GoogleOptions
+		if options != nil {
+			if typedOpts, ok := options.(*llm.GoogleOptions); ok {
+				opts = *typedOpts
+			} else {
+				return nil, fmt.Errorf("invalid options type for google llm: expected *llm.GoogleOptions, got %T", options)
+			}
 		}
-		client, ok := deps["client"].(*genkit.Genkit)
+
+		clients, ok := deps["client"].(llm.GoogleClients)
 		if !ok {
-			return nil, fmt.Errorf("invalid client type for google llm: expected *genkit.Genkit, got %T", client)
+			return nil, fmt.Errorf("invalid client type for google llm: expected llm.GoogleClients, got %T", deps["client"])
 		}
-		return NewGoogle(opts, client)
+		return NewGoogle(opts, clients.Genkit)
 	})
 	r.RegisterOptions("google", (*llm.GoogleOptions)(nil))
 	r.RegisterClientFactory("google", googleClientFactory)
@@ -116,7 +121,7 @@ func NewGoogle(opts llm.GoogleOptions, g *genkit.Genkit) (llm.Client, error) {
 // Complete generates a response from the configured Google model. It first uses
 // the PromptBuilder to construct the final prompt by merging the request's context,
 // query, and any other dynamic data into a template. It then calls the model
-// via the Genkit framework and formats the result into a standard `llm.Response`.
+// via the Genkit framework and and formats the result into a standard `llm.Response`.
 // This method satisfies the `llm.Client` interface.
 //
 // ctx is the context for the API call.
