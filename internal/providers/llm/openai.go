@@ -59,7 +59,7 @@ func newOpenAICompatibleClient(apiKey, baseURL string) (any, core.ResourceCloser
 	return &client, closer, nil
 }
 
-func openAIClientFactory(cfg *manglekit.Config) (any, core.ResourceCloser, error) {
+func openAIClientFactory(ctx context.Context, cfg *manglekit.Config) (any, core.ResourceCloser, error) {
 	if cfg.Providers.OpenAI == nil {
 		return nil, nil, fmt.Errorf("missing providers.openai config for openai client factory")
 	}
@@ -77,7 +77,7 @@ func openAIClientFactory(cfg *manglekit.Config) (any, core.ResourceCloser, error
 	return newOpenAICompatibleClient(apiKey, "")
 }
 
-func groqClientFactory(cfg *manglekit.Config) (any, core.ResourceCloser, error) {
+func groqClientFactory(ctx context.Context, cfg *manglekit.Config) (any, core.ResourceCloser, error) {
 	if cfg.Providers.Groq == nil {
 		return nil, nil, fmt.Errorf("missing providers.groq config for groq client factory")
 	}

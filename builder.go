@@ -349,7 +349,7 @@ func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, provi
 		return fmt.Errorf("invalid client factory type for provider '%s'", providerName)
 	}
 
-	client, closer, err := clientFactory(b.config)
+	client, closer, err := clientFactory(ctx, b.config)
 	if err != nil {
 		return fmt.Errorf("failed to create client for provider '%s': %w", providerName, err)
 	}
@@ -696,7 +696,7 @@ func (b *Builder) buildComponents(ctx context.Context) error {
 	if err := b.buildLLM(); err != nil {
 		return err
 	}
-	if err := b.buildStateProvider(); err != nil {
+	if err := b.buildStateProvider(ctx); err != nil {
 		return err
 	}
 	return nil
@@ -979,7 +979,7 @@ func (b *Builder) closeResources(ctx context.Context) error {
 	return combined
 }
 
-func (b *Builder) buildStateProvider() error {
+func (b *Builder) buildStateProvider(ctx context.Context) error {
 	if b.stateProviderName == "" {
 		return nil
 	}
@@ -996,7 +996,7 @@ func (b *Builder) buildStateProvider() error {
 		opts = o
 	}
 
-	provider, err := factory(opts, nil) // State providers currently don't have dependencies.
+	provider, err := factory(ctx, opts, nil) // State providers currently don't have dependencies.
 	if err != nil {
 		return fmt.Errorf("failed to build state provider '%s': %w", b.stateProviderName, err)
 	}

@@ -1,6 +1,7 @@
 package manglekit
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 
@@ -67,7 +68,7 @@ var Registry = struct {
 // object and is responsible for extracting its own provider-specific settings.
 // It returns the initialized client, a `core.ResourceCloser` for graceful shutdown,
 // and an error.
-type ClientFactory func(cfg *Config) (client any, closer core.ResourceCloser, err error)
+type ClientFactory func(ctx context.Context, cfg *Config) (client any, closer core.ResourceCloser, err error)
 
 // Get retrieves a constructor function from the specified registry map. It is a
 // helper used by the Builder to find and instantiate components.
@@ -77,7 +78,7 @@ type RetrieverFactory func(options any, deps FactoryDeps) (retrieve.Retriever, e
 type RerankerFactory func(options any, deps FactoryDeps) (rerank.Reranker, error)
 type LLMFactory func(options any, deps FactoryDeps) (llm.Client, error)
 type EmbedderFactory func(options any, deps FactoryDeps) (ai.Embedder, error)
-type StateProviderFactory func(options any, deps FactoryDeps) (core.StateProvider, error)
+type StateProviderFactory func(ctx context.Context, options any, deps FactoryDeps) (core.StateProvider, error)
 type ComponentFactory func(options any, deps FactoryDeps) (any, error)
 //
 // registry is the specific component map to search in (e.g., `Registry.Retriever`).

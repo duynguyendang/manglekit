@@ -103,7 +103,7 @@ func TestMain(m *testing.M) {
 
 	RegisterOptions("mock", (*mockOptions)(nil))
 	RegisterOptions("mock-vs", (*core.LocalvecOptions)(nil))
-	RegisterStateProvider("mock-sp", func(opts any, deps FactoryDeps) (core.StateProvider, error) {
+	RegisterStateProvider("mock-sp", func(ctx context.Context, opts any, deps FactoryDeps) (core.StateProvider, error) {
 		return &mockStateProvider{}, nil
 	})
 	RegisterOptions("mock-sp", (*mockStateProviderOptions)(nil))
