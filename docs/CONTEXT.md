@@ -129,6 +129,24 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 | Medium | MaxTokens ignored | internal/providers/llm/openai.go, internal/providers/llm/google.go | LLM clients discard `req.MaxTokens`, so orchestrator defaults cannot constrain response length. |
 | Low | Declarative state | pipeline/declarative/orchestrator.go | The declarative orchestrator stores a `StateProvider` but never reads or writes session state, leaving the feature unused. |
 | Low | Heuristic constants | internal/providers/hybrid/hybrid.go | Reciprocal Rank Fusion uses a hard-coded `k=60` without configuration hooks.
+| High | OCP Violation | builder.go | The builder uses large `switch` statements, violating the Open/Closed Principle and hindering extensibility. See `docs/code-review.md`. |
+| Medium | Duplicated Logic | pipeline/sandwich.go, pipeline/declarative/orchestrator.go | Conversational state management logic is duplicated across both orchestrators. See `docs/code-review.md`. |
+| Low | Inconsistent Context | internal/providers/ | `context.Context` is not consistently propagated by all providers making external calls. See `docs/code-review.md`. |
+
+---
+
+## Code Review Findings (2025-10-14)
+
+A comprehensive code review was conducted and the detailed findings are available in `docs/code-review.md`. The review identified several key areas for improvement that align with the known gaps and architectural principles of the project.
+
+**Key Findings Summary:**
+- **Violation of Open/Closed Principle:** The core `builder.go` file requires modification to add new providers, making the system less extensible.
+- **Duplicated State Management Logic:** The `Sandwich` and `Declarative` orchestrators share nearly identical code for handling conversational history, which should be centralized.
+- **Hard-coded Configuration:** The hybrid retriever uses a hard-coded "magic number" for its fusion algorithm, which should be configurable.
+- **Inconsistent Context Propagation:** Some provider implementations do not properly propagate `context.Context`, which is a known issue that impacts resilience.
+- **Minor Organizational Issues:** The `typemap.go` file is unused, with its intended logic located in `registry.go`.
+
+For detailed analysis and refactoring suggestions, please refer to the full [Code Review Document](./code-review.md).
 
 ---
 
