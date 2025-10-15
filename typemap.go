@@ -13,7 +13,7 @@ var (
 
 // RegisterOptions registers the **pointer-to-struct** options type for a provider.
 // Always pass a **typed nil pointer**:  (*MyOptions)(nil)
-func RegisterOptions(providerName string, typedNilPtr any) error {
+func (r *Registry) RegisterOptions(providerName string, typedNilPtr any) error {
 	t := reflect.TypeOf(typedNilPtr)
 	if t == nil {
 		return fmt.Errorf("RegisterOptions %q: got nil; pass a typed nil pointer like (*T)(nil)", providerName)

@@ -1,96 +1,69 @@
-// Package main for 07-rdf-knowledge-base demonstrates how to integrate an RDF
-// knowledge base into the MangleKit pipeline.
-//
-// This example loads an RDF graph (in Turtle format) containing statements about
-// user permissions. The `config.yaml` file configures the `rdf` schema parser,
-// which converts the RDF triples into Mangle facts. The Mangle rules in
-// `rules/policy.dlog` then query this graph-structured data to make complex
-// access control decisions, showcasing how Mangle can reason over structured,
-// semantic knowledge.
 package main
 
 import (
 	"context"
-	"errors"
-	"fmt"
+	"flag"
 	"log"
-	"path/filepath"
-	"runtime"
 
 	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/core"
-	_ "github.com/duynguyendang/manglekit/providers/all" // register all standard providers
-	"github.com/joho/godotenv"
+	"github.com/duynguyendang/manglekit/internal/embedders/google"
+	"github.com/duynguyendang/manglekit/internal/embedders/openai"
+	"github.com/duynguyendang/manglekit/internal/providers/bm25"
+	"github.com/duynguyendang/manglekit/internal/providers/dense"
+	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
+	"github.com/duynguyendang/manglekit/internal/providers/llm"
+	"github.com/duynguyendang/manglekit/internal/providers/mangle"
+	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
+	inmemory "github.com/duynguyendang/manglekit/internal/providers/retrievers/inmemory"
+	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
+	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
+	"github.com/duynguyendang/manglekit/retrieve"
 )
 
-func main() {
-	_ = godotenv.Load() // load .env file if exists
-	ctx := context.Background()
+func registerAllProviders(r *manglekit.Registry) {
+	// LLM Providers
+	llm.RegisterGoogle(r)
+	llm.RegisterOpenAI(r)
 
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		log.Fatalf("failed to get current file path")
-	}
-	dir := filepath.Dir(currentFile)
-	configPath := filepath.Join(dir, "config.yaml")
+	// Embedder Providers
+	google.Register(r)
+	openai.Register(r)
 
-	// 1. Load the base configuration from YAML.
-	// This will set up the Mangle rules and the LLM.
-	builder, err := manglekit.NewBuilderFromYAML(configPath)
+	// Retriever Providers
+	inmemory.Register(r)
+	bm25.Register(r)
+	dense.Register(r)
+	hybrid.Register(r)
 
-	if err != nil {
-		log.Fatalf("Failed to create builder from yaml: %v", err)
-	}
+	// Reranker Providers
+	cosine.Register(r)
 
-	orch, err := builder.Build(ctx)
-	if err != nil {
-		log.Fatalf("Failed to build orchestrator: %v", err)
-	}
-	defer orch.Close(ctx)
+	// Rules Providers
+	mangle.Register(r)
 
-	// === Test Case 1: Alice requests access to doc123 (should be allowed) ===
-	fmt.Println("--- Running Test Case 1: Alice requests doc123 ---")
-	aliceQuery := core.Query{
-		Text: "Can I access this document?",
-		Meta: map[string]any{
-			"user_context": map[string]any{
-				"name":            "<http://example.org/ontology#alice>",
-				"document":        "<http://example.org/ontology#doc123>",
-				"permission_pred": "<http://example.org/ontology#hasPermission>",
-			},
-		},
-	}
-	runTest("Alice (Allowed)", ctx, orch, aliceQuery, false)
+	// Schema Parser Providers
+	jsonschema.Register(r)
+	rdf.Register(r)
 
-	// === Test Case 2: Bob requests access to doc123 (should be denied) ===
-	fmt.Println("\n--- Running Test Case 2: Bob requests doc123 ---")
-	bobQuery := core.Query{
-		Text: "Can I access this document?",
-		Meta: map[string]any{
-			"user_context": map[string]any{
-				"name":            "<http://example.org/ontology#bob>",
-				"document":        "<http://example.org/ontology#doc123>",
-				"permission_pred": "<http://example.org/ontology#hasPermission>",
-			},
-		},
-	}
-	runTest("Bob (Denied)", ctx, orch, bobQuery, true)
+	// Options
+	r.RegisterOptions("bm25", (*retrieve.BM25Options)(nil))
 }
 
-func runTest(name string, ctx context.Context, orch core.Orchestrator, query core.Query, expectDeny bool) {
-	result, err := orch.Execute(ctx, "session-1", query)
-	wasDenied := errors.Is(err, core.ErrDenied)
+func main() {
+	configFile := flag.String("config", "config.yaml", "Path to the configuration file")
+	flag.Parse()
 
-	if wasDenied == expectDeny {
-		fmt.Printf("Test Case: %q - PASSED\n", name)
-		if wasDenied {
-			deniedReasons, _ := result.Meta["mangle_denied_reasons"]
-			fmt.Printf("  > Decision: Denied. Justification: %v\n", deniedReasons)
-		} else {
-			fmt.Println("  > Decision: Allowed.")
-		}
-	} else {
-		fmt.Printf("Test Case: %q - FAILED\n", name)
-		fmt.Printf("  > Expected deny: %v, but got: %v. Error: %v\n", expectDeny, wasDenied, err)
+	registry := manglekit.NewRegistry()
+	registerAllProviders(registry)
+
+	builder, err := manglekit.NewBuilderFromYAML(*configFile, registry)
+	if err != nil {
+		log.Fatalf("failed to create builder: %v", err)
 	}
+	ctx := context.Background()
+	orch, err := builder.Build(ctx)
+	if err != nil {
+		log.Fatalf("failed to build orchestrator: %v", err)
+	}
+	defer orch.Close(ctx)
 }

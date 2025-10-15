@@ -1,57 +1,69 @@
-// Package main for 01-basic-rag demonstrates the simplest way to create and run
-// a MangleKit pipeline. It uses the `NewBuilderFromYAML` function to load a
-// complete "sandwich" pipeline configuration from a local `config.yaml` file.
-// This example showcases how to initialize the system, run a query, and print
-// the response and its citations.
 package main
 
 import (
 	"context"
-	"fmt"
+	"flag"
 	"log"
-	"path/filepath"
-	"runtime"
 
 	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/core"
-	_ "github.com/duynguyendang/manglekit/providers/all"
-	"github.com/joho/godotenv"
+	"github.com/duynguyendang/manglekit/internal/embedders/google"
+	"github.com/duynguyendang/manglekit/internal/embedders/openai"
+	"github.com/duynguyendang/manglekit/internal/providers/bm25"
+	"github.com/duynguyendang/manglekit/internal/providers/dense"
+	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
+	"github.com/duynguyendang/manglekit/internal/providers/llm"
+	"github.com/duynguyendang/manglekit/internal/providers/mangle"
+	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
+	inmemory "github.com/duynguyendang/manglekit/internal/providers/retrievers/inmemory"
+	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
+	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
+	"github.com/duynguyendang/manglekit/retrieve"
 )
 
-// The simplest way to get started.
-//
-// This example demonstrates the basic RAG pipeline.
+func registerAllProviders(r *manglekit.Registry) {
+	// LLM Providers
+	llm.RegisterGoogle(r)
+	llm.RegisterOpenAI(r)
+
+	// Embedder Providers
+	google.Register(r)
+	openai.Register(r)
+
+	// Retriever Providers
+	inmemory.Register(r)
+	bm25.Register(r)
+	dense.Register(r)
+	hybrid.Register(r)
+
+	// Reranker Providers
+	cosine.Register(r)
+
+	// Rules Providers
+	mangle.Register(r)
+
+	// Schema Parser Providers
+	jsonschema.Register(r)
+	rdf.Register(r)
+
+	// Options
+	r.RegisterOptions("bm25", (*retrieve.BM25Options)(nil))
+}
+
 func main() {
-	_ = godotenv.Load()
+	configFile := flag.String("config", "config.yaml", "Path to the configuration file")
+	flag.Parse()
 
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		log.Fatalf("failed to get current file path")
-	}
-	dir := filepath.Dir(currentFile)
-	configPath := filepath.Join(dir, "config.yaml")
+	registry := manglekit.NewRegistry()
+	registerAllProviders(registry)
 
-	// Build the pipeline from the local config file.
-	builder, err := manglekit.NewBuilderFromYAML(configPath)
+	builder, err := manglekit.NewBuilderFromYAML(*configFile, registry)
 	if err != nil {
-		log.Fatalf("failed to create builder from yaml: %v", err)
+		log.Fatalf("failed to create builder: %v", err)
 	}
-
 	ctx := context.Background()
-	pipeline, err := builder.Build(ctx)
+	orch, err := builder.Build(ctx)
 	if err != nil {
-		log.Fatalf("failed to build pipeline: %v", err)
+		log.Fatalf("failed to build orchestrator: %v", err)
 	}
-	defer pipeline.Close(ctx)
-
-	// Run the pipeline.
-	resp, err := pipeline.Execute(ctx, "session-1", core.Query{Text: "what is the features of mangle?"})
-	if err != nil {
-		log.Fatalf("failed to run pipeline: %v", err)
-	}
-	fmt.Println(resp.Text)
-	fmt.Println("\nCitations:")
-	for _, citation := range resp.Citations {
-		fmt.Printf("- %s (%s)\n", citation.Snippet, citation.Source)
-	}
+	defer orch.Close(ctx)
 }

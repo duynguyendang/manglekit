@@ -25,13 +25,9 @@ import (
 	"github.com/google/mangle/parse"
 )
 
-func init() {
+func Register(r *manglekit.Registry) {
 	// Register the constructor with the MangleKit framework.
-	manglekit.Register("mangle", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
-		// The New function for mangle has a different signature (takes context),
-		// so we can't pass it directly. This adapter is needed.
-		// For now, we assume the context can be created here.
-		// A better long-term solution might be to pass context through the factory deps.
+	r.Register("mangle", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(core.MangleOptions)
 		if !ok {
 			// Also handle the pointer case, which is common.
@@ -41,9 +37,14 @@ func init() {
 				return nil, fmt.Errorf("invalid options type, expected core.MangleOptions, got %T", options)
 			}
 		}
-		return New(ctx, opts)
+		// Pass the registry from the builder's dependencies.
+		reg, ok := deps["registry"].(*manglekit.Registry)
+		if !ok {
+			return nil, fmt.Errorf("mangle provider requires a *manglekit.Registry in its dependencies")
+		}
+		return New(ctx, opts, reg)
 	})
-	manglekit.RegisterOptions("mangle", (*core.MangleOptions)(nil))
+	r.RegisterOptions("mangle", (*core.MangleOptions)(nil))
 }
 
 var builtinRedactions = map[string]*regexp.Regexp{
@@ -82,7 +83,7 @@ type ruleSet struct {
 // opts provides the configuration, including paths to rule files, schemas, and converters.
 // It returns a fully initialized `core.RuleSet` (which also satisfies `core.FlowController`)
 // or an error if any part of the initialization fails.
-func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
+func New(ctx context.Context, opts core.MangleOptions, r *manglekit.Registry) (core.RuleSet, error) {
 	if len(opts.Path) == 0 {
 		return nil, fmt.Errorf("mangle: at least one path in 'path' must be provided")
 	}
@@ -93,7 +94,7 @@ func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
 
 	// 1) Parse schemas (if any). We only take schema facts here; EDB declarations
 	// come from either code (code-first) or .dlog Decl (file-first).
-	schemaFacts, schemaDecls, err := parseSchemas(opts.SchemaSources)
+	schemaFacts, schemaDecls, err := parseSchemas(opts.SchemaSources, r)
 	if err != nil {
 		return nil, fmt.Errorf("mangle: failed to parse schemas: %w", err)
 	}
@@ -120,14 +121,14 @@ func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
 
 	// Custom converters
 	for _, name := range opts.PreProcess {
-		conv, err := loadConverter(name)
+		conv, err := loadConverter(name, r)
 		if err != nil {
 			return nil, fmt.Errorf("mangle: failed to load pre-process converter '%s': %w", name, err)
 		}
 		preConverters = append(preConverters, conv)
 	}
 	for _, name := range opts.PostProcess {
-		conv, err := loadConverter(name)
+		conv, err := loadConverter(name, r)
 		if err != nil {
 			return nil, fmt.Errorf("mangle: failed to load post-process converter '%s': %w", name, err)
 		}
@@ -185,8 +186,8 @@ func New(ctx context.Context, opts core.MangleOptions) (core.RuleSet, error) {
 
 // loadConverter looks up a converter by name from the registry, instantiates it,
 // and returns it as a core.FactConverter.
-func loadConverter(name string) (core.FactConverter, error) {
-	factory, err := manglekit.Get(manglekit.Registry.Component, name)
+func loadConverter(name string, r *manglekit.Registry) (core.FactConverter, error) {
+	factory, err := manglekit.Get(r.Component, name)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +205,7 @@ func loadConverter(name string) (core.FactConverter, error) {
 }
 
 // parseSchemas handles reading and parsing schema definition files.
-func parseSchemas(sources []core.SchemaSource) ([]ast.Atom, []ast.PredicateSym, error) {
+func parseSchemas(sources []core.SchemaSource, r *manglekit.Registry) ([]ast.Atom, []ast.PredicateSym, error) {
 	if len(sources) == 0 {
 		return nil, nil, nil
 	}
@@ -214,7 +215,7 @@ func parseSchemas(sources []core.SchemaSource) ([]ast.Atom, []ast.PredicateSym, 
 
 	for _, source := range sources {
 		// 1. Lookup parser factory
-		factory, err := manglekit.Get(manglekit.Registry.Component, source.Type)
+		factory, err := manglekit.Get(r.Component, source.Type)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get schema parser factory '%s': %w", source.Type, err)
 		}

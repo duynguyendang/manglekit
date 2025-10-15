@@ -24,6 +24,17 @@ type InMemoryRetriever struct {
 	log  core.Logger
 }
 
+func Register(r *manglekit.Registry) {
+	r.Register("in-memory", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+		opts, ok := options.(retrieve.InMemoryOptions)
+		if !ok {
+			return nil, errors.New("invalid options type for in-memory retriever")
+		}
+		return New(opts)
+	})
+	r.RegisterOptions("in-memory", (*retrieve.InMemoryOptions)(nil))
+}
+
 // New is the constructor for the InMemoryRetriever. It is registered with the
 // MangleKit registry for the "in-memory" provider name.
 //
@@ -113,15 +124,4 @@ func (r *InMemoryRetriever) Replace(ctx context.Context, docs []core.Doc) error 
 	}
 	r.log.Infof("in-memory retriever replace", "total", len(r.docs))
 	return nil
-}
-
-func init() {
-	manglekit.Register("in-memory", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
-		opts, ok := options.(retrieve.InMemoryOptions)
-		if !ok {
-			return nil, errors.New("invalid options type for in-memory retriever")
-		}
-		return New(opts)
-	})
-	manglekit.RegisterOptions("in-memory", (*retrieve.InMemoryOptions)(nil))
 }

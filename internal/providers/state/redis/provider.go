@@ -11,15 +11,15 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func init() {
-	manglekit.Register("state-redis", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+func Register(r *manglekit.Registry) {
+	r.Register("state-redis", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(state.RedisOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected state.RedisOptions, got %T", options)
 		}
 		return New(ctx, opts)
 	})
-	manglekit.RegisterOptions("state-redis", (*state.RedisOptions)(nil))
+	r.RegisterOptions("state-redis", (*state.RedisOptions)(nil))
 }
 
 // Provider is a production-ready implementation of the core.StateProvider that

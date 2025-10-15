@@ -13,8 +13,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func init() {
-	manglekit.Register("cosine", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+func Register(r *manglekit.Registry) {
+	r.Register("cosine", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(rerank.CosineOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected rerank.CosineOptions, got %T", options)
@@ -25,7 +25,7 @@ func init() {
 		}
 		return New(opts, embedder)
 	})
-	manglekit.RegisterOptions("cosine", (*rerank.CosineOptions)(nil))
+	r.RegisterOptions("cosine", (*rerank.CosineOptions)(nil))
 }
 
 // Reranker implements the `rerank.Reranker` interface. It re-scores documents

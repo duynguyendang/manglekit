@@ -14,7 +14,7 @@ import (
 	"github.com/openai/openai-go/packages/param"
 )
 
-func init() {
+func Register(r *manglekit.Registry) {
 	factory := func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(embed.OpenAIEmbedderOptions)
 		if !ok {
@@ -26,10 +26,10 @@ func init() {
 		}
 		return New(opts, client)
 	}
-	manglekit.Register("openai-embedder", factory)
-	manglekit.Register("groq-embedder", factory)
-	manglekit.RegisterOptions("openai-embedder", (*embed.OpenAIEmbedderOptions)(nil))
-	manglekit.RegisterOptions("groq-embedder", (*embed.OpenAIEmbedderOptions)(nil))
+	r.Register("openai-embedder", factory)
+	r.Register("groq-embedder", factory)
+	r.RegisterOptions("openai-embedder", (*embed.OpenAIEmbedderOptions)(nil))
+	r.RegisterOptions("groq-embedder", (*embed.OpenAIEmbedderOptions)(nil))
 }
 
 // New is the constructor for the OpenAI-compatible embedder. It is registered

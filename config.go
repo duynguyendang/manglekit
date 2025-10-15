@@ -207,7 +207,7 @@ type OpenAICompatibleConfig struct {
 // @param path is the file system path to the YAML configuration file.
 // @return A pre-configured, ready-to-use BuilderAPI instance, or an error
 // if the file cannot be read, parsed, or if the configuration is invalid.
-func NewBuilderFromYAML(path string) (BuilderAPI, error) {
+func NewBuilderFromYAML(path string, r *Registry) (BuilderAPI, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
@@ -222,7 +222,7 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 
 	configDir := filepath.Dir(path)
 
-	baseBuilder := NewBuilder()
+	baseBuilder := NewBuilder(r)
 	baseBuilder.configDir = configDir
 
 	if cfg.Logging != nil {
@@ -325,8 +325,8 @@ func NewBuilderFromYAML(path string) (BuilderAPI, error) {
 // It also reads `MKT_TOPK`, `MKT_MAX_TOKENS`, and `MKT_FALLBACK_THRESHOLD`.
 //
 // @return A pre-configured BuilderAPI instance or an error if configuration is invalid.
-func NewBuilderFromEnv() (BuilderAPI, error) {
-	baseBuilder := NewBuilder()
+func NewBuilderFromEnv(r *Registry) (BuilderAPI, error) {
+	baseBuilder := NewBuilder(r)
 
 	// Since there's no file, the config dir is the current working directory.
 	// This is important for resolving any relative paths in the JSON params.

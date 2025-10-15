@@ -13,8 +13,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func init() {
-	manglekit.Register("hybrid", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+func Register(r *manglekit.Registry) {
+	r.Register("hybrid", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		opts, ok := options.(retrieve.HybridOptions)
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected retrieve.HybridOptions, got %T", options)
@@ -27,7 +27,7 @@ func init() {
 		}
 		return New(opts)
 	})
-	manglekit.RegisterOptions("hybrid", (*retrieve.HybridOptions)(nil))
+	r.RegisterOptions("hybrid", (*retrieve.HybridOptions)(nil))
 }
 
 // Retriever implements the `retrieve.Retriever` interface by combining results

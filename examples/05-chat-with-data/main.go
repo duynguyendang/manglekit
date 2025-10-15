@@ -1,70 +1,69 @@
-// Package main for 05-chat-with-data provides an example of building a chat
-// application that can interact with and answer questions about your data.
-//
-// This example demonstrates how to pass dynamic, request-specific facts into
-// the Mangle engine using the `dynamic_facts` metadata key. The rules in
-// `rules/policy.dlog` use these facts (e.g., the user's department) to
-// enforce access control, ensuring that the retriever only returns documents
-// that the user is permitted to see. This showcases a powerful pattern for
-// building multi-tenant or role-based access control (RBAC) systems.
 package main
 
 import (
 	"context"
-	"fmt"
+	"flag"
 	"log"
-	"path/filepath"
-	"runtime"
 
 	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/core"
-	_ "github.com/duynguyendang/manglekit/providers/all"
-	"github.com/joho/godotenv"
+	"github.com/duynguyendang/manglekit/internal/embedders/google"
+	"github.com/duynguyendang/manglekit/internal/embedders/openai"
+	"github.com/duynguyendang/manglekit/internal/providers/bm25"
+	"github.com/duynguyendang/manglekit/internal/providers/dense"
+	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
+	"github.com/duynguyendang/manglekit/internal/providers/llm"
+	"github.com/duynguyendang/manglekit/internal/providers/mangle"
+	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
+	inmemory "github.com/duynguyendang/manglekit/internal/providers/retrievers/inmemory"
+	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
+	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
+	"github.com/duynguyendang/manglekit/retrieve"
 )
 
+func registerAllProviders(r *manglekit.Registry) {
+	// LLM Providers
+	llm.RegisterGoogle(r)
+	llm.RegisterOpenAI(r)
+
+	// Embedder Providers
+	google.Register(r)
+	openai.Register(r)
+
+	// Retriever Providers
+	inmemory.Register(r)
+	bm25.Register(r)
+	dense.Register(r)
+	hybrid.Register(r)
+
+	// Reranker Providers
+	cosine.Register(r)
+
+	// Rules Providers
+	mangle.Register(r)
+
+	// Schema Parser Providers
+	jsonschema.Register(r)
+	rdf.Register(r)
+
+	// Options
+	r.RegisterOptions("bm25", (*retrieve.BM25Options)(nil))
+}
+
 func main() {
-	_ = godotenv.Load()
+	configFile := flag.String("config", "config.yaml", "Path to the configuration file")
+	flag.Parse()
 
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		log.Fatalf("failed to get current file path")
-	}
-	dir := filepath.Dir(currentFile)
-	configPath := filepath.Join(dir, "config.yaml")
-	builder, err := manglekit.NewBuilderFromYAML(configPath)
+	registry := manglekit.NewRegistry()
+	registerAllProviders(registry)
 
+	builder, err := manglekit.NewBuilderFromYAML(*configFile, registry)
 	if err != nil {
-		log.Fatalf("Failed to create builder from YAML: %v", err)
+		log.Fatalf("failed to create builder: %v", err)
 	}
-
-	// Build the orchestrator from the configured builder.
 	ctx := context.Background()
-	orch, err := builder.Build(context.Background())
+	orch, err := builder.Build(ctx)
 	if err != nil {
-		log.Fatalf("Failed to build orchestrator: %v", err)
+		log.Fatalf("failed to build orchestrator: %v", err)
 	}
 	defer orch.Close(ctx)
-
-	// Simulate a query from user "alice".
-	// The Mangle rules will use the `current_user` fact to find the document
-	// assigned to her.
-	query := core.Query{
-		Text: "Based on the document assigned to me, what is the customer name and total revenue?",
-		Meta: map[string]any{
-			"dynamic_facts": []map[string]any{
-				//{"predicate": "user_attribute", "args": []any{"doc_id", "A123"}},
-				// {"predicate": "user_attribute", "args": []any{"role", "analyst"}},
-				{"predicate": "user_attribute", "args": []any{"department", "sales"}},
-			},
-		},
-	}
-
-	// Run the pipeline.
-	answer, err := orch.Execute(ctx, "session-1", query)
-	if err != nil {
-		log.Fatalf("Pipeline run failed: %v", err)
-	}
-
-	fmt.Println("AI Answer:", answer.Text)
-	// Expected Output: An LLM-generated answer like "The customer name is 'Innovate Inc.'."
 }
