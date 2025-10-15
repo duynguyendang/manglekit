@@ -3,10 +3,15 @@ package llm
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"os"
+	"time"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 )
 
 func init() {
@@ -14,6 +19,61 @@ func init() {
 	manglekit.RegisterLLM("groq", NewOpenAI)
 	manglekit.RegisterOptions("openai", (*llm.OpenAIOptions)(nil))
 	manglekit.RegisterOptions("groq", (*llm.OpenAIOptions)(nil))
+	manglekit.RegisterClientFactory("openai", openAIClientFactory)
+	manglekit.RegisterClientFactory("groq", openAIClientFactory)
+}
+
+func openAIClientFactory(options any) (any, core.ResourceCloser, error) {
+	var apiKey, baseURL string
+	var apiKeyEnvVar string
+
+	switch opts := options.(type) {
+	case *manglekit.OpenAIConfig:
+		apiKey = opts.APIKey
+		apiKeyEnvVar = "OPENAI_API_KEY"
+	case *manglekit.OpenAICompatibleConfig:
+		apiKey = opts.APIKey
+		baseURL = opts.BaseURL
+		apiKeyEnvVar = "GROQ_API_KEY" // As an example for groq
+	default:
+		return nil, nil, fmt.Errorf("unsupported options type for openai client factory: %T", options)
+	}
+
+	if apiKey == "" {
+		apiKey = os.Getenv(apiKeyEnvVar)
+	}
+	if apiKey == "" {
+		return nil, nil, fmt.Errorf("missing apiKey for provider: please provide it via config or %s env var", apiKeyEnvVar)
+	}
+
+	if baseURL == "" {
+		if _, ok := options.(*manglekit.OpenAICompatibleConfig); ok {
+			// Default for groq
+			baseURL = "https://api.groq.com/openai/v1"
+		}
+	}
+
+	transport := &http.Transport{
+		IdleConnTimeout: 30 * time.Second,
+	}
+	httpClient := &http.Client{
+		Transport: transport,
+		Timeout:   120 * time.Second,
+	}
+
+	var client openai.Client
+	if baseURL != "" {
+		client = openai.NewClient(option.WithAPIKey(apiKey), option.WithBaseURL(baseURL), option.WithHTTPClient(httpClient))
+	} else {
+		client = openai.NewClient(option.WithAPIKey(apiKey), option.WithHTTPClient(httpClient))
+	}
+
+	closer := func(ctx context.Context) error {
+		transport.CloseIdleConnections()
+		return nil
+	}
+
+	return &client, closer, nil
 }
 
 // openAIClient implements the llm.Client interface for OpenAI and other services

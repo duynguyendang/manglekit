@@ -3,6 +3,8 @@ package manglekit
 import (
 	"fmt"
 	"reflect"
+
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // Registry is the global, central store for all registered component constructors.
@@ -41,17 +43,26 @@ var Registry = struct {
 	Options map[string]reflect.Type
 	// StateProviders holds registered `core.StateProvider` constructors.
 	StateProviders map[string]any
+	// ClientFactories holds registered client factory functions.
+	ClientFactories map[string]any
 }{
-	Retriever:      make(map[string]any),
-	Reranker:       make(map[string]any),
-	Rules:          make(map[string]any),
-	LLM:            make(map[string]any),
-	Embedder:       make(map[string]any),
-	SchemaParser:   make(map[string]any),
-	Component:      make(map[string]any),
-	Options:        make(map[string]reflect.Type),
-	StateProviders: make(map[string]any),
+	Retriever:       make(map[string]any),
+	Reranker:        make(map[string]any),
+	Rules:           make(map[string]any),
+	LLM:             make(map[string]any),
+	Embedder:        make(map[string]any),
+	SchemaParser:    make(map[string]any),
+	Component:       make(map[string]any),
+	Options:         make(map[string]reflect.Type),
+	StateProviders:  make(map[string]any),
+	ClientFactories: make(map[string]any),
 }
+
+// ClientFactory defines the contract for a function that creates a shared client
+// for a provider family (e.g., Google, OpenAI). It takes a provider-family-specific
+// config struct (e.g., `config.GoogleConfig`) and returns the initialized client,
+// a `core.ResourceCloser` for graceful shutdown, and an error.
+type ClientFactory func(options any) (client any, closer core.ResourceCloser, err error)
 
 // Bidirectional maps: provider name <-> options pointer type (*T)
 var (
@@ -120,3 +131,9 @@ func Register(name string, c any) { Registry.Component[name] = c }
 // RegisterStateProvider adds a state provider constructor to the global registry.
 // This is typically called from an `init()` function in a provider package.
 func RegisterStateProvider(name string, c any) { Registry.StateProviders[name] = c }
+
+// RegisterClientFactory adds a client factory function to the global registry.
+// This is typically called from an `init()` function in a provider package.
+func RegisterClientFactory(name string, c ClientFactory) {
+	Registry.ClientFactories[name] = c
+}
