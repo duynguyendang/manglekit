@@ -9,6 +9,7 @@ import (
 	"io"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/google/mangle/ast"
 )
 
@@ -17,7 +18,7 @@ import (
 type Options struct{}
 
 func Register(r *manglekit.Registry) {
-	r.Register("jsonschema", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+	r.RegisterSchemaParser("jsonschema", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		return New(nil)
 	})
 	r.RegisterOptions("jsonschema", (*Options)(nil))
@@ -30,7 +31,7 @@ type JSONSchemaParser struct{}
 
 // New is the constructor for the JSONSchemaParser. It is registered with the
 // MangleKit registry for the "jsonschema" parser type.
-func New(params map[string]any) (any, error) {
+func New(params map[string]any) (core.SchemaParser, error) {
 	return &JSONSchemaParser{}, nil
 }
 

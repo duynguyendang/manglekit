@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/google/mangle/ast"
 	"github.com/knakk/rdf"
 )
@@ -18,7 +19,7 @@ import (
 type Options struct{}
 
 func Register(r *manglekit.Registry) {
-	r.Register("rdf", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
+	r.RegisterSchemaParser("rdf", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
 		return New(nil)
 	})
 	r.RegisterOptions("rdf", (*Options)(nil))
@@ -31,7 +32,7 @@ type RDFParser struct{}
 
 // New is the constructor for the RDFParser. It is registered with the MangleKit
 // registry for the "rdf" parser type.
-func New(params map[string]any) (any, error) {
+func New(params map[string]any) (core.SchemaParser, error) {
 	return &RDFParser{}, nil
 }
 

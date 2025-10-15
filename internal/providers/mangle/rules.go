@@ -26,18 +26,18 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	// Register the constructor with the MangleKit framework.
-	r.Register("mangle", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
-		opts, ok := options.(core.MangleOptions)
-		if !ok {
-			// Also handle the pointer case, which is common.
+	r.RegisterRuleSet("mangle", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.RuleSet, error) {
+		var opts core.MangleOptions
+		if options != nil {
 			if o, ok := options.(*core.MangleOptions); ok && o != nil {
 				opts = *o
+			} else if o, ok := options.(core.MangleOptions); ok {
+				opts = o
 			} else {
-				return nil, fmt.Errorf("invalid options type, expected core.MangleOptions, got %T", options)
+				return nil, fmt.Errorf("invalid options type, expected *core.MangleOptions or core.MangleOptions, got %T", options)
 			}
 		}
-		// Pass the registry from the builder's dependencies.
+
 		reg, ok := deps["registry"].(*manglekit.Registry)
 		if !ok {
 			return nil, fmt.Errorf("mangle provider requires a *manglekit.Registry in its dependencies")

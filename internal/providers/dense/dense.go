@@ -19,11 +19,7 @@ type Options struct {
 }
 
 func Register(r *manglekit.Registry) {
-	r.Register("dense", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
-		_, ok := options.(Options)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected dense.Options, got %T", options)
-		}
+	r.RegisterRetriever("dense", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
 		embedder, ok := deps["embedder"].(ai.Embedder)
 		if !ok {
 			return nil, fmt.Errorf("missing required dependency 'embedder' of type ai.Embedder")

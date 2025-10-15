@@ -14,11 +14,16 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	r.Register("hybrid", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
-		opts, ok := options.(retrieve.HybridOptions)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected retrieve.HybridOptions, got %T", options)
+	r.RegisterRetriever("hybrid", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
+		var opts retrieve.HybridOptions
+		if options != nil {
+			if typedOpts, ok := options.(*retrieve.HybridOptions); ok {
+				opts = *typedOpts
+			} else {
+				return nil, fmt.Errorf("invalid options type, expected *retrieve.HybridOptions, got %T", options)
+			}
 		}
+
 		if bm25, ok := deps["bm25"].(retrieve.Retriever); ok {
 			opts.BM25Retriever = bm25
 		}

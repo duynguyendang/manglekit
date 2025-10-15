@@ -21,11 +21,16 @@ const (
 )
 
 func Register(r *manglekit.Registry) {
-	r.Register("localvec", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
-		opts, ok := options.(core.LocalvecOptions)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected core.LocalvecOptions, got %T", options)
+	r.RegisterVectorStore("localvec", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.VectorStore, error) {
+		var opts core.LocalvecOptions
+		if options != nil {
+			if typedOpts, ok := options.(*core.LocalvecOptions); ok {
+				opts = *typedOpts
+			} else {
+				return nil, fmt.Errorf("invalid options type, expected *core.LocalvecOptions, got %T", options)
+			}
 		}
+
 		embedder, ok := deps["embedder"].(ai.Embedder)
 		if !ok {
 			return nil, fmt.Errorf("missing required dependency 'embedder' of type ai.Embedder")
@@ -74,6 +79,7 @@ func New(ctx context.Context, opts core.LocalvecOptions, embedder ai.Embedder) (
 
 	if err := localvec.Init(); err != nil {
 		if !strings.Contains(err.Error(), "already initialized") {
+			gCancel()
 			return nil, fmt.Errorf("localvec: failed to initialize localvec plugin: %w", err)
 		}
 	}
@@ -81,6 +87,7 @@ func New(ctx context.Context, opts core.LocalvecOptions, embedder ai.Embedder) (
 	retOpts := &ai.RetrieverOptions{Label: collectionName}
 	docStore, retriever, err := localvec.DefineRetriever(g, collectionName, localvec.Config{Embedder: embedder}, retOpts)
 	if err != nil {
+		gCancel()
 		return nil, fmt.Errorf("localvec: failed to define retriever: %w", err)
 	}
 

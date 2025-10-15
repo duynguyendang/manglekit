@@ -6,6 +6,7 @@ package inmemory
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/duynguyendang/manglekit"
@@ -25,10 +26,14 @@ type InMemoryRetriever struct {
 }
 
 func Register(r *manglekit.Registry) {
-	r.Register("in-memory", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (any, error) {
-		opts, ok := options.(retrieve.InMemoryOptions)
-		if !ok {
-			return nil, errors.New("invalid options type for in-memory retriever")
+	r.RegisterRetriever("in-memory", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
+		var opts retrieve.InMemoryOptions
+		if options != nil {
+			if typedOpts, ok := options.(*retrieve.InMemoryOptions); ok {
+				opts = *typedOpts
+			} else {
+				return nil, fmt.Errorf("invalid options type, expected *retrieve.InMemoryOptions, got %T", options)
+			}
 		}
 		return New(opts)
 	})

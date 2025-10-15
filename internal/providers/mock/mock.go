@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/rerank"
@@ -13,6 +14,39 @@ import (
 	"github.com/firebase/genkit/go/core/api"
 	"github.com/google/mangle/ast"
 )
+
+func Register(r *manglekit.Registry) {
+	r.RegisterRetriever("mock-retriever", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
+		opts, ok := options.(*RetrieverOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type, expected *mock.RetrieverOptions, got %T", options)
+		}
+		return NewRetriever(opts.Pairs), nil
+	})
+	r.RegisterOptions("mock-retriever", (*RetrieverOptions)(nil))
+
+	r.RegisterReranker("mock-reranker", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (rerank.Reranker, error) {
+		opts, ok := options.(*RerankerOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type, expected *mock.RerankerOptions, got %T", options)
+		}
+		return NewReranker(opts.Passthrough), nil
+	})
+	r.RegisterOptions("mock-reranker", (*RerankerOptions)(nil))
+
+	r.RegisterLLM("mock-llm", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (llm.Client, error) {
+		opts, ok := options.(*LLMOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type, expected *mock.LLMOptions, got %T", options)
+		}
+		return NewLLM(opts.Model), nil
+	})
+	r.RegisterOptions("mock-llm", (*LLMOptions)(nil))
+
+	r.RegisterEmbedder("mock-embedder", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (ai.Embedder, error) {
+		return &Embedder{}, nil
+	})
+}
 
 type Params map[string]any
 type Object map[string]any
@@ -43,7 +77,7 @@ func ObjectToConstant(obj Object) (ast.Constant, error) {
 		return ast.Constant{}, err
 	}
 	return *ast.Struct(map[*ast.Constant]*ast.Constant{
-		&key:   &val,
+		&key:  &val,
 		&keyB: &valB,
 	}), nil
 }
