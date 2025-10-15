@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -14,49 +13,8 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/embedders/google"
-	"github.com/duynguyendang/manglekit/internal/embedders/openai"
-	"github.com/duynguyendang/manglekit/internal/providers/bm25"
-	"github.com/duynguyendang/manglekit/internal/providers/dense"
-	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
-	"github.com/duynguyendang/manglekit/internal/providers/llm"
-	"github.com/duynguyendang/manglekit/internal/providers/mangle"
-	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
-	inmemory "github.com/duynguyendang/manglekit/internal/providers/retrievers/inmemory"
-	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
-	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
-	"github.com/duynguyendang/manglekit/retrieve"
-	_ "github.com/duynguyendang/manglekit/providers/all"
+	"github.com/duynguyendang/manglekit/providers" // Import the new providers package
 )
-
-func registerAllProviders(r *manglekit.Registry) {
-	// LLM Providers
-	llm.RegisterGoogle(r)
-	llm.RegisterOpenAI(r)
-
-	// Embedder Providers
-	google.Register(r)
-	openai.Register(r)
-
-	// Retriever Providers
-	inmemory.Register(r)
-	bm25.Register(r)
-	dense.Register(r)
-	hybrid.Register(r)
-
-	// Reranker Providers
-	cosine.Register(r)
-
-	// Rules Providers
-	mangle.Register(r)
-
-	// Schema Parser Providers
-	jsonschema.Register(r)
-	rdf.Register(r)
-
-	// Options
-	r.RegisterOptions("bm25", (*retrieve.BM25Options)(nil))
-}
 
 func main() {
 	// a. Parse command-line flags.
@@ -65,9 +23,19 @@ func main() {
 
 	log.Printf("Starting Manglekit agent with config: %s", *configFile)
 
-	// Create the registry and register all providers.
+	// Create the registry.
 	registry := manglekit.NewRegistry()
-	registerAllProviders(registry)
+
+	// Simple, elegant registration for most users:
+	providers.RegisterDefaults(registry)
+
+	/*
+	   // Example for advanced users who want selective registration:
+	   providers.NewSet().
+	       WithGoogleLLM().
+	       WithBM25Retriever().
+	       ApplyTo(registry)
+	*/
 
 	// b. Initialize the Manglekit builder from the YAML file.
 	builder, err := manglekit.NewBuilderFromYAML(*configFile, registry)
