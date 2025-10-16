@@ -14,9 +14,9 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 ---
 
 ## Core Building Blocks
-- ✅ **Registry (`registry.go`)**: The `Registry` is now an **instance** created in the application entry point and passed via Dependency Injection. It stores strongly-typed factory functions (e.g., `LLMFactory`, `RetrieverFactory`) for each component type in dedicated maps, ensuring type safety at compile time. It no longer holds any global state.
+- ⚠️ **Registry (`registry.go`)**: The `Registry` is now an **instance** created in the application entry point. It stores strongly-typed factory functions (e.g., `LLMFactory`, `RetrieverFactory`) for most components. However, the encapsulation is incomplete; the registry modifies global state in `typemap.go` and still uses `any` for client factories.
 - ✅ **Providers (`providers/`)**: This new package provides a fluent "Registration Builder" (`providers.NewSet()`) for a streamlined developer experience. Users can chain `With...` methods (e.g., `NewSet().WithOpenAI().WithBM25()`) to explicitly register the desired provider implementations with the `Registry` instance.
-- ✅ **Type Mapping (`typemap.go`)**: Manages the bidirectional mapping between provider names and their option types using `RegisterOptions`.
+- ⚠️ **Type Mapping (`typemap.go`)**: Manages the bidirectional mapping between provider names and their option types using `RegisterOptions`. Critically, this mapping is stored in **global variables**, creating shared state between otherwise isolated `Registry` instances.
 - ✅ **Core types & contracts (`core/types.go`, `core/rules.go`)**: `Query`, `Answer`, `Doc`, and `Citation` model pipeline payloads; `Options` now carries the configured `StateProvider`, observability hooks, and a LIFO stack of `ResourceClosers`. Sentinel errors (`ErrInvalidOptions`, `ErrNoEvidence`, `ErrDenied`) and rule interfaces (`RuleSet`, `FlowController`, `PostRuleEvaluator`) gate Sandwich and declarative orchestrators.
 - ✅ **Observability contracts**: `Logger` exposes `{Debug,Info,Warn,Error}f` plus `With` for scoped fields, `Tracer.StartSpan` supplies optional spans, and `Meter.Record` captures latency metrics with arbitrary attributes.
 - ✅ **SDK entry point (`sdk.go`)**: `New` enforces that a retriever and LLM are present, defaults `TopK` to 8 and `MaxTokens` to 512, asserts concrete interfaces, and hands control to `pipeline.NewSandwich`.
@@ -25,10 +25,11 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 ---
 
 ## Orchestrator Construction
-- ✅ **Fluent builder (`builder.go`)**
-  - The builder is instantiated with a `Registry` instance (`builder.New(registry)`), making it completely stateless and decoupled from the provider registration process.
-  - **Type-Safe & OCP-Compliant Construction**: The `Build()` process is significantly simplified and more robust. The builder looks up the required **strongly-typed factory** (e.g., `RetrieverFactory`, `LLMFactory`) from its injected `Registry` instance. It then invokes the factory, receiving a fully-formed, type-safe component.
-  - **Provider-Led Dependency Resolution**: All complex construction logic, such as that for the `hybrid` retriever, has been moved out of the builder and into the provider's own factory. If a component needs to build another component (e.g., a retriever needing an embedder), its factory receives a `BuilderAPI` to call back into the builder, ensuring dependencies are resolved correctly without the builder needing to know the specific requirements of each provider. This design eliminates unsafe `switch` statements and type assertions, making the builder fully compliant with the Open/Closed Principle.
+- ⚠️ **Fluent builder (`builder.go`)**
+  - The builder is instantiated with a `Registry` instance (`builder.New(registry)`), making it decoupled from the provider registration process.
+  - **Improved Type-Safety**: The builder now looks up **strongly-typed factories** (e.g., `RetrieverFactory`) from its `Registry`. This is a significant improvement but is not consistently applied (e.g., for client factories).
+  - **Provider-Led Construction**: Complex construction logic has been moved into provider factories. However, this has introduced new problems, such as composite components requiring a callback to the full `BuilderAPI`, creating a leaky abstraction.
+  - **Implicit Dependency Guessing**: The builder contains a fragile `resolveDependencies` method that attempts to guess component needs (e.g., inferring an embedder) instead of requiring explicit configuration.
 - ⚠️ **Configuration (`config.go`)**
   - `Config` describes orchestrator selection, linear component slots, declarative `tools`, and provider-family defaults (`google`, `openai`, `groq`, `openaiCompatible`, `mangle`).
   - `NewBuilderFromYAML` expands environment variables, resolves every `path:"resolve"` field relative to the file, hydrates typed option structs via JSON marshal/unmarshal, and chains the relevant `With*` calls—including state providers. The optional `logging` block only swaps in the stdlib-backed logger; level/format values are parsed but not yet applied to zap.
@@ -44,11 +45,8 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
   - **Rerank & fallback**: When configured, reranking captures `rerank_ms`, rebuilds citations from `rerank.ScoredDoc`, stores `best_score`, and applies `FallbackThreshold`, returning `ErrNoEvidence` if the score falls below the configured floor.
   - **LLM**: `prepareLlmRequest` flattens docs to passages and rewrites citations. `runLlm` merges `Query.Meta` (including conversation `history`) into the prompt data, forwards `MaxTokens`, captures `llm_ms`, and records token usage.
   - **Post rules**: Replays `Rules.Evaluate(core.Post, q, &answer)`, records `manglekit.rules_post_ms`, applies answer mutations, and bubbles denials.
-- ⚠️ **Declarative orchestrator (`pipeline/declarative/orchestrator.go`)**
-  - Resolves flow structure by querying `flow_stage/3` and `stage_tool/2` facts from the `FlowController`, sorting on declared order, and rejecting missing stages.
-  - Pre-rules gate execution (`core.ErrDenied` on failure) and may flag `SkippedStages`. Mutations are applied to the staged query/answer stored inside an execution context map (`contextKeyQuery`, `contextKeyDocs`, `contextKeyAnswer`, `contextKeyMeta`).
-  - For each stage, `dispatchToTool` type-switches: retrievers populate docs and `retrieved_count`, rerankers fuse scores and citations, `llm.Client` implementations write `answer.Text` and `token_usage`, and `core.PostRuleEvaluator` hooks filter evidence, emit denial metadata, and drop citations for redacted docs while recording `manglekit.rules_post_ms`.
-  - Structured logs emitted per stage carry the shared `request_id`. A `StateProvider` can be supplied but declarative execution does not yet read or persist session state.
+- ❌ **Declarative orchestrator (`pipeline/declarative/orchestrator.go`)**
+  - **NOTE: This feature is currently disabled due to the recent refactoring.** The build path is stubbed out and will return an error if invoked.
 
 ---
 
@@ -119,15 +117,19 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 ## Known Gaps (machine-readable)
 | Severity | Issue | File | Description |
 | --- | --- | --- | --- |
+| High | **Incomplete State Encapsulation** | typemap.go | The registry modifies global variables in `typemap.go`, preventing isolated instances of the framework. |
+| High | **Leaky Builder Abstraction** | internal/providers/hybrid/hybrid.go | Composite components depend on the entire `BuilderAPI` instead of just the factories they need, creating tight coupling. |
+| High | **Fragile Dependency Guessing** | builder.go | The builder's `resolveDependencies` method uses brittle, implicit logic to guess component needs instead of requiring explicit configuration. |
 | High | CLI build targets | Makefile | `make build` and `make run` reference missing `./cmd/agent`, so default workflows fail. |
-| High | Prompt template mismatch | llm/prompt.go, pipeline/sandwich.go | The default RAG template expects `.documents[*].Text`, but Sandwich passes a `[]string`, so default prompting panics unless callers override the template. |
+| High | Prompt template mismatch | llm/prompt.go, pipeline/sandwich.go | The default RAG template expects `.documents[*].Text`, but Sandwich passes a `[]string`, so default prompting panics unless callers override it. |
 | High | Empty provider stubs | llm/google.go, llm/openai.go | Root-level files are empty, indicating incomplete or dead code paths that confuse navigation and coverage. |
 | Medium | Logging config unused | config.go | YAML/env logging fields flip the logger on but never apply level/format or wire zap, leaving configuration knobs ineffective. |
 | Medium | Fallback behaviour | pipeline/sandwich.go | `FallbackThreshold` is enforced only when a reranker is configured, so non-reranked pipelines always proceed to the LLM. |
 | Medium | MaxTokens ignored | internal/providers/llm/openai.go, internal/providers/llm/google.go | LLM clients discard `req.MaxTokens`, so orchestrator defaults cannot constrain response length. |
-| Low | Declarative state | pipeline/declarative/orchestrator.go | The declarative orchestrator stores a `StateProvider` but never reads or writes session state, leaving the feature unused. |
+| Medium | OCP Violation in Builder | builder.go | The main `Build` method still contains a `switch` statement for orchestrator types. |
+| Low | Declarative state | pipeline/declarative/orchestrator.go | The declarative orchestrator is disabled, but if re-enabled, it does not use its configured state provider. |
 | Low | Heuristic constants | internal/providers/hybrid/hybrid.go | Reciprocal Rank Fusion uses a hard-coded `k=60` without configuration hooks. |
-| Medium | Duplicated Logic | pipeline/sandwich.go, pipeline/declarative/orchestrator.go | Conversational state management logic is duplicated across both orchestrators. See `docs/code-review.md`. |
-| Low | Inconsistent Context | internal/providers/ | `context.Context` is not consistently propagated by all providers making external calls. See `docs/code-review.md`. |
+| Low | Deprecated Code | core/types.go | `LocalvecOptions` is marked as deprecated but has not been removed from the core API. |
+
 
 For detailed analysis and refactoring suggestions, please refer to the full [Code Review Document](./code-review.md).
