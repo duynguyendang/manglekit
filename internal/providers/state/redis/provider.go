@@ -12,16 +12,12 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterStateProvider("redis", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
-		var opts state.RedisOptions
-		if options != nil {
-			if typedOpts, ok := options.(*state.RedisOptions); ok {
-				opts = *typedOpts
-			} else {
-				return nil, fmt.Errorf("invalid options type, expected *state.RedisOptions, got %T", options)
-			}
+	r.RegisterStateProvider("redis", func(ctx context.Context, opts any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
+		typedOpts, ok := opts.(*state.RedisOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type, expected *state.RedisOptions, got %T", opts)
 		}
-		return New(ctx, opts)
+		return New(ctx, *typedOpts)
 	})
 	r.RegisterOptions("redis", (*state.RedisOptions)(nil))
 }

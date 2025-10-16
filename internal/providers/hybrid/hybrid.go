@@ -30,11 +30,11 @@ func Register(r *manglekit.Registry) {
 		}
 
 		// Build sub-components by calling back into the builder.
-		bm25Retriever, err := builder.BuildRetrieverComponent(ctx, "bm25", nil)
+		bm25Retriever, err := builder.BuildRetriever(ctx, "bm25", nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build bm25 component for hybrid retriever: %w", err)
 		}
-		denseRetriever, err := builder.BuildRetrieverComponent(ctx, "dense", nil)
+		denseRetriever, err := builder.BuildRetriever(ctx, "dense", nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build dense component for hybrid retriever: %w", err)
 		}

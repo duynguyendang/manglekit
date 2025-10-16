@@ -14,21 +14,17 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterReranker("cosine", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (rerank.Reranker, error) {
-		var opts rerank.CosineOptions
-		if options != nil {
-			if typedOpts, ok := options.(*rerank.CosineOptions); ok {
-				opts = *typedOpts
-			} else {
-				return nil, fmt.Errorf("invalid options type, expected *rerank.CosineOptions, got %T", options)
-			}
+	r.RegisterReranker("cosine", func(ctx context.Context, opts any, deps manglekit.FactoryDeps) (rerank.Reranker, error) {
+		typedOpts, ok := opts.(*rerank.CosineOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type, expected *rerank.CosineOptions, got %T", opts)
 		}
 
 		embedder, ok := deps["embedder"].(ai.Embedder)
 		if !ok {
 			return nil, fmt.Errorf("missing required dependency 'embedder' of type ai.Embedder")
 		}
-		return New(opts, embedder)
+		return New(*typedOpts, embedder)
 	})
 	r.RegisterOptions("cosine", (*rerank.CosineOptions)(nil))
 }

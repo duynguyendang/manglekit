@@ -22,21 +22,17 @@ import (
 )
 
 func RegisterGoogle(r *manglekit.Registry) {
-	r.RegisterLLM("google", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (llm.Client, error) {
-		var opts llm.GoogleOptions
-		if options != nil {
-			if typedOpts, ok := options.(*llm.GoogleOptions); ok {
-				opts = *typedOpts
-			} else {
-				return nil, fmt.Errorf("invalid options type for google llm: expected *llm.GoogleOptions, got %T", options)
-			}
+	r.RegisterLLM("google", func(ctx context.Context, opts any, deps manglekit.FactoryDeps) (llm.Client, error) {
+		typedOpts, ok := opts.(*llm.GoogleOptions)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type for google llm: expected *llm.GoogleOptions, got %T", opts)
 		}
 
 		clients, ok := deps["client"].(llm.GoogleClients)
 		if !ok {
 			return nil, fmt.Errorf("invalid client type for google llm: expected llm.GoogleClients, got %T", deps["client"])
 		}
-		return NewGoogle(opts, clients.Genkit)
+		return NewGoogle(*typedOpts, clients.Genkit)
 	})
 	r.RegisterOptions("google", (*llm.GoogleOptions)(nil))
 	r.RegisterClientFactory("google", googleClientFactory)
