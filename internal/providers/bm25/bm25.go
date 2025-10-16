@@ -25,16 +25,12 @@ const (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("bm25", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
-		var opts retrieve.BM25Options
-		if options != nil {
-			if typedOpts, ok := options.(*retrieve.BM25Options); ok {
-				opts = *typedOpts
-			} else {
-				return nil, fmt.Errorf("invalid options type, expected *retrieve.BM25Options, got %T", options)
-			}
+	r.RegisterRetriever("bm25", func(ctx context.Context, opts any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
+		typedOpts, ok := opts.(*retrieve.BM25Options)
+		if !ok {
+			return nil, fmt.Errorf("invalid options type for bm25: expected *retrieve.BM25Options, got %T", opts)
 		}
-		return New(opts)
+		return New(*typedOpts)
 	})
 	r.RegisterOptions("bm25", (*retrieve.BM25Options)(nil))
 }

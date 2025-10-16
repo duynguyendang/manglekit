@@ -11,16 +11,16 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterStateProvider("inmemory", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
-		var opts state.InMemoryOptions
-		if options != nil {
-			if typedOpts, ok := options.(*state.InMemoryOptions); ok {
-				opts = *typedOpts
+	r.RegisterStateProvider("inmemory", func(ctx context.Context, opts any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
+		var typedOpts state.InMemoryOptions
+		if opts != nil {
+			if castedOpts, ok := opts.(*state.InMemoryOptions); ok {
+				typedOpts = *castedOpts
 			} else {
-				return nil, fmt.Errorf("invalid options type, expected *state.InMemoryOptions, got %T", options)
+				return nil, fmt.Errorf("invalid options type, expected *state.InMemoryOptions, got %T", opts)
 			}
 		}
-		return New(opts)
+		return New(typedOpts)
 	})
 	r.RegisterOptions("inmemory", (*state.InMemoryOptions)(nil))
 }

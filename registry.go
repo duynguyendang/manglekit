@@ -6,20 +6,40 @@ import (
 	"reflect"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/llm"
+	"github.com/duynguyendang/manglekit/rerank"
+	"github.com/duynguyendang/manglekit/retrieve"
+	"github.com/firebase/genkit/go/ai"
 )
+
+// Dependency map for passing components.
+type FactoryDeps map[string]any
+
+// Define specific, type-safe factories.
+type RetrieverFactory func(ctx context.Context, opts any, deps FactoryDeps) (retrieve.Retriever, error)
+type LLMFactory func(ctx context.Context, opts any, deps FactoryDeps) (llm.Client, error)
+type EmbedderFactory func(ctx context.Context, opts any, deps FactoryDeps) (ai.Embedder, error)
+type RerankerFactory func(ctx context.Context, opts any, deps FactoryDeps) (rerank.Reranker, error)
+type VectorStoreFactory func(ctx context.Context, opts any, deps FactoryDeps) (core.VectorStore, error)
+type RuleSetFactory func(ctx context.Context, opts any, deps FactoryDeps) (core.RuleSet, error)
+type StateProviderFactory func(ctx context.Context, options any, deps FactoryDeps) (core.StateProvider, error)
+type SchemaParserFactory func(ctx context.Context, options any, deps FactoryDeps) (core.SchemaParser, error)
+type FactConverterFactory func(ctx context.Context, options any, deps FactoryDeps) (core.FactConverter, error)
 
 // Registry is the central store for all registered component constructors.
 // It is the primary mechanism for extending MangleKit with new providers.
 type Registry struct {
-	Retrievers     map[string]RetrieverFactory
-	LLMs           map[string]LLMFactory
-	Embedders      map[string]EmbedderFactory
-	Rerankers      map[string]RerankerFactory
+	// Strongly-typed factory maps
+	Retrievers   map[string]RetrieverFactory
+	LLMs         map[string]LLMFactory
+	Embedders    map[string]EmbedderFactory
+	Rerankers    map[string]RerankerFactory
+	VectorStores map[string]VectorStoreFactory
+	RuleSets     map[string]RuleSetFactory
 	StateProviders map[string]StateProviderFactory
-	VectorStores   map[string]VectorStoreFactory
-	RuleSets       map[string]RuleSetFactory
 	SchemaParsers  map[string]SchemaParserFactory
 	FactConverters map[string]FactConverterFactory
+
 	// Options holds registered options types for components.
 	Options map[string]reflect.Type
 	// ClientFactories holds registered client factory functions.
@@ -56,10 +76,6 @@ type ToolFactory func(options any, deps FactoryDeps) (any, error)
 
 // Get retrieves a constructor function from the specified registry map. It is a
 // helper used by the Builder to find and instantiate components.
-//
-// registry is the specific component map to search in (e.g., `r.Component`).
-// name is the string name under which the component was registered.
-// It returns the constructor as `any` or an error if the name is not found in the map.
 func Get[T any](registry map[string]T, name string) (T, error) {
 	c, ok := registry[name]
 	if !ok {
