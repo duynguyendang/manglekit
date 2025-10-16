@@ -53,7 +53,50 @@ graph TD
     I --> J;
 ```
 
-### 2. Dependency Rules (Non-Negotiable)
+### 2. Pipeline Stage Architecture
+
+The `Sandwich` orchestrator is implemented using a typed, stage-based pipeline architecture. This design replaces the previous monolithic "god method" and eliminates the use of `map[string]any` and "magic strings" for passing data between pipeline steps. It promotes the Single Responsibility Principle (SRP), testability, and clear data flow.
+
+The core components of this architecture are:
+
+-   **`PipelineContext`**: A typed struct that acts as a mutable data carrier. It flows through the entire pipeline, holding all inputs (query, history), intermediate artifacts (retrieved documents, reranked documents), and final results (response text, citations). It also tracks metrics like component latencies.
+-   **`Stage`**: A simple interface (`interface { Name(); Execute(*PipelineContext) error }`) that represents a single, discrete step in the pipeline (e.g., retrieving documents, calling the LLM). Each stage is responsible for a specific task, reading its required data from the `PipelineContext` and writing its output back into it.
+-   **`Runner`**: A component that composes and executes a sequence of `Stage`s. It iterates through the stages in the order they are added, executes them, and provides short-circuiting error handling. If any stage returns an error, the runner immediately stops and propagates the error.
+
+This architecture makes the orchestration logic explicit, easier to test in isolation, and more extensible for future modifications.
+
+```mermaid
+graph TD
+    subgraph "Input"
+        A[core.Query]
+        B[SessionID]
+    end
+
+    subgraph "Execution Flow"
+        C(pipeline.Sandwich) -- Creates --> D(pipeline.PipelineContext)
+        A --> D
+        B --> D
+
+        D -- Is passed to --> E(pipeline.Runner)
+        E -- Executes Stages in Order --> F(PreRulesStage)
+        F -- Reads/Writes --> D
+        F --> G(RetrieveStage)
+        G -- Reads/Writes --> D
+        G --> H(RerankStage)
+        H -- Reads/Writes --> D
+        H --> I(LLMStage)
+        I -- Reads/Writes --> D
+        I --> J(PostRulesStage)
+        J -- Reads/Writes --> D
+    end
+
+    subgraph "Output"
+        D -- Is used to construct --> K(core.Answer)
+        C -- Returns --> K
+    end
+```
+
+### 3. Dependency Rules (Non-Negotiable)
 
 | Package                       | Allowed Dependencies                                     | Forbidden Dependencies                               | Rationale                                                                |
 | ----------------------------- | -------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------ |
@@ -155,7 +198,6 @@ This table summarizes open architectural issues identified in the latest code re
 
 | Severity | Issue                                  | File(s)                                 | Description                                                                                             |
 | :------- | :------------------------------------- | :-------------------------------------- | :------------------------------------------------------------------------------------------------------ |
-| High     | **God Method & Magic Strings**         | `pipeline/sandwich.go`                  | The `Execute` method has too many responsibilities (SRP violation), and the code uses brittle string literals for metadata keys. |
 | High     | **Interface Pollution & Type Safety**  | `core/types.go`, `pipeline/sandwich.go` | The `Orchestrator` interface uses `any` for component accessors, forcing unsafe runtime type assertions. |
 | Medium   | **Inconsistent Factory Signatures**    | `registry.go`                           | The `ClientFactories` map uses `any`, creating a type-safety hole in the registry and dependency injection. |
 | Medium   | **Inconsistent Builder API**           | `builder.go`                            | The `WithEmbedder` method accepts pre-built instances, making it inconsistent with other `With...` methods. |

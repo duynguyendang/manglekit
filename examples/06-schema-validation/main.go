@@ -8,6 +8,8 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/config"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/embedders/google"
 	"github.com/duynguyendang/manglekit/internal/embedders/openai"
 	"github.com/duynguyendang/manglekit/internal/providers/bm25"
@@ -19,8 +21,6 @@ import (
 	inmemory "github.com/duynguyendang/manglekit/internal/providers/retrievers/inmemory"
 	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
 	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/google/mangle/ast"
 )

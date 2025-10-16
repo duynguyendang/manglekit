@@ -37,7 +37,6 @@ func LoadFromYAMLFile(path string) (*Config, error) {
 	return LoadFromYAML(f)
 }
 
-
 // LoadFromEnv loads configuration from environment variables.
 // This is a placeholder for now and will be implemented based on the final
 // environment variable strategy.
