@@ -130,18 +130,4 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 | Medium | Duplicated Logic | pipeline/sandwich.go, pipeline/declarative/orchestrator.go | Conversational state management logic is duplicated across both orchestrators. See `docs/code-review.md`. |
 | Low | Inconsistent Context | internal/providers/ | `context.Context` is not consistently propagated by all providers making external calls. See `docs/code-review.md`. |
 
----
-
-## Code Review Findings (2025-10-14)
-
-A comprehensive code review was conducted and the detailed findings are available in `docs/code-review.md`. The review identified several key areas for improvement that align with the known gaps and architectural principles of the project.
-
-**Key Findings Summary:**
-- **SOLID Principles Violations:** The review identified several violations of SOLID principles, including the Open/Closed Principle in the builder and declarative orchestrator, and the Single Responsibility Principle in the Sandwich orchestrator.
-- **Inconsistent Design:** The codebase exhibits inconsistencies in dependency injection and the use of "magic strings" for map keys.
-- **Tight Coupling:** There is tight coupling between the configuration loading and builder instantiation, and between the builder and the specific dependency requirements of different components.
-- **Lack of Type Safety:** The use of `any` and reflection for factory functions and provider options compromises type safety.
-- **Configuration & Magic Numbers:** A hard-coded "magic number" was found in the hybrid retriever's fusion algorithm.
-- **Dead Code:** The `core` package contains a deprecated `LocalvecOptions` struct that should be removed.
-
 For detailed analysis and refactoring suggestions, please refer to the full [Code Review Document](./code-review.md).
