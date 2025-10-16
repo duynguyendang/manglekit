@@ -2,14 +2,14 @@
 
 > Module path: `github.com/duynguyendang/manglekit`  
 > Go version: 1.24.1  
-> Last Updated: 2025-10-15  
-> Status: Sandwich and Declarative orchestrators are production-ready. The fluent builder and provider ecosystem are stable. Current focus areas: consistent context propagation, LLM MaxTokens handling, and hybrid fusion configuration.
+> Last Updated: 2025-10-15
+> Status: **Major architectural refactoring complete.** The builder and registry architecture is now significantly more robust, type-safe, and extensible. Sandwich and Declarative orchestrators are production-ready.
 
 ---
 
 ## 1. Design Tenets
 - Public entry points: `sdk.New` and the fluent builder (`builder.go`). They enforce defaults (`TopK=8`, `MaxTokens=512`), assert concrete types for registry‑constructed components, and accumulate LIFO `ResourceClosers` for clean shutdown.
-- Provider discovery flows through the global registry (`registry.go`) and the option‑type maps in `typemap.go`, keeping programmatic and YAML/env assembly in sync.
+- **Dependency Injection over global state.** The component `Registry` is now an instance created in the application entry point (`main.go`). Providers are explicitly registered with this instance, which is then injected into the `Builder`. This pattern eliminates global state and ensures clear, testable dependency resolution.
 - Sandwich orchestrator (`pipeline/sandwich.go`) executes a fixed, rule‑wrapped flow; records timings in `Answer.Meta` (`retrieve_ms`, `rerank_ms`, `llm_ms`); and stores pre‑rule evidence as `Meta["original_docs"]`.
 - Declarative orchestrator (`pipeline/declarative/orchestrator.go`) queries a `core.FlowController` to determine stage order, dispatches tools via a shared execution context, and supports `core.PostRuleEvaluator` for pre‑LLM gating.
 - Observability is pluggable. If `core.Observability.Logger` is nil, a lightweight structured `StdLogger` is installed; tracing and metrics hooks are optional and skipped when unset. No direct `fmt.Printf` is used in production paths.
@@ -81,18 +81,15 @@ github.com/duynguyendang/manglekit
 ---
 
 ## 4. Builder & Configuration
-- `builder.NewBuilder()` issues an empty builder that captures typed configuration via `With*` methods. Each call records the provider name determined from `typemap.go` and stashes the typed config under `typedConfig`.
-- `config.NewBuilderFromYAML` expands environment variables, resolves any `path:"resolve"` struct tags relative to the YAML file, hydrates typed option structs, and chains the corresponding `With*` calls.
-- `config.NewBuilderFromEnv` mirrors the YAML loader but sources component names/params from `MKT_*` environment variables and resolves paths relative to `$PWD`.
-- `builder.resolveProviderConfig` creates external clients up front (Google Genkit + generative AI, OpenAI/Groq) and pushes cleanup callbacks onto `core.Options.ResourceClosers`.
-- `builder.Build()` inspects `config.Orchestrator.Type`:  
-  * Sandwich mode builds components in a fixed order (embedder → vector store → retriever → reranker → rules → LLM) before creating `pipeline.NewSandwich`.  
-  * Declarative mode requires a `FlowController`, builds every `config.tools` entry while resolving dependencies, and instantiates `declarative.New`.
+- The `Builder` is instantiated with a configured `Registry` instance (`builder.New(registry)`). It no longer holds global state.
+- Configuration can be loaded from YAML (`config.NewBuilderFromYAML`) or environment variables (`config.NewBuilderFromEnv`). These helpers now populate a configuration struct that is passed to the builder, separating configuration loading from component construction.
+- `builder.Build()` is a type-safe construction process. For each required component, it looks up the corresponding **strongly-typed factory** (e.g., `RetrieverFactory`) from the injected registry.
+- The builder is now **OCP-compliant**. It contains no `switch` statements or special-case logic for specific providers (like the `hybrid` retriever). All construction complexity, including dependency resolution (e.g., a retriever needing an embedder), is encapsulated within the provider's own factory. The factory receives a `BuilderAPI` to recursively build its dependencies.
 
 ---
 
 ## 5. Provider Wiring
-- Every provider package registers itself via the appropriate `manglekit.Register*` call from its `init()`, exposing a constructor with a fully typed signature.
+- Provider registration is now explicit and centralized in the application entry point (e.g., `main.go`). A fluent "Registration Builder" (`providers.NewSet()`) is used to register provider factories with a `Registry` instance. The `init()`-based side-effect-driven registration has been removed.
 - Option structs exposed to users live in public packages (`retrieve/options.go`, `rerank/options.go`, `embed/options.go`, `llm/options.go`) so programmatic flows remain type-safe.
 - The builder infers dependencies: dense retrievers and cosine rerankers automatically request the configured embedder; localvec requires both an embedder and corpus path; declarative tools declare dependencies by referencing other tool names in their params.
 - Rules providers (`internal/providers/mangle`) support both code-first (converters define EDB) and file-first (rule files declare EDB) modes, selectable via `core.MangleOptions.FileFirst`.
@@ -154,12 +151,14 @@ github.com/duynguyendang/manglekit
 
 ---
 
-## 11. Known Gaps & Risks
-- LLM `MaxTokens` ignored: current OpenAI/Google clients do not propagate `req.MaxTokens`, so orchestrator defaults cannot constrain completion length.
-- Hybrid RRF constant: `internal/providers/hybrid/hybrid.go` uses a hard‑coded `k=60` with no configuration hook.
-- Heuristic tool deps: declarative tool dependency detection treats any string param as a dependency, risking false positives for literal strings.
-- Duplicated orchestration logic: conversational state handling exists in both orchestrators and could be centralized.
-- Context propagation: some providers may not consistently thread `context.Context` through external calls.
+## 11. Open Items / Known Issues
+- **Resolved:** Global registry state hinders testing. (The registry is now an injected instance).
+- **Resolved:** Lack of type safety due to `any` and reflection in factories. (Factories are now strongly-typed).
+- **Resolved:** Builder is not OCP compliant. (Provider-specific logic has been moved into their respective factories).
+- **Duplicated orchestration logic:** Conversational state handling exists in both orchestrators and could be centralized.
+- **LLM `MaxTokens` ignored:** Current OpenAI/Google clients do not propagate `req.MaxTokens`, so orchestrator defaults cannot constrain completion length.
+- **Hybrid RRF constant:** `internal/providers/hybrid/hybrid.go` uses a hard‑coded `k=60` with no configuration hook.
+- **Context propagation:** Some providers may not consistently thread `context.Context` through external calls.
 
 ---
 
