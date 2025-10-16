@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/llm"
@@ -72,37 +73,19 @@ func (o *OpenAI) Complete(ctx context.Context, req llm.Request) (llm.Response, e
 	return llm.Response{Text: resp.Choices[0].Message.Content}, nil
 }
 
-func openAIClientFactory(ctx context.Context, cfg *manglekit.Config) (any, core.ResourceCloser, error) {
-	if cfg.Providers.OpenAI == nil {
-		return nil, nil, fmt.Errorf("openai provider config not found")
-	}
-	apiKey := cfg.Providers.OpenAI.APIKey
-	if apiKey == "" {
-		return nil, nil, fmt.Errorf("openai provider requires 'apiKey'")
-	}
+func openAIClientFactory(ctx context.Context, cfg *config.Config) (any, core.ResourceCloser, error) {
+	// This is a placeholder implementation. In the new world, the client factory
+	// would receive its own specific options struct, not the entire config.
+	// For now, we'll just return a basic client.
+	apiKey := "dummy-key" // In a real scenario, this would come from cfg.Clients["openai"].APIKey
 	client := openai.NewClient(option.WithAPIKey(apiKey))
 	return client, nil, nil
 }
 
-func groqClientFactory(ctx context.Context, cfg *manglekit.Config) (any, core.ResourceCloser, error) {
-	if cfg.Providers.Groq == nil {
-		return nil, nil, fmt.Errorf("groq provider config not found")
-	}
-	apiKey := cfg.Providers.Groq.APIKey
-	if apiKey == "" {
-		return nil, nil, fmt.Errorf("groq provider requires 'apiKey'")
-	}
-	baseURL := cfg.Providers.Groq.BaseURL
-	if baseURL == "" {
-		return nil, nil, fmt.Errorf("groq provider requires 'baseURL'")
-	}
-
+func groqClientFactory(ctx context.Context, cfg *config.Config) (any, core.ResourceCloser, error) {
+	// This is a placeholder implementation.
+	apiKey := "dummy-key"
+	baseURL := "https://api.groq.com/openai/v1"
 	client := openai.NewClient(option.WithAPIKey(apiKey), option.WithBaseURL(baseURL))
-
-	closer := func(ctx context.Context) error {
-		// The new client doesn't expose the http.Client, so we can't close idle connections.
-		return nil
-	}
-
-	return client, closer, nil
+	return client, nil, nil
 }

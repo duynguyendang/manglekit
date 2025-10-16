@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -356,7 +357,7 @@ func (s *Sandwich) runLlm(ctx context.Context, logger core.Logger, q core.Query,
 
 	tLlmStart := time.Now()
 	llmRes, err := s.llm.Complete(ctx, llm.Request{
-		Prompt:    q.Text,
+		Prompt:    fmt.Sprintf("%s context: %s", q.Text, strings.Join(passages, " ")),
 		Context:   passages,
 		MaxTokens: s.opts.MaxTokens,
 		Data:      promptData,

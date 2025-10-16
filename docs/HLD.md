@@ -43,7 +43,7 @@ The architecture places the **Declarative Orchestrator** and **Mangle Engine** a
 
 This section details the primary components and their concrete implementations available within the Manglekit SDK.
 
-- **Builder & SDK:** The entrypoint for configuring and instantiating a Manglekit pipeline, either programmatically (`builder.BuilderAPI`) or via YAML (`config.NewBuilderFromYAML`). It manages the lifecycle of all resources via `core.ResourceCloser`.
+- **Builder & SDK:** The entrypoint for configuring and instantiating a Manglekit pipeline. Configuration is loaded via the `config` package and then wired into the builder using `manglekit.NewBuilderFromConfig`. The builder also provides a programmatic API (`builder.BuilderAPI`) and manages the lifecycle of all resources via `core.ResourceCloser`.
 
 - **Registry:** A central service locator for registering and retrieving providers (LLMs, Retrievers, State Providers, etc.). It is the foundation of the plug-and-play architecture.
 

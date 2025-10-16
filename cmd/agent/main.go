@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/providers" // Import the new providers package
 )
@@ -37,14 +38,19 @@ func main() {
 	       ApplyTo(registry)
 	*/
 
-	// b. Initialize the Manglekit builder from the YAML file.
-	builder, err := manglekit.NewBuilderFromYAML(*configFile, registry)
+	// b. Load the configuration from the YAML file.
+	cfg, err := config.LoadFromYAMLFile(*configFile)
 	if err != nil {
-		log.Fatalf("Failed to create builder from YAML: %v", err)
+		log.Fatalf("Failed to load config file: %v", err)
 	}
 
-	// c. Build the orchestrator.
-	// Use context.Background() for the build process as it's a startup operation.
+	// c. Initialize the Manglekit builder from the configuration object.
+	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry)
+	if err != nil {
+		log.Fatalf("Failed to create builder from config: %v", err)
+	}
+
+	// d. Build the orchestrator.
 	orchestrator, err := builder.Build(context.Background())
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)

@@ -7,6 +7,7 @@ import (
 	"log"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/internal/embedders/google"
 	"github.com/duynguyendang/manglekit/internal/embedders/openai"
 	"github.com/duynguyendang/manglekit/internal/providers/bm25"
@@ -79,7 +80,12 @@ func main() {
 	registry := manglekit.NewRegistry()
 	registerAllProviders(registry)
 
-	builder, err := manglekit.NewBuilderFromYAML(*configFile, registry)
+	cfg, err := config.LoadFromYAMLFile(*configFile)
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
+
+	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry)
 	if err != nil {
 		log.Fatalf("failed to create builder: %v", err)
 	}
