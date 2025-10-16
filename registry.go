@@ -6,25 +6,23 @@ import (
 	"reflect"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 )
 
-// Dependency map for passing components.
-type FactoryDeps map[string]any
-
 // Define specific, type-safe factories.
-type RetrieverFactory func(ctx context.Context, opts any, deps FactoryDeps) (retrieve.Retriever, error)
-type LLMFactory func(ctx context.Context, opts any, deps FactoryDeps) (llm.Client, error)
-type EmbedderFactory func(ctx context.Context, opts any, deps FactoryDeps) (ai.Embedder, error)
-type RerankerFactory func(ctx context.Context, opts any, deps FactoryDeps) (rerank.Reranker, error)
-type VectorStoreFactory func(ctx context.Context, opts any, deps FactoryDeps) (core.VectorStore, error)
-type RuleSetFactory func(ctx context.Context, opts any, deps FactoryDeps) (core.RuleSet, error)
-type StateProviderFactory func(ctx context.Context, options any, deps FactoryDeps) (core.StateProvider, error)
-type SchemaParserFactory func(ctx context.Context, options any, deps FactoryDeps) (core.SchemaParser, error)
-type FactConverterFactory func(ctx context.Context, options any, deps FactoryDeps) (core.FactConverter, error)
+type RetrieverFactory func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error)
+type LLMFactory func(ctx context.Context, deps diapi.LLMDeps, cfg any) (llm.Client, error)
+type EmbedderFactory func(ctx context.Context, deps diapi.EmbedderDeps, cfg any) (ai.Embedder, error)
+type RerankerFactory func(ctx context.Context, deps diapi.RerankerDeps, cfg any) (rerank.Reranker, error)
+type VectorStoreFactory func(ctx context.Context, deps diapi.VectorStoreDeps, cfg any) (core.VectorStore, error)
+type RuleSetFactory func(ctx context.Context, deps diapi.RuleSetDeps, cfg any) (core.RuleSet, error)
+type StateProviderFactory func(ctx context.Context, deps diapi.StateProviderDeps, cfg any) (core.StateProvider, error)
+type SchemaParserFactory func(ctx context.Context, deps diapi.NoopDeps, cfg any) (core.SchemaParser, error)
+type FactConverterFactory func(ctx context.Context, deps diapi.NoopDeps, cfg any) (core.FactConverter, error)
 
 // OrchestratorFactory defines the signature for creating an orchestrator instance.
 // It receives the fully built Options object containing all necessary components.
@@ -103,7 +101,7 @@ type ClientFactory func(ctx context.Context, cfg *Config) (client any, closer co
 
 // ToolFactory is a specialized factory for declarative tools, which may have
 // a different dependency injection mechanism.
-type ToolFactory func(options any, deps FactoryDeps) (any, error)
+type ToolFactory func(deps any, cfg any) (any, error)
 
 // Get retrieves a constructor function from the specified registry map. It is a
 // helper used by the Builder to find and instantiate components.

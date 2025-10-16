@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/embed"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
@@ -21,21 +22,20 @@ const (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterEmbedder("google-embedder", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (ai.Embedder, error) {
+	r.RegisterEmbedder("google-embedder", func(ctx context.Context, deps diapi.EmbedderDeps, cfg any) (ai.Embedder, error) {
 		var opts embed.GoogleEmbedderOptions
-		if options != nil {
-			if typedOpts, ok := options.(*embed.GoogleEmbedderOptions); ok {
+		if cfg != nil {
+			if typedOpts, ok := cfg.(*embed.GoogleEmbedderOptions); ok {
 				opts = *typedOpts
 			} else {
-				return nil, fmt.Errorf("invalid options type, expected *embed.GoogleEmbedderOptions, got %T", options)
+				return nil, fmt.Errorf("invalid options type, expected *embed.GoogleEmbedderOptions, got %T", cfg)
 			}
 		}
 
-		g, ok := deps["client"].(*genkit.Genkit)
-		if !ok {
-			return nil, fmt.Errorf("invalid client type, expected *genkit.Genkit, got %T", deps["client"])
+		if deps.Genkit == nil {
+			return nil, fmt.Errorf("missing required dependency 'genkit'")
 		}
-		return New(opts, g)
+		return New(opts, deps.Genkit)
 	})
 	r.RegisterOptions("google-embedder", (*embed.GoogleEmbedderOptions)(nil))
 }

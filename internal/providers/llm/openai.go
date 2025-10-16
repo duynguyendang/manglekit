@@ -6,20 +6,24 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 )
 
 func RegisterOpenAI(r *manglekit.Registry) {
-	factory := func(ctx context.Context, options any, deps manglekit.FactoryDeps) (llm.Client, error) {
-		opts, ok := options.(*llm.OpenAIOptions)
+	factory := func(ctx context.Context, deps diapi.LLMDeps, cfg any) (llm.Client, error) {
+		opts, ok := cfg.(*llm.OpenAIOptions)
 		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected *llm.OpenAIOptions, got %T", options)
+			return nil, fmt.Errorf("invalid options type, expected *llm.OpenAIOptions, got %T", cfg)
 		}
-		client, ok := deps["client"].(*openai.Client)
+		if deps.Client == nil {
+			return nil, fmt.Errorf("missing required dependency 'client'")
+		}
+		client, ok := deps.Client.(*openai.Client)
 		if !ok {
-			return nil, fmt.Errorf("missing required dependency 'client' of type *openai.Client")
+			return nil, fmt.Errorf("dependency 'client' has the wrong type, expected *openai.Client, got %T", deps.Client)
 		}
 		return NewOpenAI(*opts, client), nil
 	}

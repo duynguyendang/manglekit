@@ -19,6 +19,7 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
 	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/google/mangle/ast"
 )
@@ -63,7 +64,7 @@ func registerAllProviders(r *manglekit.Registry) {
 	// Schema Parser Providers
 	jsonschema.Register(r)
 	rdf.Register(r)
-	r.RegisterSchemaParser("mock-schema-parser", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.SchemaParser, error) {
+	r.RegisterSchemaParser("mock-schema-parser", func(ctx context.Context, deps diapi.NoopDeps, cfg any) (core.SchemaParser, error) {
 		return &mockSchemaParser{}, nil
 	})
 

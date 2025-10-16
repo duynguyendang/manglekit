@@ -11,6 +11,7 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	obslogger "github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
@@ -25,10 +26,10 @@ const (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("bm25", func(ctx context.Context, opts any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
-		typedOpts, ok := opts.(*retrieve.BM25Options)
+	r.RegisterRetriever("bm25", func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error) {
+		typedOpts, ok := cfg.(*retrieve.BM25Options)
 		if !ok {
-			return nil, fmt.Errorf("invalid options type for bm25: expected *retrieve.BM25Options, got %T", opts)
+			return nil, fmt.Errorf("invalid options type for bm25: expected *retrieve.BM25Options, got %T", cfg)
 		}
 		return New(*typedOpts)
 	})

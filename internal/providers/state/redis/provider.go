@@ -7,15 +7,16 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/state"
 	"github.com/redis/go-redis/v9"
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterStateProvider("redis", func(ctx context.Context, opts any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
-		typedOpts, ok := opts.(*state.RedisOptions)
+	r.RegisterStateProvider("redis", func(ctx context.Context, deps diapi.StateProviderDeps, cfg any) (core.StateProvider, error) {
+		typedOpts, ok := cfg.(*state.RedisOptions)
 		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected *state.RedisOptions, got %T", opts)
+			return nil, fmt.Errorf("invalid options type, expected *state.RedisOptions, got %T", cfg)
 		}
 		return New(ctx, *typedOpts)
 	})

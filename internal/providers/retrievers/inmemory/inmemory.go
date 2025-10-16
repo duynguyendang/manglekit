@@ -11,6 +11,7 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	obslogger "github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/retrieve"
 )
@@ -26,13 +27,13 @@ type InMemoryRetriever struct {
 }
 
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("in-memory", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
+	r.RegisterRetriever("in-memory", func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error) {
 		var opts retrieve.InMemoryOptions
-		if options != nil {
-			if typedOpts, ok := options.(*retrieve.InMemoryOptions); ok {
+		if cfg != nil {
+			if typedOpts, ok := cfg.(*retrieve.InMemoryOptions); ok {
 				opts = *typedOpts
 			} else {
-				return nil, fmt.Errorf("invalid options type, expected *retrieve.InMemoryOptions, got %T", options)
+				return nil, fmt.Errorf("invalid options type, expected *retrieve.InMemoryOptions, got %T", cfg)
 			}
 		}
 		return New(opts)

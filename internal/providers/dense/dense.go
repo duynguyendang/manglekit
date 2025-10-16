@@ -8,6 +8,7 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 )
@@ -19,16 +20,14 @@ type Options struct {
 }
 
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("dense", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
-		embedder, ok := deps["embedder"].(ai.Embedder)
-		if !ok || embedder == nil {
-			return nil, fmt.Errorf("dense retriever factory requires an 'embedder' dependency, but it was not provided or has the wrong type")
+	r.RegisterRetriever("dense", func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error) {
+		if deps.Embedder == nil {
+			return nil, fmt.Errorf("dense retriever factory requires an 'embedder' dependency, but it was not provided")
 		}
-		vectorStore, ok := deps["vectorStore"].(core.VectorStore)
-		if !ok || vectorStore == nil {
-			return nil, fmt.Errorf("dense retriever factory requires a 'vectorStore' dependency, but it was not provided or has the wrong type")
+		if deps.VectorStore == nil {
+			return nil, fmt.Errorf("dense retriever factory requires a 'vectorStore' dependency, but it was not provided")
 		}
-		return New(embedder, vectorStore)
+		return New(deps.Embedder, deps.VectorStore)
 	})
 	if err := r.RegisterOptions("dense", (*Options)(nil)); err != nil {
 		panic(err)

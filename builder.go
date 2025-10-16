@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
@@ -367,7 +368,7 @@ func (b *Builder) buildComponents(ctx context.Context) error {
 	return nil
 }
 
-// buildEmbedder is now simple and type-safe.
+// buildEmbedder constructs the embedder component using type-safe dependencies.
 func (b *Builder) buildEmbedder(ctx context.Context) error {
 	if b.embedder != nil || b.embedderName == "" {
 		return nil // Already built or not configured
@@ -379,18 +380,19 @@ func (b *Builder) buildEmbedder(ctx context.Context) error {
 		return err
 	}
 
-	deps := make(FactoryDeps)
-	if client, ok := b.clients[b.embedderName]; ok { // Or provider family logic
-		deps["client"] = client
+	deps := diapi.EmbedderDeps{
+		Genkit: b.genkit,
 	}
-	deps["genkit"] = b.genkit
+	if client, ok := b.clients[b.embedderName]; ok {
+		deps.Client = client
+	}
 
-	embedder, err := factory(ctx, b.embedderParams["typedConfig"], deps)
+	embedder, err := factory(ctx, deps, b.embedderParams["typedConfig"])
 	if err != nil {
 		return fmt.Errorf("factory for embedder '%s' failed: %w", b.embedderName, err)
 	}
 
-	b.embedder = embedder // NO type assertion needed
+	b.embedder = embedder
 	if c, ok := embedder.(closer); ok {
 		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
 	}
@@ -398,7 +400,7 @@ func (b *Builder) buildEmbedder(ctx context.Context) error {
 	return nil
 }
 
-// buildRetriever is now simple and OCP-compliant.
+// buildRetriever constructs the retriever component using type-safe dependencies.
 func (b *Builder) buildRetriever(ctx context.Context) error {
 	if b.retrieverName == "" {
 		return nil // Not configured
@@ -410,44 +412,45 @@ func (b *Builder) buildRetriever(ctx context.Context) error {
 		return err
 	}
 
-	deps := make(FactoryDeps)
-	deps["embedder"] = b.embedder
-	deps["vectorStore"] = b.vectorStore
-	deps["subRetrieverBuilder"] = SubRetrieverBuilder(b) // Correct Abstraction: Exposes only the sub-retriever building capability.
+	deps := diapi.RetrieverDeps{
+		Embedder:          b.embedder,
+		VectorStore:       b.vectorStore,
+		BuildSubRetriever: b.BuildRetriever, // Pass the method value.
+	}
 
-	retriever, err := factory(ctx, b.retrieverParams["typedConfig"], deps)
+	retriever, err := factory(ctx, deps, b.retrieverParams["typedConfig"])
 	if err != nil {
 		return fmt.Errorf("factory for retriever '%s' failed: %w", b.retrieverName, err)
 	}
 
-	b.opts.Retriever = retriever // NO type assertion needed
+	b.opts.Retriever = retriever
 	b.opts.Obs.Logger.Infof("initialized retriever: %s", b.retrieverName)
 	return nil
 }
 
-// BuildRetriever is the public method for the hybrid factory to call back.
+// BuildRetriever provides the diapi.BuildRetrieverFunc capability.
 func (b *Builder) BuildRetriever(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error) {
-	b.opts.Obs.Logger.Debugf("building sub-retriever %q for hybrid", name)
+	b.opts.Obs.Logger.Debugf("building sub-retriever %q", name)
 	factory, err := Get(b.registry.Retrievers, name)
 	if err != nil {
 		return nil, err
 	}
 
-	deps := make(FactoryDeps)
-	deps["embedder"] = b.embedder
-	deps["vectorStore"] = b.vectorStore
-	// Do NOT pass the builder again to avoid infinite recursion.
+	deps := diapi.RetrieverDeps{
+		Embedder:    b.embedder,
+		VectorStore: b.vectorStore,
+		// Do NOT pass BuildSubRetriever again to prevent recursion.
+	}
 
 	var opts any
 	if params != nil {
 		opts = params["typedConfig"]
 	}
 
-	return factory(ctx, opts, deps)
+	return factory(ctx, deps, opts)
 }
 
-
-// buildVectorStore is now simple and type-safe.
+// buildVectorStore constructs the vector store component using type-safe dependencies.
 func (b *Builder) buildVectorStore(ctx context.Context) error {
 	if b.vectorStoreName == "" {
 		return nil
@@ -459,10 +462,11 @@ func (b *Builder) buildVectorStore(ctx context.Context) error {
 		return err
 	}
 
-	deps := make(FactoryDeps)
-	deps["embedder"] = b.embedder
+	deps := diapi.VectorStoreDeps{
+		Embedder: b.embedder,
+	}
 
-	vectorStore, err := factory(ctx, b.vectorStoreParams["typedConfig"], deps)
+	vectorStore, err := factory(ctx, deps, b.vectorStoreParams["typedConfig"])
 	if err != nil {
 		return fmt.Errorf("factory for vector store '%s' failed: %w", b.vectorStoreName, err)
 	}
@@ -475,7 +479,7 @@ func (b *Builder) buildVectorStore(ctx context.Context) error {
 	return nil
 }
 
-// buildReranker is now simple and type-safe.
+// buildReranker constructs the reranker component using type-safe dependencies.
 func (b *Builder) buildReranker(ctx context.Context) error {
 	if b.rerankerName == "" {
 		return nil
@@ -487,10 +491,11 @@ func (b *Builder) buildReranker(ctx context.Context) error {
 		return err
 	}
 
-	deps := make(FactoryDeps)
-	deps["embedder"] = b.embedder
+	deps := diapi.RerankerDeps{
+		Embedder: b.embedder,
+	}
 
-	reranker, err := factory(ctx, b.rerankerParams["typedConfig"], deps)
+	reranker, err := factory(ctx, deps, b.rerankerParams["typedConfig"])
 	if err != nil {
 		return fmt.Errorf("factory for reranker '%s' failed: %w", b.rerankerName, err)
 	}
@@ -500,7 +505,7 @@ func (b *Builder) buildReranker(ctx context.Context) error {
 	return nil
 }
 
-// buildRules is now simple and type-safe.
+// buildRules constructs the rules engine component using type-safe dependencies.
 func (b *Builder) buildRules(ctx context.Context) error {
 	if b.rulesName == "" {
 		return nil
@@ -512,10 +517,10 @@ func (b *Builder) buildRules(ctx context.Context) error {
 		return err
 	}
 
-	deps := make(FactoryDeps)
-	deps["registry"] = b.registry
+	// Rulesets currently have no dependencies.
+	deps := diapi.RuleSetDeps{}
 
-	ruleset, err := factory(ctx, b.rulesParams["typedConfig"], deps)
+	ruleset, err := factory(ctx, deps, b.rulesParams["typedConfig"])
 	if err != nil {
 		return fmt.Errorf("factory for ruleset '%s' failed: %w", b.rulesName, err)
 	}
@@ -525,7 +530,7 @@ func (b *Builder) buildRules(ctx context.Context) error {
 	return nil
 }
 
-// buildLLM is now simple and type-safe.
+// buildLLM constructs the LLM component using type-safe dependencies.
 func (b *Builder) buildLLM(ctx context.Context) error {
 	if b.llmName == "" {
 		return nil
@@ -537,13 +542,14 @@ func (b *Builder) buildLLM(ctx context.Context) error {
 		return err
 	}
 
-	deps := make(FactoryDeps)
-	if client, ok := b.clients[b.llmName]; ok {
-		deps["client"] = client
+	deps := diapi.LLMDeps{
+		Genkit: b.genkit,
 	}
-	deps["genkit"] = b.genkit
+	if client, ok := b.clients[b.llmName]; ok {
+		deps.Client = client
+	}
 
-	llmClient, err := factory(ctx, b.llmParams["typedConfig"], deps)
+	llmClient, err := factory(ctx, deps, b.llmParams["typedConfig"])
 	if err != nil {
 		return fmt.Errorf("factory for llm '%s' failed: %w", b.llmName, err)
 	}
@@ -556,7 +562,7 @@ func (b *Builder) buildLLM(ctx context.Context) error {
 	return nil
 }
 
-// buildStateProvider is now simple and type-safe.
+// buildStateProvider constructs the state provider component using type-safe dependencies.
 func (b *Builder) buildStateProvider(ctx context.Context) error {
 	if b.stateProviderName == "" {
 		return nil
@@ -568,7 +574,10 @@ func (b *Builder) buildStateProvider(ctx context.Context) error {
 		return err
 	}
 
-	provider, err := factory(ctx, b.stateProviderParams["typedConfig"], nil)
+	// State providers currently have no dependencies.
+	deps := diapi.StateProviderDeps{}
+
+	provider, err := factory(ctx, deps, b.stateProviderParams["typedConfig"])
 	if err != nil {
 		return fmt.Errorf("factory for state provider '%s' failed: %w", b.stateProviderName, err)
 	}
