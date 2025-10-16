@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/llm"
@@ -92,12 +93,18 @@ func (r *Registry) RegisterOptions(providerName string, typedNilPtr any) error {
 	return nil
 }
 
+// NameToOptionsType returns the reflect.Type for a given provider name.
+func (r *Registry) NameToOptionsType(providerName string) (reflect.Type, bool) {
+	t, ok := r.nameToOptionsType[providerName]
+	return t, ok
+}
+
 // ClientFactory defines the contract for a function that creates a shared client
 // for a provider family (e.g., Google, OpenAI). It takes the global `*Config`
 // object and is responsible for extracting its own provider-specific settings.
 // It returns the initialized client, a `core.ResourceCloser` for graceful shutdown,
 // and an error.
-type ClientFactory func(ctx context.Context, cfg *Config) (client any, closer core.ResourceCloser, err error)
+type ClientFactory func(ctx context.Context, cfg *config.Config) (client any, closer core.ResourceCloser, err error)
 
 // ToolFactory is a specialized factory for declarative tools, which may have
 // a different dependency injection mechanism.

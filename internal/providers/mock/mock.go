@@ -3,6 +3,7 @@ package mock
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/duynguyendang/manglekit"
@@ -53,6 +54,9 @@ func Register(r *manglekit.Registry) {
 	r.RegisterEmbedder("mock-embedder", func(ctx context.Context, deps diapi.EmbedderDeps, cfg any) (ai.Embedder, error) {
 		return &Embedder{}, nil
 	})
+	if err := r.RegisterOptions("mock-embedder", (*struct{})(nil)); err != nil {
+		panic(err)
+	}
 }
 
 type Params map[string]any
@@ -150,7 +154,13 @@ func NewLLM(model string) *LLM {
 
 // Complete generates a response.
 func (l *LLM) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
-	return llm.Response{Text: fmt.Sprintf("model: %s query: %s", l.model, req.Prompt)}, nil
+	var fullPrompt strings.Builder
+	fullPrompt.WriteString(req.Prompt)
+	if len(req.Context) > 0 {
+		fullPrompt.WriteString(" context: ")
+		fullPrompt.WriteString(strings.Join(req.Context, " "))
+	}
+	return llm.Response{Text: fmt.Sprintf("model: %s prompt: %s", l.model, fullPrompt.String())}, nil
 }
 
 // Model returns the model name.

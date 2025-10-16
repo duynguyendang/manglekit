@@ -20,7 +20,6 @@ import (
 // This interface is returned by all chained `With...` methods to allow for a
 // seamless and readable configuration flow.
 type BuilderAPI interface {
-	WithConfig(cfg *Config) BuilderAPI
 	WithRetriever(opts any) BuilderAPI
 	WithVectorStore(opts any) BuilderAPI
 	WithReranker(opts any) BuilderAPI
@@ -50,11 +49,9 @@ type SubRetrieverBuilder interface {
 // dependency injection, component construction, and configuration resolution
 // from multiple sources (programmatic, YAML, environment variables).
 type Builder struct {
-	opts      core.Options
-	config    *Config
-	errs      []error
-	registry  *Registry
-	configDir string
+	opts     core.Options
+	errs     []error
+	registry *Registry
 
 	// Declarative flow fields
 	flowName string
@@ -96,7 +93,6 @@ type closer interface {
 // NewBuilder returns a new, empty instance of the fluent builder.
 func NewBuilder(r *Registry) *Builder {
 	b := &Builder{
-		config:        &Config{},
 		registry:      r,
 		clients:       make(map[string]any),
 		resolvedCfgs:  make(map[string]any),
@@ -104,14 +100,6 @@ func NewBuilder(r *Registry) *Builder {
 		tools:         make(map[string]any),
 	}
 	b.opts.Obs.Logger = logger.NewStdLogger()
-	return b
-}
-
-// WithConfig applies a configuration object to the builder.
-func (b *Builder) WithConfig(cfg *Config) BuilderAPI {
-	if cfg != nil {
-		b.config = cfg
-	}
 	return b
 }
 
@@ -303,10 +291,10 @@ func (b *Builder) WithGenkit(g *genkit.Genkit) BuilderAPI {
 
 // Build constructs the final Orchestrator.
 func (b *Builder) Build(ctx context.Context) (core.Orchestrator, error) {
-	orchestratorType := "sandwich" // default
-	if b.config.Orchestrator.Type != "" {
-		orchestratorType = b.config.Orchestrator.Type
-	}
+	// The orchestrator type is now determined by the config before calling the builder.
+	// For programmatic builds, we can add a `WithOrchestrator` method if needed.
+	// For now, we default to "sandwich".
+	orchestratorType := "sandwich"
 	b.opts.Obs.Logger.Infof("starting build for orchestrator type %q", orchestratorType)
 
 	if len(b.errs) > 0 {
@@ -608,9 +596,4 @@ func (b *Builder) closeResources(ctx context.Context) error {
 		}
 	}
 	return combined
-}
-
-var embedderAlias = map[string]string{
-	"google-embedder": "google",
-	"openai-embedder": "openai",
 }
