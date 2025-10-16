@@ -62,7 +62,7 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry)
+	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry, nil)
 	if err != nil {
 		log.Fatalf("failed to create builder: %v", err)
 	}

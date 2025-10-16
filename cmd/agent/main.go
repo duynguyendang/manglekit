@@ -45,7 +45,7 @@ func main() {
 	}
 
 	// c. Initialize the Manglekit builder from the configuration object.
-	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry)
+	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry, nil)
 	if err != nil {
 		log.Fatalf("Failed to create builder from config: %v", err)
 	}

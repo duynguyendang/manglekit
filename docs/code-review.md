@@ -24,6 +24,7 @@ The following checks must be enforced for all orchestration logic.
 -   **No magic strings**: All data passed between orchestration stages must be done via the typed `pipeline.PipelineContext` struct. Using `map[string]any` with string literals as keys for passing data is forbidden.
 -   **Ctx propagation**: Every stage must receive and use the `p.Ctx` from the `PipelineContext`. Stages must not create their own background contexts or hidden timeouts.
 -   **Metrics consistency**: Each stage is individually responsible for recording its own timing and performance metrics to the `PipelineContext`.
+-   **Use Genkit Plugins**: Providers that interact with external services (e.g., LLMs, embedders) must be implemented as wrappers around Genkit plugins. Custom client implementations and factories are forbidden.
 
 ---
 
@@ -36,15 +37,6 @@ The following issues are currently present in the codebase and require attention
 **Impact Analysis:** The `core.Orchestrator` interface previously defined methods like `Retriever() any`. This use of `any` forced consumers to perform unsafe type assertions, bypassing compile-time type safety.
 **Refactoring Action:** The `Orchestrator` interface has been refactored to be a pure executor (`Execute`, `Close`). All `any`-based accessors have been removed. The `builder.Build()` method now returns typed components (e.g., `retrieve.Updatable`) alongside the orchestrator, providing a type-safe mechanism for accessing components that require runtime interaction. A new rule has been added: **No `any` accessors** — all typed components must be returned explicitly from builder factories.
 **Status:** **Resolved**
-
-### Smell: Inconsistent Factory Signature & Type Safety Hole
-**Location:** `registry.go`
-**Impact Analysis:** The `Registry.ClientFactories` map is defined as `map[string]any`, and the `ClientFactory` signature returns `(client any, ...)`. This creates a type-safety hole in the framework's dependency injection system. The builder must fetch a factory from this map and then immediately perform a type assertion on the resulting client. This is unsafe and inconsistent with the other strongly-typed factory maps (e.g., `Retrievers`, `LLMs`).
-**Refactoring Suggestion:**
-1.  **Introduce a Generic Client Factory:** Define a generic `ClientFactory[T any]` type using Go generics.
-2.  **Create Typed Client Registries:** Instead of one `any`-based map, have separate, type-safe maps for different client types if needed, or use a generic registration method that captures the type information safely.
-3.  **Update the Builder:** The builder would then request a client of a specific type, eliminating the need for runtime assertions.
-**Status:** Open
 
 ### Smell: Inconsistent Builder API
 **Location:** `builder.go`
