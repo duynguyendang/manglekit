@@ -114,27 +114,6 @@ func New(fc core.FlowController, tools map[string]any, flowName string, sp core.
 	}, nil
 }
 
-// Retriever satisfies the `core.Orchestrator` interface. It returns the first
-// tool found in its configuration that implements the `retrieve.Retriever`
-// interface. This provides a convenience method for runtime operations, such as
-// updating documents in an updatable retriever.
-//
-// It returns the retriever instance as `any` (which can be type-asserted by the
-// caller) or `nil` if no retriever tool is found in the orchestrator's configuration.
-func (o *DeclarativeOrchestrator) Retriever() any {
-	for _, tool := range o.tools {
-		if r, ok := tool.(retrieve.Retriever); ok {
-			return r
-		}
-	}
-	return nil
-}
-
-// StateProvider returns the state provider component configured for the orchestrator.
-func (o *DeclarativeOrchestrator) StateProvider() core.StateProvider {
-	return o.stateProvider
-}
-
 // Close releases any external resources held by the orchestrator.
 func (o *DeclarativeOrchestrator) Close(ctx context.Context) error {
 	var combined error

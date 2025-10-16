@@ -138,21 +138,6 @@ func (s *Sandwich) Execute(ctx context.Context, sessionID string, q core.Query) 
 	return p.Answer, nil
 }
 
-// Retriever returns the retriever component configured for the orchestrator.
-func (s *Sandwich) Retriever() any {
-	return s.retriever
-}
-
-// Reranker returns the reranker component configured for the orchestrator.
-func (s *Sandwich) Reranker() any {
-	return s.reranker
-}
-
-// StateProvider returns the state provider component configured for the orchestrator.
-func (s *Sandwich) StateProvider() core.StateProvider {
-	return s.stateProvider
-}
-
 // Close releases any external resources held by the orchestrator's components.
 func (s *Sandwich) Close(ctx context.Context) error {
 	var combined error

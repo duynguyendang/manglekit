@@ -10,6 +10,9 @@ import (
 	"github.com/duynguyendang/manglekit/rerank"
 )
 
+// Compile-time check to ensure Sandwich implements the Orchestrator interface.
+var _ core.Orchestrator = (*Sandwich)(nil)
+
 // This file contains an end-to-end integration test for the Sandwich orchestrator,
 // verifying that the stage-based runner correctly executes a full pipeline with mocks.
 

@@ -65,14 +65,12 @@ type VectorStore interface {
 	Search(ctx context.Context, queryText string, queryVector []float32, topK int, filter map[string]any) ([]Doc, error)
 }
 
-// Orchestrator is the central interface for the MangleKit SDK. It defines the
-// main entry point for processing a query and returning an answer. Implementations
-// of this interface, like the "Sandwich" or "Declarative" orchestrators, manage
-// the flow of data through the various components of the system.
+// Orchestrator is the central behavioral interface for the MangleKit SDK. It is
+// a pure executor, responsible for running a configured pipeline but not for
+// exposing the components within it. Typed components should be returned by the
+// builder at construction time.
 type Orchestrator interface {
-	// Execute executes the full processing pipeline for a given query. This typically
-	// involves pre-processing rules, document retrieval, reranking, LLM generation,
-	// and post-processing rules.
+	// Execute runs the full processing pipeline for a given query.
 	//
 	// ctx is the context for the entire operation.
 	// sessionID is the unique identifier for the session.
@@ -81,19 +79,9 @@ type Orchestrator interface {
 	// or an error if any part of the process fails.
 	Execute(ctx context.Context, sessionID string, q Query) (Answer, error)
 
-	// Retriever returns the retriever instance configured for the orchestrator.
-	// This allows for runtime operations on the retriever, such as adding or updating
-	// documents in an updatable retriever. The return type is `any` to avoid a
-	// circular dependency with the `retrieve` package; the caller is expected to
-	// perform a type assertion to `retrieve.Retriever`.
-	Retriever() any
-
-	// StateProvider returns the state provider instance configured for the orchestrator.
-	StateProvider() StateProvider
-
 	// Close releases any resources (such as API clients) associated with the
-	// orchestrator. It should be invoked when the orchestrator is no longer needed.
-	// Implementations should be idempotent.
+	// orchestrator's components. It should be invoked when the orchestrator is
+	// no longer needed. Implementations should be idempotent.
 	Close(ctx context.Context) error
 }
 

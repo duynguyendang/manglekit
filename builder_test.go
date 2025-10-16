@@ -8,9 +8,13 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
+	"github.com/duynguyendang/manglekit/pipeline/declarative"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 )
+
+// Compile-time check to ensure DeclarativeOrchestrator implements the Orchestrator interface.
+var _ core.Orchestrator = (*declarative.DeclarativeOrchestrator)(nil)
 
 // mockEmbedder is a dummy embedder for testing.
 type mockEmbedder struct {
@@ -52,7 +56,7 @@ func TestBuilder_DependencyInjection_Failure(t *testing.T) {
 		// Configure the retriever that needs an embedder, but do NOT provide an embedder.
 		builder.WithRetriever(&TestRetrieverOptions{})
 
-		_, err := builder.Build(context.Background())
+		_, _, err := builder.Build(context.Background())
 		if err == nil {
 			t.Fatal("expected builder.Build() to fail, but it succeeded")
 		}
@@ -83,7 +87,7 @@ func TestBuilder_DependencyInjection_Success(t *testing.T) {
 		builder.WithRetriever(&TestRetrieverOptions{})
 		builder.WithEmbedder(&MockEmbedderOptions{})
 
-		_, err := builder.Build(context.Background())
+		_, _, err := builder.Build(context.Background())
 		if err != nil {
 			t.Fatalf("expected builder.Build() to succeed, but it failed: %v", err)
 		}
