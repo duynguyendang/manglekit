@@ -9,9 +9,9 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/logger"
-	"github.com/duynguyendang/manglekit/pipeline"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
 )
 
 // BuilderAPI defines the fluent interface for the MangleKit orchestrator builder.
@@ -32,7 +32,15 @@ type BuilderAPI interface {
 	WithObservability(obs core.Observability) BuilderAPI
 	WithFallbackThreshold(f float64) BuilderAPI
 	WithStateProvider(opts any) BuilderAPI
+	WithGenkit(g *genkit.Genkit) BuilderAPI
 	Build(ctx context.Context) (core.Orchestrator, error)
+	BuildRetriever(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error)
+}
+
+// SubRetrieverBuilder defines a minimal interface that complex components, like a
+// hybrid retriever, can use to build their constituent sub-retrievers.
+// It prevents leaking the entire BuilderAPI into component factories.
+type SubRetrieverBuilder interface {
 	BuildRetriever(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error)
 }
 
@@ -73,6 +81,7 @@ type Builder struct {
 	embedder      ai.Embedder
 	vectorStore   core.VectorStore
 	stateProvider core.StateProvider
+	genkit        *genkit.Genkit
 
 	stateProviderName   string
 	stateProviderParams map[string]any
@@ -113,7 +122,7 @@ func (b *Builder) WithRetriever(opts any) BuilderAPI {
 		return b
 	}
 	optsType := reflect.TypeOf(opts)
-	name, ok := optionsTypeToName[optsType]
+	name, ok := b.registry.optionsTypeToName[optsType]
 	if !ok {
 		err := fmt.Errorf("unregistered options type for retriever: %T", opts)
 		b.opts.Obs.Logger.Errorf(err.Error())
@@ -133,7 +142,7 @@ func (b *Builder) WithVectorStore(opts any) BuilderAPI {
 		return b
 	}
 	optsType := reflect.TypeOf(opts)
-	name, ok := optionsTypeToName[optsType]
+	name, ok := b.registry.optionsTypeToName[optsType]
 	if !ok {
 		err := fmt.Errorf("unregistered options type for vector store: %T", opts)
 		b.opts.Obs.Logger.Errorf(err.Error())
@@ -153,7 +162,7 @@ func (b *Builder) WithReranker(opts any) BuilderAPI {
 		return b
 	}
 	optsType := reflect.TypeOf(opts)
-	name, ok := optionsTypeToName[optsType]
+	name, ok := b.registry.optionsTypeToName[optsType]
 	if !ok {
 		err := fmt.Errorf("unregistered options type for reranker: %T", opts)
 		b.opts.Obs.Logger.Errorf(err.Error())
@@ -173,7 +182,7 @@ func (b *Builder) WithRules(opts any) BuilderAPI {
 		return b
 	}
 	optsType := reflect.TypeOf(opts)
-	name, ok := optionsTypeToName[optsType]
+	name, ok := b.registry.optionsTypeToName[optsType]
 	if !ok {
 		err := fmt.Errorf("unregistered options type for rules engine: %T", opts)
 		b.opts.Obs.Logger.Errorf(err.Error())
@@ -193,7 +202,7 @@ func (b *Builder) WithLLM(opts any) BuilderAPI {
 		return b
 	}
 	optsType := reflect.TypeOf(opts)
-	name, ok := optionsTypeToName[optsType]
+	name, ok := b.registry.optionsTypeToName[optsType]
 	if !ok {
 		err := fmt.Errorf("unregistered options type for LLM: %T", opts)
 		b.opts.Obs.Logger.Errorf(err.Error())
@@ -228,7 +237,7 @@ func (b *Builder) WithEmbedder(opts any) BuilderAPI {
 	}
 
 	optsType := reflect.TypeOf(opts)
-	name, ok := optionsTypeToName[optsType]
+	name, ok := b.registry.optionsTypeToName[optsType]
 	if !ok {
 		err := fmt.Errorf("unregistered options type for embedder: %T", opts)
 		b.opts.Obs.Logger.Errorf(err.Error())
@@ -273,7 +282,7 @@ func (b *Builder) WithStateProvider(opts any) BuilderAPI {
 		return b
 	}
 	optsType := reflect.TypeOf(opts)
-	name, ok := optionsTypeToName[optsType]
+	name, ok := b.registry.optionsTypeToName[optsType]
 	if !ok {
 		err := fmt.Errorf("unregistered options type for state provider: %T", opts)
 		b.opts.Obs.Logger.Errorf(err.Error())
@@ -282,6 +291,12 @@ func (b *Builder) WithStateProvider(opts any) BuilderAPI {
 	}
 	b.stateProviderName = name
 	b.stateProviderParams = map[string]any{"typedConfig": opts}
+	return b
+}
+
+// WithGenkit sets the genkit instance for the builder.
+func (b *Builder) WithGenkit(g *genkit.Genkit) BuilderAPI {
+	b.genkit = g
 	return b
 }
 
@@ -299,43 +314,35 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, error) {
 		return nil, err
 	}
 
-	switch orchestratorType {
-	case "declarative":
-		// This part remains complex for now and is out of scope for this refactoring
-		b.opts.Obs.Logger.Debugf("building declarative orchestrator")
-		// ... existing declarative logic ...
-		return nil, errors.New("declarative orchestrator build not implemented in this refactoring")
-
-	case "sandwich":
-		b.opts.Obs.Logger.Debugf("building sandwich orchestrator")
-		if err := b.buildComponents(ctx); err != nil {
-			closeErr := b.closeResources(ctx)
-			b.opts.Obs.Logger.Errorf("failed to build components: %v", err)
-			return nil, errors.Join(err, closeErr)
-		}
-		b.opts.StateProvider = b.stateProvider
-		orchestrator, err := pipeline.NewSandwich(b.opts)
-		if err != nil {
-			closeErr := b.closeResources(ctx)
-			b.opts.Obs.Logger.Errorf("failed to create new sandwich pipeline: %v", err)
-			return nil, errors.Join(err, closeErr)
-		}
-		b.opts.Obs.Logger.Infof("successfully built sandwich orchestrator")
-		return orchestrator, nil
-
-	default:
+	if err := b.buildComponents(ctx); err != nil {
 		closeErr := b.closeResources(ctx)
-		err := fmt.Errorf("unknown orchestrator type: %q", orchestratorType)
+		b.opts.Obs.Logger.Errorf("failed to build components: %v", err)
+		return nil, errors.Join(err, closeErr)
+	}
+
+	// Dynamic factory lookup
+	factory, err := Get(b.registry.OrchestratorFactories, orchestratorType)
+	if err != nil {
+		closeErr := b.closeResources(ctx)
+		err = fmt.Errorf("unknown orchestrator type %q: %w", orchestratorType, err)
 		b.opts.Obs.Logger.Errorf(err.Error())
 		return nil, errors.Join(err, closeErr)
 	}
+
+	b.opts.StateProvider = b.stateProvider
+	orchestrator, err := factory(b.opts)
+	if err != nil {
+		closeErr := b.closeResources(ctx)
+		b.opts.Obs.Logger.Errorf("factory for orchestrator %q failed: %v", orchestratorType, err)
+		return nil, errors.Join(err, closeErr)
+	}
+
+	b.opts.Obs.Logger.Infof("successfully built %s orchestrator", orchestratorType)
+	return orchestrator, nil
 }
 
 // buildComponents calls the individual component builders in the correct order.
 func (b *Builder) buildComponents(ctx context.Context) error {
-	if err := b.resolveDependencies(ctx); err != nil { // Resolve dependencies first
-		return err
-	}
 	if err := b.buildEmbedder(ctx); err != nil {
 		return err
 	}
@@ -376,6 +383,7 @@ func (b *Builder) buildEmbedder(ctx context.Context) error {
 	if client, ok := b.clients[b.embedderName]; ok { // Or provider family logic
 		deps["client"] = client
 	}
+	deps["genkit"] = b.genkit
 
 	embedder, err := factory(ctx, b.embedderParams["typedConfig"], deps)
 	if err != nil {
@@ -405,7 +413,7 @@ func (b *Builder) buildRetriever(ctx context.Context) error {
 	deps := make(FactoryDeps)
 	deps["embedder"] = b.embedder
 	deps["vectorStore"] = b.vectorStore
-	deps["builder"] = b // For hybrid retriever callback
+	deps["subRetrieverBuilder"] = SubRetrieverBuilder(b) // Correct Abstraction: Exposes only the sub-retriever building capability.
 
 	retriever, err := factory(ctx, b.retrieverParams["typedConfig"], deps)
 	if err != nil {
@@ -533,6 +541,7 @@ func (b *Builder) buildLLM(ctx context.Context) error {
 	if client, ok := b.clients[b.llmName]; ok {
 		deps["client"] = client
 	}
+	deps["genkit"] = b.genkit
 
 	llmClient, err := factory(ctx, b.llmParams["typedConfig"], deps)
 	if err != nil {
@@ -590,77 +599,6 @@ func (b *Builder) closeResources(ctx context.Context) error {
 		}
 	}
 	return combined
-}
-
-// resolveDependencies handles identifying required providers and initializing API clients.
-func (b *Builder) resolveDependencies(ctx context.Context) error {
-	if b.embedder == nil && b.embedderName == "" {
-		if b.vectorStoreName != "" {
-			if name, ok := b.vectorStoreParams["embedder"].(string); ok {
-				b.embedderName = name
-			}
-		} else if b.retrieverName == "dense" {
-			if name, ok := b.retrieverParams["embedder"].(string); ok {
-				b.embedderName = name
-			}
-		} else if b.retrieverName == "hybrid" {
-			if denseParams, ok := b.retrieverParams["dense"].(map[string]any); ok {
-				if name, ok := denseParams["embedder"].(string); ok {
-					b.embedderName = name
-				}
-			}
-		} else if b.rerankerName == "cosine" {
-			if name, ok := b.rerankerParams["embedder"].(string); ok {
-				b.embedderName = name
-			}
-		}
-	}
-
-	if b.llmName != "" {
-		b.providerNames["llm"] = b.llmName
-	}
-	if b.embedder == nil && b.embedderName != "" {
-		if norm, ok := embedderAlias[b.embedderName]; ok {
-			b.embedderName = norm
-		}
-		b.providerNames["embedder"] = b.embedderName
-	}
-
-	for compType, providerName := range b.providerNames {
-		if err := b.resolveProviderConfig(ctx, compType, providerName); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (b *Builder) resolveProviderConfig(ctx context.Context, providerType, providerName string) error {
-	if _, exists := b.clients[providerName]; exists {
-		return nil // Already resolved.
-	}
-
-	factory, err := Get(b.registry.ClientFactories, providerName)
-	if err != nil {
-		// Not all providers have client factories, so this is not an error.
-		return nil
-	}
-
-	clientFactory, ok := factory.(ClientFactory)
-	if !ok {
-		return fmt.Errorf("invalid client factory type for provider '%s'", providerName)
-	}
-
-	client, closer, err := clientFactory(ctx, b.config)
-	if err != nil {
-		return fmt.Errorf("failed to create client for provider '%s': %w", providerName, err)
-	}
-
-	b.clients[providerName] = client
-	if closer != nil {
-		b.opts.ResourceClosers = append(b.opts.ResourceClosers, closer)
-	}
-
-	return nil
 }
 
 var embedderAlias = map[string]string{

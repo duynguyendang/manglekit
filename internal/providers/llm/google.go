@@ -1,168 +1,90 @@
-// Package llm provides the concrete implementations of the llm.Client interface
-// for various providers, such as Google and OpenAI. These packages are internal
-// and are registered with the framework using init() functions.
 package llm
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
-	"strings"
-	"sync"
 
 	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/option"
 )
 
 func RegisterGoogle(r *manglekit.Registry) {
-	r.RegisterLLM("google", func(ctx context.Context, opts any, deps manglekit.FactoryDeps) (llm.Client, error) {
-		typedOpts, ok := opts.(*llm.GoogleOptions)
+	// The new pattern: we don't register a client factory anymore.
+	// We register the LLM factory directly.
+	// The Genkit plugin handles the client lifecycle.
+	r.RegisterLLM("google", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (llm.Client, error) {
+		opts, ok := options.(*llm.GoogleOptions)
 		if !ok {
-			return nil, fmt.Errorf("invalid options type for google llm: expected *llm.GoogleOptions, got %T", opts)
+			return nil, fmt.Errorf("invalid options type for google llm, expected *llm.GoogleOptions, got %T", options)
 		}
 
-		clients, ok := deps["client"].(llm.GoogleClients)
+		g, ok := deps["genkit"].(*genkit.Genkit)
 		if !ok {
-			return nil, fmt.Errorf("invalid client type for google llm: expected llm.GoogleClients, got %T", deps["client"])
+			return nil, fmt.Errorf("missing required dependency 'genkit' of type *genkit.Genkit")
 		}
-		return NewGoogle(*typedOpts, clients.Genkit)
+
+		// In the new genkit model, models are defined and then retrieved.
+		// We will define a model based on the options.
+		model := googlegenai.GoogleAIModel(g, opts.Model)
+		if model == nil {
+			// If the model is not already defined (e.g. by a user's explicit genkit.Init),
+			// we can try to define it.
+			// This part is complex and depends on how Manglekit wants to integrate with Genkit's initialization.
+			// For now, we'll assume the model must be predefined in the user's main.go
+			// by initializing the genkit with the googleai plugin.
+			// A simpler approach for now is to just use the model name.
+			return NewGoogle(*opts, nil, g)
+		}
+
+		return NewGoogle(*opts, model, g)
 	})
-	r.RegisterOptions("google", (*llm.GoogleOptions)(nil))
-	r.RegisterClientFactory("google", googleClientFactory)
+
+	if err := r.RegisterOptions("google", (*llm.GoogleOptions)(nil)); err != nil {
+		panic(err)
+	}
 }
 
-func googleClientFactory(ctx context.Context, cfg *manglekit.Config) (any, core.ResourceCloser, error) {
-	if cfg.Providers.Google == nil {
-		return nil, nil, errors.New("missing providers.google config for google client factory")
-	}
-	googleCfg := cfg.Providers.Google
+// Google is a wrapper around a genkit AI model.
+type Google struct {
+	opts   llm.GoogleOptions
+	model  ai.Model
+	genkit *genkit.Genkit
+}
 
-	apiKey := googleCfg.APIKey
-	if apiKey == "" {
-		apiKey = os.Getenv("GOOGLE_API_KEY")
-	}
-	if apiKey == "" {
-		return nil, nil, fmt.Errorf("missing apiKey for provider 'google': please provide it via config or GOOGLE_API_KEY env var")
+// NewGoogle creates a new Google LLM client.
+func NewGoogle(opts llm.GoogleOptions, model ai.Model, g *genkit.Genkit) (llm.Client, error) {
+	return &Google{opts: opts, model: model, genkit: g}, nil
+}
+
+// Complete implements the llm.Client interface.
+func (g *Google) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
+	if g.model == nil {
+		return llm.Response{}, fmt.Errorf("google llm client not initialized with a model")
 	}
 
-	g, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	// Use the functional options pattern from the new genkit API.
+	res, err := genkit.Generate(ctx, g.genkit,
+		ai.WithModel(g.model),
+		ai.WithPrompt(req.Prompt),
+		ai.WithConfig(&ai.GenerationCommonConfig{
+			Temperature: float64(g.opts.Temperature),
+		}),
+	)
+
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create genai client: %w", err)
+		return llm.Response{}, err
 	}
 
-	gkit := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{APIKey: apiKey}))
-
-	clients := llm.GoogleClients{
-		Genkit: gkit,
-		Genai:  g,
-	}
-
-	var once sync.Once
-	var closeErr error
-	closer := func(closeCtx context.Context) error {
-		once.Do(func() {
-			if clients.Genai != nil {
-				if err := clients.Genai.Close(); err != nil {
-					closeErr = errors.Join(closeErr, err)
-				}
-			}
-		})
-		return closeErr
-	}
-
-	return clients, closer, nil
+	return llm.Response{Text: res.Text()}, nil
 }
 
-// googleClient implements the llm.Client interface for Google's generative models,
-// using the Genkit framework as an abstraction layer.
-type googleClient struct {
-	model          ai.Model
-	promptTemplate string
-	promptBuilder  *llm.PromptBuilder
+func (g *Google) Model() string {
+	return g.opts.Model
 }
 
-// NewGoogle is the constructor for the Google LLM client. It is the function
-// that gets registered with the MangleKit registry for the "google" LLM provider.
-// It initializes a client that uses the Genkit framework to interact with Google's
-// generative models.
-//
-// opts provides configuration such as the model name (e.g., "gemini-1.5-flash")
-// and an optional custom prompt template.
-// g is the initialized Genkit instance that provides access to the underlying model.
-// This dependency is injected by the MangleKit builder.
-// It returns a configured llm.Client or an error if dependencies are missing or
-// invalid.
-func NewGoogle(opts llm.GoogleOptions, g *genkit.Genkit) (llm.Client, error) {
-	if g == nil {
-		return nil, fmt.Errorf("genkit client is required for google llm")
-	}
-	if opts.Model == "" {
-		return nil, fmt.Errorf("Model is required for google llm")
-	}
-
-	return &googleClient{
-		model:          googlegenai.GoogleAIModel(g, opts.Model),
-		promptTemplate: opts.PromptTemplate,
-		promptBuilder:  llm.NewPromptBuilder(llm.DefaultRAGTemplate),
-	}, nil
-}
-
-// Complete generates a response from the configured Google model. It first uses
-// the PromptBuilder to construct the final prompt by merging the request's context,
-// query, and any other dynamic data into a template. It then calls the model
-// via the Genkit framework and and formats the result into a standard `llm.Response`.
-// This method satisfies the `llm.Client` interface.
-//
-// ctx is the context for the API call.
-// req is the request containing the prompt, context, and other parameters.
-// It returns an `llm.Response` with the generated text and token usage data, or
-// an error if prompt building or the model generation call fails.
-func (c *googleClient) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
-	// Prepare the data for the template.
-	data := map[string]any{
-		"Context": req.Context,
-		"Query":   req.Prompt,
-	}
-	// Merge any dynamic data from the request, overwriting defaults if needed.
-	for k, v := range req.Data {
-		data[k] = v
-	}
-
-	prompt, err := c.promptBuilder.Build(c.promptTemplate, data)
-	if err != nil {
-		return llm.Response{}, fmt.Errorf("failed to build prompt: %w", err)
-	}
-
-	var finalAnswer strings.Builder
-	var usage map[string]int
-
-	genkitReq := ai.NewModelRequest(nil, ai.NewUserMessage(ai.NewTextPart(prompt)))
-
-	res, err := c.model.Generate(ctx, genkitReq, nil)
-	if err != nil {
-		return llm.Response{}, fmt.Errorf("failed to generate response from google: %w", err)
-	}
-
-	if res.Message != nil {
-		finalAnswer.WriteString(res.Message.Text())
-	}
-
-	if res.Usage != nil {
-		usage = map[string]int{
-			"prompt":     res.Usage.InputTokens,
-			"completion": res.Usage.OutputTokens,
-		}
-	}
-
-	return llm.Response{
-		Text:  finalAnswer.String(),
-		Usage: usage,
-	}, nil
+func (g *Google) GetName() string {
+	return "google"
 }

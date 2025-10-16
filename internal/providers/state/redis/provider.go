@@ -19,7 +19,9 @@ func Register(r *manglekit.Registry) {
 		}
 		return New(ctx, *typedOpts)
 	})
-	r.RegisterOptions("redis", (*state.RedisOptions)(nil))
+	if err := r.RegisterOptions("redis", (*state.RedisOptions)(nil)); err != nil {
+		panic(err)
+	}
 }
 
 // Provider is a production-ready implementation of the core.StateProvider that

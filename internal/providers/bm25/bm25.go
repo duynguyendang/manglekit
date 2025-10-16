@@ -32,7 +32,9 @@ func Register(r *manglekit.Registry) {
 		}
 		return New(*typedOpts)
 	})
-	r.RegisterOptions("bm25", (*retrieve.BM25Options)(nil))
+	if err := r.RegisterOptions("bm25", (*retrieve.BM25Options)(nil)); err != nil {
+		panic(err)
+	}
 }
 
 // tfidfDoc is a wrapper for ai.Document to implement the tfidf.Document interface.

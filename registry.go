@@ -26,41 +26,72 @@ type StateProviderFactory func(ctx context.Context, options any, deps FactoryDep
 type SchemaParserFactory func(ctx context.Context, options any, deps FactoryDeps) (core.SchemaParser, error)
 type FactConverterFactory func(ctx context.Context, options any, deps FactoryDeps) (core.FactConverter, error)
 
+// OrchestratorFactory defines the signature for creating an orchestrator instance.
+// It receives the fully built Options object containing all necessary components.
+type OrchestratorFactory func(opts core.Options) (core.Orchestrator, error)
+
 // Registry is the central store for all registered component constructors.
 // It is the primary mechanism for extending MangleKit with new providers.
 type Registry struct {
 	// Strongly-typed factory maps
-	Retrievers   map[string]RetrieverFactory
-	LLMs         map[string]LLMFactory
-	Embedders    map[string]EmbedderFactory
-	Rerankers    map[string]RerankerFactory
-	VectorStores map[string]VectorStoreFactory
-	RuleSets     map[string]RuleSetFactory
-	StateProviders map[string]StateProviderFactory
-	SchemaParsers  map[string]SchemaParserFactory
-	FactConverters map[string]FactConverterFactory
+	Retrievers            map[string]RetrieverFactory
+	LLMs                  map[string]LLMFactory
+	Embedders             map[string]EmbedderFactory
+	Rerankers             map[string]RerankerFactory
+	VectorStores          map[string]VectorStoreFactory
+	RuleSets              map[string]RuleSetFactory
+	StateProviders        map[string]StateProviderFactory
+	SchemaParsers         map[string]SchemaParserFactory
+	FactConverters        map[string]FactConverterFactory
+	OrchestratorFactories map[string]OrchestratorFactory
 
 	// Options holds registered options types for components.
 	Options map[string]reflect.Type
 	// ClientFactories holds registered client factory functions.
 	ClientFactories map[string]any
+
+	// Type maps are now owned by the registry instance.
+	nameToOptionsType map[string]reflect.Type
+	optionsTypeToName map[reflect.Type]string
 }
 
 // NewRegistry creates and returns a new, fully initialized Registry struct.
 func NewRegistry() *Registry {
 	return &Registry{
-		Retrievers:     make(map[string]RetrieverFactory),
-		LLMs:           make(map[string]LLMFactory),
-		Embedders:      make(map[string]EmbedderFactory),
-		Rerankers:      make(map[string]RerankerFactory),
-		StateProviders: make(map[string]StateProviderFactory),
-		VectorStores:   make(map[string]VectorStoreFactory),
-		RuleSets:       make(map[string]RuleSetFactory),
-		SchemaParsers:  make(map[string]SchemaParserFactory),
-		FactConverters: make(map[string]FactConverterFactory),
-		Options:        make(map[string]reflect.Type),
-		ClientFactories: make(map[string]any),
+		Retrievers:            make(map[string]RetrieverFactory),
+		LLMs:                  make(map[string]LLMFactory),
+		Embedders:             make(map[string]EmbedderFactory),
+		Rerankers:             make(map[string]RerankerFactory),
+		StateProviders:        make(map[string]StateProviderFactory),
+		VectorStores:          make(map[string]VectorStoreFactory),
+		RuleSets:              make(map[string]RuleSetFactory),
+		SchemaParsers:         make(map[string]SchemaParserFactory),
+		FactConverters:        make(map[string]FactConverterFactory),
+		OrchestratorFactories: make(map[string]OrchestratorFactory),
+		Options:               make(map[string]reflect.Type),
+		ClientFactories:       make(map[string]any),
+
+		// Initialize the instance-owned type maps.
+		nameToOptionsType: make(map[string]reflect.Type),
+		optionsTypeToName: make(map[reflect.Type]string),
 	}
+}
+
+// RegisterOptions registers the **pointer-to-struct** options type for a provider.
+// This is now a method on *Registry.
+func (r *Registry) RegisterOptions(providerName string, typedNilPtr any) error {
+	t := reflect.TypeOf(typedNilPtr)
+	if t == nil {
+		return fmt.Errorf("RegisterOptions %q: got nil; pass a typed nil pointer like (*T)(nil)", providerName)
+	}
+	if t.Kind() != reflect.Ptr || t.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("RegisterOptions %q: expected pointer to struct, got %v", providerName, t)
+	}
+
+	// These maps are guaranteed to be initialized by NewRegistry()
+	r.nameToOptionsType[providerName] = t
+	r.optionsTypeToName[t] = providerName
+	return nil
 }
 
 // ClientFactory defines the contract for a function that creates a shared client
@@ -117,4 +148,9 @@ func (r *Registry) RegisterStateProvider(name string, c StateProviderFactory) {
 // RegisterClientFactory adds a client factory function to the registry.
 func (r *Registry) RegisterClientFactory(name string, c ClientFactory) {
 	r.ClientFactories[name] = c
+}
+
+// RegisterOrchestrator adds an orchestrator factory to the registry.
+func (r *Registry) RegisterOrchestrator(name string, c OrchestratorFactory) {
+	r.OrchestratorFactories[name] = c
 }

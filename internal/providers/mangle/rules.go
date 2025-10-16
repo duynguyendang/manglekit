@@ -44,7 +44,9 @@ func Register(r *manglekit.Registry) {
 		}
 		return New(ctx, opts, reg)
 	})
-	r.RegisterOptions("mangle", (*core.MangleOptions)(nil))
+	if err := r.RegisterOptions("mangle", (*core.MangleOptions)(nil)); err != nil {
+		panic(err)
+	}
 }
 
 var builtinRedactions = map[string]*regexp.Regexp{

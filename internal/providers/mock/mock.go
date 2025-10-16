@@ -23,7 +23,9 @@ func Register(r *manglekit.Registry) {
 		}
 		return NewRetriever(opts.Pairs), nil
 	})
-	r.RegisterOptions("mock-retriever", (*RetrieverOptions)(nil))
+	if err := r.RegisterOptions("mock-retriever", (*RetrieverOptions)(nil)); err != nil {
+		panic(err)
+	}
 
 	r.RegisterReranker("mock-reranker", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (rerank.Reranker, error) {
 		opts, ok := options.(*RerankerOptions)
@@ -32,7 +34,9 @@ func Register(r *manglekit.Registry) {
 		}
 		return NewReranker(opts.Passthrough), nil
 	})
-	r.RegisterOptions("mock-reranker", (*RerankerOptions)(nil))
+	if err := r.RegisterOptions("mock-reranker", (*RerankerOptions)(nil)); err != nil {
+		panic(err)
+	}
 
 	r.RegisterLLM("mock-llm", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (llm.Client, error) {
 		opts, ok := options.(*LLMOptions)
@@ -41,7 +45,9 @@ func Register(r *manglekit.Registry) {
 		}
 		return NewLLM(opts.Model), nil
 	})
-	r.RegisterOptions("mock-llm", (*LLMOptions)(nil))
+	if err := r.RegisterOptions("mock-llm", (*LLMOptions)(nil)); err != nil {
+		panic(err)
+	}
 
 	r.RegisterEmbedder("mock-embedder", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (ai.Embedder, error) {
 		return &Embedder{}, nil

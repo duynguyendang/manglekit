@@ -24,17 +24,17 @@ func Register(r *manglekit.Registry) {
 			}
 		}
 
-		builder, ok := deps["builder"].(manglekit.BuilderAPI)
-		if !ok {
-			return nil, fmt.Errorf("missing required dependency 'builder' of type manglekit.BuilderAPI")
+		subBuilder, ok := deps["subRetrieverBuilder"].(manglekit.SubRetrieverBuilder)
+		if !ok || subBuilder == nil {
+			return nil, fmt.Errorf("hybrid retriever factory requires a 'subRetrieverBuilder' dependency, but it was not provided or has the wrong type")
 		}
 
 		// Build sub-components by calling back into the builder.
-		bm25Retriever, err := builder.BuildRetriever(ctx, "bm25", nil)
+		bm25Retriever, err := subBuilder.BuildRetriever(ctx, "bm25", nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build bm25 component for hybrid retriever: %w", err)
 		}
-		denseRetriever, err := builder.BuildRetriever(ctx, "dense", nil)
+		denseRetriever, err := subBuilder.BuildRetriever(ctx, "dense", nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build dense component for hybrid retriever: %w", err)
 		}
@@ -42,7 +42,9 @@ func Register(r *manglekit.Registry) {
 		opts.DenseRetriever = denseRetriever
 		return New(opts)
 	})
-	r.RegisterOptions("hybrid", (*retrieve.HybridOptions)(nil))
+	if err := r.RegisterOptions("hybrid", (*retrieve.HybridOptions)(nil)); err != nil {
+		panic(err)
+	}
 }
 
 // Retriever implements the `retrieve.Retriever` interface by combining results

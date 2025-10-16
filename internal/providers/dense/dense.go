@@ -21,16 +21,18 @@ type Options struct {
 func Register(r *manglekit.Registry) {
 	r.RegisterRetriever("dense", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
 		embedder, ok := deps["embedder"].(ai.Embedder)
-		if !ok {
-			return nil, fmt.Errorf("missing required dependency 'embedder' of type ai.Embedder")
+		if !ok || embedder == nil {
+			return nil, fmt.Errorf("dense retriever factory requires an 'embedder' dependency, but it was not provided or has the wrong type")
 		}
 		vectorStore, ok := deps["vectorStore"].(core.VectorStore)
-		if !ok {
-			return nil, fmt.Errorf("missing required dependency 'vectorStore' of type core.VectorStore")
+		if !ok || vectorStore == nil {
+			return nil, fmt.Errorf("dense retriever factory requires a 'vectorStore' dependency, but it was not provided or has the wrong type")
 		}
 		return New(embedder, vectorStore)
 	})
-	r.RegisterOptions("dense", (*Options)(nil))
+	if err := r.RegisterOptions("dense", (*Options)(nil)); err != nil {
+		panic(err)
+	}
 }
 
 // Dense implements the `retrieve.Retriever` interface for dense, vector-based
