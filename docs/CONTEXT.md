@@ -8,128 +8,60 @@ last_updated: 2025-10-15
 
 # Manglekit Project Context
 
-## Overview
-Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine with retrieval, reranking, and LLM calls. The default “Sandwich” pipeline runs **Mangle-Pre → Retrieval → optional Rerank → LLM → Mangle-Post**; an alternate declarative orchestrator drives stage ordering from Mangle facts. Provider registration is now handled explicitly in the application's entry point, using a fluent Registration Builder, which creates a `Registry` instance that is injected into the system.
+## Architectural Integrity Summary
+The Manglekit SDK is in a **partially stable** state. A major refactoring effort successfully resolved several critical architectural flaws, notably by eliminating global state in the registry and improving adherence to the Open/Closed principle in the builder. The architecture is now based on a much cleaner, factory-based pattern for component instantiation.
 
----
+However, this refactoring has left behind significant and subtle code smells. The system's type safety is compromised by the inconsistent use of `any` to break package dependency cycles. The builder's API is inconsistent, and its configuration mechanisms are tightly coupled and not fully extensible. Key components, like the hybrid retriever, suffer from configuration flaws that limit their utility. The declarative orchestrator remains disabled.
+
+While the foundation is stronger, the SDK is not yet stable. The remaining issues impact developer experience, maintainability, and type safety, and must be addressed before the SDK can be considered robust.
 
 ## Core Building Blocks
-- ⚠️ **Registry (`registry.go`)**: The `Registry` is now an **instance** created in the application entry point. It stores strongly-typed factory functions (e.g., `LLMFactory`, `RetrieverFactory`) for most components. However, the encapsulation is incomplete; the registry modifies global state in `typemap.go` and still uses `any` for client factories.
-- ✅ **Providers (`providers/`)**: This new package provides a fluent "Registration Builder" (`providers.NewSet()`) for a streamlined developer experience. Users can chain `With...` methods (e.g., `NewSet().WithOpenAI().WithBM25()`) to explicitly register the desired provider implementations with the `Registry` instance.
-- ⚠️ **Type Mapping (`typemap.go`)**: Manages the bidirectional mapping between provider names and their option types using `RegisterOptions`. Critically, this mapping is stored in **global variables**, creating shared state between otherwise isolated `Registry` instances.
-- ✅ **Core types & contracts (`core/types.go`, `core/rules.go`)**: `Query`, `Answer`, `Doc`, and `Citation` model pipeline payloads; `Options` now carries the configured `StateProvider`, observability hooks, and a LIFO stack of `ResourceClosers`. Sentinel errors (`ErrInvalidOptions`, `ErrNoEvidence`, `ErrDenied`) and rule interfaces (`RuleSet`, `FlowController`, `PostRuleEvaluator`) gate Sandwich and declarative orchestrators.
-- ✅ **Observability contracts**: `Logger` exposes `{Debug,Info,Warn,Error}f` plus `With` for scoped fields, `Tracer.StartSpan` supplies optional spans, and `Meter.Record` captures latency metrics with arbitrary attributes.
-- ✅ **SDK entry point (`sdk.go`)**: `New` enforces that a retriever and LLM are present, defaults `TopK` to 8 and `MaxTokens` to 512, asserts concrete interfaces, and hands control to `pipeline.NewSandwich`.
-- ✅ **State management (`core/state.go`, `state/types.go`)**: `StateProvider` defines `Get`/`Set`/`Delete`/`Close`; bundled options cover in-memory and Redis-backed implementations with JSON byte payloads.
-
----
+- ✅ **Registry (`registry.go`)**: The `Registry` is now a fully encapsulated instance, a major improvement. It correctly uses strongly-typed factory functions for most components.
+- ⚠️ **Registry Smells**: The `ClientFactories` map still uses `any`, and its factory signature is inconsistent with all others, representing a significant remaining type-safety hole. The registry also contains a dead/unused `Options` field.
+- ✅ **Providers (`providers/`)**: The provider registration builder (`providers.NewSet()`) offers a clean, fluent API for developers.
+- ✅ **Core types (`core/types.go`)**: The core data structures are well-defined.
+- ⚠️ **Core Smells**: The `Orchestrator` interface and `Options` struct use `any` to avoid import cycles, which sacrifices compile-time safety and is a symptom of poor package boundaries.
 
 ## Orchestrator Construction
 - ⚠️ **Fluent builder (`builder.go`)**
-  - The builder is instantiated with a `Registry` instance (`builder.New(registry)`), making it decoupled from the provider registration process.
-  - **Improved Type-Safety**: The builder now looks up **strongly-typed factories** (e.g., `RetrieverFactory`) from its `Registry`. This is a significant improvement but is not consistently applied (e.g., for client factories).
-  - **Provider-Led Construction**: Complex construction logic has been moved into provider factories. However, this has introduced new problems, such as composite components requiring a callback to the full `BuilderAPI`, creating a leaky abstraction.
-  - **Implicit Dependency Guessing**: The builder contains a fragile `resolveDependencies` method that attempts to guess component needs (e.g., inferring an embedder) instead of requiring explicit configuration.
-- ⚠️ **Configuration (`config.go`)**
-  - `Config` describes orchestrator selection, linear component slots, declarative `tools`, and provider-family defaults (`google`, `openai`, `groq`, `openaiCompatible`, `mangle`).
-  - `NewBuilderFromYAML` expands environment variables, resolves every `path:"resolve"` field relative to the file, hydrates typed option structs via JSON marshal/unmarshal, and chains the relevant `With*` calls—including state providers. The optional `logging` block only swaps in the stdlib-backed logger; level/format values are parsed but not yet applied to zap.
-  - `NewBuilderFromEnv` mirrors the YAML flow with `MKT_*` variables (`MKT_LLM_NAME`, `MKT_LLM_PARAMS`, etc.), expecting JSON parameter blobs. Paths inside those blobs are resolved relative to `cwd`.
-
----
+  - The builder is now "dumber" and correctly uses factories, which is a major step forward. The `SubRetrieverBuilder` is a good example of the Interface Segregation Principle.
+  - **Inconsistent API**: The builder's `With...` methods are inconsistent (e.g., `WithEmbedder` can take an instance, others cannot).
+  - **Opaque Internals**: The builder's internal `clients` map for dependency injection is not exposed via a public method, making it unusable.
+  - **Dead Code**: Contains an unused `embedderAlias` map.
+- ❌ **Configuration (`config.go`)**
+  - **Tight Coupling**: `NewBuilderFromYAML` and `NewBuilderFromEnv` are tightly coupled to the builder, violating SRP. They are responsible for both parsing config and instantiating the builder.
+  - **Duplicated Logic**: The logic for processing components is duplicated across both functions.
+  - **OCP Violation**: Uses a `switch` statement to configure components, which is not easily extensible.
 
 ## Execution Pipelines
 - ⚠️ **Sandwich orchestrator (`pipeline/sandwich.go`)**
-  - `Execute(ctx, sessionID, q)` decorates the logger with `request_id`, `pipeline`, and `session_id`. When a `StateProvider` is present it attempts to hydrate a `core.ConversationHistory` blob (stored as JSON bytes) before execution and persists the augmented history after a successful LLM call.
-  - **Pre rules**: Calls `Rules.Evaluate(core.Pre, q, nil)`, records `manglekit.rules_pre_ms`, applies `RuleResult.Mutate`, and raises `ErrDenied` on disallowed requests.
-  - **Retrieval**: Invokes `retrieve.Retriever.Retrieve` with `TopK` from options, records `retrieve_ms`, and caches `original_docs` plus retriever metadata in `Answer.Meta`. Empty results short-circuit with `ErrNoEvidence`.
-  - **Rerank & fallback**: When configured, reranking captures `rerank_ms`, rebuilds citations from `rerank.ScoredDoc`, stores `best_score`, and applies `FallbackThreshold`, returning `ErrNoEvidence` if the score falls below the configured floor.
-  - **LLM**: `prepareLlmRequest` flattens docs to passages and rewrites citations. `runLlm` merges `Query.Meta` (including conversation `history`) into the prompt data, forwards `MaxTokens`, captures `llm_ms`, and records token usage.
-  - **Post rules**: Replays `Rules.Evaluate(core.Post, q, &answer)`, records `manglekit.rules_post_ms`, applies answer mutations, and bubbles denials.
+  - **SRP Violation**: The `Execute` method is a "god method" with mixed responsibilities (logging, tracing, state management, orchestration), making it hard to maintain.
+  - **Magic Strings**: The code is littered with raw string literals for `Meta` map keys, which is error-prone.
 - ❌ **Declarative orchestrator (`pipeline/declarative/orchestrator.go`)**
-  - **NOTE: This feature is currently disabled due to the recent refactoring.** The build path is stubbed out and will return an error if invoked.
+  - **Disabled**: This feature is currently disabled and stubbed out.
 
----
+## Known Gaps & Critical Risks (machine-readable)
 
-## Rules Engine (`internal/providers/mangle`) ⚠️
-- **Initialization (`New`)**: Parses optional schemas through registered schema parsers (e.g., `jsonschema`, `rdf`), instantiates default and custom converters, decides between code-first vs file-first predicate declarations, loads `.dlog` / `.facts` files, stratifies the program, seeds a base fact store, and performs an initial evaluation.
-- **Converters**: Built-ins include `QueryConverter` (tokens, versions, normalized text), `UserContextConverter` (metadata to `user_attribute/2` facts with optional IRI handling), and `DocumentConverter` (document IDs, text, metadata fan-out).
-- **Evaluate (pre/post)**: Clones the base store, injects converter-derived facts, re-evaluates the program, and returns `RuleResult` with `Allowed`, `Reason`, `Mutate` (injecting `filters` and `expansion_terms`), and optional `SkippedStages`.
-- **Post hook (`Post`)**: Accepts the query, evidence, and execution metadata; adds `retrieved_doc` facts; evaluates drop/redact/deny rules; applies regex-based redactions; filters documents; records applied rule metadata; and returns `core.PostRuleResult`.
-- **Query**: Implements read-only fact queries by running the engine and manually unifying results into Go maps.
+This table is the authoritative list of open issues, synchronized with `docs/code-review.md`.
 
----
-
-## Providers & Components
-- ⚠️ **Retrieval**
-  - ✅ `internal/providers/bm25`: Walks Markdown files (parsing YAML front matter), builds a TF-IDF vocabulary, applies Okapi BM25 scoring with a default `TopK=10`, and mirrors scores in document metadata.
-  - ⚠️ `internal/providers/dense`: Couples an `ai.Embedder` with a `core.VectorStore`, embeds the query, forwards `req.Meta["filters"]` to the store’s `Search`, and requires both dependencies to be injected by the builder.
-  - ⚠️ `internal/providers/hybrid`: Runs sparse and dense retrievers concurrently via `errgroup`, fuses results with Reciprocal Rank Fusion (`k=60`), and trims the fused list to the request’s `TopK`.
-  - ⚠️ `internal/providers/retrievers/inmemory`: Mutex-protected map that ignores the query string and returns all stored docs (capped by `TopK`), while supporting `Upsert`/`Replace` for live updates.
-- ⚠️ **Vector store**
-  - ⚠️ `internal/vectorstores/localvec`: Boots Genkit LocalVec with a managed context, eagerly indexes Markdown files through `localvec.Index`, filters matches via stringified metadata equality, and provides `Close` to cancel the background Genkit context.
-- ⚠️ **Rerank**
-  - ⚠️ `internal/providers/rerank/cosine`: Shares the configured embedder across query/doc embeddings (concurrently via `errgroup`), computes cosine similarity with a custom float32 `sqrt`, sorts results descending, and respects either the options or per-request `TopK`.
-- ⚠️ **Embedders**
-  - ⚠️ `internal/embedders/openai`: Registers as `"openai-embedder"` and `"groq-embedder"`, builds embeddings through the OpenAI API with optional `Dimensions`, casts float64 responses to float32, and exposes a no-op `Close`.
-  - ⚠️ `internal/embedders/google`: Registers `"google-embedder"`, wraps Genkit’s GoogleAI embedder (default `"embedding-001"`); the builder normalises this alias back to the `"google"` client family.
-- ⚠️ **LLM clients**
-  - ⚠️ `internal/providers/llm/google`: Uses Genkit `Model.Generate`, assembles prompts with `llm.PromptBuilder`, concatenates text parts, and returns usage counters keyed `"prompt"`/`"completion"`.
-  - ⚠️ `internal/providers/llm/openai`: Targets OpenAI-compatible APIs (OpenAI/Groq), builds prompts via `PromptBuilder`, calls Chat Completions through `openai-go`, and reports a resource closer that shuts down idle HTTP transports.
-- ✅ **Schema parsers**
-  - ✅ `internal/providers/schemaparsers/jsonschema`: Converts JSON Schema definitions into fact predicates consumable by the rules engine.
-  - ✅ `internal/providers/schemaparsers/rdf`: Loads Turtle RDF triples into `triple/3` facts with basic IRI handling.
-- ✅ **State providers**
-  - ✅ `internal/providers/state/inmemory`: Thread-safe map implementation of `core.StateProvider`, returning raw values and ignoring `Close`.
-  - ✅ `internal/providers/state/redis`: Wraps `redis/v9`, expects state payloads as `[]byte`, and returns a close hook to release the client.
-- ⚠️ **Mocks (`internal/providers/mock`)**: Supplies mock retriever, reranker, LLM, and tool implementations plus adapters for Datalog constants—used extensively in tests.
-- ⚠️ **Catch-all import (`providers/all/all.go`)**: Blank-import convenience that registers every bundled provider family.
-
----
-
-## Prompting (`llm/prompt.go`) ⚠️
-- `PromptBuilder` caches compiled `text/template` instances, guarded by a RW mutex, and injects helper functions (`toJSON`, `join`, `truncate`).
-- The default RAG template instructs the model to ground answers strictly in the provided context and to refuse when evidence is missing, but it expects each entry in `.documents` to expose a `.Text` field—`Sandwich.prepareLlmRequest` currently passes a `[]string`, so the default template fails unless callers override it.
-
----
-
-## Applications & Samples
-- ✅ **`apps/rdf-knowledge-base`**: CLI demo that loads RDF data via the Mangle rules engine, normalises user input into query metadata, runs `RuleSet.Evaluate(core.Pre, ...)`, and prints sheet associations plus canonical keyword expansions. Uses `godotenv` to source environment variables.
-
----
-
-## Observability & Logging ✅
-- `NewBuilder` always installs `internal/logger.StdLogger` so pipeline code never checks for nil. YAML `logging` blocks and `MKT_LOG_LEVEL` / `MKT_LOG_FORMAT` env vars currently just trigger the same fallback; level/format values are parsed but not yet applied to zap.
-- `internal/logger.ZapAdapter` can wrap an injected `zap.SugaredLogger`, while the default `StdLogger` emits key/value pairs to stdout with shared fields inherited via `Logger.With`.
-- Sandwich and declarative orchestrators attach `request_id`, `pipeline`, and flow/session metadata to scoped loggers; component failures and stage transitions log through the same interface.
-- Metrics flow through `Meter.Record` with names such as `manglekit.rules_pre_ms`, `manglekit.retrieve_ms`, `manglekit.rerank_ms`, `manglekit.llm_ms`, and `manglekit.rules_post_ms`.
-- Builders aggregate `ResourceClosers` from client factories and components and unwind them LIFO on orchestrator shutdown or build failure; `Tracer.StartSpan("manglekit.Execute")` wraps Sandwich runs when provided.
-
----
-
-## Testing & Tooling ⚠️
-- Unit tests currently cover the builder (`builder_test.go`), the sandwich and declarative orchestrators, the in-memory retriever, and both state providers. BM25, dense, hybrid, cosine, and rules providers remain untested.
-- `builder_test.go` registers mock providers and option types to exercise YAML/env configuration paths.
-- `Makefile` defines `fmt`, `lint`, `test`, `build`, and `run` targets, though the build/run targets point to a non-existent `./cmd/agent`.
-- `go.mod` pins Firebase Genkit, Google Mangle, OpenAI-go, and supporting libraries; `go.sum` tracks module hashes.
-
----
-
-## Known Gaps (machine-readable)
-| Severity | Issue | File | Description |
+| Severity | Issue | File(s) | Description |
 | --- | --- | --- | --- |
-| High | **Incomplete State Encapsulation** | typemap.go | The registry modifies global variables in `typemap.go`, preventing isolated instances of the framework. |
-| High | **Leaky Builder Abstraction** | internal/providers/hybrid/hybrid.go | Composite components depend on the entire `BuilderAPI` instead of just the factories they need, creating tight coupling. |
-| High | **Fragile Dependency Guessing** | builder.go | The builder's `resolveDependencies` method uses brittle, implicit logic to guess component needs instead of requiring explicit configuration. |
-| High | CLI build targets | Makefile | `make build` and `make run` reference missing `./cmd/agent`, so default workflows fail. |
-| High | Prompt template mismatch | llm/prompt.go, pipeline/sandwich.go | The default RAG template expects `.documents[*].Text`, but Sandwich passes a `[]string`, so default prompting panics unless callers override it. |
-| High | Empty provider stubs | llm/google.go, llm/openai.go | Root-level files are empty, indicating incomplete or dead code paths that confuse navigation and coverage. |
-| Medium | Logging config unused | config.go | YAML/env logging fields flip the logger on but never apply level/format or wire zap, leaving configuration knobs ineffective. |
-| Medium | Fallback behaviour | pipeline/sandwich.go | `FallbackThreshold` is enforced only when a reranker is configured, so non-reranked pipelines always proceed to the LLM. |
-| Medium | MaxTokens ignored | internal/providers/llm/openai.go, internal/providers/llm/google.go | LLM clients discard `req.MaxTokens`, so orchestrator defaults cannot constrain response length. |
-| Medium | OCP Violation in Builder | builder.go | The main `Build` method still contains a `switch` statement for orchestrator types. |
-| Low | Declarative state | pipeline/declarative/orchestrator.go | The declarative orchestrator is disabled, but if re-enabled, it does not use its configured state provider. |
-| Low | Heuristic constants | internal/providers/hybrid/hybrid.go | Reciprocal Rank Fusion uses a hard-coded `k=60` without configuration hooks. |
-| Low | Deprecated Code | core/types.go | `LocalvecOptions` is marked as deprecated but has not been removed from the core API. |
+| High | **Tight Coupling in Configuration** | `config.go` | `NewBuilderFromYAML` and `NewBuilderFromEnv` are coupled to the builder, violating SRP and duplicating logic. |
+| High | **Interface Pollution & Type Safety** | `core/types.go` | The `Orchestrator` interface and `Options` struct use `any` to break import cycles, sacrificing compile-time safety. |
+| High | **God Method & Magic Strings** | `pipeline/sandwich.go` | The `Execute` method has too many responsibilities (SRP violation), and the code uses brittle string literals for metadata keys. |
+| Medium | **Inconsistent Factory Signatures** | `registry.go` | The `ClientFactories` map uses `any` and a custom signature, creating a type-safety hole in the registry. |
+| Medium | **Inconsistent Builder API** | `builder.go` | The `With...` methods are inconsistent (some accept instances, others don't), and the client injection mechanism is unusable. |
+| Medium | **Hybrid Retriever Configuration Flaws** | `internal/providers/hybrid/hybrid.go` | A key algorithm parameter (`k=60.0`) is hard-coded, and it's impossible to configure the sub-retrievers. |
+| Low | **Dead Code** | `builder.go`, `registry.go` | The codebase contains unused variables (`embedderAlias`) and struct fields (`Registry.Options`) from past refactors. |
+| Low | **Disabled Declarative Orchestrator** | `pipeline/declarative/orchestrator.go` | The declarative orchestrator, a key feature in the HLD, remains disabled. |
 
+---
 
-For detailed analysis and refactoring suggestions, please refer to the full [Code Review Document](./code-review.md).
+### Review Summary — 2025-10-15
+- **Total smells identified:** 11
+- **Resolved:** 4
+- **Remaining:** 7
+- **Key risks:**
+  - **Type Safety:** The pervasive use of `any` in core interfaces and the registry undermines the benefits of Go's type system.
+  - **Maintainability:** The tight coupling in `config.go` and the SRP violations in `pipeline/sandwich.go` make the code difficult to test and maintain.
+  - **Extensibility:** The configuration flaws in the hybrid retriever and the OCP violation in `config.go` make it hard for users to extend or properly configure the system.
