@@ -9,12 +9,13 @@ last_updated: 2025-10-15
 # Manglekit Project Context
 
 ## Overview
-Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine with retrieval, reranking, and LLM calls. The default “Sandwich” pipeline runs **Mangle-Pre → Retrieval → optional Rerank → LLM → Mangle-Post**; an alternate declarative orchestrator drives stage ordering from Mangle facts. Providers are registered at init-time as factory functions and wired at runtime through the global registry.
+Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine with retrieval, reranking, and LLM calls. The default “Sandwich” pipeline runs **Mangle-Pre → Retrieval → optional Rerank → LLM → Mangle-Post**; an alternate declarative orchestrator drives stage ordering from Mangle facts. Provider registration is now handled explicitly in the application's entry point, using a fluent Registration Builder, which creates a `Registry` instance that is injected into the system.
 
 ---
 
 ## Core Building Blocks
-- ✅ **Registry (`registry.go`)**: A global `Component` map stores strongly-typed **factory functions** for all components. `Registry.ClientFactories` lets providers register shared client builders (e.g., OpenAI, Google) that also emit `ResourceCloser`s.
+- ✅ **Registry (`registry.go`)**: The `Registry` is now an **instance** created in the application entry point and passed via Dependency Injection. It stores strongly-typed factory functions (e.g., `LLMFactory`, `RetrieverFactory`) for each component type in dedicated maps, ensuring type safety at compile time. It no longer holds any global state.
+- ✅ **Providers (`providers/`)**: This new package provides a fluent "Registration Builder" (`providers.NewSet()`) for a streamlined developer experience. Users can chain `With...` methods (e.g., `NewSet().WithOpenAI().WithBM25()`) to explicitly register the desired provider implementations with the `Registry` instance.
 - ✅ **Type Mapping (`typemap.go`)**: Manages the bidirectional mapping between provider names and their option types using `RegisterOptions`.
 - ✅ **Core types & contracts (`core/types.go`, `core/rules.go`)**: `Query`, `Answer`, `Doc`, and `Citation` model pipeline payloads; `Options` now carries the configured `StateProvider`, observability hooks, and a LIFO stack of `ResourceClosers`. Sentinel errors (`ErrInvalidOptions`, `ErrNoEvidence`, `ErrDenied`) and rule interfaces (`RuleSet`, `FlowController`, `PostRuleEvaluator`) gate Sandwich and declarative orchestrators.
 - ✅ **Observability contracts**: `Logger` exposes `{Debug,Info,Warn,Error}f` plus `With` for scoped fields, `Tracer.StartSpan` supplies optional spans, and `Meter.Record` captures latency metrics with arbitrary attributes.
@@ -24,13 +25,10 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 ---
 
 ## Orchestrator Construction
-- ⚠️ **Fluent builder (`builder.go`)**
-  - `NewBuilder` initialises `clients`, `providerNames`, a typed `tools` map for declarative mode, and installs a `StdLogger` so component constructors always receive a non-nil logger.
-  - `With*` methods expect registered option pointers (via `RegisterOptions`); they log and accrue errors if unregistered types are supplied. `WithEmbedder` can also inject a pre-built `ai.Embedder`.
-  - `resolveDependencies` infers missing embedder names from vector store, dense, hybrid, or cosine options before invoking `resolveProviderConfig`, which currently knows how to bootstrap shared clients for `"google"`, `"openai"`, and `"groq"` using `Registry.ClientFactories` and records any returned closers.
-  - **Component Construction**: The `buildComponents` method now iterates through configured providers and invokes their registered factory functions from the unified `Registry.Component` map. It is responsible for assembling a dependency map (`FactoryDeps`) for each component, injecting shared clients (e.g., OpenAI, Google) and other components (e.g., an `ai.Embedder` for a dense retriever). This registry-driven approach eliminates the large `switch` statements, adhering to the Open/Closed Principle.
-  - Declarative builds iterate until tool dependencies are satisfied: `buildSingleTool` rehydrates typed options via JSON round-trips, resolves families (`google-embedder`, `openai-embedder`, `localvec`, `dense`, `hybrid`, `bm25`, `openai`, `google`, `groq`), and hands over pre-built dependencies from the `tools` map. Closers surfaced by tools are tracked alongside orchestrator-level closers.
-  - `Build` selects `"sandwich"` by default, wiring the assembled components into `pipeline.NewSandwich` and copying the state provider. Declarative mode insists on a `core.FlowController`, adds the rule engine under `mangle_rules` if missing, and calls `declarative.New` with the tool graph, state provider, observability, and closers.
+- ✅ **Fluent builder (`builder.go`)**
+  - The builder is instantiated with a `Registry` instance (`builder.New(registry)`), making it completely stateless and decoupled from the provider registration process.
+  - **Type-Safe & OCP-Compliant Construction**: The `Build()` process is significantly simplified and more robust. The builder looks up the required **strongly-typed factory** (e.g., `RetrieverFactory`, `LLMFactory`) from its injected `Registry` instance. It then invokes the factory, receiving a fully-formed, type-safe component.
+  - **Provider-Led Dependency Resolution**: All complex construction logic, such as that for the `hybrid` retriever, has been moved out of the builder and into the provider's own factory. If a component needs to build another component (e.g., a retriever needing an embedder), its factory receives a `BuilderAPI` to call back into the builder, ensuring dependencies are resolved correctly without the builder needing to know the specific requirements of each provider. This design eliminates unsafe `switch` statements and type assertions, making the builder fully compliant with the Open/Closed Principle.
 - ⚠️ **Configuration (`config.go`)**
   - `Config` describes orchestrator selection, linear component slots, declarative `tools`, and provider-family defaults (`google`, `openai`, `groq`, `openaiCompatible`, `mangle`).
   - `NewBuilderFromYAML` expands environment variables, resolves every `path:"resolve"` field relative to the file, hydrates typed option structs via JSON marshal/unmarshal, and chains the relevant `With*` calls—including state providers. The optional `logging` block only swaps in the stdlib-backed logger; level/format values are parsed but not yet applied to zap.
@@ -128,7 +126,7 @@ Manglekit is a Go 1.24+ toolkit that combines Google’s Mangle Datalog engine w
 | Medium | Fallback behaviour | pipeline/sandwich.go | `FallbackThreshold` is enforced only when a reranker is configured, so non-reranked pipelines always proceed to the LLM. |
 | Medium | MaxTokens ignored | internal/providers/llm/openai.go, internal/providers/llm/google.go | LLM clients discard `req.MaxTokens`, so orchestrator defaults cannot constrain response length. |
 | Low | Declarative state | pipeline/declarative/orchestrator.go | The declarative orchestrator stores a `StateProvider` but never reads or writes session state, leaving the feature unused. |
-| Low | Heuristic constants | internal/providers/hybrid/hybrid.go | Reciprocal Rank Fusion uses a hard-coded `k=60` without configuration hooks.
+| Low | Heuristic constants | internal/providers/hybrid/hybrid.go | Reciprocal Rank Fusion uses a hard-coded `k=60` without configuration hooks. |
 | Medium | Duplicated Logic | pipeline/sandwich.go, pipeline/declarative/orchestrator.go | Conversational state management logic is duplicated across both orchestrators. See `docs/code-review.md`. |
 | Low | Inconsistent Context | internal/providers/ | `context.Context` is not consistently propagated by all providers making external calls. See `docs/code-review.md`. |
 
