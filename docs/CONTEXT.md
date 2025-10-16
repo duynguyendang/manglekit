@@ -111,7 +111,8 @@ graph TD
 
 ### 3. Core Contracts
 
--   **Builder (`BuilderAPI`)**: The builder's responsibility is to collect configuration for components and orchestrate their construction via factories. It must not contain business logic or file I/O. Its `Build(ctx)` method is the terminal operation that assembles the final `Orchestrator`.
+-   **Builder (`BuilderAPI`)**: The builder's responsibility is to collect configuration for components and orchestrate their construction via factories. It must not contain business logic or file I/O. Its `Build(ctx)` method is the terminal operation that assembles the final `Orchestrator` and any typed, updatable components.
+-   **Orchestrator (`core.Orchestrator`)**: The orchestrator is a pure behavioral interface (`Execute`, `Close`). It is responsible for running a pipeline but must not expose its internal components via accessors.
 -   **Registry (`Registry`)**: The registry acts as a service locator for component factories. It maps a string name (e.g., `"openai"`) to a strongly-typed factory function. It is responsible for providing the correct factory but not for invoking it.
 -   **Factory (e.g., `retrieve.Factory`)**: A factory is a function that creates a component instance. The signature is `func(ctx context.Context, deps DEPS_STRUCT, opts any) (INTERFACE, error)`. It is responsible for checking for its required dependencies in the `DEPS_STRUCT` and returning a clear error if they are missing or of the wrong type.
 
@@ -198,7 +199,6 @@ This table summarizes open architectural issues identified in the latest code re
 
 | Severity | Issue                                  | File(s)                                 | Description                                                                                             |
 | :------- | :------------------------------------- | :-------------------------------------- | :------------------------------------------------------------------------------------------------------ |
-| High     | **Interface Pollution & Type Safety**  | `core/types.go`, `pipeline/sandwich.go` | The `Orchestrator` interface uses `any` for component accessors, forcing unsafe runtime type assertions. |
 | Medium   | **Inconsistent Factory Signatures**    | `registry.go`                           | The `ClientFactories` map uses `any`, creating a type-safety hole in the registry and dependency injection. |
 | Medium   | **Inconsistent Builder API**           | `builder.go`                            | The `WithEmbedder` method accepts pre-built instances, making it inconsistent with other `With...` methods. |
 | Low      | **Hard-coded Orchestrator Selection**  | `builder.go`                            | The builder hard-codes the `"sandwich"` orchestrator, preventing programmatic selection of other pipelines. |

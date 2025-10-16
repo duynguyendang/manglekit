@@ -51,7 +51,7 @@ func main() {
 	}
 
 	// d. Build the orchestrator.
-	orchestrator, err := builder.Build(context.Background())
+	orchestrator, _, err := builder.Build(context.Background())
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}

@@ -45,7 +45,7 @@ func TestNewBuilderFromConfig_HappyPath(t *testing.T) {
 	require.NotNil(t, builder)
 
 	// 4. Build the orchestrator to confirm wiring was successful.
-	orch, err := builder.Build(context.Background())
+	orch, _, err := builder.Build(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, orch)
 

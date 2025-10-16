@@ -33,11 +33,9 @@ The following issues are currently present in the codebase and require attention
 
 ### Smell: Interface Pollution & Type Safety Violation
 **Location:** `core/types.go`, `pipeline/sandwich.go`
-**Impact Analysis:** The `core.Orchestrator` interface defines methods like `Retriever() any`. This use of `any` forces consumers to perform unsafe type assertions (e.g., `orch.Retriever().(retrieve.Retriever)`) to access the underlying component. This completely bypasses compile-time type safety and moves type checking to runtime, where it can cause panics. This is a major architectural smell that indicates incorrect package boundaries or a failure to define appropriate, narrow interfaces.
-**Refactoring Suggestion:**
-1.  **Eliminate `any`-based accessors:** Remove methods like `Retriever() any` from the `Orchestrator` interface. An orchestrator's job is to `Execute` a pipeline, not to be a generic container for its components.
-2.  **Provide Components at Build Time:** If specific components (like an `Updatable` retriever) need to be accessed after the build, the `Build()` method should return them as explicit, type-safe return values alongside the orchestrator itself. For example: `Build() (core.Orchestrator, retrieve.Updatable, error)`.
-**Status:** Open
+**Impact Analysis:** The `core.Orchestrator` interface previously defined methods like `Retriever() any`. This use of `any` forced consumers to perform unsafe type assertions, bypassing compile-time type safety.
+**Refactoring Action:** The `Orchestrator` interface has been refactored to be a pure executor (`Execute`, `Close`). All `any`-based accessors have been removed. The `builder.Build()` method now returns typed components (e.g., `retrieve.Updatable`) alongside the orchestrator, providing a type-safe mechanism for accessing components that require runtime interaction. A new rule has been added: **No `any` accessors** — all typed components must be returned explicitly from builder factories.
+**Status:** **Resolved**
 
 ### Smell: Inconsistent Factory Signature & Type Safety Hole
 **Location:** `registry.go`
