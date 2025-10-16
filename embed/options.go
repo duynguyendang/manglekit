@@ -11,6 +11,8 @@ type GoogleEmbedderOptions struct {
 // OpenAIEmbedderOptions provides typed configuration for OpenAI and compatible
 // embedding models.
 type OpenAIEmbedderOptions struct {
+	// APIKey is the API key for authenticating with the OpenAI or a compatible service.
+	APIKey string `json:"apiKey,omitempty"`
 	// Model is the identifier for the specific OpenAI model to be used,
 	// for example, "text-embedding-3-small".
 	Model string `json:"model,omitempty"`

@@ -35,6 +35,7 @@ graph TD
     subgraph "Build Phase"
         P[Programmatic Code] -->|Calls With...()| E{Builder};
         D -->|Calls With...()| E;
+        GK[genkit.Genkit Instance] --> E;
         E -- Build() calls --> F[Registry];
         F -- Returns Factory --> G(Component Factory);
         E -- Provides Deps (diapi) --> G;
@@ -95,6 +96,16 @@ graph TD
         C -- Returns --> K
     end
 ```
+
+### 3. Client Layer Architecture
+
+Manglekit delegates the management of low-level SDK clients (e.g., for OpenAI, Google AI) to Google's Genkit framework. This approach avoids the need for custom client factories and ensures that providers are built on a standard, well-supported foundation.
+
+-   **Genkit Plugins**: Providers that interact with external services (like LLMs or embedders) should be implemented as wrappers around a Genkit `ai.Model` or `ai.Embedder`.
+-   **Dependency Injection**: The Manglekit `Builder` accepts a pre-initialized `*genkit.Genkit` instance via the `WithGenkit()` method. This instance is then passed to provider factories via the `diapi` dependency structs.
+-   **Provider Implementation**: Inside the factory, the provider retrieves the specific model or embedder it needs from the `*genkit.Genkit` instance (e.g., using `openai.Model(g, "gpt-4o-mini")`). The provider then uses the standard `genkit.Generate` or `genkit.Embed` functions to perform its operations.
+
+This pattern ensures that Manglekit providers are compatible with the broader Genkit ecosystem and benefit from its features, such as automatic telemetry and plugin management.
 
 ### 3. Dependency Rules (Non-Negotiable)
 
@@ -199,7 +210,6 @@ This table summarizes open architectural issues identified in the latest code re
 
 | Severity | Issue                                  | File(s)                                 | Description                                                                                             |
 | :------- | :------------------------------------- | :-------------------------------------- | :------------------------------------------------------------------------------------------------------ |
-| Medium   | **Inconsistent Factory Signatures**    | `registry.go`                           | The `ClientFactories` map uses `any`, creating a type-safety hole in the registry and dependency injection. |
 | Medium   | **Inconsistent Builder API**           | `builder.go`                            | The `WithEmbedder` method accepts pre-built instances, making it inconsistent with other `With...` methods. |
 | Low      | **Hard-coded Orchestrator Selection**  | `builder.go`                            | The builder hard-codes the `"sandwich"` orchestrator, preventing programmatic selection of other pipelines. |
 

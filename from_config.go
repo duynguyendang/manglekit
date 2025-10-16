@@ -9,17 +9,23 @@ import (
 	"github.com/duynguyendang/manglekit/config"
 )
 
+import "github.com/firebase/genkit/go/genkit"
+
 // NewBuilderFromConfig creates a new Builder instance from a validated Config object.
 // This function is the primary entrypoint for creating a builder from a static configuration.
 // It translates the config struct into a series of type-safe builder calls.
-func NewBuilderFromConfig(ctx context.Context, cfg *config.Config, reg *Registry) (*Builder, error) {
+func NewBuilderFromConfig(ctx context.Context, cfg *config.Config, reg *Registry, g *genkit.Genkit) (*Builder, error) {
 	// First, normalize and validate the configuration.
 	cfg.Normalize()
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	if g == nil {
+		g = genkit.Init(ctx)
+	}
 	b := NewBuilder(reg)
+	b.WithGenkit(g)
 
 	// Helper function to resolve provider options from a map[string]any to a typed struct.
 	resolveOptions := func(providerName string, optionsMap map[string]any) (any, error) {

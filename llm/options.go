@@ -13,6 +13,10 @@ type OpenAIOptions struct {
 	// final prompt that is sent to the LLM. If this is empty, a default
 	// prompt template will be used by the client.
 	PromptTemplate string `json:"promptTemplate,omitempty"`
+	// Temperature controls the randomness of the model's output.
+	Temperature float32 `json:"temperature,omitempty"`
+	// MaxOutputTokens is the maximum number of tokens to generate in the response.
+	MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
 }
 
 // GoogleOptions provides typed configuration for Google language models,

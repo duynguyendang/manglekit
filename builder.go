@@ -381,9 +381,6 @@ func (b *Builder) buildEmbedder(ctx context.Context) error {
 	deps := diapi.EmbedderDeps{
 		Genkit: b.genkit,
 	}
-	if client, ok := b.clients[b.embedderName]; ok {
-		deps.Client = client
-	}
 
 	embedder, err := factory(ctx, deps, b.embedderParams["typedConfig"])
 	if err != nil {
