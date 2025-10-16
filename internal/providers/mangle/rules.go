@@ -16,6 +16,7 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	obslogger "github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/providers/mangle/converters"
 	"github.com/google/mangle/analysis"
@@ -26,23 +27,22 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterRuleSet("mangle", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.RuleSet, error) {
+	r.RegisterRuleSet("mangle", func(ctx context.Context, deps diapi.RuleSetDeps, cfg any) (core.RuleSet, error) {
 		var opts core.MangleOptions
-		if options != nil {
-			if o, ok := options.(*core.MangleOptions); ok && o != nil {
+		if cfg != nil {
+			if o, ok := cfg.(*core.MangleOptions); ok && o != nil {
 				opts = *o
-			} else if o, ok := options.(core.MangleOptions); ok {
+			} else if o, ok := cfg.(core.MangleOptions); ok {
 				opts = o
 			} else {
-				return nil, fmt.Errorf("invalid options type, expected *core.MangleOptions or core.MangleOptions, got %T", options)
+				return nil, fmt.Errorf("invalid options type, expected *core.MangleOptions or core.MangleOptions, got %T", cfg)
 			}
 		}
 
-		reg, ok := deps["registry"].(*manglekit.Registry)
-		if !ok {
-			return nil, fmt.Errorf("mangle provider requires a *manglekit.Registry in its dependencies")
-		}
-		return New(ctx, opts, reg)
+		// The registry is no longer passed as a dependency.
+		// For now, we pass nil, as the default converters don't need it.
+		// A future refactoring could inject the specific converter/parser factories needed.
+		return New(ctx, opts, nil)
 	})
 	if err := r.RegisterOptions("mangle", (*core.MangleOptions)(nil)); err != nil {
 		panic(err)
@@ -189,13 +189,14 @@ func New(ctx context.Context, opts core.MangleOptions, r *manglekit.Registry) (c
 // loadConverter looks up a converter by name from the registry, instantiates it,
 // and returns it as a core.FactConverter.
 func loadConverter(name string, r *manglekit.Registry) (core.FactConverter, error) {
+	if r == nil {
+		return nil, fmt.Errorf("cannot load converter '%s': registry is nil", name)
+	}
 	factory, err := manglekit.Get(r.FactConverters, name)
 	if err != nil {
 		return nil, err
 	}
-	// The factory is now strongly-typed.
-	// The old code assumed no params for converters. We'll pass nil for options and deps.
-	instance, err := factory(context.Background(), nil, nil)
+	instance, err := factory(context.Background(), diapi.NoopDeps{}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct converter '%s': %w", name, err)
 	}
@@ -212,6 +213,9 @@ func parseSchemas(sources []core.SchemaSource, r *manglekit.Registry) ([]ast.Ato
 	var allDecls []ast.PredicateSym
 
 	for _, source := range sources {
+		if r == nil {
+			return nil, nil, fmt.Errorf("cannot parse schema '%s': registry is nil", source.Path)
+		}
 		// 1. Lookup parser factory
 		factory, err := manglekit.Get(r.SchemaParsers, source.Type)
 		if err != nil {
@@ -219,7 +223,7 @@ func parseSchemas(sources []core.SchemaSource, r *manglekit.Registry) ([]ast.Ato
 		}
 
 		// 2. Construct parser
-		parser, err := factory(context.Background(), nil, nil) // Assume no params for now.
+		parser, err := factory(context.Background(), diapi.NoopDeps{}, nil) // Assume no params for now.
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to construct schema parser '%s': %w", source.Type, err)
 		}

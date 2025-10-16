@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/embed"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
@@ -15,19 +16,21 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	factory := func(ctx context.Context, options any, deps manglekit.FactoryDeps) (ai.Embedder, error) {
+	factory := func(ctx context.Context, deps diapi.EmbedderDeps, cfg any) (ai.Embedder, error) {
 		var opts embed.OpenAIEmbedderOptions
-		if options != nil {
-			if typedOpts, ok := options.(*embed.OpenAIEmbedderOptions); ok {
+		if cfg != nil {
+			if typedOpts, ok := cfg.(*embed.OpenAIEmbedderOptions); ok {
 				opts = *typedOpts
 			} else {
-				return nil, fmt.Errorf("invalid options type, expected *embed.OpenAIEmbedderOptions, got %T", options)
+				return nil, fmt.Errorf("invalid options type, expected *embed.OpenAIEmbedderOptions, got %T", cfg)
 			}
 		}
-
-		client, ok := deps["client"].(*openai.Client)
+		if deps.Client == nil {
+			return nil, fmt.Errorf("missing required dependency 'client'")
+		}
+		client, ok := deps.Client.(*openai.Client)
 		if !ok {
-			return nil, fmt.Errorf("invalid client type, expected *openai.Client, got %T", deps["client"])
+			return nil, fmt.Errorf("dependency 'client' has the wrong type, expected *openai.Client, got %T", deps.Client)
 		}
 		return New(opts, client)
 	}

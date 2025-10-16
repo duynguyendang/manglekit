@@ -8,23 +8,23 @@ import (
 	"sort"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/firebase/genkit/go/ai"
 	"golang.org/x/sync/errgroup"
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterReranker("cosine", func(ctx context.Context, opts any, deps manglekit.FactoryDeps) (rerank.Reranker, error) {
-		typedOpts, ok := opts.(*rerank.CosineOptions)
+	r.RegisterReranker("cosine", func(ctx context.Context, deps diapi.RerankerDeps, cfg any) (rerank.Reranker, error) {
+		typedOpts, ok := cfg.(*rerank.CosineOptions)
 		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected *rerank.CosineOptions, got %T", opts)
+			return nil, fmt.Errorf("invalid options type, expected *rerank.CosineOptions, got %T", cfg)
 		}
 
-		embedder, ok := deps["embedder"].(ai.Embedder)
-		if !ok || embedder == nil {
-			return nil, fmt.Errorf("cosine reranker factory requires an 'embedder' dependency, but it was not provided or has the wrong type")
+		if deps.Embedder == nil {
+			return nil, fmt.Errorf("cosine reranker factory requires an 'embedder' dependency, but it was not provided")
 		}
-		return New(*typedOpts, embedder)
+		return New(*typedOpts, deps.Embedder)
 	})
 	if err := r.RegisterOptions("cosine", (*rerank.CosineOptions)(nil)); err != nil {
 		panic(err)

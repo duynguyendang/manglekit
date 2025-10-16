@@ -9,32 +9,32 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"golang.org/x/sync/errgroup"
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("hybrid", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
+	r.RegisterRetriever("hybrid", func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error) {
 		var opts retrieve.HybridOptions
-		if options != nil {
-			if typedOpts, ok := options.(*retrieve.HybridOptions); ok {
+		if cfg != nil {
+			if typedOpts, ok := cfg.(*retrieve.HybridOptions); ok {
 				opts = *typedOpts
 			} else {
-				return nil, fmt.Errorf("invalid options type, expected *retrieve.HybridOptions, got %T", options)
+				return nil, fmt.Errorf("invalid options type, expected *retrieve.HybridOptions, got %T", cfg)
 			}
 		}
 
-		subBuilder, ok := deps["subRetrieverBuilder"].(manglekit.SubRetrieverBuilder)
-		if !ok || subBuilder == nil {
-			return nil, fmt.Errorf("hybrid retriever factory requires a 'subRetrieverBuilder' dependency, but it was not provided or has the wrong type")
+		if deps.BuildSubRetriever == nil {
+			return nil, fmt.Errorf("hybrid retriever factory requires the BuildSubRetriever capability, but it was not provided")
 		}
 
-		// Build sub-components by calling back into the builder.
-		bm25Retriever, err := subBuilder.BuildRetriever(ctx, "bm25", nil)
+		// Build sub-components using the provided capability function.
+		bm25Retriever, err := deps.BuildSubRetriever(ctx, "bm25", nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build bm25 component for hybrid retriever: %w", err)
 		}
-		denseRetriever, err := subBuilder.BuildRetriever(ctx, "dense", nil)
+		denseRetriever, err := deps.BuildSubRetriever(ctx, "dense", nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build dense component for hybrid retriever: %w", err)
 		}

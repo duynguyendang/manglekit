@@ -10,6 +10,7 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/localvec"
@@ -21,21 +22,20 @@ const (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterVectorStore("localvec", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.VectorStore, error) {
+	r.RegisterVectorStore("localvec", func(ctx context.Context, deps diapi.VectorStoreDeps, cfg any) (core.VectorStore, error) {
 		var opts core.LocalvecOptions
-		if options != nil {
-			if typedOpts, ok := options.(*core.LocalvecOptions); ok {
+		if cfg != nil {
+			if typedOpts, ok := cfg.(*core.LocalvecOptions); ok {
 				opts = *typedOpts
 			} else {
-				return nil, fmt.Errorf("invalid options type, expected *core.LocalvecOptions, got %T", options)
+				return nil, fmt.Errorf("invalid options type, expected *core.LocalvecOptions, got %T", cfg)
 			}
 		}
 
-		embedder, ok := deps["embedder"].(ai.Embedder)
-		if !ok {
+		if deps.Embedder == nil {
 			return nil, fmt.Errorf("missing required dependency 'embedder' of type ai.Embedder")
 		}
-		return New(ctx, opts, embedder)
+		return New(ctx, opts, deps.Embedder)
 	})
 	r.RegisterOptions("localvec", (*core.LocalvecOptions)(nil))
 }

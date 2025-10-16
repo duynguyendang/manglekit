@@ -7,6 +7,7 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/duynguyendang/manglekit/retrieve"
@@ -16,10 +17,10 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("mock-retriever", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (retrieve.Retriever, error) {
-		opts, ok := options.(*RetrieverOptions)
+	r.RegisterRetriever("mock-retriever", func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error) {
+		opts, ok := cfg.(*RetrieverOptions)
 		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected *mock.RetrieverOptions, got %T", options)
+			return nil, fmt.Errorf("invalid options type, expected *mock.RetrieverOptions, got %T", cfg)
 		}
 		return NewRetriever(opts.Pairs), nil
 	})
@@ -27,10 +28,10 @@ func Register(r *manglekit.Registry) {
 		panic(err)
 	}
 
-	r.RegisterReranker("mock-reranker", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (rerank.Reranker, error) {
-		opts, ok := options.(*RerankerOptions)
+	r.RegisterReranker("mock-reranker", func(ctx context.Context, deps diapi.RerankerDeps, cfg any) (rerank.Reranker, error) {
+		opts, ok := cfg.(*RerankerOptions)
 		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected *mock.RerankerOptions, got %T", options)
+			return nil, fmt.Errorf("invalid options type, expected *mock.RerankerOptions, got %T", cfg)
 		}
 		return NewReranker(opts.Passthrough), nil
 	})
@@ -38,10 +39,10 @@ func Register(r *manglekit.Registry) {
 		panic(err)
 	}
 
-	r.RegisterLLM("mock-llm", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (llm.Client, error) {
-		opts, ok := options.(*LLMOptions)
+	r.RegisterLLM("mock-llm", func(ctx context.Context, deps diapi.LLMDeps, cfg any) (llm.Client, error) {
+		opts, ok := cfg.(*LLMOptions)
 		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected *mock.LLMOptions, got %T", options)
+			return nil, fmt.Errorf("invalid options type, expected *mock.LLMOptions, got %T", cfg)
 		}
 		return NewLLM(opts.Model), nil
 	})
@@ -49,7 +50,7 @@ func Register(r *manglekit.Registry) {
 		panic(err)
 	}
 
-	r.RegisterEmbedder("mock-embedder", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (ai.Embedder, error) {
+	r.RegisterEmbedder("mock-embedder", func(ctx context.Context, deps diapi.EmbedderDeps, cfg any) (ai.Embedder, error) {
 		return &Embedder{}, nil
 	})
 }

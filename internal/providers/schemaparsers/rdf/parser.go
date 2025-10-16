@@ -10,6 +10,7 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/google/mangle/ast"
 	"github.com/knakk/rdf"
 )
@@ -19,7 +20,7 @@ import (
 type Options struct{}
 
 func Register(r *manglekit.Registry) {
-	r.RegisterSchemaParser("rdf", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.SchemaParser, error) {
+	r.RegisterSchemaParser("rdf", func(ctx context.Context, deps diapi.NoopDeps, cfg any) (core.SchemaParser, error) {
 		return New(nil)
 	})
 	if err := r.RegisterOptions("rdf", (*Options)(nil)); err != nil {

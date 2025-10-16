@@ -7,17 +7,18 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/state"
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterStateProvider("inmemory", func(ctx context.Context, opts any, deps manglekit.FactoryDeps) (core.StateProvider, error) {
+	r.RegisterStateProvider("inmemory", func(ctx context.Context, deps diapi.StateProviderDeps, cfg any) (core.StateProvider, error) {
 		var typedOpts state.InMemoryOptions
-		if opts != nil {
-			if castedOpts, ok := opts.(*state.InMemoryOptions); ok {
+		if cfg != nil {
+			if castedOpts, ok := cfg.(*state.InMemoryOptions); ok {
 				typedOpts = *castedOpts
 			} else {
-				return nil, fmt.Errorf("invalid options type, expected *state.InMemoryOptions, got %T", opts)
+				return nil, fmt.Errorf("invalid options type, expected *state.InMemoryOptions, got %T", cfg)
 			}
 		}
 		return New(typedOpts)
