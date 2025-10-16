@@ -37,7 +37,9 @@ func Register(r *manglekit.Registry) {
 		}
 		return New(opts)
 	})
-	r.RegisterOptions("in-memory", (*retrieve.InMemoryOptions)(nil))
+	if err := r.RegisterOptions("in-memory", (*retrieve.InMemoryOptions)(nil)); err != nil {
+		panic(err)
+	}
 }
 
 // New is the constructor for the InMemoryRetriever. It is registered with the

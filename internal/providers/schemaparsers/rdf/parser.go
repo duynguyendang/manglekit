@@ -22,7 +22,9 @@ func Register(r *manglekit.Registry) {
 	r.RegisterSchemaParser("rdf", func(ctx context.Context, options any, deps manglekit.FactoryDeps) (core.SchemaParser, error) {
 		return New(nil)
 	})
-	r.RegisterOptions("rdf", (*Options)(nil))
+	if err := r.RegisterOptions("rdf", (*Options)(nil)); err != nil {
+		panic(err)
+	}
 }
 
 // RDFParser implements the `core.SchemaParser` interface for RDF files. It uses

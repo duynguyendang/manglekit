@@ -220,7 +220,7 @@ func NewBuilderFromYAML(path string, r *Registry) (BuilderAPI, error) {
 			return nil
 		}
 		// Look up the Go type for the component's options struct.
-		optsType, ok := nameToOptionsType[name]
+		optsType, ok := r.nameToOptionsType[name]
 		if !ok {
 			return fmt.Errorf("no options type registered for component name %q", name)
 		}
@@ -340,7 +340,7 @@ func NewBuilderFromEnv(r *Registry) (BuilderAPI, error) {
 			}
 		}
 
-		optsType, ok := nameToOptionsType[name]
+		optsType, ok := r.nameToOptionsType[name]
 		if !ok {
 			return fmt.Errorf("no options type registered for component name %q", name)
 		}

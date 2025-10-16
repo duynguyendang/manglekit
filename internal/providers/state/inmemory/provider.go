@@ -22,7 +22,9 @@ func Register(r *manglekit.Registry) {
 		}
 		return New(typedOpts)
 	})
-	r.RegisterOptions("inmemory", (*state.InMemoryOptions)(nil))
+	if err := r.RegisterOptions("inmemory", (*state.InMemoryOptions)(nil)); err != nil {
+		panic(err)
+	}
 }
 
 // Provider is a thread-safe, in-memory implementation of the core.StateProvider

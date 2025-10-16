@@ -25,4 +25,6 @@ type GoogleOptions struct {
 	// final prompt that is sent to the LLM. If this is empty, a default
 	// prompt template will be used by the client.
 	PromptTemplate string `json:"promptTemplate"`
+	// Temperature controls the randomness of the model's output.
+	Temperature float32 `json:"temperature,omitempty"`
 }

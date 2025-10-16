@@ -21,12 +21,14 @@ func Register(r *manglekit.Registry) {
 		}
 
 		embedder, ok := deps["embedder"].(ai.Embedder)
-		if !ok {
-			return nil, fmt.Errorf("missing required dependency 'embedder' of type ai.Embedder")
+		if !ok || embedder == nil {
+			return nil, fmt.Errorf("cosine reranker factory requires an 'embedder' dependency, but it was not provided or has the wrong type")
 		}
 		return New(*typedOpts, embedder)
 	})
-	r.RegisterOptions("cosine", (*rerank.CosineOptions)(nil))
+	if err := r.RegisterOptions("cosine", (*rerank.CosineOptions)(nil)); err != nil {
+		panic(err)
+	}
 }
 
 // Reranker implements the `rerank.Reranker` interface. It re-scores documents
