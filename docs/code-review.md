@@ -1,35 +1,23 @@
-# Manglekit Code Review (Post-Refactoring)
+# Manglekit Code Review
 
-**Version:** 1.1
-**Status:** In Progress (Updated 2025-10-15)
+**Version:** 2.0
+**Status:** Completed (2025-10-15)
 
 ---
 
 ## Introduction
 
-This document provides a comprehensive analysis of the Manglekit codebase following a major architectural refactoring. It identifies code smells, design problems, and areas for improvement. The review is grounded in the architectural principles outlined in the `HLD.md` and `LLD.md` documents, with a strong focus on SOLID principles, extensibility, and maintainability. Each identified smell includes a location, impact analysis, and a concrete refactoring suggestion.
+This document provides a comprehensive analysis of the Manglekit codebase following a major architectural refactoring. It identifies code smells, design problems, and areas for improvement. This review supersedes all previous versions and is based on a fresh, holistic audit of the current source code.
 
-This updated review assesses the effectiveness of the recent refactoring, verifying which issues were resolved and identifying new smells that have been introduced.
-
----
+The review is grounded in the architectural principles of SOLID, extensibility, and maintainability. Each identified smell includes a location, impact analysis, and a concrete refactoring suggestion.
 
 ## Part 1: Status of Previously Identified Smells
 
 ### 1. Violation of Open/Closed Principle in Builder
 
-**Status: Unresolved**
+**Status: Resolved**
 
-**Smell:** The `Build` method in `builder.go` uses a `switch` statement to handle different orchestrator types ("sandwich" and "declarative").
-
-**Location(s):**
-- `builder.go`
-
-**Impact Analysis:** This design violates the Open/Closed Principle. If a new orchestrator type is added, the `Build` method must be modified. This increases the risk of introducing bugs and makes the builder less maintainable. A comment in the code explicitly notes this was left out of the recent refactoring.
-
-**Refactoring Suggestion:**
-- Introduce an `OrchestratorFactory` interface with a `Build` method.
-- Create concrete factory implementations for each orchestrator type.
-- Register these factories in the registry and have the `Builder.Build` method look up the appropriate factory, eliminating the `switch` statement.
+**Analysis:** The `Build` method in `builder.go` no longer uses a `switch` statement. It now correctly uses a dynamic factory lookup (`b.registry.OrchestratorFactories`) to construct the orchestrator, adhering to the Open/Closed Principle.
 
 ---
 
@@ -37,215 +25,119 @@ This updated review assesses the effectiveness of the recent refactoring, verify
 
 **Status: Partially Resolved**
 
-**Smell:** The dependency injection mechanism is inconsistent. The original direct-argument vs. map inconsistency is gone, but new inconsistencies have appeared.
+**Smell:** The dependency injection mechanism has been standardized around a `FactoryDeps` map (`map[string]any`), which is a significant improvement. However, two inconsistencies remain.
+1.  The `ClientFactory` in `registry.go` uses a completely different signature than all other factories.
+2.  The use of `map[string]any` sacrifices compile-time type safety.
 
 **Location(s):**
 - `registry.go` (ClientFactory signature)
 - `builder.go` (Use of `FactoryDeps`)
 
-**Impact Analysis:** The system now primarily uses a `FactoryDeps` map (`map[string]any`), which standardizes the approach but sacrifices compile-time safety. Furthermore, the `ClientFactory` uses a completely different signature, creating a new inconsistency between component factories and client factories.
+**Impact Analysis:** The lack of compile-time safety means that dependency errors (e.g., passing a `Retriever` where an `LLM` is expected) are only caught at runtime. The inconsistent `ClientFactory` signature adds a cognitive burden for developers.
 
 **Refactoring Suggestion:**
-- Define a strongly-typed `FactoryDependencies` struct instead of a `map[string]any`. This struct would hold all possible dependencies (Retriever, LLM, etc.) as optional fields. Factories could then consume the struct, gaining compile-time safety.
-- Unify the `ClientFactory` signature to be more consistent with other factories.
+- Unify the `ClientFactory` signature to be consistent with other factories.
+- Future consideration: Evolve the `FactoryDeps` map into a strongly-typed struct to re-introduce compile-time safety.
 
 ---
 
 ### 3. Tight Coupling in Dependency Resolution
 
-**Status: Unresolved**
+**Status: Resolved**
 
-**Smell:** The `resolveDependencies` method in `builder.go` contains logic that is tightly coupled to the specific requirements of different component types.
-
-**Location(s):**
-- `builder.go`: `resolveDependencies` method
-
-**Impact Analysis:** This method contains a web of `if/else` statements that implicitly deduce component needs (e.g., guessing that a `dense` retriever requires an `embedder`). This is brittle, violates the Open/Closed principle, and makes the system hard to configure predictably.
-
-**Refactoring Suggestion:**
-- Components should explicitly declare their dependencies. This could be done via a `Dependencies()` method on the component's factory or options struct. The builder would then simply fulfill this declared list of needs rather than guessing.
+**Analysis:** The brittle `resolveDependencies` method in `builder.go` has been completely removed. The builder is no longer responsible for "guessing" component dependencies. Instead, dependencies are explicitly passed to factories via the `FactoryDeps` map, and it is the factory's responsibility to validate them. This is a major architectural improvement.
 
 ---
 
-### 4. Stringly-Typed Dependencies
+### 4. Global State in Registry and Typemap
 
 **Status: Resolved**
 
-**Note:** This smell existed in the declarative orchestrator's build logic, which is currently disabled and stubbed out. The issue is therefore resolved by feature removal, not by a direct fix.
+**Analysis:** This was a critical flaw that has been fully addressed. The `typemap.go` file has been removed, and its maps (`nameToOptionsType`, `optionsTypeToName`) have been moved into the `Registry` struct in `registry.go`. Each `Registry` instance is now fully self-contained and encapsulated, eliminating the risk of interference from global state.
 
 ---
 
-### 5. Lack of `context.Context` Propagation
-
-**Status: Resolved**
-
-**Note:** The refactoring successfully added `context.Context` to all `build*` methods and their corresponding factory signatures, allowing for proper propagation.
-
----
-
-### 6. Potential Nil Pointer Dereference
-
-**Status: Resolved**
-
-**Note:** This smell existed in the declarative orchestrator's build logic, which is currently disabled. The issue is resolved by feature removal.
-
----
-
-### 7. Overly Complex Retriever Build Logic
-
-**Status: Resolved**
-
-**Note:** The special-cased logic for the "hybrid" retriever was correctly moved into its own dedicated factory, simplifying the main builder as suggested.
-
----
-
-### 8. Global State in Registry and Typemap
+### 5. Use of `any` for Factory Functions
 
 **Status: Partially Resolved**
 
-**Smell:** The `Registry` in `registry.go` is no longer a global variable, which is a major improvement. However, the `typemap.go` file it depends on *still* uses global variables for its state.
+**Smell:** While most component factories have been converted to type-safe function signatures (e.g., `RetrieverFactory`), the `ClientFactories` map in `registry.go` remains `map[string]any`.
 
 **Location(s):**
-- `typemap.go`: `nameToOptionsType`, `optionsTypeToName` variables.
-- `registry.go`: The `RegisterOptions` method modifies these global variables.
+- `registry.go`: `ClientFactories` map definition.
 
-**Impact Analysis:** The goal of eliminating global state was not fully achieved. Creating two separate `Registry` instances will lead to them interfering with each other through the shared global typemaps. This is a subtle but severe architectural flaw.
+**Impact Analysis:** This forces a runtime type assertion in the builder when creating clients, re-introducing the risk of runtime panics that the rest of the refactoring successfully eliminated.
 
 **Refactoring Suggestion:**
-- Move the `nameToOptionsType` and `optionsTypeToName` maps from global variables into fields within the `Registry` struct.
-- The `RegisterOptions` method should operate on these instance fields, ensuring that each `Registry` instance is fully encapsulated and isolated.
+- Define a strong type for `ClientFactory` (e.g., `type ClientFactory func(...) (...)`) and use it in the `ClientFactories` map to achieve full type safety.
 
 ---
 
-### 9. Use of `any` for Factory Functions
-
-**Status: Partially Resolved**
-
-**Smell:** Most factory functions are now strongly-typed (e.g., `RetrieverFactory`). However, this effort was incomplete.
-
-**Location(s):**
-- `registry.go`: `ClientFactories` map is still `map[string]any`.
-
-**Impact Analysis:** While the core component factories are now type-safe, the `ClientFactory` is not. This requires a runtime type assertion in the builder, re-introducing the risk of runtime panics that the rest of the refactoring sought to eliminate.
-
-**Refactoring Suggestion:**
-- Define a strong type for `ClientFactory` and use it in the `ClientFactories` map, just as was done for all other factory types.
-
----
-
-### 10. Unsafe Reflection in `typemap.go`
+### 6. Tight Coupling Between `config.go` and `builder.go`
 
 **Status: Unresolved**
 
-**Smell:** The `RegisterOptions` function in `typemap.go` still relies on reflection to map an options type to a provider name.
+**Smell:** The `NewBuilderFromYAML` and `NewBuilderFromEnv` functions in `config.go` are tightly coupled to the `Builder`. They are responsible for both loading/parsing configuration and calling the builder's `With...` methods.
 
 **Location(s):**
-- `typemap.go`: `RegisterOptions` method.
+- `config.go`: `NewBuilderFromYAML`, `NewBuilderFromEnv`
 
-**Impact Analysis:** Reflection-based code is harder to understand and maintain and is not fully type-safe at compile time.
+**Impact Analysis:** This coupling makes it difficult to test configuration loading in isolation from the builder. It also violates the Single Responsibility Principle, as `config.go` is doing more than just configuration management.
 
 **Refactoring Suggestion:**
-- While a fully reflection-free approach may be difficult, this could be improved with generics. A generic `RegisterOptions[T any](providerName string)` function could provide better compile-time checks.
+- Decouple configuration loading from builder instantiation. The config functions should parse the environment/file and return a pure `Config` struct. A separate `NewBuilderFromConfig(cfg *Config)` function should then be responsible for populating the builder from that struct.
 
 ---
 
-### 11. Tight Coupling Between `config.go` and `builder.go`
+### 7. Violation of SRP in `pipeline/sandwich.go`
 
 **Status: Unresolved**
 
-**Smell:** The `NewBuilderFromYAML` and `NewBuilderFromEnv` functions in `config.go` are tightly coupled to the `Builder`'s `With...` methods.
-
-**Location(s):**
-- `config.go`
-
-**Impact Analysis:** This coupling makes it difficult to test configuration loading in isolation from the builder.
-
-**Refactoring Suggestion:**
-- Decouple configuration loading from builder instantiation. The config functions should return a `Config` struct. A separate `NewBuilderFromConfig(cfg *Config)` function should then populate the builder.
-
----
-
-### 12. Violation of SRP in `pipeline/sandwich.go`
-
-**Status: Unresolved**
-
-**Smell:** The `Execute` method in `pipeline/sandwich.go` is a large function that orchestrates the entire pipeline.
+**Smell:** The `Execute` method in `pipeline/sandwich.go` is a large function that orchestrates the entire RAG pipeline. While helper methods exist, the main function is still too large and has too many responsibilities.
 
 **Location(s):**
 - `pipeline/sandwich.go`
 
-**Impact Analysis:** The method is difficult to understand, test, and maintain due to its many responsibilities.
+**Impact Analysis:** The method is difficult to understand, test, and maintain due to its size and complexity.
 
 **Refactoring Suggestion:**
-- Break down the `Execute` method into smaller, more focused methods or objects, each responsible for a single stage of the pipeline (e.g., retrieval, reranking, generation).
+- Continue to break down the `Execute` method into smaller, more focused private methods, each responsible for a single, well-defined stage of the pipeline (e.g., `runRetrieve`, `runRerank`, `runLlm`).
 
 ---
 
-### 13. Implicit Side Effects in `pipeline/sandwich.go`
+### 8. Magic Strings for `Meta` Map in `pipeline/sandwich.go`
 
 **Status: Unresolved**
 
-**Smell:** The `prepareLlmRequest` method has a side effect of modifying the `Answer` struct's `Citations` field.
+**Smell:** The code uses raw string literals ("reranked_docs", "history") as keys for the `Answer.Meta` map.
 
 **Location(s):**
 - `pipeline/sandwich.go`
 
-**Impact Analysis:** The method's name is misleading, making the code harder to reason about.
+**Impact Analysis:** This is error-prone, as typos in string literals are not caught by the compiler and lead to runtime bugs.
 
 **Refactoring Suggestion:**
-- Rename the method to `prepareLlmRequestAndCreateCitations` or separate the citation creation logic into its own method.
+- Define constants for the keys of the `Meta` map (e.g., `const RerankedDocsKey = "reranked_docs"`) to provide compile-time checking and improve readability.
 
 ---
 
-### 14. Magic Strings for `Meta` Map in `pipeline/sandwich.go`
+### 9. Magic Number in Hybrid Retriever
 
 **Status: Unresolved**
 
-**Smell:** The code uses string literals as keys for the `Answer.Meta` map.
-
-**Location(s):**
-- `pipeline/sandwich.go`
-
-**Impact Analysis:** This is error-prone, as typos in string literals are not caught by the compiler.
-
-**Refactoring Suggestion:**
-- Define constants for the keys of the `Meta` map to provide compile-time checking.
-
----
-
-### 15. Violation of OCP in `pipeline/declarative/orchestrator.go`
-
-**Status: Resolved**
-
-**Note:** This smell existed in the declarative orchestrator's `dispatchToTool` method. The feature is currently disabled, so the issue is resolved by removal.
-
----
-
-### 16. Use of `map[string]any` as Execution Context
-
-**Status: Resolved**
-
-**Note:** This smell existed in the declarative orchestrator, which is currently disabled. The issue is resolved by removal.
-
----
-
-### 17. Magic Number in Hybrid Retriever
-
-**Status: Unresolved**
-
-**Smell:** The hybrid retriever in `internal/providers/hybrid/hybrid.go` uses a hard-coded constant `k = 60.0` in its RRF algorithm.
+**Smell:** The hybrid retriever in `internal/providers/hybrid/hybrid.go` uses a hard-coded constant `k = 60.0` in its Reciprocal Rank Fusion (RRF) algorithm.
 
 **Location(s):**
 - `internal/providers/hybrid/hybrid.go`
 
-**Impact Analysis:** This magic number is a configuration value hidden in the implementation, making it impossible for users to tune the RRF algorithm.
+**Impact Analysis:** This magic number is a critical configuration value hidden in the implementation, making it impossible for users to tune the RRF algorithm for their specific use case.
 
 **Refactoring Suggestion:**
-- Expose the `k` constant as a configurable parameter in the `retrieve.HybridOptions` struct, with a sensible default.
+- Expose the `k` constant as a configurable parameter in the `retrieve.HybridOptions` struct, with a sensible default value.
 
 ---
 
-### 18. Use of `any` for Retriever in Orchestrator Interface
+### 10. Use of `any` for Retriever in Orchestrator Interface
 
 **Status: Unresolved**
 
@@ -254,69 +146,29 @@ This updated review assesses the effectiveness of the recent refactoring, verify
 **Location(s):**
 - `core/types.go`
 
-**Impact Analysis:** This sacrifices type safety, forcing the caller to perform a type assertion. While done to avoid a circular dependency, it's a design compromise that weakens the interface contract.
+**Impact Analysis:** This sacrifices type safety at a critical boundary, forcing the caller to perform a type assertion. It was likely done to avoid a circular dependency between the `core` and `retrieve` packages, but it remains a design smell.
 
 **Refactoring Suggestion:**
-- Define a new, minimal `Retriever` interface in the `core` package. The full `retrieve.Retriever` can embed this. The `Orchestrator.Retriever()` method can then return the type-safe `core.Retriever`.
+- Define a new, minimal `Retriever` interface within the `core` package itself (e.g., `type CoreRetriever interface { Retrieve(...) }`). The full `retrieve.Retriever` can embed this new interface. The `Orchestrator.Retriever()` method can then return the type-safe `core.CoreRetriever`.
 
 ---
 
-### 19. Deprecated `LocalvecOptions` in `core/types.go`
+## Part 2: New Code Smells Identified
 
-**Status: Unresolved**
+### 11. Leaky Abstraction via Builder Callback (Status: Resolved)
 
-**Smell:** The `LocalvecOptions` struct is defined in `core/types.go` but is marked as deprecated.
-
-**Location(s):**
-- `core/types.go`
-
-**Impact Analysis:** Deprecated code should be removed to keep the codebase clean. Its continued presence suggests an incomplete refactoring.
-
-**Refactoring Suggestion:**
-- Remove the `LocalvecOptions` struct and ensure all code uses the new options struct in the `localvec` provider package.
+**Analysis:** The original refactoring introduced a flaw where composite components (like the hybrid retriever) were given a dependency on the entire `BuilderAPI`. This has been **resolved** by the introduction of the `SubRetrieverBuilder` interface in `builder.go`. This is an excellent application of the Interface Segregation Principle, ensuring the factory only has access to the functionality it needs.
 
 ---
 
-## Part 2: New Code Smells Introduced by Refactoring
+### 12. Dead Code in `builder.go`
 
-### 20. Leaky Abstraction via Builder Callback
-
-**Smell:** Composite components (like the hybrid retriever) are given a dependency on the entire `BuilderAPI` to build their sub-components.
+**Smell:** The `embedderAlias` map at the end of `builder.go` is a remnant of the old dependency resolution logic and is now completely unused.
 
 **Location(s):**
-- `internal/providers/hybrid/hybrid.go` (factory implementation)
-- `builder.go` (the public `BuildRetriever` method)
+- `builder.go`
 
-**Impact Analysis:** This is a severe violation of the Interface Segregation Principle. The factory for a retriever should not have access to unrelated builder methods like `WithLLM` or `WithStateProvider`. This creates a leaky abstraction and unnecessary coupling between the component and the main builder.
-
-**Refactoring Suggestion:**
-- The builder should pass only the necessary *factories* to the composite component's factory, not the entire builder API. For example, the hybrid retriever factory should receive a `map[string]RetrieverFactory` so it can look up and build its own dependencies without needing a callback to the main builder.
-
----
-
-### 21. Incomplete State Encapsulation in Registry
-
-**Smell:** The `Registry` instance correctly encapsulates most provider factories, but its `RegisterOptions` method modifies global variables in `typemap.go`.
-
-**Location(s):**
-- `typemap.go`: `nameToOptionsType` and `optionsTypeToName` are global.
-- `registry.go`: `(*Registry).RegisterOptions` modifies these globals.
-
-**Impact Analysis:** This is a critical architectural inconsistency. It prevents the creation of multiple, isolated `Registry` instances within a single application, as they would all interfere with each other via the shared global typemaps. The primary goal of making the registry an instance is defeated.
+**Impact Analysis:** This is a minor issue, but dead code adds clutter and can confuse future developers who may waste time trying to understand its purpose.
 
 **Refactoring Suggestion:**
-- Move the `nameToOptionsType` and `optionsTypeToName` maps from global variables into fields of the `Registry` struct. The `RegisterOptions` method must be updated to operate on these instance fields, making each registry truly self-contained.
-
----
-
-### 22. Fragile Implicit Dependency Resolution
-
-**Smell:** The builder contains complex, hard-coded logic to implicitly infer component dependencies.
-
-**Location(s):**
-- `builder.go`: The `resolveDependencies` method.
-
-**Impact Analysis:** The builder tries to be "smart" by guessing that certain retrievers need a specific embedder. This logic is brittle, error-prone, and violates the principle of explicit configuration. When a configuration is invalid, the system should fail with a clear error, not try to guess the user's intent. This method will require modification every time a new component with similar implicit needs is added.
-
-**Refactoring Suggestion:**
-- Eliminate the `resolveDependencies` method entirely. Instead, have factories fail at runtime if a required dependency from the `FactoryDeps` map is missing. This makes dependencies explicit and forces the user to provide a valid configuration. For example, the dense retriever factory should return an error if `deps["embedder"]` is nil.
+- Remove the `embedderAlias` variable declaration.
