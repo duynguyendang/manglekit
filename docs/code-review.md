@@ -1,81 +1,53 @@
-# Manglekit SDK Code Review
+## Smell: Type Assertions in Core Component Factories
+**Location:** `pipeline/sandwich.go` (function `NewSandwich`)
+**Impact Analysis:** The `core.Resolved` struct, which is intended to be a type-safe container for fully built components, uses `any` for its fields (e.g., `Retriever any`). This forces the `NewSandwich` factory to perform type assertions (e.g., `deps.Retriever.(retrieve.Retriever)`). This undermines the goal of end-to-end type safety, re-introducing runtime risks that the builder pattern was designed to eliminate. A failure here would cause a panic during orchestrator construction.
+**Refactoring Suggestion:** Modify the `core.Resolved` struct to use concrete interface types (e.g., `Retriever retrieve.Retriever`, `LLM llm.Client`). This will enforce type safety at compile time and remove the need for any type assertions in the factory, making the code more robust and self-documenting.
+**Status:** Open
 
-**Author:** Jules, Senior Go Software Architect
-**Date:** 2025-10-16
-**Status:** Completed
+## Smell: Broken Resource Cleanup Lifecycle
+**Location:** `pipeline/sandwich.go` (struct `Sandwich`, method `Close`)
+**Impact Analysis:** The `Builder` in `builder.go` correctly collects `ResourceCloser` functions from components that require cleanup. However, it never passes this list of closers to the created `Sandwich` orchestrator. The `Sandwich` struct has its own `closers` slice that is never populated, so its `Close` method does nothing. This is a critical bug that will lead to resource leaks (e.g., open database connections, running background goroutines) for any provider that requires graceful shutdown.
+**Refactoring Suggestion:** The `core.Resolved` struct passed to orchestrator factories should contain the slice of `core.ResourceCloser` functions collected by the builder. The `NewSandwich` factory must then assign this slice to the `closers` field in the `Sandwich` struct, ensuring that the `Close` method can correctly iterate and call them.
+**Status:** Open
 
----
+## Smell: Dead Code - Declarative Orchestrator is Unreachable
+**Location:** `pipeline/declarative/orchestrator.go`, `builder.go`
+**Impact Analysis:** The entire declarative orchestrator is dead code. The `builder.go` has no logic to construct the dependencies required by `declarative.New` (specifically the `core.FlowController` and the `map[string]any` of tools). The builder is hard-wired to always instantiate the `sandwich` orchestrator. This represents a significant amount of un-used, un-tested, and potentially bit-rotting code in the repository.
+**Refactoring Suggestion:** Either complete the implementation by adding logic to `builder.go` to build and configure the declarative orchestrator from a config file, or remove the `pipeline/declarative` package entirely to reduce codebase size and maintenance overhead. If kept, the builder would need to be ableto construct a `FlowController` (e.g., a Mangle engine) and dynamically build a `tools` map based on the config.
+**Status:** Open
 
-## Executive Summary
+## Smell: Magic Strings for Execution Context
+**Location:** `pipeline/declarative/orchestrator.go`
+**Impact Analysis:** The declarative orchestrator uses a `map[string]any` as a property bag to pass state between stages, using string constants like `contextKeyQuery`. This pattern is fragile, error-prone, and lacks type safety. A typo in a key would lead to a runtime bug that the compiler cannot catch. It also makes the data flow difficult to follow and debug.
+**Refactoring Suggestion:** Replace the `map[string]any` with a dedicated, typed struct, similar to `pipeline.PipelineContext` used by the `sandwich` orchestrator. This struct would have explicit, typed fields for `Query`, `Docs`, `Answer`, etc., ensuring compile-time safety and dramatically improving code clarity.
+**Status:** Open
 
-This code review provides a deep-dive analysis of the Manglekit SDK's internal architecture, focusing on its core construction and orchestration logic. The review confirms that while previous refactorings have improved the system's structure (e.g., separating configuration from the builder, introducing pipeline stages), several significant architectural smells persist.
+## Smell: Violation of Open/Closed Principle via Type Switch
+**Location:** `pipeline/declarative/orchestrator.go` (function `dispatchToTool`)
+**Impact Analysis:** The `dispatchToTool` function uses a large `switch tool.(type)` block to execute different components. This is a classic code smell. To add a new type of tool or component to the declarative pipeline, this central function must be modified, violating the Open/Closed Principle. This makes the system rigid and harder to extend.
+**Refactoring Suggestion:** Define a common interface, such as `DeclarativeStage`, with an `Execute(ctx, execContext)` method. Each tool wrapper would implement this interface. The `dispatchToTool` function would then simply become a single call: `tool.Execute(ctx, execContext)`. This removes the type switch and allows new tool types to be added without modifying the core orchestrator logic.
+**Status:** Open
 
-This report documents three primary issues that violate the SDK's stated goals of modularity, consistency, and extensibility. All three issues are currently marked with **Status: Open**. No code changes were made as part of this review; the goal is to provide a clear and actionable record of the current architectural state.
+## Smell: Dependency Injection Bypass
+**Location:** `internal/providers/llm/openai.go`
+**Impact Analysis:** The OpenAI and Groq provider factories create their own `openai.OpenAI` client instances directly, ignoring the `diapi.OpenAIClient` interface defined in the dependency injection layer. This bypasses the intended DI mechanism, which is designed to create a single, shared client instance in the builder and inject it into all providers that need it. The current implementation is inefficient as it creates multiple client objects where one would suffice.
+**Refactoring Suggestion:** The `Builder` should be responsible for creating a single `diapi.OpenAIClient`. This client should be added to a dependency struct (e.g., `diapi.LLMDeps`). The OpenAI and Groq factories should then *receive* this client via their `deps` struct instead of creating their own.
+**Status:** Open
 
-The accompanying `docs/CONTEXT.md` file has also been updated to reflect this reality, ensuring our architectural standard is synchronized with the actual implementation.
+## Smell: Hard-coded Dependencies in Factory
+**Location:** `internal/providers/hybrid/hybrid.go`
+**Impact Analysis:** The hybrid retriever's factory is hard-coded to build its "bm25" and "dense" sub-retrievers. This makes the component inflexible. It's impossible to configure a different set of sub-retrievers (e.g., two different dense retrievers, or a dense retriever and a graph retriever) without changing the factory's code. The composition of a component should be defined in configuration, not in code.
+**Refactoring Suggestion:** The `retrieve.HybridOptions` struct should contain the *names* of the sub-retrievers to use (e.g., `SparseRetrieverName: "bm25"`, `DenseRetrieverName: "dense"`). The factory would then use the `deps.BuildSubRetriever` function to build the retrievers specified in the configuration, making the component fully composable.
+**Status:** Open
 
----
+## Smell: Hard-coded Magic Number
+**Location:** `internal/providers/hybrid/hybrid.go` (function `Retrieve`)
+**Impact Analysis:** The Reciprocal Rank Fusion (RRF) algorithm contains a hard-coded constant `k = 60.0`. This "magic number" is a critical tuning parameter for the fusion algorithm. Having it hard-coded prevents users from tuning the retriever's behavior for their specific use case without modifying the source code.
+**Refactoring Suggestion:** Add a `RRF_K` field to the `retrieve.HybridOptions` struct with a sensible default value. The `Retrieve` method should use the value from the options struct instead of the hard-coded constant. This exposes the parameter for configuration and tuning.
+**Status:** Open
 
-## 1. Orchestration Checks
-
-The following principles were used to evaluate the orchestration logic and should be enforced for all future development.
-
--   **No god method**: Orchestration logic must be composed of discrete, testable components. Monolithic functions are forbidden.
--   **No magic strings**: Data passed between internal components must be via typed structs, not `map[string]any`.
--   **Strict Ctx Propagation**: The `context.Context` must be passed explicitly through all calls.
--   **Consistent Metrics**: Components are responsible for recording their own performance metrics.
--   **Leverage Genkit**: Providers interacting with external services must wrap standard Genkit plugins.
-
----
-
-## 2. Open Architectural Issues
-
-The following issues are present in the current codebase and are documented here as the official findings of this review.
-
-### Smell: Repetitive, Non-Generic Builder Logic
-**Location:** `builder.go` (multiple `With...` and `build...` methods)
-**Impact Analysis:** The builder contains significant code duplication. The `With<Component>` methods (e.g., `WithRetriever`, `WithLLM`) are nearly identical, each performing the same boilerplate logic of looking up an options type in the registry. Likewise, the `build<Component>` methods (`buildRetriever`, `buildLLM`, etc.) are also highly repetitive, each following the same pattern: get a factory, assemble dependencies, call the factory, and store the component. This violates the DRY (Don't Repeat Yourself) principle, increases the maintenance burden, and makes adding new component types a tedious, error-prone process.
-**Refactoring Suggestion:** Refactor the builder and registry to use a single, generic registration and build mechanism. This could be achieved using reflection or generics (if Go version allows) to handle all component types through a unified `With(name, opts)` and `build(name)` flow, eliminating the per-type boilerplate.
-**Status:** **Open**
-
-### Smell: Type Erasure via `core.Options`
-**Location:** `core/types.go` (definition of `Options`), `pipeline/sandwich.go` (`NewSandwich` constructor)
-**Impact Analysis:** The `core.Options` struct uses `any` for its component fields (e.g., `Retriever any`, `LLM any`). The builder populates these fields, and the `NewSandwich` orchestrator constructor is then forced to use runtime type assertions to cast them back to their concrete interface types. This pattern, known as type erasure, moves type checking from compile-time to runtime, making the system more fragile. A mismatch between the type provided by the builder and the type expected by the orchestrator will only be caught at runtime, potentially leading to panics.
-**Refactoring Suggestion:** The orchestrator factory (`OrchestratorFactory`) signature should be changed to accept a struct of fully-resolved, typed component interfaces instead of the `core.Options` struct. The builder would be responsible for populating this new struct, ensuring all components are of the correct type before the orchestrator is ever created.
-**Status:** **Open**
-
-### Smell: Rigid, Type-Specific Registries
-**Location:** `registry.go`
-**Impact Analysis:** The `Registry` uses separate, strongly-typed maps for each component factory type (e.g., `Retrievers map[string]RetrieverFactory`, `LLMs map[string]LLMFactory`). This rigidity is the root cause of the repetitive builder logic. To add a new type of component to the framework, one must modify the `Registry` struct, add a new `Register...` method, and add a new `build...` method to the builder. This makes the framework difficult to extend.
-**Refactoring Suggestion:** Consolidate the disparate factory maps into a single, generic registry, likely a `map[string]any` where the `any` is a generic factory function type. This would allow new component types to be registered without modifying the core registry or builder code, dramatically improving extensibility.
-**Status:** **Open**
-
----
-
-## 3. Resolved Issues (Historical Context)
-
-The following issues were identified and fixed in previous refactoring cycles. They are preserved here for historical context.
-
-### Smell: Inconsistent Builder API
-**Location:** `builder.go` (`WithEmbedder` method)
-**Impact Analysis:** The `WithEmbedder` method deviated from the builder's established API pattern by accepting pre-built instances.
-**Refactoring Action:** The `WithEmbedder` method was refactored to only accept typed options structs, consistent with the rest of the builder API.
-**Status:** **Resolved**
-
-### Smell: Hard-coded Orchestrator Selection
-**Location:** `builder.go` (`Build` method)
-**Impact Analysis:** The builder previously hard-coded the `"sandwich"` orchestrator, preventing programmatic selection of other pipelines.
-**Refactoring Action:** A new `WithOrchestrator(name string)` method was added to the builder, and the `Build` method now uses a dynamic factory lookup.
-**Status:** **Resolved**
-
-### Smell: God Method & Magic Strings
-**Location:** `pipeline/sandwich.go` (legacy)
-**Impact Analysis:** The `Sandwich.Execute` method was a classic "God Method" with excessive responsibilities and used hardcoded "magic strings" for passing data.
-**Refactoring Action:** The orchestrator was refactored into a sequence of discrete `pipeline.Stage` components executed by a `Runner`, using a typed `pipeline.PipelineContext` for data flow.
-**Status:** **Resolved**
-
-### Smell: SRP Violation in Configuration
-**Location:** `config.go` (legacy), `builder.go` (legacy)
-**Impact Analysis:** The builder was previously responsible for both loading configuration and wiring components.
-**Refactoring Action:** A dedicated `config` package now handles loading, and the `NewBuilderFromConfig` function acts as the bridge to the builder.
-**Status:** **Resolved**
+## Smell: Deprecated Code Present in Core
+**Location:** `core/types.go`
+**Impact Analysis:** The `core.LocalvecOptions` struct is marked as deprecated, stating it has been moved to the provider's own package. Leaving deprecated code, especially in a `core` package, increases maintenance overhead and can confuse developers about which component to use. Core APIs should be clean and reflect the current state of the architecture.
+**Refactoring Suggestion:** Remove the `core.LocalvecOptions` struct and update any code that still references it to use the new options struct from the `internal/vectorstores/localvec` package. This enforces the architectural principle that providers define their own options.
+**Status:** Resolved
