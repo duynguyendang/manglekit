@@ -1,5 +1,7 @@
 package llm
 
+import "github.com/duynguyendang/manglekit/core"
+
 // OpenAIOptions provides typed configuration for OpenAI and compatible language
 // models (e.g., Groq). It specifies the model to use and how to authenticate.
 type OpenAIOptions struct {
@@ -19,6 +21,16 @@ type OpenAIOptions struct {
 	MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
 }
 
+func (o OpenAIOptions) ProviderName() string { return "openai" }
+func (o OpenAIOptions) ProviderKind() core.Kind   { return core.KindLLM }
+
+// GroqOptions is an alias for OpenAIOptions, but it identifies itself as "groq".
+type GroqOptions struct {
+	OpenAIOptions
+}
+
+func (o GroqOptions) ProviderName() string { return "groq" }
+
 // GoogleOptions provides typed configuration for Google language models,
 // such as those in the Gemini family.
 type GoogleOptions struct {
@@ -32,3 +44,6 @@ type GoogleOptions struct {
 	// Temperature controls the randomness of the model's output.
 	Temperature float32 `json:"temperature,omitempty"`
 }
+
+func (o GoogleOptions) ProviderName() string { return "google" }
+func (o GoogleOptions) ProviderKind() core.Kind   { return core.KindLLM }

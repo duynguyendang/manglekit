@@ -7,291 +7,272 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/logger"
-	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 )
 
 // BuilderAPI defines the fluent interface for the MangleKit orchestrator builder.
 // It is the primary API for programmatically configuring and constructing a pipeline.
-// This interface is returned by all chained `With...` methods to allow for a
-// seamless and readable configuration flow.
 type BuilderAPI interface {
-	WithRetriever(opts any) BuilderAPI
-	WithVectorStore(opts any) BuilderAPI
-	WithReranker(opts any) BuilderAPI
-	WithRules(opts any) BuilderAPI
-	WithLLM(opts any) BuilderAPI
-	WithFlow(name string) BuilderAPI
-	WithEmbedder(opts any) BuilderAPI
+	With(opts any) BuilderAPI
+	WithKind(kind core.Kind, name string, opts any) BuilderAPI
 	WithTopK(k int) BuilderAPI
 	WithMaxTokens(n int) BuilderAPI
 	WithObservability(obs core.Observability) BuilderAPI
 	WithFallbackThreshold(f float64) BuilderAPI
-	WithStateProvider(opts any) BuilderAPI
 	WithGenkit(g *genkit.Genkit) BuilderAPI
 	WithOrchestrator(name string) BuilderAPI
 	Build(ctx context.Context) (core.Orchestrator, retrieve.Updatable, error)
-	BuildRetriever(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error)
 }
 
-// SubRetrieverBuilder defines a minimal interface that complex components, like a
-// hybrid retriever, can use to build their constituent sub-retrievers.
-// It prevents leaking the entire BuilderAPI into component factories.
-type SubRetrieverBuilder interface {
-	BuildRetriever(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error)
+// configItem represents a single component configuration added to the builder.
+type configItem struct {
+	kind   core.Kind
+	name   string
+	params map[string]any // Holds {"typedConfig": opts}, matching the old structure.
 }
 
 // Builder provides a fluent, chainable interface for constructing a MangleKit
 // Orchestrator. It is the recommended way to assemble a pipeline, as it handles
-// dependency injection, component construction, and configuration resolution
-// from multiple sources (programmatic, YAML, environment variables).
+// dependency injection, component construction, and configuration resolution.
 type Builder struct {
-	opts     core.Options
-	errs     []error
 	registry *Registry
+	genkit   *genkit.Genkit
+	opts     core.OptionsLike
+	errs     []error
 
-	// Declarative flow fields
-	flowName string
-	tools    map[string]any // Holds built tool instances.
-
-	retrieverName     string
-	retrieverParams   map[string]any
-	rerankerName      string
-	rerankerParams    map[string]any
-	rulesName         string
-	rulesParams       map[string]any
-	llmName           string
-	llmParams         map[string]any
-	embedderName      string
-	embedderParams    map[string]any
-	vectorStoreName   string
-	vectorStoreParams map[string]any
-
-	// Internal fields for dependency management.
-	clients       map[string]any
-	resolvedCfgs  map[string]any
-	providerNames map[string]string
+	// cfgs stores the list of component configurations to be built.
+	cfgs []configItem
 
 	// Built components are stored here during the build process.
 	embedder      ai.Embedder
 	vectorStore   core.VectorStore
+	retriever     retrieve.Retriever
+	reranker      any // rerank.Reranker
+	rules         core.RuleSet
+	llm           any // llm.Client
 	stateProvider core.StateProvider
-	genkit        *genkit.Genkit
 
-	stateProviderName   string
-	stateProviderParams map[string]any
-	orchestratorName    string
-}
-
-// closer is a local interface used for type assertions.
-type closer interface {
-	Close(context.Context) error
+	orchestratorName string
 }
 
 // NewBuilder returns a new, empty instance of the fluent builder.
 func NewBuilder(r *Registry) *Builder {
 	b := &Builder{
-		registry:      r,
-		clients:       make(map[string]any),
-		resolvedCfgs:  make(map[string]any),
-		providerNames: make(map[string]string),
-		tools:         make(map[string]any),
+		registry: r,
 	}
 	b.opts.Obs.Logger = logger.NewStdLogger()
 	return b
 }
 
-// WithRetriever programmatically configures the retriever component.
-func (b *Builder) WithRetriever(opts any) BuilderAPI {
+// With adds a component to the builder using its provider-specific options struct.
+// It looks up the provider's kind and name from the registry using the options type.
+// This is the primary, type-safe way to configure the builder.
+func (b *Builder) With(opts any) BuilderAPI {
 	if opts == nil {
-		b.retrieverName = ""
-		b.retrieverParams = nil
 		return b
 	}
-	optsType := reflect.TypeOf(opts)
-	name, ok := b.registry.optionsTypeToName[optsType]
+	t := reflect.TypeOf(opts)
+	name, ok := b.registry.optionsTypeToName[t]
 	if !ok {
-		err := fmt.Errorf("unregistered options type for retriever: %T", opts)
-		b.opts.Obs.Logger.Errorf(err.Error())
+		err := fmt.Errorf("unregistered options type: %T", opts)
 		b.errs = append(b.errs, err)
+		b.opts.Obs.Logger.Errorf(err.Error())
 		return b
 	}
-	b.retrieverName = name
-	b.retrieverParams = map[string]any{"typedConfig": opts}
-	return b
-}
-
-// WithVectorStore programmatically configures the vector store.
-func (b *Builder) WithVectorStore(opts any) BuilderAPI {
-	if opts == nil {
-		b.vectorStoreName = ""
-		b.vectorStoreParams = nil
-		return b
-	}
-	optsType := reflect.TypeOf(opts)
-	name, ok := b.registry.optionsTypeToName[optsType]
+	kind, ok := b.registry.optionsTypeToKind[t]
 	if !ok {
-		err := fmt.Errorf("unregistered options type for vector store: %T", opts)
-		b.opts.Obs.Logger.Errorf(err.Error())
+		// This should be unreachable if the registry is populated correctly.
+		err := fmt.Errorf("internal error: no kind registered for options type %T", opts)
 		b.errs = append(b.errs, err)
-		return b
-	}
-	b.vectorStoreName = name
-	b.vectorStoreParams = map[string]any{"typedConfig": opts}
-	return b
-}
-
-// WithReranker programmatically configures the reranker component.
-func (b *Builder) WithReranker(opts any) BuilderAPI {
-	if opts == nil {
-		b.rerankerName = ""
-		b.rerankerParams = nil
-		return b
-	}
-	optsType := reflect.TypeOf(opts)
-	name, ok := b.registry.optionsTypeToName[optsType]
-	if !ok {
-		err := fmt.Errorf("unregistered options type for reranker: %T", opts)
 		b.opts.Obs.Logger.Errorf(err.Error())
-		b.errs = append(b.errs, err)
-		return b
-	}
-	b.rerankerName = name
-	b.rerankerParams = map[string]any{"typedConfig": opts}
-	return b
-}
-
-// WithRules programmatically configures the rules engine.
-func (b *Builder) WithRules(opts any) BuilderAPI {
-	if opts == nil {
-		b.rulesName = ""
-		b.rulesParams = nil
-		return b
-	}
-	optsType := reflect.TypeOf(opts)
-	name, ok := b.registry.optionsTypeToName[optsType]
-	if !ok {
-		err := fmt.Errorf("unregistered options type for rules engine: %T", opts)
-		b.opts.Obs.Logger.Errorf(err.Error())
-		b.errs = append(b.errs, err)
-		return b
-	}
-	b.rulesName = name
-	b.rulesParams = map[string]any{"typedConfig": opts}
-	return b
-}
-
-// WithLLM programmatically configures the language model client.
-func (b *Builder) WithLLM(opts any) BuilderAPI {
-	if opts == nil {
-		b.llmName = ""
-		b.llmParams = nil
-		return b
-	}
-	optsType := reflect.TypeOf(opts)
-	name, ok := b.registry.optionsTypeToName[optsType]
-	if !ok {
-		err := fmt.Errorf("unregistered options type for LLM: %T", opts)
-		b.opts.Obs.Logger.Errorf(err.Error())
-		b.errs = append(b.errs, err)
-		return b
-	}
-	b.llmName = name
-	b.llmParams = map[string]any{"typedConfig": opts}
-	return b
-}
-
-// WithFlow programmatically sets the flow name for the declarative orchestrator.
-func (b *Builder) WithFlow(name string) BuilderAPI {
-	b.flowName = name
-	return b
-}
-
-// WithEmbedder programmatically configures the text embedding model.
-func (b *Builder) WithEmbedder(opts any) BuilderAPI {
-	if opts == nil {
-		b.embedderName = ""
-		b.embedderParams = nil
 		return b
 	}
 
-	optsType := reflect.TypeOf(opts)
-	name, ok := b.registry.optionsTypeToName[optsType]
-	if !ok {
-		err := fmt.Errorf("unregistered options type for embedder: %T", opts)
-		b.opts.Obs.Logger.Errorf(err.Error())
-		b.errs = append(b.errs, err)
-		return b
+	b.cfgs = append(b.cfgs, configItem{
+		kind:   kind,
+		name:   name,
+		params: map[string]any{"typedConfig": opts},
+	})
+	return b
+}
+
+// WithKind adds a component to the builder using an explicit kind, name, and options.
+// This is primarily used by the config loader, which reads kind and name strings
+// from a YAML file.
+func (b *Builder) WithKind(kind core.Kind, name string, opts any) BuilderAPI {
+	b.cfgs = append(b.cfgs, configItem{
+		kind:   kind,
+		name:   name,
+		params: map[string]any{"typedConfig": opts},
+	})
+	return b
+}
+
+// compSpec defines the specification for building a single kind of component.
+// It's the core of the data-driven, spec-based build process.
+type compSpec struct {
+	kind           core.Kind
+	makeDeps       func(*Builder) any
+	assign         func(*Builder, any)
+	registerCloser func(*Builder, any)
+}
+
+// specTable returns the map of all component specifications. The dependency
+// graph and build logic are defined here, not in imperative code.
+func (b *Builder) specTable() map[core.Kind]compSpec {
+	return map[core.Kind]compSpec{
+		core.KindEmbedder: {
+			kind:     core.KindEmbedder,
+			makeDeps: func(b *Builder) any { return diapi.EmbedderDeps{Genkit: b.genkit} },
+			assign:   func(b *Builder, v any) { b.embedder = v.(ai.Embedder) },
+			registerCloser: func(b *Builder, v any) {
+				if c, ok := v.(interface{ Close(context.Context) error }); ok {
+					b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
+				}
+			},
+		},
+		core.KindVectorStore: {
+			kind:     core.KindVectorStore,
+			makeDeps: func(b *Builder) any { return diapi.VectorStoreDeps{Embedder: b.embedder} },
+			assign:   func(b *Builder, v any) { b.vectorStore = v.(core.VectorStore) },
+			registerCloser: func(b *Builder, v any) {
+				if c, ok := v.(interface{ Close(context.Context) error }); ok {
+					b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
+				}
+			},
+		},
+		core.KindRetriever: {
+			kind: core.KindRetriever,
+			makeDeps: func(b *Builder) any {
+				return diapi.RetrieverDeps{
+					Embedder:          b.embedder,
+					VectorStore:       b.vectorStore,
+					BuildSubRetriever: b.BuildRetriever,
+				}
+			},
+			assign: func(b *Builder, v any) { b.retriever = v.(retrieve.Retriever) },
+		},
+		core.KindReranker: {
+			kind:     core.KindReranker,
+			makeDeps: func(b *Builder) any { return diapi.RerankerDeps{Embedder: b.embedder} },
+			assign:   func(b *Builder, v any) { b.reranker = v },
+		},
+		core.KindRules: {
+			kind:     core.KindRules,
+			makeDeps: func(b *Builder) any { return diapi.RuleSetDeps{} },
+			assign:   func(b *Builder, v any) { b.rules = v.(core.RuleSet) },
+		},
+		core.KindLLM: {
+			kind:     core.KindLLM,
+			makeDeps: func(b *Builder) any { return diapi.LLMDeps{Genkit: b.genkit} },
+			assign:   func(b *Builder, v any) { b.llm = v },
+			registerCloser: func(b *Builder, v any) {
+				if c, ok := v.(interface{ Close(context.Context) error }); ok {
+					b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
+				}
+			},
+		},
+		core.KindStateProvider: {
+			kind:     core.KindStateProvider,
+			makeDeps: func(b *Builder) any { return diapi.StateProviderDeps{} },
+			assign:   func(b *Builder, v any) { b.stateProvider = v.(core.StateProvider) },
+			registerCloser: func(b *Builder, v any) {
+				if c, ok := v.(interface{ Close(context.Context) error }); ok {
+					b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
+				}
+			},
+		},
 	}
-	b.embedderName = name
-	b.embedderParams = map[string]any{"typedConfig": opts}
-	return b
 }
 
-// WithTopK programmatically sets the default number of documents to retrieve.
-func (b *Builder) WithTopK(k int) BuilderAPI {
-	b.opts.TopK = k
-	return b
-}
+// buildAll constructs all configured components in the correct dependency order.
+func (b *Builder) buildAll(ctx context.Context) error {
+	specs := b.specTable()
 
-// WithMaxTokens programmatically sets the default maximum number of tokens for the LLM response.
-func (b *Builder) WithMaxTokens(n int) BuilderAPI {
-	b.opts.MaxTokens = n
-	return b
-}
-
-// WithObservability programmatically sets the observability hooks.
-func (b *Builder) WithObservability(obs core.Observability) BuilderAPI {
-	b.opts.Obs = obs
-	return b
-}
-
-// WithFallbackThreshold programmatically sets the confidence score for fallback.
-func (b *Builder) WithFallbackThreshold(f float64) BuilderAPI {
-	b.opts.FallbackThreshold = f
-	return b
-}
-
-// WithStateProvider programmatically configures the state provider.
-func (b *Builder) WithStateProvider(opts any) BuilderAPI {
-	if opts == nil {
-		b.stateProviderName = ""
-		b.stateProviderParams = nil
-		return b
+	// Define the explicit build order to manage dependencies.
+	order := []core.Kind{
+		core.KindEmbedder,
+		core.KindVectorStore,
+		core.KindRetriever,
+		core.KindReranker,
+		core.KindRules,
+		core.KindLLM,
+		core.KindStateProvider,
+		core.KindSchemaParser,
 	}
-	optsType := reflect.TypeOf(opts)
-	name, ok := b.registry.optionsTypeToName[optsType]
-	if !ok {
-		err := fmt.Errorf("unregistered options type for state provider: %T", opts)
-		b.opts.Obs.Logger.Errorf(err.Error())
-		b.errs = append(b.errs, err)
-		return b
+
+	// Group configurations by kind for ordered processing.
+	groups := make(map[core.Kind][]configItem)
+	for _, c := range b.cfgs {
+		groups[c.kind] = append(groups[c.kind], c)
 	}
-	b.stateProviderName = name
-	b.stateProviderParams = map[string]any{"typedConfig": opts}
-	return b
+
+	// Iterate through the build order and construct components.
+	for _, k := range order {
+		spec, ok := specs[k]
+		if !ok {
+			continue // No spec for this kind.
+		}
+		for _, c := range groups[k] {
+			b.opts.Obs.Logger.Debugf("building %s %q", k, c.name)
+			factory, err := b.registry.Get(k, c.name)
+			if err != nil {
+				return err
+			}
+
+			deps := spec.makeDeps(b)
+			var cfg any
+			if c.params != nil {
+				cfg = c.params["typedConfig"]
+			}
+
+			built, err := factory.Build(ctx, deps, cfg)
+			if err != nil {
+				return fmt.Errorf("factory for %s '%s' failed: %w", k, c.name, err)
+			}
+
+			spec.assign(b, built)
+			if spec.registerCloser != nil {
+				spec.registerCloser(b, built)
+			}
+			b.opts.Obs.Logger.Infof("initialized %s: %s", k, c.name)
+		}
+	}
+	return nil
 }
 
-// WithGenkit sets the genkit instance for the builder.
-func (b *Builder) WithGenkit(g *genkit.Genkit) BuilderAPI {
-	b.genkit = g
-	return b
+// BuildRetriever constructs a retriever by name. This is used to support the
+// hybrid retriever pattern, which needs to build its sub-retrievers.
+func (b *Builder) BuildRetriever(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error) {
+	b.opts.Obs.Logger.Debugf("building sub-retriever %q", name)
+	factory, err := b.registry.Get(core.KindRetriever, name)
+	if err != nil {
+		return nil, err
+	}
+
+	deps := diapi.RetrieverDeps{
+		Embedder:    b.embedder,
+		VectorStore: b.vectorStore,
+	}
+
+	var cfg any
+	if params != nil {
+		cfg = params["typedConfig"]
+	}
+
+	v, err := factory.Build(ctx, deps, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return v.(retrieve.Retriever), nil
 }
 
-// WithOrchestrator programmatically sets the orchestrator to be built.
-// If not called, the builder defaults to "sandwich".
-func (b *Builder) WithOrchestrator(name string) BuilderAPI {
-	b.orchestratorName = name
-	return b
-}
-
-// Build constructs the final Orchestrator and returns typed handles to any
-// sub-components that support runtime updates, such as an Updatable retriever.
-// This approach avoids unsafe `any` accessors on the orchestrator interface.
+// Build constructs the final Orchestrator.
 func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updatable, error) {
 	orchestratorName := b.orchestratorName
 	if orchestratorName == "" {
@@ -305,285 +286,56 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updata
 		return nil, nil, err
 	}
 
-	if err := b.buildComponents(ctx); err != nil {
+	if err := b.buildAll(ctx); err != nil {
 		closeErr := b.closeResources(ctx)
 		b.opts.Obs.Logger.Errorf("failed to build components: %v", err)
 		return nil, nil, errors.Join(err, closeErr)
 	}
 
-	// Dynamic factory lookup
-	factory, err := Get(b.registry.OrchestratorFactories, orchestratorName)
+	// Assemble the strongly-typed Resolved struct for the orchestrator.
+	resolved := core.Resolved{
+		Retriever:         b.retriever,
+		VectorStore:       b.vectorStore,
+		Reranker:          b.reranker,
+		Rules:             b.rules,
+		LLM:               b.llm,
+		Embedder:          b.embedder,
+		StateProvider:     b.stateProvider,
+		Obs:               b.opts.Obs,
+		TopK:              b.opts.TopK,
+		MaxTokens:         b.opts.MaxTokens,
+		FallbackThreshold: b.opts.FallbackThreshold,
+	}
+
+	// Build the orchestrator itself.
+	factory, err := b.registry.Get(core.KindOrchestrator, orchestratorName)
 	if err != nil {
 		closeErr := b.closeResources(ctx)
-		knownKeys := reflect.ValueOf(b.registry.OrchestratorFactories).MapKeys()
-		err = fmt.Errorf("unknown orchestrator %q; known orchestrators: %v", orchestratorName, knownKeys)
+		err = fmt.Errorf("unknown orchestrator %q", orchestratorName)
 		b.opts.Obs.Logger.Errorf(err.Error())
 		return nil, nil, errors.Join(err, closeErr)
 	}
 
-	b.opts.StateProvider = b.stateProvider
-	orchestrator, err := factory(b.opts)
+	// The orchestrator factory expects `core.Resolved` as its dependency.
+	// Orchestrators typically don't have their own config, so `cfg` is nil.
+	orchAny, err := factory.Build(ctx, resolved, nil)
 	if err != nil {
 		closeErr := b.closeResources(ctx)
 		b.opts.Obs.Logger.Errorf("factory for orchestrator %q failed: %v", orchestratorName, err)
 		return nil, nil, errors.Join(err, closeErr)
 	}
+	orchestrator := orchAny.(core.Orchestrator)
 
 	// Check if the retriever is updatable and return a typed handle if so.
 	var updatable retrieve.Updatable
-	if b.opts.Retriever != nil {
-		if u, ok := b.opts.Retriever.(retrieve.Updatable); ok {
+	if b.retriever != nil {
+		if u, ok := b.retriever.(retrieve.Updatable); ok {
 			updatable = u
 		}
 	}
 
 	b.opts.Obs.Logger.Infof("successfully built %s orchestrator", orchestratorName)
 	return orchestrator, updatable, nil
-}
-
-// buildComponents calls the individual component builders in the correct order.
-func (b *Builder) buildComponents(ctx context.Context) error {
-	if err := b.buildEmbedder(ctx); err != nil {
-		return err
-	}
-	if err := b.buildVectorStore(ctx); err != nil {
-		return err
-	}
-	if err := b.buildRetriever(ctx); err != nil {
-		return err
-	}
-	if err := b.buildReranker(ctx); err != nil {
-		return err
-	}
-	if err := b.buildRules(ctx); err != nil {
-		return err
-	}
-	if err := b.buildLLM(ctx); err != nil {
-		return err
-	}
-	if err := b.buildStateProvider(ctx); err != nil {
-		return err
-	}
-	return nil
-}
-
-// buildEmbedder constructs the embedder component using type-safe dependencies.
-func (b *Builder) buildEmbedder(ctx context.Context) error {
-	if b.embedderName == "" {
-		return nil // Not configured
-	}
-	b.opts.Obs.Logger.Debugf("building embedder %q", b.embedderName)
-
-	factory, err := Get(b.registry.Embedders, b.embedderName)
-	if err != nil {
-		return err
-	}
-
-	deps := diapi.EmbedderDeps{
-		Genkit: b.genkit,
-	}
-
-	embedder, err := factory(ctx, deps, b.embedderParams["typedConfig"])
-	if err != nil {
-		return fmt.Errorf("factory for embedder '%s' failed: %w", b.embedderName, err)
-	}
-
-	b.embedder = embedder
-	if c, ok := embedder.(closer); ok {
-		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
-	}
-	b.opts.Obs.Logger.Infof("initialized embedder: %s", b.embedderName)
-	return nil
-}
-
-// buildRetriever constructs the retriever component using type-safe dependencies.
-func (b *Builder) buildRetriever(ctx context.Context) error {
-	if b.retrieverName == "" {
-		return nil // Not configured
-	}
-	b.opts.Obs.Logger.Debugf("building retriever %q", b.retrieverName)
-
-	factory, err := Get(b.registry.Retrievers, b.retrieverName)
-	if err != nil {
-		return err
-	}
-
-	deps := diapi.RetrieverDeps{
-		Embedder:          b.embedder,
-		VectorStore:       b.vectorStore,
-		BuildSubRetriever: b.BuildRetriever, // Pass the method value.
-	}
-
-	retriever, err := factory(ctx, deps, b.retrieverParams["typedConfig"])
-	if err != nil {
-		return fmt.Errorf("factory for retriever '%s' failed: %w", b.retrieverName, err)
-	}
-
-	b.opts.Retriever = retriever
-	b.opts.Obs.Logger.Infof("initialized retriever: %s", b.retrieverName)
-	return nil
-}
-
-// BuildRetriever provides the diapi.BuildRetrieverFunc capability.
-func (b *Builder) BuildRetriever(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error) {
-	b.opts.Obs.Logger.Debugf("building sub-retriever %q", name)
-	factory, err := Get(b.registry.Retrievers, name)
-	if err != nil {
-		return nil, err
-	}
-
-	deps := diapi.RetrieverDeps{
-		Embedder:    b.embedder,
-		VectorStore: b.vectorStore,
-		// Do NOT pass BuildSubRetriever again to prevent recursion.
-	}
-
-	var opts any
-	if params != nil {
-		opts = params["typedConfig"]
-	}
-
-	return factory(ctx, deps, opts)
-}
-
-// buildVectorStore constructs the vector store component using type-safe dependencies.
-func (b *Builder) buildVectorStore(ctx context.Context) error {
-	if b.vectorStoreName == "" {
-		return nil
-	}
-	b.opts.Obs.Logger.Debugf("building vector store %q", b.vectorStoreName)
-
-	factory, err := Get(b.registry.VectorStores, b.vectorStoreName)
-	if err != nil {
-		return err
-	}
-
-	deps := diapi.VectorStoreDeps{
-		Embedder: b.embedder,
-	}
-
-	vectorStore, err := factory(ctx, deps, b.vectorStoreParams["typedConfig"])
-	if err != nil {
-		return fmt.Errorf("factory for vector store '%s' failed: %w", b.vectorStoreName, err)
-	}
-
-	b.vectorStore = vectorStore
-	if c, ok := vectorStore.(closer); ok {
-		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
-	}
-	b.opts.Obs.Logger.Infof("initialized vector store: %s", b.vectorStoreName)
-	return nil
-}
-
-// buildReranker constructs the reranker component using type-safe dependencies.
-func (b *Builder) buildReranker(ctx context.Context) error {
-	if b.rerankerName == "" {
-		return nil
-	}
-	b.opts.Obs.Logger.Debugf("building reranker %q", b.rerankerName)
-
-	factory, err := Get(b.registry.Rerankers, b.rerankerName)
-	if err != nil {
-		return err
-	}
-
-	deps := diapi.RerankerDeps{
-		Embedder: b.embedder,
-	}
-
-	reranker, err := factory(ctx, deps, b.rerankerParams["typedConfig"])
-	if err != nil {
-		return fmt.Errorf("factory for reranker '%s' failed: %w", b.rerankerName, err)
-	}
-
-	b.opts.Reranker = reranker
-	b.opts.Obs.Logger.Infof("initialized reranker: %s", b.rerankerName)
-	return nil
-}
-
-// buildRules constructs the rules engine component using type-safe dependencies.
-func (b *Builder) buildRules(ctx context.Context) error {
-	if b.rulesName == "" {
-		return nil
-	}
-	b.opts.Obs.Logger.Debugf("building rules engine %q", b.rulesName)
-
-	factory, err := Get(b.registry.RuleSets, b.rulesName)
-	if err != nil {
-		return err
-	}
-
-	// Rulesets currently have no dependencies.
-	deps := diapi.RuleSetDeps{}
-
-	ruleset, err := factory(ctx, deps, b.rulesParams["typedConfig"])
-	if err != nil {
-		return fmt.Errorf("factory for ruleset '%s' failed: %w", b.rulesName, err)
-	}
-
-	b.opts.Rules = ruleset
-	b.opts.Obs.Logger.Infof("initialized rules engine: %s", b.rulesName)
-	return nil
-}
-
-// buildLLM constructs the LLM component using type-safe dependencies.
-func (b *Builder) buildLLM(ctx context.Context) error {
-	if b.llmName == "" {
-		return nil
-	}
-	b.opts.Obs.Logger.Debugf("building llm %q", b.llmName)
-
-	factory, err := Get(b.registry.LLMs, b.llmName)
-	if err != nil {
-		return err
-	}
-
-	deps := diapi.LLMDeps{
-		Genkit: b.genkit,
-	}
-	if client, ok := b.clients[b.llmName]; ok {
-		deps.Client = client
-	}
-
-	llmClient, err := factory(ctx, deps, b.llmParams["typedConfig"])
-	if err != nil {
-		return fmt.Errorf("factory for llm '%s' failed: %w", b.llmName, err)
-	}
-
-	b.opts.LLM = llmClient
-	if c, ok := llmClient.(closer); ok {
-		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
-	}
-	b.opts.Obs.Logger.Infof("initialized llm: %s", b.llmName)
-	return nil
-}
-
-// buildStateProvider constructs the state provider component using type-safe dependencies.
-func (b *Builder) buildStateProvider(ctx context.Context) error {
-	if b.stateProviderName == "" {
-		return nil
-	}
-	b.opts.Obs.Logger.Debugf("building state provider %q", b.stateProviderName)
-
-	factory, err := Get(b.registry.StateProviders, b.stateProviderName)
-	if err != nil {
-		return err
-	}
-
-	// State providers currently have no dependencies.
-	deps := diapi.StateProviderDeps{}
-
-	provider, err := factory(ctx, deps, b.stateProviderParams["typedConfig"])
-	if err != nil {
-		return fmt.Errorf("factory for state provider '%s' failed: %w", b.stateProviderName, err)
-	}
-
-	b.stateProvider = provider
-	if c, ok := provider.(closer); ok {
-		b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
-	}
-	b.opts.Obs.Logger.Infof("initialized state provider: %s", b.stateProviderName)
-	return nil
 }
 
 // closeResources attempts to release any provider clients that were opened during the build.
@@ -605,3 +357,14 @@ func (b *Builder) closeResources(ctx context.Context) error {
 	}
 	return combined
 }
+
+// Fluent setters for global options.
+func (b *Builder) WithTopK(k int) BuilderAPI                           { b.opts.TopK = k; return b }
+func (b *Builder) WithMaxTokens(n int) BuilderAPI                      { b.opts.MaxTokens = n; return b }
+func (b *Builder) WithObservability(obs core.Observability) BuilderAPI { b.opts.Obs = obs; return b }
+func (b *Builder) WithFallbackThreshold(f float64) BuilderAPI {
+	b.opts.FallbackThreshold = f
+	return b
+}
+func (b *Builder) WithGenkit(g *genkit.Genkit) BuilderAPI { b.genkit = g; return b }
+func (b *Builder) WithOrchestrator(name string) BuilderAPI { b.orchestratorName = name; return b }

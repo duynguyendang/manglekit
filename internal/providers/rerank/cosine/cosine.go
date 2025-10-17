@@ -15,20 +15,14 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterReranker("cosine", func(ctx context.Context, deps diapi.RerankerDeps, cfg any) (rerank.Reranker, error) {
-		typedOpts, ok := cfg.(*rerank.CosineOptions)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected *rerank.CosineOptions, got %T", cfg)
-		}
-
-		if deps.Embedder == nil {
-			return nil, fmt.Errorf("cosine reranker factory requires an 'embedder' dependency, but it was not provided")
-		}
-		return New(*typedOpts, deps.Embedder)
-	})
-	if err := r.RegisterOptions("cosine", (*rerank.CosineOptions)(nil)); err != nil {
-		panic(err)
-	}
+	manglekit.Register(r, rerank.CosineOptions{},
+		func(ctx context.Context, deps diapi.RerankerDeps, cfg rerank.CosineOptions) (rerank.Reranker, error) {
+			if deps.Embedder == nil {
+				return nil, fmt.Errorf("cosine reranker factory requires an 'embedder' dependency, but it was not provided")
+			}
+			return New(cfg, deps.Embedder)
+		},
+	)
 }
 
 // Reranker implements the `rerank.Reranker` interface. It re-scores documents

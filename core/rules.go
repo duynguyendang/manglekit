@@ -55,6 +55,9 @@ type MangleOptions struct {
 	Logger Logger `yaml:"-"`
 }
 
+func (o MangleOptions) ProviderName() string { return "mangle" }
+func (o MangleOptions) ProviderKind() Kind   { return KindRules }
+
 // RuleSet defines the interface for a rules engine that can evaluate rules
 // at different stages of the pipeline. It is the primary point of interaction
 // between the orchestrator and the policy engine.

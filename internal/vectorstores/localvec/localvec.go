@@ -22,22 +22,14 @@ const (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterVectorStore("localvec", func(ctx context.Context, deps diapi.VectorStoreDeps, cfg any) (core.VectorStore, error) {
-		var opts core.LocalvecOptions
-		if cfg != nil {
-			if typedOpts, ok := cfg.(*core.LocalvecOptions); ok {
-				opts = *typedOpts
-			} else {
-				return nil, fmt.Errorf("invalid options type, expected *core.LocalvecOptions, got %T", cfg)
+	manglekit.Register(r, core.LocalvecOptions{},
+		func(ctx context.Context, deps diapi.VectorStoreDeps, cfg core.LocalvecOptions) (core.VectorStore, error) {
+			if deps.Embedder == nil {
+				return nil, fmt.Errorf("missing required dependency 'embedder' of type ai.Embedder")
 			}
-		}
-
-		if deps.Embedder == nil {
-			return nil, fmt.Errorf("missing required dependency 'embedder' of type ai.Embedder")
-		}
-		return New(ctx, opts, deps.Embedder)
-	})
-	r.RegisterOptions("localvec", (*core.LocalvecOptions)(nil))
+			return New(ctx, cfg, deps.Embedder)
+		},
+	)
 }
 
 // LocalVecStore implements the core.VectorStore interface using Genkit's localvec.

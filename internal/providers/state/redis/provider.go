@@ -3,7 +3,6 @@ package redis
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
@@ -13,16 +12,11 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterStateProvider("redis", func(ctx context.Context, deps diapi.StateProviderDeps, cfg any) (core.StateProvider, error) {
-		typedOpts, ok := cfg.(*state.RedisOptions)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected *state.RedisOptions, got %T", cfg)
-		}
-		return New(ctx, *typedOpts)
-	})
-	if err := r.RegisterOptions("redis", (*state.RedisOptions)(nil)); err != nil {
-		panic(err)
-	}
+	manglekit.Register(r, state.RedisOptions{},
+		func(ctx context.Context, deps diapi.StateProviderDeps, cfg state.RedisOptions) (core.StateProvider, error) {
+			return New(ctx, cfg)
+		},
+	)
 }
 
 // Provider is a production-ready implementation of the core.StateProvider that

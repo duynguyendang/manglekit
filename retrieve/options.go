@@ -13,6 +13,9 @@ type InMemoryOptions struct {
 	Logger core.Logger `yaml:"-"`
 }
 
+func (o InMemoryOptions) ProviderName() string { return "in-memory" }
+func (o InMemoryOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+
 // BM25Options provides a type-safe way to configure the BM25 retriever, which
 // performs keyword-based search.
 type BM25Options struct {
@@ -27,11 +30,17 @@ type BM25Options struct {
 	Logger core.Logger `yaml:"-"`
 }
 
+func (o BM25Options) ProviderName() string { return "bm25" }
+func (o BM25Options) ProviderKind() core.Kind   { return core.KindRetriever }
+
 // DenseOptions provides a type-safe way to configure a dense (vector-based)
 // retriever. This struct is often a marker, as its primary dependencies,
 // such as an Embedder and a VectorStore, are expected to be configured
 // separately and injected by the central builder.
 type DenseOptions struct{}
+
+func (o DenseOptions) ProviderName() string { return "dense" }
+func (o DenseOptions) ProviderKind() core.Kind   { return core.KindRetriever }
 
 // HybridOptions provides a type-safe way to configure the hybrid retriever.
 // This retriever combines results from multiple underlying retrievers (typically
@@ -44,3 +53,6 @@ type HybridOptions struct {
 	// DenseRetriever is the vector-based (dense) retriever instance.
 	DenseRetriever Retriever
 }
+
+func (o HybridOptions) ProviderName() string { return "hybrid" }
+func (o HybridOptions) ProviderKind() core.Kind   { return core.KindRetriever }

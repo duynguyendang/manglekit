@@ -14,7 +14,8 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/providers" // Import the new providers package
+	_ "github.com/duynguyendang/manglekit/providers/all" // Import to register all providers
+	"github.com/duynguyendang/manglekit/sdk"
 )
 
 func main() {
@@ -24,19 +25,8 @@ func main() {
 
 	log.Printf("Starting Manglekit agent with config: %s", *configFile)
 
-	// Create the registry.
-	registry := manglekit.NewRegistry()
-
-	// Simple, elegant registration for most users:
-	providers.RegisterDefaults(registry)
-
-	/*
-	   // Example for advanced users who want selective registration:
-	   providers.NewSet().
-	       WithGoogleLLM().
-	       WithBM25Retriever().
-	       ApplyTo(registry)
-	*/
+	// The global registry is populated by the `providers/all` import.
+	registry := sdk.GlobalRegistry()
 
 	// b. Load the configuration from the YAML file.
 	cfg, err := config.LoadFromYAMLFile(*configFile)

@@ -1,5 +1,7 @@
 package rerank
 
+import "github.com/duynguyendang/manglekit/core"
+
 // CosineOptions provides typed configuration for a reranker that operates by
 // calculating the cosine similarity between the query embedding and each of the
 // document embeddings. This type of reranker requires an embedder to be
@@ -14,6 +16,9 @@ type CosineOptions struct {
 	VectorDim int `json:"vectorDim,omitempty"`
 }
 
+func (o CosineOptions) ProviderName() string { return "cosine" }
+func (o CosineOptions) ProviderKind() core.Kind   { return core.KindReranker }
+
 // ColbertOptions provides a placeholder for configuring a Colbert-style reranker,
 // which uses a more advanced, token-level interaction model for scoring.
 //
@@ -22,3 +27,6 @@ type ColbertOptions struct {
 	// TopK specifies the number of documents to return after reranking.
 	TopK int `json:"topK,omitempty"`
 }
+
+func (o ColbertOptions) ProviderName() string { return "colbert" }
+func (o ColbertOptions) ProviderKind() core.Kind   { return core.KindReranker }

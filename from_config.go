@@ -7,15 +7,13 @@ import (
 	"reflect"
 
 	"github.com/duynguyendang/manglekit/config"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 import "github.com/firebase/genkit/go/genkit"
 
 // NewBuilderFromConfig creates a new Builder instance from a validated Config object.
-// This function is the primary entrypoint for creating a builder from a static configuration.
-// It translates the config struct into a series of type-safe builder calls.
 func NewBuilderFromConfig(ctx context.Context, cfg *config.Config, reg *Registry, g *genkit.Genkit) (*Builder, error) {
-	// First, normalize and validate the configuration.
 	cfg.Normalize()
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
@@ -27,85 +25,79 @@ func NewBuilderFromConfig(ctx context.Context, cfg *config.Config, reg *Registry
 	b := NewBuilder(reg)
 	b.WithGenkit(g)
 
-	// Helper function to resolve provider options from a map[string]any to a typed struct.
-	resolveOptions := func(providerName string, optionsMap map[string]any) (any, error) {
+	// Helper to resolve provider options from a map[string]any to a typed struct.
+	resolveOptions := func(providerName string, kind core.Kind, optionsMap map[string]any) (any, error) {
 		if optionsMap == nil {
-			// If no options are provided, we may still need an empty struct.
 			optionsMap = make(map[string]any)
 		}
 
-		optsType, ok := reg.NameToOptionsType(providerName)
-		if !ok {
-			return nil, fmt.Errorf("no options type registered for provider %q", providerName)
+		// Find the options type associated with the provider name and kind.
+		var optsType reflect.Type
+		for t, name := range reg.optionsTypeToName {
+			if name == providerName && reg.optionsTypeToKind[t] == kind {
+				optsType = t
+				break
+			}
+		}
+		if optsType == nil {
+			return nil, fmt.Errorf("no options type registered for provider %q with kind %q", providerName, kind)
 		}
 
-		optsPtr := reflect.New(optsType.Elem()).Interface()
-
+		optsPtr := reflect.New(optsType).Interface()
 		jsonParams, err := json.Marshal(optionsMap)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal params for %q: %w", providerName, err)
 		}
 		if err := json.Unmarshal(jsonParams, optsPtr); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal params into options struct for %q: %w", providerName, err)
+			return nil, fmt.Errorf("failed to unmarshal params for %q: %w", providerName, err)
 		}
-		return optsPtr, nil
+		return reflect.ValueOf(optsPtr).Elem().Interface(), nil
 	}
 
-	// Configure LLM
+	// Configure components using the new WithKind method.
 	if cfg.LLM != nil {
-		opts, err := resolveOptions(cfg.LLM.Provider, cfg.LLM.Options)
+		opts, err := resolveOptions(cfg.LLM.Provider, core.KindLLM, cfg.LLM.Options)
 		if err != nil {
-			return nil, fmt.Errorf("failed to configure llm: %w", err)
+			return nil, err
 		}
-		b.WithLLM(opts)
+		b.WithKind(core.KindLLM, cfg.LLM.Provider, opts)
 	}
-
-	// Configure Embedder
 	if cfg.Embedder != nil {
-		opts, err := resolveOptions(cfg.Embedder.Provider, cfg.Embedder.Options)
+		opts, err := resolveOptions(cfg.Embedder.Provider, core.KindEmbedder, cfg.Embedder.Options)
 		if err != nil {
-			return nil, fmt.Errorf("failed to configure embedder: %w", err)
+			return nil, err
 		}
-		b.WithEmbedder(opts)
+		b.WithKind(core.KindEmbedder, cfg.Embedder.Provider, opts)
 	}
-
-	// Configure Retriever
 	if cfg.Retrieve != nil {
-		opts, err := resolveOptions(cfg.Retrieve.Provider, cfg.Retrieve.Options)
+		opts, err := resolveOptions(cfg.Retrieve.Provider, core.KindRetriever, cfg.Retrieve.Options)
 		if err != nil {
-			return nil, fmt.Errorf("failed to configure retriever: %w", err)
+			return nil, err
 		}
-		b.WithRetriever(opts)
+		b.WithKind(core.KindRetriever, cfg.Retrieve.Provider, opts)
 	}
-
-	// Configure Reranker
 	if cfg.Rerank != nil {
-		opts, err := resolveOptions(cfg.Rerank.Provider, cfg.Rerank.Options)
+		opts, err := resolveOptions(cfg.Rerank.Provider, core.KindReranker, cfg.Rerank.Options)
 		if err != nil {
-			return nil, fmt.Errorf("failed to configure reranker: %w", err)
+			return nil, err
 		}
-		b.WithReranker(opts)
+		b.WithKind(core.KindReranker, cfg.Rerank.Provider, opts)
 	}
-
-	// Configure Vector Store
 	if cfg.Vector != nil {
-		opts, err := resolveOptions(cfg.Vector.Provider, cfg.Vector.Options)
+		opts, err := resolveOptions(cfg.Vector.Provider, core.KindVectorStore, cfg.Vector.Options)
 		if err != nil {
-			return nil, fmt.Errorf("failed to configure vector store: %w", err)
+			return nil, err
 		}
-		b.WithVectorStore(opts)
+		b.WithKind(core.KindVectorStore, cfg.Vector.Provider, opts)
 	}
-
-	// Configure State Provider
 	if cfg.State != nil {
-		opts, err := resolveOptions(cfg.State.Provider, cfg.State.Options)
+		opts, err := resolveOptions(cfg.State.Provider, core.KindStateProvider, cfg.State.Options)
 		if err != nil {
-			return nil, fmt.Errorf("failed to configure state provider: %w", err)
+			return nil, err
 		}
-		b.WithStateProvider(opts)
+		b.WithKind(core.KindStateProvider, cfg.State.Provider, opts)
 	}
 
-	// Configure TopK and MaxTokens
 	b.WithTopK(cfg.TopK)
 	b.WithMaxTokens(cfg.MaxTokens)
 
