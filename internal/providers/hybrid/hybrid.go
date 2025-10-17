@@ -15,36 +15,26 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("hybrid", func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error) {
-		var opts retrieve.HybridOptions
-		if cfg != nil {
-			if typedOpts, ok := cfg.(*retrieve.HybridOptions); ok {
-				opts = *typedOpts
-			} else {
-				return nil, fmt.Errorf("invalid options type, expected *retrieve.HybridOptions, got %T", cfg)
+	manglekit.Register(r, retrieve.HybridOptions{},
+		func(ctx context.Context, deps diapi.RetrieverDeps, cfg retrieve.HybridOptions) (retrieve.Retriever, error) {
+			if deps.BuildSubRetriever == nil {
+				return nil, fmt.Errorf("hybrid retriever factory requires the BuildSubRetriever capability, but it was not provided")
 			}
-		}
 
-		if deps.BuildSubRetriever == nil {
-			return nil, fmt.Errorf("hybrid retriever factory requires the BuildSubRetriever capability, but it was not provided")
-		}
-
-		// Build sub-components using the provided capability function.
-		bm25Retriever, err := deps.BuildSubRetriever(ctx, "bm25", nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build bm25 component for hybrid retriever: %w", err)
-		}
-		denseRetriever, err := deps.BuildSubRetriever(ctx, "dense", nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build dense component for hybrid retriever: %w", err)
-		}
-		opts.BM25Retriever = bm25Retriever
-		opts.DenseRetriever = denseRetriever
-		return New(opts)
-	})
-	if err := r.RegisterOptions("hybrid", (*retrieve.HybridOptions)(nil)); err != nil {
-		panic(err)
-	}
+			// Build sub-components using the provided capability function.
+			bm25Retriever, err := deps.BuildSubRetriever(ctx, "bm25", nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to build bm25 component for hybrid retriever: %w", err)
+			}
+			denseRetriever, err := deps.BuildSubRetriever(ctx, "dense", nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to build dense component for hybrid retriever: %w", err)
+			}
+			cfg.BM25Retriever = bm25Retriever
+			cfg.DenseRetriever = denseRetriever
+			return New(cfg)
+		},
+	)
 }
 
 // Retriever implements the `retrieve.Retriever` interface by combining results

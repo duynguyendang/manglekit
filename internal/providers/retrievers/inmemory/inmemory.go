@@ -6,7 +6,6 @@ package inmemory
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/duynguyendang/manglekit"
@@ -27,20 +26,11 @@ type InMemoryRetriever struct {
 }
 
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("in-memory", func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error) {
-		var opts retrieve.InMemoryOptions
-		if cfg != nil {
-			if typedOpts, ok := cfg.(*retrieve.InMemoryOptions); ok {
-				opts = *typedOpts
-			} else {
-				return nil, fmt.Errorf("invalid options type, expected *retrieve.InMemoryOptions, got %T", cfg)
-			}
-		}
-		return New(opts)
-	})
-	if err := r.RegisterOptions("in-memory", (*retrieve.InMemoryOptions)(nil)); err != nil {
-		panic(err)
-	}
+	manglekit.Register(r, retrieve.InMemoryOptions{},
+		func(ctx context.Context, deps diapi.RetrieverDeps, cfg retrieve.InMemoryOptions) (retrieve.Retriever, error) {
+			return New(cfg)
+		},
+	)
 }
 
 // New is the constructor for the InMemoryRetriever. It is registered with the

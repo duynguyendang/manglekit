@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/state"
 	"github.com/stretchr/testify/assert"
@@ -73,34 +74,20 @@ func TestRegister(t *testing.T) {
 	Register(r)
 
 	t.Run("provider is registered", func(t *testing.T) {
-		factory, ok := r.StateProviders["inmemory"]
-		require.True(t, ok)
+		factory, err := r.Get(core.KindStateProvider, "in-memory")
+		require.NoError(t, err)
 		assert.NotNil(t, factory)
 
 		// Test the factory itself
-		provider, err := factory(context.Background(), diapi.StateProviderDeps{}, &state.InMemoryOptions{})
+		provider, err := factory.Build(context.Background(), diapi.StateProviderDeps{}, state.InMemoryOptions{})
 		require.NoError(t, err)
 		assert.IsType(t, &Provider{}, provider)
-	})
-
-	t.Run("options are registered", func(t *testing.T) {
-		optsType, ok := r.NameToOptionsType("inmemory")
-		require.True(t, ok)
-		assert.Equal(t, "InMemoryOptions", optsType.Elem().Name())
 	})
 
 	t.Run("factory handles nil config", func(t *testing.T) {
-		factory, _ := r.StateProviders["inmemory"]
-		provider, err := factory(context.Background(), diapi.StateProviderDeps{}, nil)
+		factory, _ := r.Get(core.KindStateProvider, "in-memory")
+		provider, err := factory.Build(context.Background(), diapi.StateProviderDeps{}, nil)
 		require.NoError(t, err)
 		assert.IsType(t, &Provider{}, provider)
-	})
-
-	t.Run("factory handles wrong config type", func(t *testing.T) {
-		factory, _ := r.StateProviders["inmemory"]
-		type WrongOptions struct{}
-		_, err := factory(context.Background(), diapi.StateProviderDeps{}, &WrongOptions{})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid options type")
 	})
 }

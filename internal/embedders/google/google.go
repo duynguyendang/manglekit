@@ -22,22 +22,14 @@ const (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterEmbedder("google-embedder", func(ctx context.Context, deps diapi.EmbedderDeps, cfg any) (ai.Embedder, error) {
-		var opts embed.GoogleEmbedderOptions
-		if cfg != nil {
-			if typedOpts, ok := cfg.(*embed.GoogleEmbedderOptions); ok {
-				opts = *typedOpts
-			} else {
-				return nil, fmt.Errorf("invalid options type, expected *embed.GoogleEmbedderOptions, got %T", cfg)
+	manglekit.Register(r, embed.GoogleEmbedderOptions{},
+		func(ctx context.Context, deps diapi.EmbedderDeps, cfg embed.GoogleEmbedderOptions) (ai.Embedder, error) {
+			if deps.Genkit == nil {
+				return nil, fmt.Errorf("missing required dependency 'genkit'")
 			}
-		}
-
-		if deps.Genkit == nil {
-			return nil, fmt.Errorf("missing required dependency 'genkit'")
-		}
-		return New(opts, deps.Genkit)
-	})
-	r.RegisterOptions("google-embedder", (*embed.GoogleEmbedderOptions)(nil))
+			return New(cfg, deps.Genkit)
+		},
+	)
 }
 
 // GoogleEmbedder implements the `ai.Embedder` interface from Genkit, providing

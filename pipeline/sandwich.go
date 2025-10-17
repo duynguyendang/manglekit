@@ -3,7 +3,6 @@ package pipeline
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -26,7 +25,7 @@ import (
 // 3.  **LLM Call**: Synthesize an answer based on the evidence.
 // 4.  **Post-retrieval rules**: Filter the final answer and citations for compliance.
 type Sandwich struct {
-	opts                core.Options
+	opts                core.OptionsLike
 	retriever           retrieve.Retriever
 	reranker            rerank.Reranker
 	ruleset             core.RuleSet
@@ -36,56 +35,27 @@ type Sandwich struct {
 	conversationManager *statehelper.ConversationManager
 }
 
-// NewSandwich creates a new Sandwich orchestrator from a set of options.
-// It performs critical type assertions to ensure that the components provided
-// in the `core.Options` struct (which uses `any` for flexibility) match the
-// interfaces expected by the pipeline.
-func NewSandwich(o core.Options) (core.Orchestrator, error) {
+// NewSandwich is the factory for the Sandwich orchestrator. It now receives a
+// `core.Resolved` struct, which contains all its dependencies, fully constructed
+// and strongly typed. This eliminates the need for runtime type assertions.
+func NewSandwich(ctx context.Context, deps core.Resolved) (core.Orchestrator, error) {
 	s := &Sandwich{
-		opts:                o,
-		closers:             o.ResourceClosers,
+		retriever:           deps.Retriever.(retrieve.Retriever),
+		reranker:            deps.Reranker.(rerank.Reranker),
+		ruleset:             deps.Rules,
+		llm:                 deps.LLM.(llm.Client),
+		stateProvider:       deps.StateProvider,
 		conversationManager: statehelper.NewConversationManager(),
+		opts: core.OptionsLike{ // Adapt to the new options-like struct
+			TopK:              deps.TopK,
+			MaxTokens:         deps.MaxTokens,
+			FallbackThreshold: deps.FallbackThreshold,
+			Obs:               deps.Obs,
+		},
 	}
 	if s.opts.Obs.Logger == nil {
 		s.opts.Obs.Logger = obslogger.NewStdLogger()
 	}
-	var ok bool
-
-	if o.Retriever != nil {
-		s.retriever, ok = o.Retriever.(retrieve.Retriever)
-		if !ok {
-			return nil, fmt.Errorf("invalid retriever type: %T", o.Retriever)
-		}
-	}
-
-	if o.LLM != nil {
-		s.llm, ok = o.LLM.(llm.Client)
-		if !ok {
-			return nil, fmt.Errorf("invalid llm type: %T", o.LLM)
-		}
-	}
-
-	if o.Reranker != nil {
-		s.reranker, ok = o.Reranker.(rerank.Reranker)
-		if !ok {
-			return nil, fmt.Errorf("invalid reranker type: %T", o.Reranker)
-		}
-	}
-
-	if o.StateProvider != nil {
-		s.stateProvider, ok = o.StateProvider.(core.StateProvider)
-		if !ok {
-			return nil, fmt.Errorf("invalid state provider type: %T", o.StateProvider)
-		}
-	}
-
-	if o.Rules != nil {
-		s.ruleset, ok = o.Rules.(core.RuleSet)
-		if !ok {
-			return nil, fmt.Errorf("invalid ruleset type: %T", o.Rules)
-		}
-	}
-
 	return s, nil
 }
 

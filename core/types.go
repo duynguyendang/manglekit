@@ -42,6 +42,9 @@ type LocalvecOptions struct {
 	Path string `yaml:"path" path:"resolve"`
 }
 
+func (o LocalvecOptions) ProviderName() string { return "localvec" }
+func (o LocalvecOptions) ProviderKind() Kind   { return KindVectorStore }
+
 // VectorStore defines the standard interface for vector database operations,
 // allowing for pluggable vector storage backends. Implementations of this
 // interface handle the storage and retrieval of documents based on vector similarity.
@@ -127,40 +130,33 @@ type Citation struct {
 	Score float64 `json:"score,omitempty"`
 }
 
-// Options configures the MangleKit SDK's orchestrator. It serves as a container
-// for all the components and settings that define a pipeline. The fields are
-// left as `any` to be populated by the builder, which avoids circular dependencies
-// between packages.
-type Options struct {
-	// Retriever is the component responsible for fetching relevant documents.
-	// The builder ensures this is of type `retrieve.Retriever`.
-	Retriever any
-	// Reranker is an optional component to re-score and re-order retrieved documents
-	// for better relevance before passing them to the LLM.
-	// The builder ensures this is of type `rerank.Reranker`.
-	Reranker any
-	// LLM is the language model client used for generating the final answer.
-	// The builder ensures this is of type `llm.Client`.
-	LLM any
-	// StateProvider is the component responsible for persisting and retrieving session state.
-	// The builder ensures this is of type `core.StateProvider`.
-	StateProvider any
-	// Rules is the engine responsible for evaluating Mangle Datalog rules at
-	// different stages of the pipeline.
-	Rules RuleSet
-	// TopK is the number of documents to retrieve from the retriever.
-	TopK int
-	// MaxTokens is the maximum number of tokens to generate in the LLM response.
-	MaxTokens int
-	// FallbackThreshold is a confidence score (often from the reranker) below which
-	// the pipeline may exit early and return a fallback answer.
+// Resolved is the final, strongly-typed container of all built components and
+// configuration settings. It is passed to the orchestrator factory, ensuring
+// that orchestrators receive their dependencies in a type-safe manner, free
+// from `any` types and runtime assertions.
+type Resolved struct {
+	Retriever     any // retrieve.Retriever
+	VectorStore   VectorStore
+	Reranker      any // rerank.Reranker
+	Rules         RuleSet
+	LLM           any // llm.Client
+	Embedder      any // ai.Embedder
+	StateProvider StateProvider
+
+	Obs               Observability
+	TopK              int
+	MaxTokens         int
 	FallbackThreshold float64
-	// Obs provides hooks for observability, including logging, tracing, and metrics.
-	Obs Observability
-	// ResourceClosers contains cleanup callbacks that should be invoked when the
-	// orchestrator is shut down. The builder populates this with provider-specific
-	// shutdown hooks (e.g., API clients) that need explicit closure.
-	ResourceClosers []ResourceCloser
+}
+
+// OptionsLike is a temporary struct to hold global settings during the build process.
+// It will be replaced by a more robust configuration management system in the future.
+type OptionsLike struct {
+	TopK              int
+	MaxTokens         int
+	FallbackThreshold float64
+	Obs               Observability
+	ResourceClosers   []ResourceCloser
 }
 
 // Observability provides a set of interfaces for integrating logging, tracing,

@@ -10,18 +10,8 @@ import (
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/internal/embedders/google"
-	"github.com/duynguyendang/manglekit/internal/embedders/openai"
-	"github.com/duynguyendang/manglekit/internal/providers/bm25"
-	"github.com/duynguyendang/manglekit/internal/providers/dense"
-	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
-	"github.com/duynguyendang/manglekit/internal/providers/llm"
-	"github.com/duynguyendang/manglekit/internal/providers/mangle"
-	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
-	inmemory "github.com/duynguyendang/manglekit/internal/providers/retrievers/inmemory"
-	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
-	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
-	"github.com/duynguyendang/manglekit/retrieve"
+	_ "github.com/duynguyendang/manglekit/providers/all" // Import to register all providers
+	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/google/mangle/ast"
 )
 
@@ -41,44 +31,21 @@ func (p *mockSchemaParser) Parse(source io.Reader) ([]ast.Atom, error) {
 	}, nil
 }
 
-func registerAllProviders(r *manglekit.Registry) {
-	// LLM Providers
-	llm.RegisterGoogle(r)
-	llm.RegisterOpenAI(r)
+type mockSchemaParserOptions struct{}
 
-	// Embedder Providers
-	google.Register(r)
-	openai.Register(r)
-
-	// Retriever Providers
-	inmemory.Register(r)
-	bm25.Register(r)
-	dense.Register(r)
-	hybrid.Register(r)
-
-	// Reranker Providers
-	cosine.Register(r)
-
-	// Rules Providers
-	mangle.Register(r)
-
-	// Schema Parser Providers
-	jsonschema.Register(r)
-	rdf.Register(r)
-	r.RegisterSchemaParser("mock-schema-parser", func(ctx context.Context, deps diapi.NoopDeps, cfg any) (core.SchemaParser, error) {
-		return &mockSchemaParser{}, nil
-	})
-
-	// Options
-	r.RegisterOptions("bm25", (*retrieve.BM25Options)(nil))
-}
+func (o mockSchemaParserOptions) ProviderName() string { return "mock-schema-parser" }
+func (o mockSchemaParserOptions) ProviderKind() core.Kind   { return core.KindSchemaParser }
 
 func main() {
 	configFile := flag.String("config", "config.yaml", "Path to the configuration file")
 	flag.Parse()
 
-	registry := manglekit.NewRegistry()
-	registerAllProviders(registry)
+	registry := sdk.GlobalRegistry()
+	manglekit.Register(registry, mockSchemaParserOptions{},
+		func(ctx context.Context, deps diapi.NoopDeps, cfg mockSchemaParserOptions) (core.SchemaParser, error) {
+			return &mockSchemaParser{}, nil
+		},
+	)
 
 	cfg, err := config.LoadFromYAMLFile(*configFile)
 	if err != nil {

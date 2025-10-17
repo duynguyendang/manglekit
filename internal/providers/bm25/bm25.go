@@ -26,16 +26,11 @@ const (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("bm25", func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error) {
-		typedOpts, ok := cfg.(*retrieve.BM25Options)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type for bm25: expected *retrieve.BM25Options, got %T", cfg)
-		}
-		return New(*typedOpts)
-	})
-	if err := r.RegisterOptions("bm25", (*retrieve.BM25Options)(nil)); err != nil {
-		panic(err)
-	}
+	manglekit.Register(r, retrieve.BM25Options{},
+		func(ctx context.Context, deps diapi.RetrieverDeps, cfg retrieve.BM25Options) (retrieve.Retriever, error) {
+			return New(cfg)
+		},
+	)
 }
 
 // tfidfDoc is a wrapper for ai.Document to implement the tfidf.Document interface.
