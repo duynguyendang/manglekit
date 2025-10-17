@@ -2,7 +2,7 @@
 context_type: architecture_standard
 project: manglekit
 language: go
-version: "0.6.0"
+version: "0.7.0"
 last_updated: "2025-10-16"
 stability: stable
 audience: humans_and_agents
@@ -10,19 +10,19 @@ audience: humans_and_agents
 
 ### 0. Implementation Snapshot (Current State)
 
-The Manglekit SDK's architecture is based on a decoupled configuration system, a fluent builder, and a central registry for dependency injection.
+The Manglekit SDK's architecture is based on a decoupled configuration system, a fluent builder, and a central registry for dependency injection. However, the implementation currently suffers from significant code duplication and a reliance on runtime type checking.
 
--   **Configuration (`config` package)**: All configuration loading and schema definition is encapsulated within the dedicated `config` package. It handles loading from YAML/env vars, setting defaults, and performing validation. It has no knowledge of the builder.
--   **Bridge (`from_config.go`)**: The `NewBuilderFromConfig` function is the sole entry point for translating a validated `config.Config` struct into a series of fluent builder calls. It uses the registry to map provider names to their option types.
--   **Builder (`builder.go`)**: A fluent `Builder` provides a consistent `With...` API for programmatic component configuration. All methods accept typed option structs. It also provides a `WithOrchestrator(name)` method to select the desired pipeline, which defaults to `"sandwich"`.
--   **Registry (`registry.go`)**: An instance-based catalog of component factories. It maps provider names to factory functions and option types.
+-   **Configuration (`config` package)**: All configuration loading and schema definition is encapsulated within the dedicated `config` package. It has no knowledge of the builder.
+-   **Bridge (`from_config.go`)**: The `NewBuilderFromConfig` function translates a validated `config.Config` struct into a series of fluent builder calls.
+-   **Builder (`builder.go`)**: A fluent `Builder` provides a repetitive `With...` API for programmatic component configuration. Each component type has its own `With<Component>` and `build<Component>` method, leading to significant boilerplate. The builder populates a `core.Options` struct where components are stored as `any`.
+-   **Registry (`registry.go`)**: An instance-based catalog that uses separate, strongly-typed maps for each component factory type (e.g., `map[string]RetrieverFactory`, `map[string]LLMFactory`). This rigid structure forces the builder's repetitive design.
 -   **Pipelines**:
-    -   **`Sandwich` (`pipeline/sandwich.go`)**: The default and only programmatically selectable orchestrator. It is implemented using a typed, stage-based architecture.
-    -   **`Declarative` (`pipeline/declarative/orchestrator.go`)**: Exists but is currently a disabled stub and cannot be selected via the builder.
+    -   **`Sandwich` (`pipeline/sandwich.go`)**: The default orchestrator. Its constructor receives the `core.Options` struct and uses runtime type assertions to extract the components it needs, making it vulnerable to runtime panics if types do not match.
+    -   **`Declarative` (`pipeline/declarative/orchestrator.go`)**: Exists but is currently a disabled stub.
 
 ### 1. Architectural Overview
 
-Manglekit is a modular Go framework for building verifiable, rule-based RAG applications. The architecture separates configuration from construction, allowing developers to compose pipelines from pluggable components programmatically or via static configuration.
+Manglekit is a modular Go framework for building verifiable, rule-based RAG applications. The architecture separates configuration from construction, allowing developers to compose pipelines from pluggable components. The current implementation relies heavily on runtime checks and contains significant boilerplate that hinders extensibility.
 
 ```mermaid
 graph TD
@@ -35,67 +35,20 @@ graph TD
     subgraph "Build Phase"
         P[Programmatic Code] -->|Calls With...()| E{Builder};
         D -->|Calls With...()| E;
-        GK[genkit.Genkit Instance] --> E;
-        E -- Build() calls --> F[Registry];
+        E -- build() calls --> F[Registry];
         F -- Returns Factory --> G(Component Factory);
-        E -- Provides Deps (diapi) --> G;
-        G -- Creates --> H[Provider Instance];
-        E -- Collects --> I[ResourceClosers];
+        G -- Creates --> H[Provider Instance as any];
+        E -- Populates --> I[core.Options with any];
     end
 
     subgraph "Runtime Phase"
-        J[Orchestrator] -- Contains --> H;
-        J -- Contains --> I;
-        K[Application] -- Calls Execute() --> J;
-        L[Application] -- Calls Close() --> J;
-    end
-
-    H --> J;
-    I --> J;
-```
-
-### 2. Pipeline Stage Architecture
-
-The `Sandwich` orchestrator is implemented using a typed, stage-based pipeline architecture. This design promotes the Single Responsibility Principle (SRP), testability, and clear data flow.
-
-The core components of this architecture are:
-
--   **`PipelineContext`**: A typed struct that acts as a mutable data carrier through the pipeline.
--   **`Stage`**: A simple interface (`interface { Name(); Execute(*PipelineContext) error }`) that represents a single, discrete step in the pipeline.
--   **`Runner`**: A component that composes and executes a sequence of `Stage`s.
-
-```mermaid
-graph TD
-    subgraph "Input"
-        A[core.Query]
-        B[SessionID]
-    end
-
-    subgraph "Execution Flow"
-        C(pipeline.Sandwich) -- Creates --> D(pipeline.PipelineContext)
-        A --> D
-        B --> D
-
-        D -- Is passed to --> E(pipeline.Runner)
-        E -- Executes Stages in Order --> F(PreRulesStage)
-        F -- Reads/Writes --> D
-        F --> G(RetrieveStage)
-        G -- Reads/Writes --> D
-        G --> H(RerankStage)
-        H -- Reads/Writes --> D
-        H --> I(LLMStage)
-        I -- Reads/Writes --> D
-        I --> J(PostRulesStage)
-        J -- Reads/Writes --> D
-    end
-
-    subgraph "Output"
-        D -- Is used to construct --> K(core.Answer)
-        C -- Returns --> K
+        I -->|Passed to| J[Orchestrator Factory];
+        J -- Performs runtime type assertions --> K[Orchestrator];
+        L[Application] -- Calls Execute() --> K;
     end
 ```
 
-### 3. Dependency Rules (Non-Negotiable)
+### 2. Dependency Rules (Non-Negotiable)
 
 | Package                       | Allowed Dependencies                                     | Forbidden Dependencies                               | Rationale                                                                |
 | ----------------------------- | -------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------ |
@@ -108,47 +61,49 @@ graph TD
 
 **Key Rule**: There must be **no import cycles**.
 
-### 4. Core Contracts
+### 3. Core Contracts
 
--   **Builder (`BuilderAPI`)**: The builder's responsibility is to collect configuration for components and orchestrate their construction via factories. It must not contain business logic or file I/O.
--   **Orchestrator (`core.Orchestrator`)**: A pure behavioral interface (`Execute`, `Close`). It must not expose its internal components via accessors.
+-   **Builder (`BuilderAPI`)**: The builder's responsibility is to collect configuration for components and orchestrate their construction via factories.
+-   **Orchestrator (`core.Orchestrator`)**: A pure behavioral interface (`Execute`, `Close`).
 -   **Registry (`Registry`)**: A service locator for component factories, mapping string names to factory functions.
 -   **Factory (e.g., `retrieve.Factory`)**: A function that creates a component instance, receiving dependencies via a typed `diapi` struct.
 
-### 5. Provider Composition
+### 4. Provider Composition
 
-Composition of providers (e.g., a hybrid retriever) must occur inside the parent provider's factory, which receives a `SubRetrieverBuilder` to build its children. This adheres to the Interface Segregation Principle.
+Composition of providers (e.g., a hybrid retriever) occurs inside the parent provider's factory, which receives a `SubRetrieverBuilder` to build its children.
 
-### 6. Configuration Flow
+### 5. Configuration Flow
 
 `config.Load()` parses YAML into a `config.Config` struct. `NewBuilderFromConfig` receives this struct, looks up provider option types in the registry, unmarshals the options, and calls the corresponding `builder.With...` method.
 
-### 7. Observability & Resource Lifecycle
+### 6. Observability & Resource Lifecycle
 
 -   **Observability**: An `core.Observability` struct can be passed to the builder via `WithObservability()`.
 -   **Resource Lifecycle**: Component factories can return a `core.ResourceCloser`. The builder collects all closers, and `Orchestrator.Close()` invokes them in reverse order.
 
-### 8. Testing & Replaceability
+### 7. Testing & Replaceability
 
 Components should be tested in isolation using mock dependencies registered with a test-specific registry.
 
-### 9. Anti-Patterns (Red Lines)
+### 8. Anti-Patterns (Red Lines)
 
 -   **Dependency on Builder**: A component factory must **never** take a dependency on the `BuilderAPI`.
--   **Type Erasure**: Using `any` in core interfaces or for factory registries is forbidden.
+-   **Type Erasure**: Using `any` in core interfaces or for factory registries is forbidden. (VIOLATED)
 -   **Provider Branching**: Logic like `if provider.Name == "google"` inside the framework is forbidden.
 -   **Global State**: The registry and all components must be fully encapsulated in instances.
+-   **Code Duplication**: The DRY (Don't Repeat Yourself) principle should be followed. (VIOLATED)
 
-### 10. Known Gaps
+### 9. Known Gaps
 
 This table summarizes open architectural issues identified in the latest code review. These items represent deviations from the architectural standard.
 
-| Severity | Issue                                  | File(s)                                 | Description                                                                                             | Status   |
-| :------- | :------------------------------------- | :-------------------------------------- | :------------------------------------------------------------------------------------------------------ | :------- |
-| Medium   | **Inconsistent Builder API**           | `builder.go` (`WithEmbedder` method)    | The `WithEmbedder` method accepted pre-built instances, making it inconsistent with other `With...` methods. | Resolved |
-| Low      | **Hard-coded Orchestrator Selection**  | `builder.go` (`Build` method)           | The builder hard-coded the `"sandwich"` orchestrator, preventing programmatic selection of other pipelines. | Resolved |
+| Severity | Issue                                  | File(s)                                                              | Description                                                                                                                              | Status |
+| :------- | :------------------------------------- | :------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------- | :----- |
+| High     | **Repetitive, Non-Generic Builder Logic** | `builder.go`                                                         | The builder contains significant code duplication in its `With...` and `build...` methods, making it hard to maintain and extend.          | Open   |
+| High     | **Type Erasure via `core.Options`**       | `core/types.go`, `pipeline/sandwich.go`                                | Components are stored as `any` and extracted with runtime type assertions, moving type checking from compile-time to runtime.             | Open   |
+| Medium   | **Rigid, Type-Specific Registries**       | `registry.go`                                                        | The registry uses separate, hard-coded maps for each component factory type, preventing easy extension of the framework with new types. | Open   |
 
-### 11. Provider Families
+### 10. Provider Families
 
 | Type            | Registered Providers        |
 | :-------------- | :-------------------------- |
@@ -159,12 +114,15 @@ This table summarizes open architectural issues identified in the latest code re
 | **VectorStore** | `localvec`                  |
 | **StateProvider**| `in-memory`, `redis`       |
 | **RuleSet**     | `mangle`                    |
+| **Orchestrator**| `sandwich`, `declarative`   |
+| **SchemaParser**| `jsonschema`, `rdf`         |
+| **FactConverter**| `mangle`                    |
 
-### 12. Versioning & Compatibility Policy
+### 11. Versioning & Compatibility Policy
 
 The project adheres to Semantic Versioning 2.0.0. This `CONTEXT.md` document must be updated to reflect any MINOR or MAJOR changes.
 
-### 13. Machine Appendix (JSON Snapshot v1)
+### 12. Machine Appendix (JSON Snapshot v1)
 
 ```json
 {
@@ -177,24 +135,31 @@ The project adheres to Semantic Versioning 2.0.0. This `CONTEXT.md` document mus
     "vectorstore",
     "stateprovider",
     "ruleset",
-    "orchestrator"
+    "orchestrator",
+    "schemaparser",
+    "factconverter"
   ],
   "factories": {
     "retriever": {
       "bm25": { "options_type": "retrieve.BM25Options", "deps_type": "diapi.RetrieverDeps" },
       "dense": { "options_type": "retrieve.DenseOptions", "deps_type": "diapi.RetrieverDeps" },
-      "hybrid": { "options_type": "retrieve.HybridOptions", "deps_type": "diapi.RetrieverDeps" }
+      "hybrid": { "options_type": "retrieve.HybridOptions", "deps_type": "diapi.RetrieverDeps" },
+      "in-memory": { "options_type": "retrieve.InMemoryRetrieverOptions", "deps_type": "diapi.RetrieverDeps" }
     },
     "llm": {
       "google": { "options_type": "llm.GoogleOptions", "deps_type": "diapi.LLMDeps" },
       "openai": { "options_type": "llm.OpenAIOptions", "deps_type": "diapi.LLMDeps" }
+    },
+    "orchestrator": {
+      "sandwich": { "deps_type": "core.Options" },
+      "declarative": { "deps_type": "core.Options" }
     }
   },
   "registry_keys": [
     "google", "openai", "mock-llm", "mock-embedder",
     "bm25", "dense", "hybrid", "in-memory",
     "cosine", "localvec", "redis", "mangle",
-    "sandwich", "declarative"
+    "sandwich", "declarative", "jsonschema", "rdf"
   ],
   "metrics": [
     "manglekit.rules_pre_ms",
@@ -211,7 +176,8 @@ The project adheres to Semantic Versioning 2.0.0. This `CONTEXT.md` document mus
 }
 ```
 
-### 14. Changelog
+### 13. Changelog
 
--   **2025-10-16**: Performed a deep-dive code review and updated documentation to reflect the current architectural state. Confirmed and documented two open architectural gaps in `builder.go`: the inconsistent `WithEmbedder` API and the hard-coded orchestrator selection. No code was modified. Updated `docs/code-review.md` and regenerated `docs/CONTEXT.md` to align with these findings.
+-   **2025-10-16**: Performed a deep-dive code review and updated documentation to reflect the current architectural state. Identified three major architectural smells: repetitive builder logic, type erasure in the core options struct, and rigid, type-specific registries. No code was modified. Updated `docs/code-review.md` and regenerated `docs/CONTEXT.md` to align with these findings.
 -   **2025-10-16 (previous)**: Regenerated `CONTEXT.md` to the canonical "Live Standard" format. Updated the implementation snapshot, dependency rules, and all other sections to match the current codebase reality, reflecting the new decoupled configuration. Synchronized the "Known Gaps" section with the findings in the new `docs/code-review.md`. Added a machine-readable JSON appendix.
+-   **2025-10-13 (initial)**: Initial version of the context document.
