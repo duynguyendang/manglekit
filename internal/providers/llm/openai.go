@@ -64,18 +64,40 @@ func (o *OpenAI) Complete(ctx context.Context, req llm.Request) (llm.Response, e
 		return llm.Response{}, fmt.Errorf("openai llm client not initialized with a model")
 	}
 
+	// Prepare the generation configuration.
+	config := &ai.GenerationCommonConfig{
+		Temperature:     float64(o.opts.Temperature),
+		MaxOutputTokens: o.opts.MaxOutputTokens, // Default from options
+	}
+
+	// Override MaxOutputTokens if provided in the request.
+	if req.MaxTokens > 0 {
+		config.MaxOutputTokens = req.MaxTokens
+	}
+
 	// Use the standard genkit.Generate function.
 	res, err := genkit.Generate(ctx, o.genkit,
 		ai.WithModel(o.model),
 		ai.WithPrompt(req.Prompt),
-		ai.WithConfig(&ai.GenerationCommonConfig{
-			Temperature: float64(o.opts.Temperature),
-			MaxOutputTokens: o.opts.MaxOutputTokens,
-		}),
+		ai.WithConfig(config),
 	)
 	if err != nil {
 		return llm.Response{}, err
 	}
 
-	return llm.Response{Text: res.Text()}, nil
+	// Extract token usage from the response metadata.
+	var usage *llm.TokenUsage
+	if res.Usage != nil {
+		usage = &llm.TokenUsage{
+			Provider:   o.opts.ProviderName(),
+			Prompt:     res.Usage.InputTokens,
+			Completion: res.Usage.OutputTokens,
+			Total:      res.Usage.TotalTokens,
+		}
+	}
+
+	return llm.Response{
+		Text:  res.Text(),
+		Usage: usage,
+	}, nil
 }

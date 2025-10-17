@@ -76,7 +76,9 @@ func (s *LLMStage) Execute(p *PipelineContext) error {
 	if p.Answer.Meta == nil {
 		p.Answer.Meta = make(map[string]any)
 	}
-	p.Answer.Meta["token_usage"] = llmRes.Usage
+	if llmRes.Usage != nil {
+		p.Answer.Meta["token_usage"] = llmRes.Usage.ToMap()
+	}
 
 	return nil
 }

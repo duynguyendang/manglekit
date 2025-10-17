@@ -43,6 +43,8 @@ type GoogleOptions struct {
 	PromptTemplate string `json:"promptTemplate"`
 	// Temperature controls the randomness of the model's output.
 	Temperature float32 `json:"temperature,omitempty"`
+	// MaxOutputTokens is the maximum number of tokens to generate in the response.
+	MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
 }
 
 func (o GoogleOptions) ProviderName() string { return "google" }
