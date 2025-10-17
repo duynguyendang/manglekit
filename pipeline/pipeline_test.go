@@ -1,0 +1,65 @@
+package pipeline
+
+import (
+	"context"
+	"os"
+	"testing"
+
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/providers/llm"
+	manglekitllm "github.com/duynguyendang/manglekit/llm"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// MockRetriever is a simple mock for the retriever.
+type MockRetriever struct{}
+
+func (r *MockRetriever) Retrieve(ctx context.Context, q string, k int) ([]core.Doc, error) {
+	return []core.Doc{{Text: "mock document"}}, nil
+}
+
+func TestSandwich_Integration(t *testing.T) {
+	openaiAPIKey := os.Getenv("OPENAI_API_KEY")
+	if openaiAPIKey == "" {
+		t.Skip("skipping sandwich integration test: OPENAI_API_KEY not set")
+	}
+
+	ctx := context.Background()
+	g := genkit.Init(ctx, nil)
+
+	// Create a real OpenAI client.
+	oai := &openai.OpenAI{APIKey: openaiAPIKey}
+	model := oai.Model(g, "gpt-3.5-turbo")
+	require.NotNil(t, model)
+	llmClient := llm.NewOpenAI(manglekitllm.OpenAIOptions{}, model, g)
+
+	// Create the orchestrator with the NewSandwich factory.
+	deps := core.Resolved{
+		LLM:       llmClient,
+		Retriever: &MockRetriever{},
+		MaxTokens: 16,
+	}
+	orchestrator, err := NewSandwich(ctx, deps)
+	require.NoError(t, err)
+
+	// Execute the pipeline.
+	query := core.Query{
+		Text: "hello",
+	}
+	answer, err := orchestrator.Execute(ctx, "test-session", query)
+	require.NoError(t, err)
+
+	// Verify the results.
+	assert.NotEmpty(t, answer.Text)
+	assert.NotNil(t, answer.Meta)
+	assert.Contains(t, answer.Meta, "token_usage")
+
+	usage, ok := answer.Meta["token_usage"].(map[string]int)
+	require.True(t, ok)
+	assert.Contains(t, usage, "prompt")
+	assert.Contains(t, usage, "completion")
+	assert.Contains(t, usage, "total")
+}
