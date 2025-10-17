@@ -2,6 +2,7 @@ package manglekit_test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/duynguyendang/manglekit"
@@ -86,4 +87,88 @@ func TestNewBuilderFromConfig_ValidationErrors(t *testing.T) {
 	_, err = manglekit.NewBuilderFromConfig(context.Background(), cfg, reg, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no options type registered for provider \"unknown-provider\"")
+
+	// Test case: Invalid retriever config
+	cfg.LLM = &config.LLMConfig{Provider: "mock-llm"}
+	cfg.Retrieve = &config.RetrieveConfig{Provider: ""}
+	_, err = manglekit.NewBuilderFromConfig(context.Background(), cfg, reg, nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "retrieve.provider is required")
+}
+
+func TestLoadFromYAMLFile(t *testing.T) {
+	t.Run("successfully loads a valid YAML file", func(t *testing.T) {
+		content := `
+topK: 15
+maxTokens: 2048
+llm:
+  provider: openai
+  options:
+    model: "gpt-4"
+    apiKey: "${TEST_API_KEY}"
+`
+		// Set an environment variable for expansion
+		os.Setenv("TEST_API_KEY", "test-key-123")
+		defer os.Unsetenv("TEST_API_KEY")
+
+		// Create a temporary file
+		tmpfile, err := os.CreateTemp("", "config-*.yaml")
+		require.NoError(t, err)
+		defer os.Remove(tmpfile.Name())
+
+		_, err = tmpfile.WriteString(content)
+		require.NoError(t, err)
+		err = tmpfile.Close()
+		require.NoError(t, err)
+
+		cfg, err := config.LoadFromYAMLFile(tmpfile.Name())
+		require.NoError(t, err)
+
+		assert.Equal(t, 15, cfg.TopK)
+		assert.Equal(t, 2048, cfg.MaxTokens)
+		require.NotNil(t, cfg.LLM)
+		assert.Equal(t, "openai", cfg.LLM.Provider)
+		require.NotNil(t, cfg.LLM.Options)
+		assert.Equal(t, "gpt-4", cfg.LLM.Options["model"])
+		assert.Equal(t, "test-key-123", cfg.LLM.Options["apiKey"])
+	})
+
+	t.Run("returns error for non-existent file", func(t *testing.T) {
+		_, err := config.LoadFromYAMLFile("non-existent-file.yaml")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to open config file")
+	})
+
+	t.Run("returns error for invalid YAML content", func(t *testing.T) {
+		content := `
+topK: 15
+llm:
+  provider: openai
+  options:
+    model: "gpt-4"
+    apiKey: "${TEST_API_KEY}"
+  - invalid-item
+`
+		tmpfile, err := os.CreateTemp("", "config-*.yaml")
+		require.NoError(t, err)
+		defer os.Remove(tmpfile.Name())
+
+		_, err = tmpfile.WriteString(content)
+		require.NoError(t, err)
+		err = tmpfile.Close()
+		require.NoError(t, err)
+
+		_, err = config.LoadFromYAMLFile(tmpfile.Name())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to unmarshal YAML")
+	})
+}
+
+func TestLoadFromEnv(t *testing.T) {
+	// Since LoadFromEnv is not implemented, this test just ensures it doesn't panic.
+	t.Run("runs without panicking", func(t *testing.T) {
+		cfg, err := config.LoadFromEnv()
+		require.NoError(t, err)
+		assert.NotNil(t, cfg)
+	})
 }
