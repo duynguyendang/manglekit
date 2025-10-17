@@ -8,6 +8,8 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/config"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/embedders/google"
 	"github.com/duynguyendang/manglekit/internal/embedders/openai"
 	"github.com/duynguyendang/manglekit/internal/providers/bm25"
@@ -19,8 +21,6 @@ import (
 	inmemory "github.com/duynguyendang/manglekit/internal/providers/retrievers/inmemory"
 	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
 	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/google/mangle/ast"
 )
@@ -85,12 +85,12 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry)
+	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry, nil)
 	if err != nil {
 		log.Fatalf("failed to create builder: %v", err)
 	}
 	ctx := context.Background()
-	orch, err := builder.Build(ctx)
+	orch, _, err := builder.Build(ctx)
 	if err != nil {
 		log.Fatalf("failed to build orchestrator: %v", err)
 	}

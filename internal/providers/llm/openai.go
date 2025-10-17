@@ -5,12 +5,11 @@ import (
 	"fmt"
 
 	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/config"
-	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/llm"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 )
 
 func RegisterOpenAI(r *manglekit.Registry) {
@@ -19,73 +18,67 @@ func RegisterOpenAI(r *manglekit.Registry) {
 		if !ok {
 			return nil, fmt.Errorf("invalid options type, expected *llm.OpenAIOptions, got %T", cfg)
 		}
-		if deps.Client == nil {
-			return nil, fmt.Errorf("missing required dependency 'client'")
+		if deps.Genkit == nil {
+			return nil, fmt.Errorf("missing required dependency 'genkit'")
 		}
-		client, ok := deps.Client.(*openai.Client)
-		if !ok {
-			return nil, fmt.Errorf("dependency 'client' has the wrong type, expected *openai.Client, got %T", deps.Client)
+
+		// The Genkit OpenAI plugin is initialized differently. We create the plugin instance
+		// and then get the model from it. The plugin itself is not registered with Genkit
+		// in the same way as other plugins.
+		oai := &openai.OpenAI{
+			APIKey: opts.APIKey,
 		}
-		return NewOpenAI(*opts, client), nil
+		model := oai.Model(deps.Genkit, opts.Model)
+		if model == nil {
+			return nil, fmt.Errorf("failed to get openai model %q from genkit", opts.Model)
+		}
+
+		return NewOpenAI(*opts, model, deps.Genkit), nil
 	}
 	r.RegisterLLM("openai", factory)
-	r.RegisterLLM("groq", factory)
+	r.RegisterLLM("groq", factory) // Groq uses the same machinery
 	if err := r.RegisterOptions("openai", (*llm.OpenAIOptions)(nil)); err != nil {
 		panic(err)
 	}
 	if err := r.RegisterOptions("groq", (*llm.OpenAIOptions)(nil)); err != nil {
 		panic(err)
 	}
-	r.RegisterClientFactory("openai", openAIClientFactory)
-	r.RegisterClientFactory("groq", groqClientFactory)
 }
 
-// OpenAI is a wrapper around the OpenAI client.
+// OpenAI is a wrapper around a genkit AI model from the OpenAI plugin.
 type OpenAI struct {
 	opts   llm.OpenAIOptions
-	client *openai.Client
+	model  ai.Model
+	genkit *genkit.Genkit
 }
 
 // NewOpenAI is the constructor for the OpenAI client wrapper.
-func NewOpenAI(opts llm.OpenAIOptions, client *openai.Client) llm.Client {
+func NewOpenAI(opts llm.OpenAIOptions, model ai.Model, g *genkit.Genkit) llm.Client {
 	return &OpenAI{
 		opts:   opts,
-		client: client,
+		model:  model,
+		genkit: g,
 	}
 }
 
 // Complete implements the llm.Client interface.
 func (o *OpenAI) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
-	resp, err := o.client.Chat.Completions.New(
-		ctx,
-		openai.ChatCompletionNewParams{
-			Model: o.opts.Model,
-			Messages: []openai.ChatCompletionMessageParamUnion{
-				openai.UserMessage(req.Prompt),
-			},
-		},
-	)
+	if o.model == nil {
+		return llm.Response{}, fmt.Errorf("openai llm client not initialized with a model")
+	}
 
+	// Use the standard genkit.Generate function.
+	res, err := genkit.Generate(ctx, o.genkit,
+		ai.WithModel(o.model),
+		ai.WithPrompt(req.Prompt),
+		ai.WithConfig(&ai.GenerationCommonConfig{
+			Temperature: float64(o.opts.Temperature),
+			MaxOutputTokens: o.opts.MaxOutputTokens,
+		}),
+	)
 	if err != nil {
 		return llm.Response{}, err
 	}
 
-	return llm.Response{Text: resp.Choices[0].Message.Content}, nil
-}
-
-func openAIClientFactory(ctx context.Context, cfg *config.Config) (any, core.ResourceCloser, error) {
-	// This is a placeholder implementation. In the new world, the client factory
-	// would receive its own specific options struct, not the entire config.
-	// For now, we'll just return a basic client.
-	apiKey := "dummy-key" // In a real scenario, this would come from cfg.Clients["openai"].APIKey
-	client := openai.NewClient(option.WithAPIKey(apiKey))
-	return client, nil, nil
-}
-
-func groqClientFactory(ctx context.Context, cfg *config.Config) (any, core.ResourceCloser, error) {
-	// This is a placeholder implementation.
-	apiKey := "dummy-key"
-	baseURL := "https://api.groq.com/openai/v1"
-	client := openai.NewClient(option.WithAPIKey(apiKey), option.WithBaseURL(baseURL))
-	return client, nil, nil
+	return llm.Response{Text: res.Text()}, nil
 }

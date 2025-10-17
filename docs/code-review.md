@@ -8,43 +8,35 @@
 
 ## Executive Summary
 
-This code review provides a deep-dive analysis of the Manglekit SDK's internal architecture as of October 2025. The last major refactoring successfully decoupled the configuration loading mechanism from the fluent builder, which was a significant improvement.
+This code review provides a deep-dive analysis of the Manglekit SDK's internal architecture as of October 2025. The last major refactoring successfully decoupled the configuration loading mechanism from the fluent builder, which was a significant improvement. A more recent refactoring has now resolved the "God Method" monolith in the `Sandwich` pipeline by decomposing it into a typed, stage-based architecture.
 
-However, this review has identified several new and persistent architectural smells that undermine the framework's goals of type safety, modularity, and extensibility. The most critical issues are the "God Method" in the `Sandwich` pipeline, which violates the Single Responsibility Principle, and several type-safety "holes" in the registry and core interfaces that rely on `any` and force unsafe type assertions.
+However, this review has identified several persistent architectural smells that undermine the framework's goals of type safety, modularity, and extensibility. The most critical remaining issues are the type-safety "holes" in the registry and core interfaces that rely on `any` and force unsafe type assertions.
 
 This report outlines these issues, analyzes their impact, and provides actionable refactoring suggestions. The accompanying `docs/CONTEXT.md` file has been regenerated to reflect this new reality.
 
 ---
 
-## 1. Open Architectural Issues
+## 1. Orchestration Checks
+
+The following checks must be enforced for all orchestration logic.
+
+-   **No god method**: Orchestration logic must be composed of discrete components that implement the `pipeline.Stage` interface. Monolithic functions that handle multiple, distinct responsibilities (e.g., retrieval, reranking, and LLM calls) are forbidden.
+-   **No magic strings**: All data passed between orchestration stages must be done via the typed `pipeline.PipelineContext` struct. Using `map[string]any` with string literals as keys for passing data is forbidden.
+-   **Ctx propagation**: Every stage must receive and use the `p.Ctx` from the `PipelineContext`. Stages must not create their own background contexts or hidden timeouts.
+-   **Metrics consistency**: Each stage is individually responsible for recording its own timing and performance metrics to the `PipelineContext`.
+-   **Use Genkit Plugins**: Providers that interact with external services (e.g., LLMs, embedders) must be implemented as wrappers around Genkit plugins. Custom client implementations and factories are forbidden.
+
+---
+
+## 2. Open Architectural Issues
 
 The following issues are currently present in the codebase and require attention.
 
-### Smell: God Method & Magic Strings
-**Location:** `pipeline/sandwich.go` (specifically the `Execute` method and its helpers)
-**Impact Analysis:** The `Sandwich.Execute` method is a classic "God Method." It has far too many responsibilities: state management, pre-rule evaluation, retrieval, reranking, LLM prompt construction, LLM execution, and post-rule evaluation. This makes the pipeline rigid, difficult to test in isolation, and hard to modify or extend. Furthermore, it uses hardcoded "magic strings" (e.g., `"reranked_docs"`, `"retrieve_ms"`) to pass critical data between stages via a `map[string]any`. This is brittle, error-prone, and hides the data flow contract.
-**Refactoring Suggestion:**
-1.  **Decompose the Pipeline:** Refactor the `Sandwich` orchestrator into a sequence of discrete, composable pipeline stages (e.g., `StateLoader`, `PreRuleEvaluator`, `Retriever`, `Reranker`, `LLMGenerator`). Each stage should be an interface with a single `Execute` or `Process` method.
-2.  **Introduce a Pipeline Runner:** Create a simple runner that takes a list of these stage components and executes them in order.
-3.  **Create a Typed Data Context:** Define a `PipelineContext` struct to pass data between stages. This struct would have explicit, strongly-typed fields like `History`, `OriginalDocs`, `RerankedDocs`, and `Metrics`. This eliminates magic strings and makes the data flow explicit and type-safe.
-**Status:** Open
-
 ### Smell: Interface Pollution & Type Safety Violation
 **Location:** `core/types.go`, `pipeline/sandwich.go`
-**Impact Analysis:** The `core.Orchestrator` interface defines methods like `Retriever() any`. This use of `any` forces consumers to perform unsafe type assertions (e.g., `orch.Retriever().(retrieve.Retriever)`) to access the underlying component. This completely bypasses compile-time type safety and moves type checking to runtime, where it can cause panics. This is a major architectural smell that indicates incorrect package boundaries or a failure to define appropriate, narrow interfaces.
-**Refactoring Suggestion:**
-1.  **Eliminate `any`-based accessors:** Remove methods like `Retriever() any` from the `Orchestrator` interface. An orchestrator's job is to `Execute` a pipeline, not to be a generic container for its components.
-2.  **Provide Components at Build Time:** If specific components (like an `Updatable` retriever) need to be accessed after the build, the `Build()` method should return them as explicit, type-safe return values alongside the orchestrator itself. For example: `Build() (core.Orchestrator, retrieve.Updatable, error)`.
-**Status:** Open
-
-### Smell: Inconsistent Factory Signature & Type Safety Hole
-**Location:** `registry.go`
-**Impact Analysis:** The `Registry.ClientFactories` map is defined as `map[string]any`, and the `ClientFactory` signature returns `(client any, ...)`. This creates a type-safety hole in the framework's dependency injection system. The builder must fetch a factory from this map and then immediately perform a type assertion on the resulting client. This is unsafe and inconsistent with the other strongly-typed factory maps (e.g., `Retrievers`, `LLMs`).
-**Refactoring Suggestion:**
-1.  **Introduce a Generic Client Factory:** Define a generic `ClientFactory[T any]` type using Go generics.
-2.  **Create Typed Client Registries:** Instead of one `any`-based map, have separate, type-safe maps for different client types if needed, or use a generic registration method that captures the type information safely.
-3.  **Update the Builder:** The builder would then request a client of a specific type, eliminating the need for runtime assertions.
-**Status:** Open
+**Impact Analysis:** The `core.Orchestrator` interface previously defined methods like `Retriever() any`. This use of `any` forced consumers to perform unsafe type assertions, bypassing compile-time type safety.
+**Refactoring Action:** The `Orchestrator` interface has been refactored to be a pure executor (`Execute`, `Close`). All `any`-based accessors have been removed. The `builder.Build()` method now returns typed components (e.g., `retrieve.Updatable`) alongside the orchestrator, providing a type-safe mechanism for accessing components that require runtime interaction. A new rule has been added: **No `any` accessors** — all typed components must be returned explicitly from builder factories.
+**Status:** **Resolved**
 
 ### Smell: Inconsistent Builder API
 **Location:** `builder.go`
@@ -64,10 +56,16 @@ The following issues are currently present in the codebase and require attention
 
 ---
 
-## 2. Resolved Issues
+## 3. Resolved Issues
+
+### Smell: God Method & Magic Strings
+**Location:** `pipeline/sandwich.go` (legacy)
+**Impact Analysis:** The `Sandwich.Execute` method was a classic "God Method" with too many responsibilities. It used hardcoded "magic strings" to pass data, which was brittle and error-prone.
+**Refactoring Action:** The `Sandwich` orchestrator has been refactored into a sequence of discrete, composable pipeline stages (`pipeline.Stage`). A `pipeline.Runner` executes the stages, and a typed `pipeline.PipelineContext` is used to pass data, eliminating magic strings and making the data flow explicit and type-safe.
+**Status:** **Resolved**
 
 ### Smell: SRP Violation in Configuration
 **Location:** `config.go` (legacy), `builder.go` (legacy)
 **Impact Analysis:** The builder was previously responsible for both loading configuration from files/env and wiring components. This violated the Single Responsibility Principle, making the builder bloated and tightly coupled to configuration sources.
-**Refactoring Suggestion:** This has been addressed. A dedicated `config` package now handles loading/parsing, and the `NewBuilderFromConfig` function acts as the sole bridge to the builder, which now only handles component wiring.
-**Status:** Resolved
+**Refactoring Action:** This has been addressed. A dedicated `config` package now handles loading/parsing, and the `NewBuilderFromConfig` function acts as the sole bridge to the builder, which now only handles component wiring.
+**Status:** **Resolved**

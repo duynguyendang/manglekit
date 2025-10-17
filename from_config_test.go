@@ -40,12 +40,12 @@ func TestNewBuilderFromConfig_HappyPath(t *testing.T) {
 	}
 
 	// 3. Call the function under test.
-	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, reg)
+	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, reg, nil)
 	require.NoError(t, err)
 	require.NotNil(t, builder)
 
 	// 4. Build the orchestrator to confirm wiring was successful.
-	orch, err := builder.Build(context.Background())
+	orch, _, err := builder.Build(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, orch)
 
@@ -77,13 +77,13 @@ func TestNewBuilderFromConfig_ValidationErrors(t *testing.T) {
 		Retrieve: &config.RetrieveConfig{Provider: "mock-retriever"},
 	}
 
-	_, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, reg)
+	_, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, reg, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid configuration: llm configuration is required")
 
 	// Test case: Unknown provider
 	cfg.LLM = &config.LLMConfig{Provider: "unknown-provider"}
-	_, err = manglekit.NewBuilderFromConfig(context.Background(), cfg, reg)
+	_, err = manglekit.NewBuilderFromConfig(context.Background(), cfg, reg, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no options type registered for provider \"unknown-provider\"")
 }

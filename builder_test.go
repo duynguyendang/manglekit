@@ -1,16 +1,27 @@
-package manglekit
+package manglekit_test
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
+	"github.com/duynguyendang/manglekit/internal/providers/orchestrators"
+	"github.com/duynguyendang/manglekit/llm"
+	llmprovider "github.com/duynguyendang/manglekit/internal/providers/llm"
+	"github.com/duynguyendang/manglekit/pipeline/declarative"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/stretchr/testify/assert"
 )
+
+// Compile-time check to ensure DeclarativeOrchestrator implements the Orchestrator interface.
+var _ core.Orchestrator = (*declarative.DeclarativeOrchestrator)(nil)
 
 // mockEmbedder is a dummy embedder for testing.
 type mockEmbedder struct {
@@ -40,19 +51,19 @@ func mockOrchestratorFactory(opts core.Options) (core.Orchestrator, error) {
 
 func TestBuilder_DependencyInjection_Failure(t *testing.T) {
 	t.Run("should fail when required dependency is missing", func(t *testing.T) {
-		r := NewRegistry()
+		r := manglekit.NewRegistry()
 		r.RegisterRetriever("needs-embedder", retrieverFactoryThatNeedsEmbedder)
 		r.RegisterOrchestrator("sandwich", mockOrchestratorFactory)
 
 		type TestRetrieverOptions struct{}
 		r.RegisterOptions("needs-embedder", (*TestRetrieverOptions)(nil))
 
-		builder := NewBuilder(r)
+		builder := manglekit.NewBuilder(r)
 
 		// Configure the retriever that needs an embedder, but do NOT provide an embedder.
 		builder.WithRetriever(&TestRetrieverOptions{})
 
-		_, err := builder.Build(context.Background())
+		_, _, err := builder.Build(context.Background())
 		if err == nil {
 			t.Fatal("expected builder.Build() to fail, but it succeeded")
 		}
@@ -64,9 +75,32 @@ func TestBuilder_DependencyInjection_Failure(t *testing.T) {
 	})
 }
 
+func TestBuilder_WithGenkit_OpenAI(t *testing.T) {
+	// This test requires an OpenAI API key to be set in the environment.
+	// In a CI environment, this would be skipped if the key is not present.
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		t.Skip("skipping test: OPENAI_API_KEY not set")
+	}
+
+	r := manglekit.NewRegistry()
+	llmprovider.Register(r) // Register all LLM providers
+	orchestrators.Register(r)
+
+	// A bare genkit instance is enough now. The provider handles the plugin logic.
+	g := genkit.Init(context.Background())
+
+	builder := manglekit.NewBuilder(r)
+	builder.WithGenkit(g)
+	builder.WithLLM(&llm.OpenAIOptions{Model: "gpt-4o-mini", APIKey: apiKey})
+
+	_, _, err := builder.Build(context.Background())
+	assert.NoError(t, err, "Builder.Build() should succeed with a Genkit-configured OpenAI provider")
+}
+
 func TestBuilder_DependencyInjection_Success(t *testing.T) {
 	t.Run("should succeed when required dependency is present", func(t *testing.T) {
-		r := NewRegistry()
+		r := manglekit.NewRegistry()
 		r.RegisterRetriever("needs-embedder", retrieverFactoryThatNeedsEmbedder)
 		r.RegisterEmbedder("mock-embedder", mockEmbedderFactory)
 		r.RegisterOrchestrator("sandwich", mockOrchestratorFactory)
@@ -77,13 +111,13 @@ func TestBuilder_DependencyInjection_Success(t *testing.T) {
 		type MockEmbedderOptions struct{}
 		r.RegisterOptions("mock-embedder", (*MockEmbedderOptions)(nil))
 
-		builder := NewBuilder(r)
+		builder := manglekit.NewBuilder(r)
 
 		// Configure the retriever AND provide the embedder dependency.
 		builder.WithRetriever(&TestRetrieverOptions{})
 		builder.WithEmbedder(&MockEmbedderOptions{})
 
-		_, err := builder.Build(context.Background())
+		_, _, err := builder.Build(context.Background())
 		if err != nil {
 			t.Fatalf("expected builder.Build() to succeed, but it failed: %v", err)
 		}

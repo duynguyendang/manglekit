@@ -45,13 +45,13 @@ func main() {
 	}
 
 	// c. Initialize the Manglekit builder from the configuration object.
-	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry)
+	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry, nil)
 	if err != nil {
 		log.Fatalf("Failed to create builder from config: %v", err)
 	}
 
 	// d. Build the orchestrator.
-	orchestrator, err := builder.Build(context.Background())
+	orchestrator, _, err := builder.Build(context.Background())
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}

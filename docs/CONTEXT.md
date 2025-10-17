@@ -35,6 +35,7 @@ graph TD
     subgraph "Build Phase"
         P[Programmatic Code] -->|Calls With...()| E{Builder};
         D -->|Calls With...()| E;
+        GK[genkit.Genkit Instance] --> E;
         E -- Build() calls --> F[Registry];
         F -- Returns Factory --> G(Component Factory);
         E -- Provides Deps (diapi) --> G;
@@ -53,7 +54,60 @@ graph TD
     I --> J;
 ```
 
-### 2. Dependency Rules (Non-Negotiable)
+### 2. Pipeline Stage Architecture
+
+The `Sandwich` orchestrator is implemented using a typed, stage-based pipeline architecture. This design replaces the previous monolithic "god method" and eliminates the use of `map[string]any` and "magic strings" for passing data between pipeline steps. It promotes the Single Responsibility Principle (SRP), testability, and clear data flow.
+
+The core components of this architecture are:
+
+-   **`PipelineContext`**: A typed struct that acts as a mutable data carrier. It flows through the entire pipeline, holding all inputs (query, history), intermediate artifacts (retrieved documents, reranked documents), and final results (response text, citations). It also tracks metrics like component latencies.
+-   **`Stage`**: A simple interface (`interface { Name(); Execute(*PipelineContext) error }`) that represents a single, discrete step in the pipeline (e.g., retrieving documents, calling the LLM). Each stage is responsible for a specific task, reading its required data from the `PipelineContext` and writing its output back into it.
+-   **`Runner`**: A component that composes and executes a sequence of `Stage`s. It iterates through the stages in the order they are added, executes them, and provides short-circuiting error handling. If any stage returns an error, the runner immediately stops and propagates the error.
+
+This architecture makes the orchestration logic explicit, easier to test in isolation, and more extensible for future modifications.
+
+```mermaid
+graph TD
+    subgraph "Input"
+        A[core.Query]
+        B[SessionID]
+    end
+
+    subgraph "Execution Flow"
+        C(pipeline.Sandwich) -- Creates --> D(pipeline.PipelineContext)
+        A --> D
+        B --> D
+
+        D -- Is passed to --> E(pipeline.Runner)
+        E -- Executes Stages in Order --> F(PreRulesStage)
+        F -- Reads/Writes --> D
+        F --> G(RetrieveStage)
+        G -- Reads/Writes --> D
+        G --> H(RerankStage)
+        H -- Reads/Writes --> D
+        H --> I(LLMStage)
+        I -- Reads/Writes --> D
+        I --> J(PostRulesStage)
+        J -- Reads/Writes --> D
+    end
+
+    subgraph "Output"
+        D -- Is used to construct --> K(core.Answer)
+        C -- Returns --> K
+    end
+```
+
+### 3. Client Layer Architecture
+
+Manglekit delegates the management of low-level SDK clients (e.g., for OpenAI, Google AI) to Google's Genkit framework. This approach avoids the need for custom client factories and ensures that providers are built on a standard, well-supported foundation.
+
+-   **Genkit Plugins**: Providers that interact with external services (like LLMs or embedders) should be implemented as wrappers around a Genkit `ai.Model` or `ai.Embedder`.
+-   **Dependency Injection**: The Manglekit `Builder` accepts a pre-initialized `*genkit.Genkit` instance via the `WithGenkit()` method. This instance is then passed to provider factories via the `diapi` dependency structs.
+-   **Provider Implementation**: Inside the factory, the provider retrieves the specific model or embedder it needs from the `*genkit.Genkit` instance (e.g., using `openai.Model(g, "gpt-4o-mini")`). The provider then uses the standard `genkit.Generate` or `genkit.Embed` functions to perform its operations.
+
+This pattern ensures that Manglekit providers are compatible with the broader Genkit ecosystem and benefit from its features, such as automatic telemetry and plugin management.
+
+### 3. Dependency Rules (Non-Negotiable)
 
 | Package                       | Allowed Dependencies                                     | Forbidden Dependencies                               | Rationale                                                                |
 | ----------------------------- | -------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------ |
@@ -68,7 +122,8 @@ graph TD
 
 ### 3. Core Contracts
 
--   **Builder (`BuilderAPI`)**: The builder's responsibility is to collect configuration for components and orchestrate their construction via factories. It must not contain business logic or file I/O. Its `Build(ctx)` method is the terminal operation that assembles the final `Orchestrator`.
+-   **Builder (`BuilderAPI`)**: The builder's responsibility is to collect configuration for components and orchestrate their construction via factories. It must not contain business logic or file I/O. Its `Build(ctx)` method is the terminal operation that assembles the final `Orchestrator` and any typed, updatable components.
+-   **Orchestrator (`core.Orchestrator`)**: The orchestrator is a pure behavioral interface (`Execute`, `Close`). It is responsible for running a pipeline but must not expose its internal components via accessors.
 -   **Registry (`Registry`)**: The registry acts as a service locator for component factories. It maps a string name (e.g., `"openai"`) to a strongly-typed factory function. It is responsible for providing the correct factory but not for invoking it.
 -   **Factory (e.g., `retrieve.Factory`)**: A factory is a function that creates a component instance. The signature is `func(ctx context.Context, deps DEPS_STRUCT, opts any) (INTERFACE, error)`. It is responsible for checking for its required dependencies in the `DEPS_STRUCT` and returning a clear error if they are missing or of the wrong type.
 
@@ -155,9 +210,6 @@ This table summarizes open architectural issues identified in the latest code re
 
 | Severity | Issue                                  | File(s)                                 | Description                                                                                             |
 | :------- | :------------------------------------- | :-------------------------------------- | :------------------------------------------------------------------------------------------------------ |
-| High     | **God Method & Magic Strings**         | `pipeline/sandwich.go`                  | The `Execute` method has too many responsibilities (SRP violation), and the code uses brittle string literals for metadata keys. |
-| High     | **Interface Pollution & Type Safety**  | `core/types.go`, `pipeline/sandwich.go` | The `Orchestrator` interface uses `any` for component accessors, forcing unsafe runtime type assertions. |
-| Medium   | **Inconsistent Factory Signatures**    | `registry.go`                           | The `ClientFactories` map uses `any`, creating a type-safety hole in the registry and dependency injection. |
 | Medium   | **Inconsistent Builder API**           | `builder.go`                            | The `WithEmbedder` method accepts pre-built instances, making it inconsistent with other `With...` methods. |
 | Low      | **Hard-coded Orchestrator Selection**  | `builder.go`                            | The builder hard-codes the `"sandwich"` orchestrator, preventing programmatic selection of other pipelines. |
 

@@ -33,7 +33,7 @@ type BuilderAPI interface {
 	WithFallbackThreshold(f float64) BuilderAPI
 	WithStateProvider(opts any) BuilderAPI
 	WithGenkit(g *genkit.Genkit) BuilderAPI
-	Build(ctx context.Context) (core.Orchestrator, error)
+	Build(ctx context.Context) (core.Orchestrator, retrieve.Updatable, error)
 	BuildRetriever(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error)
 }
 
@@ -289,8 +289,10 @@ func (b *Builder) WithGenkit(g *genkit.Genkit) BuilderAPI {
 	return b
 }
 
-// Build constructs the final Orchestrator.
-func (b *Builder) Build(ctx context.Context) (core.Orchestrator, error) {
+// Build constructs the final Orchestrator and returns typed handles to any
+// sub-components that support runtime updates, such as an Updatable retriever.
+// This approach avoids unsafe `any` accessors on the orchestrator interface.
+func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updatable, error) {
 	// The orchestrator type is now determined by the config before calling the builder.
 	// For programmatic builds, we can add a `WithOrchestrator` method if needed.
 	// For now, we default to "sandwich".
@@ -300,13 +302,13 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, error) {
 	if len(b.errs) > 0 {
 		err := errors.Join(b.errs...)
 		b.opts.Obs.Logger.Errorf("pre-build validation failed: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	if err := b.buildComponents(ctx); err != nil {
 		closeErr := b.closeResources(ctx)
 		b.opts.Obs.Logger.Errorf("failed to build components: %v", err)
-		return nil, errors.Join(err, closeErr)
+		return nil, nil, errors.Join(err, closeErr)
 	}
 
 	// Dynamic factory lookup
@@ -315,7 +317,7 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, error) {
 		closeErr := b.closeResources(ctx)
 		err = fmt.Errorf("unknown orchestrator type %q: %w", orchestratorType, err)
 		b.opts.Obs.Logger.Errorf(err.Error())
-		return nil, errors.Join(err, closeErr)
+		return nil, nil, errors.Join(err, closeErr)
 	}
 
 	b.opts.StateProvider = b.stateProvider
@@ -323,11 +325,19 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, error) {
 	if err != nil {
 		closeErr := b.closeResources(ctx)
 		b.opts.Obs.Logger.Errorf("factory for orchestrator %q failed: %v", orchestratorType, err)
-		return nil, errors.Join(err, closeErr)
+		return nil, nil, errors.Join(err, closeErr)
+	}
+
+	// Check if the retriever is updatable and return a typed handle if so.
+	var updatable retrieve.Updatable
+	if b.opts.Retriever != nil {
+		if u, ok := b.opts.Retriever.(retrieve.Updatable); ok {
+			updatable = u
+		}
 	}
 
 	b.opts.Obs.Logger.Infof("successfully built %s orchestrator", orchestratorType)
-	return orchestrator, nil
+	return orchestrator, updatable, nil
 }
 
 // buildComponents calls the individual component builders in the correct order.
@@ -370,9 +380,6 @@ func (b *Builder) buildEmbedder(ctx context.Context) error {
 
 	deps := diapi.EmbedderDeps{
 		Genkit: b.genkit,
-	}
-	if client, ok := b.clients[b.embedderName]; ok {
-		deps.Client = client
 	}
 
 	embedder, err := factory(ctx, deps, b.embedderParams["typedConfig"])

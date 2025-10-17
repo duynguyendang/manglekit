@@ -137,13 +137,17 @@ func (r *Registry) RegisterLLM(name string, c LLMFactory) { r.LLMs[name] = c }
 func (r *Registry) RegisterEmbedder(name string, c EmbedderFactory) { r.Embedders[name] = c }
 
 // RegisterSchemaParser adds a schema parser constructor to the registry.
-func (r *Registry) RegisterSchemaParser(name string, c SchemaParserFactory) { r.SchemaParsers[name] = c }
+func (r *Registry) RegisterSchemaParser(name string, c SchemaParserFactory) {
+	r.SchemaParsers[name] = c
+}
 
 // RegisterVectorStore adds a vector store constructor to the registry.
 func (r *Registry) RegisterVectorStore(name string, c VectorStoreFactory) { r.VectorStores[name] = c }
 
 // RegisterFactConverter adds a fact converter constructor to the registry.
-func (r *Registry) RegisterFactConverter(name string, c FactConverterFactory) { r.FactConverters[name] = c }
+func (r *Registry) RegisterFactConverter(name string, c FactConverterFactory) {
+	r.FactConverters[name] = c
+}
 
 // RegisterStateProvider adds a state provider constructor to the registry.
 func (r *Registry) RegisterStateProvider(name string, c StateProviderFactory) {

@@ -62,12 +62,12 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry)
+	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry, nil)
 	if err != nil {
 		log.Fatalf("failed to create builder: %v", err)
 	}
 	ctx := context.Background()
-	orch, err := builder.Build(ctx)
+	orch, _, err := builder.Build(ctx)
 	if err != nil {
 		log.Fatalf("failed to build orchestrator: %v", err)
 	}
