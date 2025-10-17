@@ -75,6 +75,43 @@ func TestBuilder_DependencyInjection_Failure(t *testing.T) {
 	})
 }
 
+func TestBuilder_OrchestratorSelection(t *testing.T) {
+	// mock orchestrators for testing selection
+	type mockSandwich struct{ core.Orchestrator }
+	sandwichFactory := func(opts core.Options) (core.Orchestrator, error) { return &mockSandwich{}, nil }
+
+	type mockDeclarative struct{ core.Orchestrator }
+	declarativeFactory := func(opts core.Options) (core.Orchestrator, error) { return &mockDeclarative{}, nil }
+
+	r := manglekit.NewRegistry()
+	r.RegisterOrchestrator("sandwich", sandwichFactory)
+	r.RegisterOrchestrator("declarative", declarativeFactory)
+
+	t.Run("should use default orchestrator when none is specified", func(t *testing.T) {
+		builder := manglekit.NewBuilder(r)
+		orch, _, err := builder.Build(context.Background())
+		assert.NoError(t, err)
+		assert.IsType(t, &mockSandwich{}, orch, "expected default orchestrator to be mockSandwich")
+	})
+
+	t.Run("should use the specified orchestrator", func(t *testing.T) {
+		builder := manglekit.NewBuilder(r).WithOrchestrator("declarative")
+		orch, _, err := builder.Build(context.Background())
+		assert.NoError(t, err)
+		assert.IsType(t, &mockDeclarative{}, orch, "expected selected orchestrator to be mockDeclarative")
+	})
+
+	t.Run("should return an error for an unknown orchestrator", func(t *testing.T) {
+		builder := manglekit.NewBuilder(r).WithOrchestrator("non-existent")
+		_, _, err := builder.Build(context.Background())
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), `unknown orchestrator "non-existent"`)
+		assert.Contains(t, err.Error(), "known orchestrators:")
+		assert.Contains(t, err.Error(), "sandwich")
+		assert.Contains(t, err.Error(), "declarative")
+	})
+}
+
 func TestBuilder_WithGenkit_OpenAI(t *testing.T) {
 	// This test requires an OpenAI API key to be set in the environment.
 	// In a CI environment, this would be skipped if the key is not present.

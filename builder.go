@@ -33,6 +33,7 @@ type BuilderAPI interface {
 	WithFallbackThreshold(f float64) BuilderAPI
 	WithStateProvider(opts any) BuilderAPI
 	WithGenkit(g *genkit.Genkit) BuilderAPI
+	WithOrchestrator(name string) BuilderAPI
 	Build(ctx context.Context) (core.Orchestrator, retrieve.Updatable, error)
 	BuildRetriever(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error)
 }
@@ -83,6 +84,7 @@ type Builder struct {
 
 	stateProviderName   string
 	stateProviderParams map[string]any
+	orchestratorName    string
 }
 
 // closer is a local interface used for type assertions.
@@ -214,14 +216,6 @@ func (b *Builder) WithEmbedder(opts any) BuilderAPI {
 	if opts == nil {
 		b.embedderName = ""
 		b.embedderParams = nil
-		b.embedder = nil // Clear pre-built embedder if opts is nil
-		return b
-	}
-
-	if emb, ok := opts.(ai.Embedder); ok {
-		b.embedder = emb
-		b.embedderName = "" // No name needed, it's already built.
-		b.embedderParams = nil
 		return b
 	}
 
@@ -235,7 +229,6 @@ func (b *Builder) WithEmbedder(opts any) BuilderAPI {
 	}
 	b.embedderName = name
 	b.embedderParams = map[string]any{"typedConfig": opts}
-	b.embedder = nil // Clear pre-built embedder if using options.
 	return b
 }
 
@@ -289,15 +282,22 @@ func (b *Builder) WithGenkit(g *genkit.Genkit) BuilderAPI {
 	return b
 }
 
+// WithOrchestrator programmatically sets the orchestrator to be built.
+// If not called, the builder defaults to "sandwich".
+func (b *Builder) WithOrchestrator(name string) BuilderAPI {
+	b.orchestratorName = name
+	return b
+}
+
 // Build constructs the final Orchestrator and returns typed handles to any
 // sub-components that support runtime updates, such as an Updatable retriever.
 // This approach avoids unsafe `any` accessors on the orchestrator interface.
 func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updatable, error) {
-	// The orchestrator type is now determined by the config before calling the builder.
-	// For programmatic builds, we can add a `WithOrchestrator` method if needed.
-	// For now, we default to "sandwich".
-	orchestratorType := "sandwich"
-	b.opts.Obs.Logger.Infof("starting build for orchestrator type %q", orchestratorType)
+	orchestratorName := b.orchestratorName
+	if orchestratorName == "" {
+		orchestratorName = "sandwich" // Default orchestrator
+	}
+	b.opts.Obs.Logger.Infof("starting build for orchestrator type %q", orchestratorName)
 
 	if len(b.errs) > 0 {
 		err := errors.Join(b.errs...)
@@ -312,10 +312,11 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updata
 	}
 
 	// Dynamic factory lookup
-	factory, err := Get(b.registry.OrchestratorFactories, orchestratorType)
+	factory, err := Get(b.registry.OrchestratorFactories, orchestratorName)
 	if err != nil {
 		closeErr := b.closeResources(ctx)
-		err = fmt.Errorf("unknown orchestrator type %q: %w", orchestratorType, err)
+		knownKeys := reflect.ValueOf(b.registry.OrchestratorFactories).MapKeys()
+		err = fmt.Errorf("unknown orchestrator %q; known orchestrators: %v", orchestratorName, knownKeys)
 		b.opts.Obs.Logger.Errorf(err.Error())
 		return nil, nil, errors.Join(err, closeErr)
 	}
@@ -324,7 +325,7 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updata
 	orchestrator, err := factory(b.opts)
 	if err != nil {
 		closeErr := b.closeResources(ctx)
-		b.opts.Obs.Logger.Errorf("factory for orchestrator %q failed: %v", orchestratorType, err)
+		b.opts.Obs.Logger.Errorf("factory for orchestrator %q failed: %v", orchestratorName, err)
 		return nil, nil, errors.Join(err, closeErr)
 	}
 
@@ -336,7 +337,7 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updata
 		}
 	}
 
-	b.opts.Obs.Logger.Infof("successfully built %s orchestrator", orchestratorType)
+	b.opts.Obs.Logger.Infof("successfully built %s orchestrator", orchestratorName)
 	return orchestrator, updatable, nil
 }
 
@@ -368,8 +369,8 @@ func (b *Builder) buildComponents(ctx context.Context) error {
 
 // buildEmbedder constructs the embedder component using type-safe dependencies.
 func (b *Builder) buildEmbedder(ctx context.Context) error {
-	if b.embedder != nil || b.embedderName == "" {
-		return nil // Already built or not configured
+	if b.embedderName == "" {
+		return nil // Not configured
 	}
 	b.opts.Obs.Logger.Debugf("building embedder %q", b.embedderName)
 

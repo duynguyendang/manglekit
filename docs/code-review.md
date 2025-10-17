@@ -35,18 +35,14 @@ The following issues are present in the current codebase and are documented here
 ### Smell: Inconsistent Builder API
 **Location:** `builder.go` (`WithEmbedder` method)
 **Impact Analysis:** The `WithEmbedder` method deviates from the builder's established API pattern. Unlike other `With...` methods that exclusively accept typed options structs (e.g., `WithLLM(opts *llm.OpenAIOptions)`), it contains a special case (`if emb, ok := opts.(ai.Embedder); ok`) that allows passing a pre-built instance. This inconsistency makes the builder's API less predictable, complicates the configuration-to-builder mapping logic (`NewBuilderFromConfig`), and creates a maintenance burden.
-**Refactoring Suggestion:**
-1.  **Remove the Special Case:** Eliminate the `if emb, ok := ...` block from the `WithEmbedder` method.
-2.  **Enforce Uniformity:** Mandate that all `With...` methods operate consistently by only accepting typed options pointers. This simplifies the builder's internal logic and provides a cleaner, more predictable public API. Pre-built instances for testing should be handled via mock providers with corresponding mock options structs.
-**Status:** Open
+**Refactoring Action:** The `WithEmbedder` method was refactored to remove the special case for pre-built instances. It now only accepts typed options structs, making it consistent with the rest of the builder API.
+**Status:** **Resolved**
 
 ### Smell: Hard-coded Orchestrator Selection
 **Location:** `builder.go` (`Build` method)
 **Impact Analysis:** The `Builder.Build` method currently hard-codes the orchestrator type to `"sandwich"`, preventing users from programmatically selecting a different orchestrator (such as the planned `declarative` orchestrator). The choice of pipeline is a fundamental architectural decision that should be exposed in the builder's API, not hidden as an implementation detail. This limitation severely restricts the SDK's extensibility.
-**Refactoring Suggestion:**
-1.  **Add `WithOrchestrator` Method:** Introduce a new method, `WithOrchestrator(name string) BuilderAPI`, to the `BuilderAPI` interface and implement it on the `Builder`.
-2.  **Use the Selected Orchestrator:** Modify the `Build` method to use the name provided via `WithOrchestrator` to look up the appropriate factory in the `OrchestratorFactories` map. It should default to "sandwich" only if no explicit selection has been made to maintain backward compatibility.
-**Status:** Open
+**Refactoring Action:** A new `WithOrchestrator(name string)` method was added to the builder. The `Build` method now uses the provided name to select the orchestrator, defaulting to "sandwich" for backward compatibility.
+**Status:** **Resolved**
 
 ---
 

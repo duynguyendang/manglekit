@@ -14,7 +14,7 @@ The Manglekit SDK's architecture is based on a decoupled configuration system, a
 
 -   **Configuration (`config` package)**: All configuration loading and schema definition is encapsulated within the dedicated `config` package. It handles loading from YAML/env vars, setting defaults, and performing validation. It has no knowledge of the builder.
 -   **Bridge (`from_config.go`)**: The `NewBuilderFromConfig` function is the sole entry point for translating a validated `config.Config` struct into a series of fluent builder calls. It uses the registry to map provider names to their option types.
--   **Builder (`builder.go`)**: A fluent `Builder` provides `With...` methods for programmatic component configuration. A key inconsistency exists in `WithEmbedder`, which accepts pre-built instances unlike other methods. The `Build()` method assembles the final orchestrator but **hard-codes the "sandwich" pipeline**, preventing programmatic selection of other orchestrators.
+-   **Builder (`builder.go`)**: A fluent `Builder` provides a consistent `With...` API for programmatic component configuration. All methods accept typed option structs. It also provides a `WithOrchestrator(name)` method to select the desired pipeline, which defaults to `"sandwich"`.
 -   **Registry (`registry.go`)**: An instance-based catalog of component factories. It maps provider names to factory functions and option types.
 -   **Pipelines**:
     -   **`Sandwich` (`pipeline/sandwich.go`)**: The default and only programmatically selectable orchestrator. It is implemented using a typed, stage-based architecture.
@@ -143,10 +143,10 @@ Components should be tested in isolation using mock dependencies registered with
 
 This table summarizes open architectural issues identified in the latest code review. These items represent deviations from the architectural standard.
 
-| Severity | Issue                                  | File(s)                                 | Description                                                                                             | Status |
-| :------- | :------------------------------------- | :-------------------------------------- | :------------------------------------------------------------------------------------------------------ | :----- |
-| Medium   | **Inconsistent Builder API**           | `builder.go` (`WithEmbedder` method)    | The `WithEmbedder` method accepts pre-built instances, making it inconsistent with other `With...` methods. | Open   |
-| Low      | **Hard-coded Orchestrator Selection**  | `builder.go` (`Build` method)           | The builder hard-codes the `"sandwich"` orchestrator, preventing programmatic selection of other pipelines. | Open   |
+| Severity | Issue                                  | File(s)                                 | Description                                                                                             | Status   |
+| :------- | :------------------------------------- | :-------------------------------------- | :------------------------------------------------------------------------------------------------------ | :------- |
+| Medium   | **Inconsistent Builder API**           | `builder.go` (`WithEmbedder` method)    | The `WithEmbedder` method accepted pre-built instances, making it inconsistent with other `With...` methods. | Resolved |
+| Low      | **Hard-coded Orchestrator Selection**  | `builder.go` (`Build` method)           | The builder hard-coded the `"sandwich"` orchestrator, preventing programmatic selection of other pipelines. | Resolved |
 
 ### 11. Provider Families
 
