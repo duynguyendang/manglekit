@@ -2,70 +2,66 @@
 
 **Author:** Jules, Senior Go Software Architect
 **Date:** 2025-10-16
-**Status:** In Progress
+**Status:** Completed
 
 ---
 
 ## Executive Summary
 
-This code review provides a deep-dive analysis of the Manglekit SDK's internal architecture as of October 2025. The last major refactoring successfully decoupled the configuration loading mechanism from the fluent builder, which was a significant improvement. A more recent refactoring has now resolved the "God Method" monolith in the `Sandwich` pipeline by decomposing it into a typed, stage-based architecture.
+This code review provides a deep-dive analysis of the Manglekit SDK's internal architecture, focusing on its core construction and orchestration logic. The review confirms that while previous refactorings have improved the system's structure (e.g., separating configuration from the builder, introducing pipeline stages), several significant architectural smells persist.
 
-However, this review has identified several persistent architectural smells that undermine the framework's goals of type safety, modularity, and extensibility. The most critical remaining issues are the type-safety "holes" in the registry and core interfaces that rely on `any` and force unsafe type assertions.
+This report documents two primary issues that violate the SDK's stated goals of modularity, consistency, and extensibility. Both issues are located within the fluent builder (`builder.go`) and are currently marked with **Status: Open**. No code changes were made as part of this review; the goal is to provide a clear and actionable record of the current architectural state.
 
-This report outlines these issues, analyzes their impact, and provides actionable refactoring suggestions. The accompanying `docs/CONTEXT.md` file has been regenerated to reflect this new reality.
+The accompanying `docs/CONTEXT.md` file has also been updated to reflect this reality, ensuring our architectural standard is synchronized with the actual implementation.
 
 ---
 
 ## 1. Orchestration Checks
 
-The following checks must be enforced for all orchestration logic.
+The following principles were used to evaluate the orchestration logic and should be enforced for all future development.
 
--   **No god method**: Orchestration logic must be composed of discrete components that implement the `pipeline.Stage` interface. Monolithic functions that handle multiple, distinct responsibilities (e.g., retrieval, reranking, and LLM calls) are forbidden.
--   **No magic strings**: All data passed between orchestration stages must be done via the typed `pipeline.PipelineContext` struct. Using `map[string]any` with string literals as keys for passing data is forbidden.
--   **Ctx propagation**: Every stage must receive and use the `p.Ctx` from the `PipelineContext`. Stages must not create their own background contexts or hidden timeouts.
--   **Metrics consistency**: Each stage is individually responsible for recording its own timing and performance metrics to the `PipelineContext`.
--   **Use Genkit Plugins**: Providers that interact with external services (e.g., LLMs, embedders) must be implemented as wrappers around Genkit plugins. Custom client implementations and factories are forbidden.
+-   **No god method**: Orchestration logic must be composed of discrete, testable components. Monolithic functions are forbidden.
+-   **No magic strings**: Data passed between internal components must be via typed structs, not `map[string]any`.
+-   **Strict Ctx Propagation**: The `context.Context` must be passed explicitly through all calls.
+-   **Consistent Metrics**: Components are responsible for recording their own performance metrics.
+-   **Leverage Genkit**: Providers interacting with external services must wrap standard Genkit plugins.
 
 ---
 
 ## 2. Open Architectural Issues
 
-The following issues are currently present in the codebase and require attention.
-
-### Smell: Interface Pollution & Type Safety Violation
-**Location:** `core/types.go`, `pipeline/sandwich.go`
-**Impact Analysis:** The `core.Orchestrator` interface previously defined methods like `Retriever() any`. This use of `any` forced consumers to perform unsafe type assertions, bypassing compile-time type safety.
-**Refactoring Action:** The `Orchestrator` interface has been refactored to be a pure executor (`Execute`, `Close`). All `any`-based accessors have been removed. The `builder.Build()` method now returns typed components (e.g., `retrieve.Updatable`) alongside the orchestrator, providing a type-safe mechanism for accessing components that require runtime interaction. A new rule has been added: **No `any` accessors** — all typed components must be returned explicitly from builder factories.
-**Status:** **Resolved**
+The following issues are present in the current codebase and are documented here as the official findings of this review.
 
 ### Smell: Inconsistent Builder API
-**Location:** `builder.go`
-**Impact Analysis:** The `WithEmbedder` method has a special case: `if emb, ok := opts.(ai.Embedder); ok`. It allows passing a pre-built embedder instance directly, bypassing the standard factory mechanism. While potentially convenient, this makes the builder's API inconsistent and less predictable compared to other methods like `WithLLM` or `WithRetriever`, which only accept options structs. This inconsistency complicates the configuration logic, especially in `NewBuilderFromConfig`.
+**Location:** `builder.go` (`WithEmbedder` method)
+**Impact Analysis:** The `WithEmbedder` method deviates from the builder's established API pattern. Unlike other `With...` methods that exclusively accept typed options structs (e.g., `WithLLM(opts *llm.OpenAIOptions)`), it contains a special case (`if emb, ok := opts.(ai.Embedder); ok`) that allows passing a pre-built instance. This inconsistency makes the builder's API less predictable, complicates the configuration-to-builder mapping logic (`NewBuilderFromConfig`), and creates a maintenance burden.
 **Refactoring Suggestion:**
-1.  **Remove the Special Case:** Remove the `if emb, ok := ...` block from `WithEmbedder`.
-2.  **Enforce Uniformity:** Require all `With...` methods to operate consistently by only accepting typed options pointers (e.g., `*embed.GoogleOptions`). This simplifies the builder's internal logic and makes the public API more predictable. If a pre-built instance is needed for testing, it can be handled via a mock provider with mock options.
+1.  **Remove the Special Case:** Eliminate the `if emb, ok := ...` block from the `WithEmbedder` method.
+2.  **Enforce Uniformity:** Mandate that all `With...` methods operate consistently by only accepting typed options pointers. This simplifies the builder's internal logic and provides a cleaner, more predictable public API. Pre-built instances for testing should be handled via mock providers with corresponding mock options structs.
 **Status:** Open
 
 ### Smell: Hard-coded Orchestrator Selection
-**Location:** `builder.go` (specifically the `Build` method)
-**Impact Analysis:** The `Builder.Build` method currently hard-codes the orchestrator type to `"sandwich"`. This prevents users from programmatically selecting a different orchestrator (like the planned `declarative` orchestrator) when using the fluent builder. The choice of orchestrator is a fundamental architectural decision that should be exposed in the builder's API.
+**Location:** `builder.go` (`Build` method)
+**Impact Analysis:** The `Builder.Build` method currently hard-codes the orchestrator type to `"sandwich"`, preventing users from programmatically selecting a different orchestrator (such as the planned `declarative` orchestrator). The choice of pipeline is a fundamental architectural decision that should be exposed in the builder's API, not hidden as an implementation detail. This limitation severely restricts the SDK's extensibility.
 **Refactoring Suggestion:**
-1.  **Add `WithOrchestrator` Method:** Introduce a new method `WithOrchestrator(name string)` to the `BuilderAPI`.
-2.  **Use the Selected Orchestrator:** In the `Build` method, use the name provided via `WithOrchestrator` to look up the factory in the `OrchestratorFactories` map. Default to "sandwich" only if it hasn't been explicitly set.
+1.  **Add `WithOrchestrator` Method:** Introduce a new method, `WithOrchestrator(name string) BuilderAPI`, to the `BuilderAPI` interface and implement it on the `Builder`.
+2.  **Use the Selected Orchestrator:** Modify the `Build` method to use the name provided via `WithOrchestrator` to look up the appropriate factory in the `OrchestratorFactories` map. It should default to "sandwich" only if no explicit selection has been made to maintain backward compatibility.
 **Status:** Open
 
 ---
 
-## 3. Resolved Issues
+## 3. Resolved Issues (Historical Context)
+
+The following issues were identified and fixed in previous refactoring cycles. They are preserved here for historical context.
 
 ### Smell: God Method & Magic Strings
 **Location:** `pipeline/sandwich.go` (legacy)
-**Impact Analysis:** The `Sandwich.Execute` method was a classic "God Method" with too many responsibilities. It used hardcoded "magic strings" to pass data, which was brittle and error-prone.
-**Refactoring Action:** The `Sandwich` orchestrator has been refactored into a sequence of discrete, composable pipeline stages (`pipeline.Stage`). A `pipeline.Runner` executes the stages, and a typed `pipeline.PipelineContext` is used to pass data, eliminating magic strings and making the data flow explicit and type-safe.
+**Impact Analysis:** The `Sandwich.Execute` method was a classic "God Method" with excessive responsibilities. It used hardcoded "magic strings" for passing data, which was brittle and error-prone.
+**Refactoring Action:** The `Sandwich` orchestrator was refactored into a sequence of discrete `pipeline.Stage` components. A `pipeline.Runner` executes the stages, and a typed `pipeline.PipelineContext` is used to pass data, eliminating magic strings and making the data flow explicit and type-safe.
 **Status:** **Resolved**
 
 ### Smell: SRP Violation in Configuration
 **Location:** `config.go` (legacy), `builder.go` (legacy)
-**Impact Analysis:** The builder was previously responsible for both loading configuration from files/env and wiring components. This violated the Single Responsibility Principle, making the builder bloated and tightly coupled to configuration sources.
-**Refactoring Action:** This has been addressed. A dedicated `config` package now handles loading/parsing, and the `NewBuilderFromConfig` function acts as the sole bridge to the builder, which now only handles component wiring.
+**Impact Analysis:** The builder was previously responsible for both loading configuration and wiring components, violating the Single Responsibility Principle.
+**Refactoring Action:** A dedicated `config` package now handles all loading and parsing. The `NewBuilderFromConfig` function acts as the sole bridge to the builder, which now focuses exclusively on component wiring.
 **Status:** **Resolved**
