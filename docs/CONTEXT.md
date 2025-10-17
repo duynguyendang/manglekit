@@ -2,7 +2,7 @@
 context_type: architecture_standard
 project: manglekit
 language: go
-version: "0.7.0"
+version: "0.8.0"
 last_updated: "2025-10-16"
 stability: stable
 audience: humans_and_agents
@@ -81,19 +81,32 @@ Composition of providers (e.g., a hybrid retriever) occurs inside the parent pro
 -   **Observability**: An `core.Observability` struct can be passed to the builder via `WithObservability()`.
 -   **Resource Lifecycle**: Component factories can return a `core.ResourceCloser`. The builder collects all closers, and `Orchestrator.Close()` invokes them in reverse order.
 
-### 7. Testing & Replaceability
+### 7. Error & Metric Surfaces
+
+| Type    | Name                        | Description                                          |
+| :------ | :-------------------------- | :--------------------------------------------------- |
+| Error   | `core.ErrInvalidOptions`    | Invalid or missing options during initialization.    |
+| Error   | `core.ErrNoEvidence`        | Retriever found no documents for the query.          |
+| Error   | `core.ErrDenied`            | A Mangle rule explicitly denied the request.         |
+| Metric  | `manglekit.rules_pre_ms`    | Latency of the pre-retrieval rule evaluation stage.  |
+| Metric  | `manglekit.retrieve_ms`     | Latency of the document retrieval stage.             |
+| Metric  | `manglekit.rerank_ms`       | Latency of the document reranking stage.             |
+| Metric  | `manglekit.llm_ms`          | Latency of the final LLM generation stage.           |
+| Metric  | `manglekit.rules_post_ms`   | Latency of the post-generation rule evaluation stage.|
+
+### 8. Testing & Replaceability
 
 Components should be tested in isolation using mock dependencies registered with a test-specific registry.
 
-### 8. Anti-Patterns (Red Lines)
+### 9. Anti-Patterns (Red Lines)
 
 -   **Dependency on Builder**: A component factory must **never** take a dependency on the `BuilderAPI`.
--   **Type Erasure**: Using `any` in core interfaces or for factory registries is forbidden. (VIOLATED)
+-   **Type Erasure**: Using `any` in core interfaces or for factory registries is forbidden. (VIOLATION)
 -   **Provider Branching**: Logic like `if provider.Name == "google"` inside the framework is forbidden.
 -   **Global State**: The registry and all components must be fully encapsulated in instances.
--   **Code Duplication**: The DRY (Don't Repeat Yourself) principle should be followed. (VIOLATED)
+-   **Code Duplication**: The DRY (Don't Repeat Yourself) principle should be followed. (VIOLATION)
 
-### 9. Known Gaps
+### 10. Known Gaps
 
 This table summarizes open architectural issues identified in the latest code review. These items represent deviations from the architectural standard.
 
@@ -103,7 +116,7 @@ This table summarizes open architectural issues identified in the latest code re
 | High     | **Type Erasure via `core.Options`**       | `core/types.go`, `pipeline/sandwich.go`                                | Components are stored as `any` and extracted with runtime type assertions, moving type checking from compile-time to runtime.             | Open   |
 | Medium   | **Rigid, Type-Specific Registries**       | `registry.go`                                                        | The registry uses separate, hard-coded maps for each component factory type, preventing easy extension of the framework with new types. | Open   |
 
-### 10. Provider Families
+### 11. Provider Families
 
 | Type            | Registered Providers        |
 | :-------------- | :-------------------------- |
@@ -118,11 +131,11 @@ This table summarizes open architectural issues identified in the latest code re
 | **SchemaParser**| `jsonschema`, `rdf`         |
 | **FactConverter**| `mangle`                    |
 
-### 11. Versioning & Compatibility Policy
+### 12. Versioning & Compatibility Policy
 
 The project adheres to Semantic Versioning 2.0.0. This `CONTEXT.md` document must be updated to reflect any MINOR or MAJOR changes.
 
-### 12. Machine Appendix (JSON Snapshot v1)
+### 13. Machine Appendix (JSON Snapshot v1)
 
 ```json
 {
@@ -176,8 +189,8 @@ The project adheres to Semantic Versioning 2.0.0. This `CONTEXT.md` document mus
 }
 ```
 
-### 13. Changelog
+### 14. Changelog
 
--   **2025-10-16**: Performed a deep-dive code review and updated documentation to reflect the current architectural state. Identified three major architectural smells: repetitive builder logic, type erasure in the core options struct, and rigid, type-specific registries. No code was modified. Updated `docs/code-review.md` and regenerated `docs/CONTEXT.md` to align with these findings.
+-   **2025-10-16**: Performed a deep-dive code review and updated documentation to reflect the current architectural state. Identified three major architectural smells: repetitive builder logic, type erasure in the core options struct, and rigid, type-specific registries. No code was modified. Updated `docs/code-review.md` and regenerated `docs/CONTEXT.md` to align with these findings. Updated version to 0.8.0.
 -   **2025-10-16 (previous)**: Regenerated `CONTEXT.md` to the canonical "Live Standard" format. Updated the implementation snapshot, dependency rules, and all other sections to match the current codebase reality, reflecting the new decoupled configuration. Synchronized the "Known Gaps" section with the findings in the new `docs/code-review.md`. Added a machine-readable JSON appendix.
 -   **2025-10-13 (initial)**: Initial version of the context document.
