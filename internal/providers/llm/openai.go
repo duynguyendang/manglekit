@@ -64,13 +64,13 @@ func (o *OpenAI) Complete(ctx context.Context, req llm.Request) (llm.Response, e
 		return llm.Response{}, fmt.Errorf("openai llm client not initialized with a model")
 	}
 
-	// Prepare the generation configuration.
+	// Start with default provider options.
 	config := &ai.GenerationCommonConfig{
 		Temperature:     float64(o.opts.Temperature),
-		MaxOutputTokens: o.opts.MaxOutputTokens, // Default from options
+		MaxOutputTokens: o.opts.MaxOutputTokens,
 	}
 
-	// Override MaxOutputTokens if provided in the request.
+	// Override with request-specific options if provided.
 	if req.MaxTokens > 0 {
 		config.MaxOutputTokens = req.MaxTokens
 	}
@@ -85,15 +85,12 @@ func (o *OpenAI) Complete(ctx context.Context, req llm.Request) (llm.Response, e
 		return llm.Response{}, err
 	}
 
-	// Extract token usage from the response metadata.
-	var usage *llm.TokenUsage
+	// Extract token usage.
+	usage := make(map[string]int)
 	if res.Usage != nil {
-		usage = &llm.TokenUsage{
-			Provider:   o.opts.ProviderName(),
-			Prompt:     res.Usage.InputTokens,
-			Completion: res.Usage.OutputTokens,
-			Total:      res.Usage.TotalTokens,
-		}
+		usage["prompt"] = int(res.Usage.InputTokens)
+		usage["completion"] = int(res.Usage.OutputTokens)
+		usage["total"] = int(res.Usage.TotalTokens)
 	}
 
 	return llm.Response{
