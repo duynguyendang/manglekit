@@ -2,7 +2,6 @@ package inmemory
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/duynguyendang/manglekit"
@@ -12,20 +11,11 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterStateProvider("inmemory", func(ctx context.Context, deps diapi.StateProviderDeps, cfg any) (core.StateProvider, error) {
-		var typedOpts state.InMemoryOptions
-		if cfg != nil {
-			if castedOpts, ok := cfg.(*state.InMemoryOptions); ok {
-				typedOpts = *castedOpts
-			} else {
-				return nil, fmt.Errorf("invalid options type, expected *state.InMemoryOptions, got %T", cfg)
-			}
-		}
-		return New(typedOpts)
-	})
-	if err := r.RegisterOptions("inmemory", (*state.InMemoryOptions)(nil)); err != nil {
-		panic(err)
-	}
+	manglekit.Register(r, state.InMemoryOptions{},
+		func(ctx context.Context, deps diapi.StateProviderDeps, cfg state.InMemoryOptions) (core.StateProvider, error) {
+			return New(cfg)
+		},
+	)
 }
 
 // Provider is a thread-safe, in-memory implementation of the core.StateProvider

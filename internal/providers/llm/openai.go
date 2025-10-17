@@ -13,36 +13,33 @@ import (
 )
 
 func RegisterOpenAI(r *manglekit.Registry) {
-	factory := func(ctx context.Context, deps diapi.LLMDeps, cfg any) (llm.Client, error) {
-		opts, ok := cfg.(*llm.OpenAIOptions)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected *llm.OpenAIOptions, got %T", cfg)
-		}
+	// Factory function for OpenAI
+	openAIFactory := func(ctx context.Context, deps diapi.LLMDeps, cfg llm.OpenAIOptions) (llm.Client, error) {
 		if deps.Genkit == nil {
 			return nil, fmt.Errorf("missing required dependency 'genkit'")
 		}
-
-		// The Genkit OpenAI plugin is initialized differently. We create the plugin instance
-		// and then get the model from it. The plugin itself is not registered with Genkit
-		// in the same way as other plugins.
-		oai := &openai.OpenAI{
-			APIKey: opts.APIKey,
-		}
-		model := oai.Model(deps.Genkit, opts.Model)
+		oai := &openai.OpenAI{APIKey: cfg.APIKey}
+		model := oai.Model(deps.Genkit, cfg.Model)
 		if model == nil {
-			return nil, fmt.Errorf("failed to get openai model %q from genkit", opts.Model)
+			return nil, fmt.Errorf("failed to get openai model %q from genkit", cfg.Model)
 		}
+		return NewOpenAI(cfg, model, deps.Genkit), nil
+	}
+	manglekit.Register(r, llm.OpenAIOptions{}, openAIFactory)
 
-		return NewOpenAI(*opts, model, deps.Genkit), nil
+	// Factory function for Groq (reuses OpenAI logic but with GroqOptions)
+	groqFactory := func(ctx context.Context, deps diapi.LLMDeps, cfg llm.GroqOptions) (llm.Client, error) {
+		if deps.Genkit == nil {
+			return nil, fmt.Errorf("missing required dependency 'genkit'")
+		}
+		oai := &openai.OpenAI{APIKey: cfg.APIKey}
+		model := oai.Model(deps.Genkit, cfg.Model)
+		if model == nil {
+			return nil, fmt.Errorf("failed to get groq model %q from genkit", cfg.Model)
+		}
+		return NewOpenAI(cfg.OpenAIOptions, model, deps.Genkit), nil
 	}
-	r.RegisterLLM("openai", factory)
-	r.RegisterLLM("groq", factory) // Groq uses the same machinery
-	if err := r.RegisterOptions("openai", (*llm.OpenAIOptions)(nil)); err != nil {
-		panic(err)
-	}
-	if err := r.RegisterOptions("groq", (*llm.OpenAIOptions)(nil)); err != nil {
-		panic(err)
-	}
+	manglekit.Register(r, llm.GroqOptions{}, groqFactory)
 }
 
 // OpenAI is a wrapper around a genkit AI model from the OpenAI plugin.

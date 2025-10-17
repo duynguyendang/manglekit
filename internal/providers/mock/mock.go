@@ -18,45 +18,26 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("mock-retriever", func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error) {
-		opts, ok := cfg.(*RetrieverOptions)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected *mock.RetrieverOptions, got %T", cfg)
-		}
-		return NewRetriever(opts.Pairs), nil
-	})
-	if err := r.RegisterOptions("mock-retriever", (*RetrieverOptions)(nil)); err != nil {
-		panic(err)
-	}
-
-	r.RegisterReranker("mock-reranker", func(ctx context.Context, deps diapi.RerankerDeps, cfg any) (rerank.Reranker, error) {
-		opts, ok := cfg.(*RerankerOptions)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected *mock.RerankerOptions, got %T", cfg)
-		}
-		return NewReranker(opts.Passthrough), nil
-	})
-	if err := r.RegisterOptions("mock-reranker", (*RerankerOptions)(nil)); err != nil {
-		panic(err)
-	}
-
-	r.RegisterLLM("mock-llm", func(ctx context.Context, deps diapi.LLMDeps, cfg any) (llm.Client, error) {
-		opts, ok := cfg.(*LLMOptions)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected *mock.LLMOptions, got %T", cfg)
-		}
-		return NewLLM(opts.Model), nil
-	})
-	if err := r.RegisterOptions("mock-llm", (*LLMOptions)(nil)); err != nil {
-		panic(err)
-	}
-
-	r.RegisterEmbedder("mock-embedder", func(ctx context.Context, deps diapi.EmbedderDeps, cfg any) (ai.Embedder, error) {
-		return &Embedder{}, nil
-	})
-	if err := r.RegisterOptions("mock-embedder", (*struct{})(nil)); err != nil {
-		panic(err)
-	}
+	manglekit.Register(r, RetrieverOptions{},
+		func(ctx context.Context, deps diapi.RetrieverDeps, cfg RetrieverOptions) (retrieve.Retriever, error) {
+			return NewRetriever(cfg.Pairs), nil
+		},
+	)
+	manglekit.Register(r, RerankerOptions{},
+		func(ctx context.Context, deps diapi.RerankerDeps, cfg RerankerOptions) (rerank.Reranker, error) {
+			return NewReranker(cfg.Passthrough), nil
+		},
+	)
+	manglekit.Register(r, LLMOptions{},
+		func(ctx context.Context, deps diapi.LLMDeps, cfg LLMOptions) (llm.Client, error) {
+			return NewLLM(cfg.Model), nil
+		},
+	)
+	manglekit.Register(r, EmbedderOptions{},
+		func(ctx context.Context, deps diapi.EmbedderDeps, cfg EmbedderOptions) (ai.Embedder, error) {
+			return &Embedder{}, nil
+		},
+	)
 }
 
 type Params map[string]any
@@ -115,6 +96,9 @@ type RetrieverOptions struct {
 	Pairs map[string]string `json:"pairs"`
 }
 
+func (o RetrieverOptions) ProviderName() string { return "mock-retriever" }
+func (o RetrieverOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+
 // Reranker is a mock reranker.
 type Reranker struct {
 	passthrough map[string]bool
@@ -141,6 +125,9 @@ func (r *Reranker) Rerank(ctx context.Context, req rerank.Request) ([]rerank.Sco
 type RerankerOptions struct {
 	Passthrough map[string]bool `json:"passthrough"`
 }
+
+func (o RerankerOptions) ProviderName() string { return "mock-reranker" }
+func (o RerankerOptions) ProviderKind() core.Kind   { return core.KindReranker }
 
 // LLM is a mock LLM.
 type LLM struct {
@@ -176,6 +163,15 @@ func (l *LLM) GetName() string {
 type LLMOptions struct {
 	Model string `json:"model"`
 }
+
+func (o LLMOptions) ProviderName() string { return "mock-llm" }
+func (o LLMOptions) ProviderKind() core.Kind   { return core.KindLLM }
+
+// EmbedderOptions is the options for the mock embedder.
+type EmbedderOptions struct{}
+
+func (o EmbedderOptions) ProviderName() string { return "mock-embedder" }
+func (o EmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
 
 // Tool is a mock tool that can be used in tests.
 type Tool struct {

@@ -5,110 +5,119 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/llm"
-	"github.com/duynguyendang/manglekit/rerank"
-	"github.com/duynguyendang/manglekit/retrieve"
-	"github.com/firebase/genkit/go/ai"
 )
 
-// Define specific, type-safe factories.
-type RetrieverFactory func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error)
-type LLMFactory func(ctx context.Context, deps diapi.LLMDeps, cfg any) (llm.Client, error)
-type EmbedderFactory func(ctx context.Context, deps diapi.EmbedderDeps, cfg any) (ai.Embedder, error)
-type RerankerFactory func(ctx context.Context, deps diapi.RerankerDeps, cfg any) (rerank.Reranker, error)
-type VectorStoreFactory func(ctx context.Context, deps diapi.VectorStoreDeps, cfg any) (core.VectorStore, error)
-type RuleSetFactory func(ctx context.Context, deps diapi.RuleSetDeps, cfg any) (core.RuleSet, error)
-type StateProviderFactory func(ctx context.Context, deps diapi.StateProviderDeps, cfg any) (core.StateProvider, error)
-type SchemaParserFactory func(ctx context.Context, deps diapi.NoopDeps, cfg any) (core.SchemaParser, error)
-type FactConverterFactory func(ctx context.Context, deps diapi.NoopDeps, cfg any) (core.FactConverter, error)
+// GenericFactory is a type-erased wrapper around a strongly-typed provider factory.
+// It allows the registry to store factories for different component types in a
+// single map while preserving type safety internally. The `Build` method uses
+// `any` for its parameters, but the concrete implementation (`typedFactory`)
+// immediately casts them back to their compile-time types.
+type GenericFactory interface {
+	Kind() core.Kind
+	Name() string
+	Build(ctx context.Context, deps any, cfg any) (any, error)
+}
 
-// OrchestratorFactory defines the signature for creating an orchestrator instance.
-// It receives the fully built Options object containing all necessary components.
-type OrchestratorFactory func(opts core.Options) (core.Orchestrator, error)
+// typedFactory is the concrete implementation of GenericFactory. It holds the
+// actual, strongly-typed factory function `fn`. This generic struct ensures that
+// within a provider's ecosystem, all interactions (factory definition, dependency
+// injection, configuration) are type-safe from end to end.
+type typedFactory[T any, D any, O core.ProviderOptions] struct {
+	kind core.Kind
+	name string
+	fn   func(ctx context.Context, deps D, cfg O) (T, error)
+}
+
+// Kind returns the component kind (e.g., "llm", "retriever").
+func (f typedFactory[T, D, O]) Kind() core.Kind { return f.kind }
+
+// Name returns the provider's unique name (e.g., "openai-chat").
+func (f typedFactory[T, D, O]) Name() string { return f.name }
+
+// Build executes the wrapped factory function. It performs the crucial type
+// assertions that bridge the gap from the type-erased `any` parameters back
+// to the concrete types `D` (dependencies) and `O` (options) required by the
+// factory. This is the only place where such an assertion is needed for factories.
+func (f typedFactory[T, D, O]) Build(ctx context.Context, deps any, cfg any) (any, error) {
+	// Handle cases where dependencies or config might be nil.
+	var d D
+	if deps != nil {
+		d = deps.(D)
+	}
+
+	var o O
+	if cfg != nil {
+		o = cfg.(O)
+	}
+
+	return f.fn(ctx, d, o)
+}
 
 // Registry is the central store for all registered component constructors.
-// It is the primary mechanism for extending MangleKit with new providers.
+// It has been refactored to use a single, generic, and type-safe mechanism.
 type Registry struct {
-	// Strongly-typed factory maps
-	Retrievers            map[string]RetrieverFactory
-	LLMs                  map[string]LLMFactory
-	Embedders             map[string]EmbedderFactory
-	Rerankers             map[string]RerankerFactory
-	VectorStores          map[string]VectorStoreFactory
-	RuleSets              map[string]RuleSetFactory
-	StateProviders        map[string]StateProviderFactory
-	SchemaParsers         map[string]SchemaParserFactory
-	FactConverters        map[string]FactConverterFactory
-	OrchestratorFactories map[string]OrchestratorFactory
-
-	// Options holds registered options types for components.
-	Options map[string]reflect.Type
-	// ClientFactories holds registered client factory functions.
-	ClientFactories map[string]any
-
-	// Type maps are now owned by the registry instance.
-	nameToOptionsType map[string]reflect.Type
+	factories         map[core.Kind]map[string]GenericFactory
 	optionsTypeToName map[reflect.Type]string
+	optionsTypeToKind map[reflect.Type]core.Kind
 }
 
 // NewRegistry creates and returns a new, fully initialized Registry struct.
 func NewRegistry() *Registry {
 	return &Registry{
-		Retrievers:            make(map[string]RetrieverFactory),
-		LLMs:                  make(map[string]LLMFactory),
-		Embedders:             make(map[string]EmbedderFactory),
-		Rerankers:             make(map[string]RerankerFactory),
-		StateProviders:        make(map[string]StateProviderFactory),
-		VectorStores:          make(map[string]VectorStoreFactory),
-		RuleSets:              make(map[string]RuleSetFactory),
-		SchemaParsers:         make(map[string]SchemaParserFactory),
-		FactConverters:        make(map[string]FactConverterFactory),
-		OrchestratorFactories: make(map[string]OrchestratorFactory),
-		Options:               make(map[string]reflect.Type),
-		ClientFactories:       make(map[string]any),
-
-		// Initialize the instance-owned type maps.
-		nameToOptionsType: make(map[string]reflect.Type),
+		factories:         make(map[core.Kind]map[string]GenericFactory),
 		optionsTypeToName: make(map[reflect.Type]string),
+		optionsTypeToKind: make(map[reflect.Type]core.Kind),
 	}
 }
 
-// RegisterOptions registers the **pointer-to-struct** options type for a provider.
-// This is now a method on *Registry.
-func (r *Registry) RegisterOptions(providerName string, typedNilPtr any) error {
-	t := reflect.TypeOf(typedNilPtr)
-	if t == nil {
-		return fmt.Errorf("RegisterOptions %q: got nil; pass a typed nil pointer like (*T)(nil)", providerName)
-	}
-	if t.Kind() != reflect.Ptr || t.Elem().Kind() != reflect.Struct {
-		return fmt.Errorf("RegisterOptions %q: expected pointer to struct, got %v", providerName, t)
+// Register is the new generic, type-safe function for registering any provider.
+// It infers the provider's name and kind directly from its Options type,
+// which must implement `core.ProviderOptions`. This eliminates string literals
+// and the possibility of mis-categorizing a provider.
+//
+// Example:
+//
+//	Register(
+//	  registry,
+//	  llm.OpenAIOptions{}, // The options struct itself carries the metadata.
+//	  func(ctx context.Context, deps D, cfg llm.OpenAIOptions) (llm.Client, error) {
+//	    // ... factory logic
+//	  },
+//	)
+func Register[T any, D any, O core.ProviderOptions](
+	r *Registry,
+	optsSample O,
+	fn func(ctx context.Context, deps D, cfg O) (T, error),
+) {
+	kind := optsSample.ProviderKind()
+	name := optsSample.ProviderName()
+
+	if _, ok := r.factories[kind]; !ok {
+		r.factories[kind] = make(map[string]GenericFactory)
 	}
 
-	// These maps are guaranteed to be initialized by NewRegistry()
-	r.nameToOptionsType[providerName] = t
-	r.optionsTypeToName[t] = providerName
-	return nil
+	factory := typedFactory[T, D, O]{
+		kind: kind,
+		name: name,
+		fn:   fn,
+	}
+	r.factories[kind][name] = factory
+
+	t := reflect.TypeOf(optsSample)
+	r.optionsTypeToName[t] = name
+	r.optionsTypeToKind[t] = kind
 }
 
-// NameToOptionsType returns the reflect.Type for a given provider name.
-func (r *Registry) NameToOptionsType(providerName string) (reflect.Type, bool) {
-	t, ok := r.nameToOptionsType[providerName]
-	return t, ok
+// Get retrieves a generic factory from the registry by its kind and name.
+func (r *Registry) Get(kind core.Kind, name string) (GenericFactory, error) {
+	if kindMap, ok := r.factories[kind]; ok {
+		if factory, ok := kindMap[name]; ok {
+			return factory, nil
+		}
+	}
+	return nil, fmt.Errorf("unknown %s provider: %s", kind, name)
 }
-
-// ClientFactory defines the contract for a function that creates a shared client
-// for a provider family (e.g., Google, OpenAI). It takes the global `*Config`
-// object and is responsible for extracting its own provider-specific settings.
-// It returns the initialized client, a `core.ResourceCloser` for graceful shutdown,
-// and an error.
-type ClientFactory func(ctx context.Context, cfg *config.Config) (client any, closer core.ResourceCloser, err error)
-
-// ToolFactory is a specialized factory for declarative tools, which may have
-// a different dependency injection mechanism.
-type ToolFactory func(deps any, cfg any) (any, error)
 
 // Get retrieves a constructor function from the specified registry map. It is a
 // helper used by the Builder to find and instantiate components.
@@ -119,47 +128,4 @@ func Get[T any](registry map[string]T, name string) (T, error) {
 		return zero, fmt.Errorf("unknown component: %s", name)
 	}
 	return c, nil
-}
-
-// RegisterRetriever adds a retriever constructor to the registry.
-func (r *Registry) RegisterRetriever(name string, c RetrieverFactory) { r.Retrievers[name] = c }
-
-// RegisterReranker adds a reranker constructor to the registry.
-func (r *Registry) RegisterReranker(name string, c RerankerFactory) { r.Rerankers[name] = c }
-
-// RegisterRuleSet adds a rules engine constructor to the registry.
-func (r *Registry) RegisterRuleSet(name string, c RuleSetFactory) { r.RuleSets[name] = c }
-
-// RegisterLLM adds a language model constructor to the registry.
-func (r *Registry) RegisterLLM(name string, c LLMFactory) { r.LLMs[name] = c }
-
-// RegisterEmbedder adds a text embedder constructor to the registry.
-func (r *Registry) RegisterEmbedder(name string, c EmbedderFactory) { r.Embedders[name] = c }
-
-// RegisterSchemaParser adds a schema parser constructor to the registry.
-func (r *Registry) RegisterSchemaParser(name string, c SchemaParserFactory) {
-	r.SchemaParsers[name] = c
-}
-
-// RegisterVectorStore adds a vector store constructor to the registry.
-func (r *Registry) RegisterVectorStore(name string, c VectorStoreFactory) { r.VectorStores[name] = c }
-
-// RegisterFactConverter adds a fact converter constructor to the registry.
-func (r *Registry) RegisterFactConverter(name string, c FactConverterFactory) {
-	r.FactConverters[name] = c
-}
-
-// RegisterStateProvider adds a state provider constructor to the registry.
-func (r *Registry) RegisterStateProvider(name string, c StateProviderFactory) {
-	r.StateProviders[name] = c
-}
-
-// RegisterClientFactory adds a client factory function to the registry.
-func (r *Registry) RegisterClientFactory(name string, c ClientFactory) {
-	r.ClientFactories[name] = c
-}
-
-// RegisterOrchestrator adds an orchestrator factory to the registry.
-func (r *Registry) RegisterOrchestrator(name string, c OrchestratorFactory) {
-	r.OrchestratorFactories[name] = c
 }

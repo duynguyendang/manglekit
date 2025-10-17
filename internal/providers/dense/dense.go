@@ -13,25 +13,18 @@ import (
 	"github.com/firebase/genkit/go/ai"
 )
 
-// Options defines the configuration for a Dense retriever.
-type Options struct {
-	Embedder    string `json:"embedder"`
-	VectorStore string `json:"vectorStore"`
-}
-
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("dense", func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error) {
-		if deps.Embedder == nil {
-			return nil, fmt.Errorf("dense retriever factory requires an 'embedder' dependency, but it was not provided")
-		}
-		if deps.VectorStore == nil {
-			return nil, fmt.Errorf("dense retriever factory requires a 'vectorStore' dependency, but it was not provided")
-		}
-		return New(deps.Embedder, deps.VectorStore)
-	})
-	if err := r.RegisterOptions("dense", (*Options)(nil)); err != nil {
-		panic(err)
-	}
+	manglekit.Register(r, retrieve.DenseOptions{},
+		func(ctx context.Context, deps diapi.RetrieverDeps, cfg retrieve.DenseOptions) (retrieve.Retriever, error) {
+			if deps.Embedder == nil {
+				return nil, fmt.Errorf("dense retriever factory requires an 'embedder' dependency, but it was not provided")
+			}
+			if deps.VectorStore == nil {
+				return nil, fmt.Errorf("dense retriever factory requires a 'vectorStore' dependency, but it was not provided")
+			}
+			return New(deps.Embedder, deps.VectorStore)
+		},
+	)
 }
 
 // Dense implements the `retrieve.Retriever` interface for dense, vector-based
