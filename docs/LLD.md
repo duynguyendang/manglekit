@@ -3,13 +3,13 @@
 > Module path: `github.com/duynguyendang/manglekit`  
 > Go version: 1.24.1  
 > Last Updated: 2025-10-17
-> Status: **Major architectural refactoring complete.** The builder and registry architecture is now significantly more robust, type-safe, and extensible. Sandwich and Declarative orchestrators are production-ready.
+> Status: **Architectural refactor (type-safe registry + builder).** The registry is generic and option-driven; the builder assembles a typed `core.Resolved` for orchestrators. Sandwich is production-ready; Declarative registration is stubbed.
 
 ---
 
 ## 1. Design Tenets
 - Public entry points: `sdk.New` and the fluent builder (`builder.go`). They enforce defaults (`TopK=8`, `MaxTokens=512`), assert concrete types for registry‑constructed components, and accumulate LIFO `ResourceClosers` for clean shutdown.
-- **Dependency Injection over global state.** The component `Registry` is now an instance created in the application entry point (`main.go`). Providers are explicitly registered with this instance, which is then injected into the `Builder`. This pattern eliminates global state and ensures clear, testable dependency resolution.
+- **Dependency Injection first, with a convenience singleton.** Prefer passing an instance `Registry` into the Builder. A convenience `sdk.GlobalRegistry()` exists for simple apps, but isolated registries are recommended for tests and modularity.
 - Sandwich orchestrator (`pipeline/sandwich.go`) executes a fixed, rule‑wrapped flow; records timings in `Answer.Meta` (`retrieve_ms`, `rerank_ms`, `llm_ms`); and stores pre‑rule evidence as `Meta["original_docs"]`.
 - Declarative orchestrator (`pipeline/declarative/orchestrator.go`) queries a `core.FlowController` to determine stage order, dispatches tools via a shared execution context, and supports `core.PostRuleEvaluator` for pre‑LLM gating.
 - Observability is pluggable. If `core.Observability.Logger` is nil, a lightweight structured `StdLogger` is installed; tracing and metrics hooks are optional and skipped when unset. No direct `fmt.Printf` is used in production paths.
@@ -19,11 +19,12 @@
 ## 2. Package Layout (authoritative)
 ```
 github.com/duynguyendang/manglekit
-├── builder.go                 # Fluent builder + dependency resolution/runtime clients
+├── builder.go                 # Fluent builder + spec-driven dependency resolution
 ├── from_config.go             # Translate validated config -> fluent builder
 ├── factories.go               # (doc stub) factory type defs moved to registry.go
 ├── registry.go                # Instance registry; typed factories + options/type maps + orchestrators
-├── sdk.go                     # Convenience wrapper around pipeline.NewSandwich
+├── sdk/                       # Convenience accessors (e.g., global Registry)
+│   └── sdk.go                 # sdk.GlobalRegistry()
 ├── typemap.go                 # (doc stub) mapping logic owned by Registry
 ├── config/                    # YAML/env loaders and validation
 │   ├── loader.go
@@ -76,29 +77,32 @@ github.com/duynguyendang/manglekit
 ---
 
 ## 3. Core Contracts & Observability
-- `core.Doc` contains chunk identifiers, provenance, payload text, and free-form metadata. Provider implementations populate common keys (`doc_id`, `source`, sparse scores) for rules to inspect.
-- `core.Query.Meta` acts as the coordination channel for filters, expansion terms, `user_context`, and conversation `history`. Mangle Pre rules mutate these keys so retrievers receive policy-compliant constraints.
-- `core.Answer.Meta` aggregates timings (`retrieve_ms`, `rerank_ms`, `llm_ms`), best rerank score, `original_docs`, LLM token usage, and rule emissions (`rule_results`, `redactions`, `denial_reason`, etc.).
-- `core.Options` stores components as `any` to avoid import cycles; the builder fills them with concrete instances, applies defaults, and appends provider-specific `ResourceClosers`.
-- Observability hooks are optional interfaces (`Logger`, `Tracer`, `Meter`). When `Logger` is nil, the builder installs a default structured `StdLogger`; tracing/metrics are no-ops when unset.
+- `core.Doc` contains chunk identifiers, provenance, payload text, and free-form metadata. Providers populate common keys for rules to inspect.
+- `core.Query.Meta` carries filters, expansion terms, `history`, and user context. Pre rules may mutate these.
+- `core.Answer.Meta` aggregates timings (`manglekit.retrieve_ms`, `manglekit.rerank_ms`, `manglekit.llm_ms`, `manglekit.rules_post_ms`), best rerank score, `original_docs`, token usage, and rule emissions.
+- `core.Resolved` is the typed container of built components passed to orchestrators.
+- `core.OptionsLike` holds global settings (TopK, MaxTokens, FallbackThreshold, Observability, ResourceClosers) during build.
+- Observability (`Logger`, `Tracer`, `Meter`) is optional. A default structured `StdLogger` is installed when nil.
 
 ---
 
 ## 4. Builder API
-- `NewBuilder(reg *Registry)`: initializes defaults and binds an instance `Registry` (no globals).
-- `With*` methods set components via typed options: `WithRetriever/WithReranker/WithLLM/WithEmbedder/WithVectorStore/WithStateProvider` resolve the provider name from the options type using `Registry.RegisterOptions` mappings.
-- Orchestrator: `WithOrchestrator("sandwich"|...)` selects a factory from `Registry.OrchestratorFactories`; defaults to `sandwich`. `WithFlow` names the declarative flow.
-- Other config: `WithTopK`, `WithMaxTokens`, `WithFallbackThreshold`, `WithObservability`, `WithGenkit`.
-- Build order: embedder → vector store → retriever → reranker → rules → llm → state provider. Each factory receives typed `diapi.Deps` and may add `ResourceClosers`.
-- Sub-builds: complex components (e.g., `hybrid` retriever) call `Builder.BuildRetriever` via injected `diapi.BuildSubRetriever`.
+- `NewBuilder(reg *Registry)`: initializes defaults and binds a registry.
+- `With(opts any)`: add a component using its typed options; the registry maps option type → provider kind/name.
+- `WithKind(kind core.Kind, name string, opts any)`: add a component explicitly (used by config loaders).
+- Orchestrator: `WithOrchestrator("sandwich"|...)` selects from registered orchestrators; defaults to `sandwich`.
+- Global config: `WithTopK`, `WithMaxTokens`, `WithFallbackThreshold`, `WithObservability`, `WithGenkit`.
+- Build is spec-driven: embedder → vector store → retriever → reranker → rules → llm → state provider; each receives typed deps (`diapi`).
+- Sub-builds: `BuildRetriever` exists to support patterns like hybrid retrievers creating sub-retrievers.
 
 ---
 
 ## 5. Registry & Provider Wiring
-- Instance-based `Registry` holds typed factory maps: `Retrievers`, `Rerankers`, `LLMs`, `Embedders`, `VectorStores`, `RuleSets`, `StateProviders`, `SchemaParsers`, `FactConverters`, and `OrchestratorFactories`.
-- Options mapping: `RegisterOptions(providerName, (*T)(nil))` records option type ↔ name within the registry; lookup used by the Builder to resolve provider names from typed options.
-- Provider registration is explicit and centralized (e.g., via `providers/all.RegisterAll(reg)`). The side-effect `init()` pattern is not used.
-- Option structs for programmatic flows live under `retrieve/`, `rerank/`, `embed/`, and `llm/` packages.
+- Generic registration: `manglekit.Register[T,D,O](reg, optsSample O, fn)` where `O` implements `core.ProviderOptions` with `ProviderName()` and `ProviderKind()`.
+- Internally stored as `GenericFactory` with `Build(ctx, deps any, cfg any) (any, error)`; type safety is preserved via the typed wrapper.
+- Option type mapping: the registry records option type → provider name and kind; the builder uses this for `With(opts)`.
+- Kinds enumerate component families: `retriever`, `vector_store`, `reranker`, `rules`, `llm`, `embedder`, `state_provider`, `orchestrator`, `schema_parser`.
+- Orchestrators without options use `core.NilOptions{Name, Kind: core.KindOrchestrator}` when registering.
 
 ---
 
@@ -112,6 +116,7 @@ github.com/duynguyendang/manglekit
 ---
 
 ## 7. Sandwich Orchestrator Mechanics
+- Factory: `pipeline.NewSandwich(ctx, core.Resolved)` receives fully typed deps; no runtime type assertions.
 - Context: builds `pipeline.PipelineContext` with `Query`, session `History`, timers, and `Answer.Meta`.
 - Stages: `PreRulesStage` → `RetrieveStage` → `RerankStage` → `LLMStage` → `PostRulesStage`, executed by `pipeline.Runner`.
 - Retrieval: `Retriever.Retrieve` populates `OriginalDocs`; metrics (`manglekit.retrieve_ms`) recorded; evidence saved to `Answer.Meta["original_docs"]`.
@@ -123,6 +128,7 @@ github.com/duynguyendang/manglekit
 ---
 
 ## 8. Declarative Orchestrator Mechanics
+- Registration: a stub is registered under `internal/providers/orchestrators` using `core.NilOptions{Name: "declarative", Kind: core.KindOrchestrator}`.
 - Stage discovery: queries `flow_stage/3` and `stage_tool/2` from `core.FlowController` to order stages and bind tools.
 - Pre evaluation: `Evaluate(core.Pre)` can deny, mutate `Query`, or flag stages to skip.
 - Execution context: shared map carries `query`, `docs`, `answer`, `meta`, and denial flags across tools.
@@ -150,9 +156,9 @@ github.com/duynguyendang/manglekit
 ---
 
 ## 10. Testing Coverage
-- Repository currently contains no Go test files under `pipeline/*` in tree.
-- Recommended targets: Sandwich happy path, retriever failures, pre-rule denials, fallback thresholds.
-- Declarative: flow resolution, tool dispatch, and denial handling.
+- Repository currently contains few or no tests under `pipeline/*`.
+- Recommended: Sandwich happy path, retriever failures, pre-rule denials, fallback thresholds.
+- Declarative: flow resolution, tool dispatch, and denial handling when non-stubbed.
 - Providers: BM25/dense/hybrid retrieval, cosine reranking, embedders, rules evaluation.
 - Additional: localvec lifecycle, tool dependency wiring order, and LLM error handling.
 
@@ -170,9 +176,11 @@ github.com/duynguyendang/manglekit
 ---
 
 ## 12. Extension Hooks
-- Register via `reg.Register*` on a `*Registry`, and register typed options with `reg.RegisterOptions("name", (*OptionsType)(nil))`.
-- Converters and schema parsers: `RegisterFactConverter` / `RegisterSchemaParser`; referenced by rules/flows.
-- Select orchestrator with `WithOrchestrator`; set the declarative flow with `WithFlow`.
+- Register providers using the generic API:
+  - `manglekit.Register[T,D,O](reg, optsSample, func(ctx, deps, cfg) (T, error))` where `optsSample` implements `core.ProviderOptions`.
+  - For orchestrators without options, pass `core.NilOptions{Name: "sandwich", Kind: core.KindOrchestrator}`.
+- Select orchestrator with `WithOrchestrator`. Configure components using `With(opts)` or `WithKind(...)`.
+- `sdk.GlobalRegistry()` provides a convenience singleton; create isolated registries for tests.
 
 ---
 
