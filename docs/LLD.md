@@ -2,7 +2,7 @@
 
 > Module path: `github.com/duynguyendang/manglekit`  
 > Go version: 1.24.1  
-> Last Updated: 2025-10-15
+> Last Updated: 2025-10-17
 > Status: **Major architectural refactoring complete.** The builder and registry architecture is now significantly more robust, type-safe, and extensible. Sandwich and Declarative orchestrators are production-ready.
 
 ---
@@ -20,11 +20,15 @@
 ```
 github.com/duynguyendang/manglekit
 ├── builder.go                 # Fluent builder + dependency resolution/runtime clients
-├── builder_test.go           
-├── config.go                  # YAML/env loaders feeding the builder
-├── registry.go                # Global registries for provider constructors
+├── from_config.go             # Translate validated config -> fluent builder
+├── factories.go               # (doc stub) factory type defs moved to registry.go
+├── registry.go                # Instance registry; typed factories + options/type maps + orchestrators
 ├── sdk.go                     # Convenience wrapper around pipeline.NewSandwich
-├── typemap.go                 # Option-type ↔ provider-name lookup tables
+├── typemap.go                 # (doc stub) mapping logic owned by Registry
+├── config/                    # YAML/env loaders and validation
+│   ├── loader.go
+│   ├── types.go
+│   └── validate.go
 ├── core/
 │   ├── rules.go               # Stage enums, RuleSet/FlowController/PostRule contracts
 │   ├── schema.go              # SchemaParser contract
@@ -43,10 +47,9 @@ github.com/duynguyendang/manglekit
 │   └── prompt.go              # PromptBuilder + default RAG template
 ├── pipeline/
 │   ├── sandwich.go            # Default orchestrator implementation
-│   ├── sandwich_test.go       # Stage-level unit tests
 │   └── declarative/
 │       ├── orchestrator.go    # Flow-driven orchestrator
-│       └── orchestrator_test.go
+│       └── (tests TBD)
 ├── internal/
 │   ├── embedders/{google,openai}/
 │   ├── providers/
@@ -63,7 +66,8 @@ github.com/duynguyendang/manglekit
 │   └── logger/
 │       ├── std_logger.go
 │       └── zap_adapter.go
-├── providers/all/all.go       # Blank import of bundled providers
+├── providers/                 # Provider registration helpers and sets
+│   └── all/all.go             # RegisterAll: applies standard provider set
 ├── examples/                  # 01-basic-rag … 10_chatbot runnable demos
 ├── docs/                      # HLD, LLD, CONTEXT, CSD, LOGGING, code-review
 └── state/                     # State provider option types
@@ -80,52 +84,54 @@ github.com/duynguyendang/manglekit
 
 ---
 
-## 4. Builder & Configuration
-- The `Builder` is instantiated with a configured `Registry` instance (`builder.New(registry)`). It no longer holds global state.
-- Configuration can be loaded from YAML (`config.NewBuilderFromYAML`) or environment variables (`config.NewBuilderFromEnv`). These helpers now populate a configuration struct that is passed to the builder, separating configuration loading from component construction.
-- `builder.Build()` is a type-safe construction process. For each required component, it looks up the corresponding **strongly-typed factory** (e.g., `RetrieverFactory`) from the injected registry.
-- The builder is now **OCP-compliant**. It contains no `switch` statements or special-case logic for specific providers (like the `hybrid` retriever). All construction complexity, including dependency resolution (e.g., a retriever needing an embedder), is encapsulated within the provider's own factory. The factory receives a `BuilderAPI` to recursively build its dependencies.
+## 4. Builder API
+- `NewBuilder(reg *Registry)`: initializes defaults and binds an instance `Registry` (no globals).
+- `With*` methods set components via typed options: `WithRetriever/WithReranker/WithLLM/WithEmbedder/WithVectorStore/WithStateProvider` resolve the provider name from the options type using `Registry.RegisterOptions` mappings.
+- Orchestrator: `WithOrchestrator("sandwich"|...)` selects a factory from `Registry.OrchestratorFactories`; defaults to `sandwich`. `WithFlow` names the declarative flow.
+- Other config: `WithTopK`, `WithMaxTokens`, `WithFallbackThreshold`, `WithObservability`, `WithGenkit`.
+- Build order: embedder → vector store → retriever → reranker → rules → llm → state provider. Each factory receives typed `diapi.Deps` and may add `ResourceClosers`.
+- Sub-builds: complex components (e.g., `hybrid` retriever) call `Builder.BuildRetriever` via injected `diapi.BuildSubRetriever`.
 
 ---
 
-## 5. Provider Wiring
-- Provider registration is now explicit and centralized in the application entry point (e.g., `main.go`). A fluent "Registration Builder" (`providers.NewSet()`) is used to register provider factories with a `Registry` instance. The `init()`-based side-effect-driven registration has been removed.
-- Option structs exposed to users live in public packages (`retrieve/options.go`, `rerank/options.go`, `embed/options.go`, `llm/options.go`) so programmatic flows remain type-safe.
-- The builder infers dependencies: dense retrievers and cosine rerankers automatically request the configured embedder; localvec requires both an embedder and corpus path; declarative tools declare dependencies by referencing other tool names in their params.
-- Rules providers (`internal/providers/mangle`) support both code-first (converters define EDB) and file-first (rule files declare EDB) modes, selectable via `core.MangleOptions.FileFirst`.
+## 5. Registry & Provider Wiring
+- Instance-based `Registry` holds typed factory maps: `Retrievers`, `Rerankers`, `LLMs`, `Embedders`, `VectorStores`, `RuleSets`, `StateProviders`, `SchemaParsers`, `FactConverters`, and `OrchestratorFactories`.
+- Options mapping: `RegisterOptions(providerName, (*T)(nil))` records option type ↔ name within the registry; lookup used by the Builder to resolve provider names from typed options.
+- Provider registration is explicit and centralized (e.g., via `providers/all.RegisterAll(reg)`). The side-effect `init()` pattern is not used.
+- Option structs for programmatic flows live under `retrieve/`, `rerank/`, `embed/`, and `llm/` packages.
 
 ---
 
 ## 6. Retrieval & Vector Storage
-- BM25 (`internal/providers/bm25`) indexes Markdown directories, parses YAML front matter into metadata, and attaches Okapi scores to each document’s metadata.
-- Dense retrieval (`internal/providers/dense`) embeds the query through the configured Genkit/OpenAI embedder, passes metadata filters to the injected `core.VectorStore`, and searches for semantic matches.
-- Hybrid retrieval (`internal/providers/hybrid`) executes sparse and dense lookups concurrently via `errgroup`, fuses rankings with Reciprocal Rank Fusion, and truncates to `TopK`.
-- Local vector storage (`internal/vectorstores/localvec`) relies on Genkit’s localvec plugin: it initializes a collection, indexes corpus documents (front matter included), and filters matches using metadata. Resource cleanup is a known gap.
-- The in-memory retriever (`internal/providers/retrievers/inmemory`) implements `retrieve.Updatable` for demos and small corpora.
+- BM25 (`internal/providers/bm25`): indexes Markdown directories, parses YAML front matter into metadata, attaches Okapi scores in metadata.
+- Dense (`internal/providers/dense`): embeds queries via configured embedder, queries injected `core.VectorStore`, supports metadata filters.
+- Hybrid (`internal/providers/hybrid`): runs sparse and dense in parallel, fuses with RRF, truncates to `TopK`.
+- Localvec (`internal/vectorstores/localvec`): integrates Genkit localvec; indexes corpus with metadata; known gap on lifecycle cleanup.
+- In-memory retriever (`internal/providers/retrievers/inmemory`): implements `retrieve.Updatable` for demos/small corpora.
 
 ---
 
-## 7. Sandwich Pipeline Mechanics
-- Pre rules: `pipeline.Sandwich.Run` calls `RuleSet.Evaluate(core.Pre)` to normalize the query, seed filters/expansions, and optionally deny the request early.
-- Retrieval: the configured retriever receives `retrieve.Request{Query, TopK, Meta}`, with filters/expansions forwarded via `Meta`.
-- Rerank: if configured, `rerank.Reranker` reorders documents, captures the best score, and materializes citations.
-- Fallback threshold: `FallbackThreshold > 0` short-circuits the pipeline with `core.ErrNoEvidence` when the best score is insufficient.
-- LLM call: `llm.Client.Complete` receives the query prompt, grounded context, max tokens, and metadata; responses log token usage and latency.
-- Post rules: `RuleSet.Evaluate(core.Post)` filters citations, applies redactions, or denies the answer. The orchestrator records rule timings and finalizes `Answer.Meta`.
-- Cleanup: `Sandwich.Close` drains `ResourceClosers` in LIFO order so clients like Genkit shut down cleanly.
+## 7. Sandwich Orchestrator Mechanics
+- Context: builds `pipeline.PipelineContext` with `Query`, session `History`, timers, and `Answer.Meta`.
+- Stages: `PreRulesStage` → `RetrieveStage` → `RerankStage` → `LLMStage` → `PostRulesStage`, executed by `pipeline.Runner`.
+- Retrieval: `Retriever.Retrieve` populates `OriginalDocs`; metrics (`manglekit.retrieve_ms`) recorded; evidence saved to `Answer.Meta["original_docs"]`.
+- Rerank: optional `Reranker` emits `Citations` with scores; `best_score` tracked for fallback; metrics `manglekit.rerank_ms` recorded.
+- LLM: `llm.Client.Complete` consumes query and passages; `token_usage` captured; `MaxTokens` forwarded; metrics `manglekit.llm_ms` recorded.
+- Post rules: `RuleSet.Evaluate(core.Post)` may redact citations or deny; records `manglekit.rules_post_ms`.
+- Cleanup: `Close()` drains `ResourceClosers` LIFO; conversation state persisted via `StateProvider` when configured.
 
 ---
 
 ## 8. Declarative Orchestrator Mechanics
-- Stage discovery: `getFlowStages` queries `flow_stage/3` and `stage_tool/2` facts from the `FlowController`, builds an ordered stage list, and validates tool assignments.
-- Pre evaluation: `flowController.Evaluate(core.Pre)` can deny requests, mutate the query, or flag stages to skip.
-- Execution context: a shared map holds the evolving `query`, `docs`, `answer`, `meta`, and denial flags. Each tool updates this map.
-- Tool dispatch:  
-  * Retrievers populate `docs`, `meta["retrieved_count"]`, and stash `original_docs` in the answer.  
-  * Rerankers embed in parallel, emit citations, and set `meta["best_score"]`.  
-  * LLM clients build prompts via `llm.PromptBuilder` and capture token usage.  
-  * `core.PostRuleEvaluator` instances (e.g., the Mangle engine) can drop/redact evidence, deny the request, and emit audit metadata.
-- Skips & denials propagate through the context so later tools respect prior decisions.
+- Stage discovery: queries `flow_stage/3` and `stage_tool/2` from `core.FlowController` to order stages and bind tools.
+- Pre evaluation: `Evaluate(core.Pre)` can deny, mutate `Query`, or flag stages to skip.
+- Execution context: shared map carries `query`, `docs`, `answer`, `meta`, and denial flags across tools.
+- Tool dispatch:
+  - Retrievers add `docs` and stash `original_docs` in `answer.meta`.
+  - Rerankers produce ordered docs and citation scores; update `meta["best_score"]`.
+  - LLM builds context passages and captures `token_usage`.
+  - Post rules: if tool implements `core.PostRuleEvaluator`, applies filters/denials; sets `rules_post_ms`, propagates `denied` and `denial_reason`.
+- Skips and denials propagate so later tools respect prior decisions; state managed via `StateProvider`.
 
 ---
 
@@ -144,10 +150,11 @@ github.com/duynguyendang/manglekit
 ---
 
 ## 10. Testing Coverage
-- `pipeline/sandwich_test.go` covers the happy path, retriever failures, pre-rule denials, and fallback thresholds.
-- `pipeline/declarative/orchestrator_test.go` validates flow resolution, tool dispatch, and denial handling.
-- Provider suites exercise BM25 indexing, dense/hybrid retrieval, cosine reranking, embedders, and Mangle rule evaluation.
-- Additional targets: localvec lifecycle, tool dependency resolution ordering, and LLM error handling.
+- Repository currently contains no Go test files under `pipeline/*` in tree.
+- Recommended targets: Sandwich happy path, retriever failures, pre-rule denials, fallback thresholds.
+- Declarative: flow resolution, tool dispatch, and denial handling.
+- Providers: BM25/dense/hybrid retrieval, cosine reranking, embedders, rules evaluation.
+- Additional: localvec lifecycle, tool dependency wiring order, and LLM error handling.
 
 ---
 
@@ -163,9 +170,9 @@ github.com/duynguyendang/manglekit
 ---
 
 ## 12. Extension Hooks
-- Register providers via `manglekit.Register*` and a typed options struct mirrored in `typemap.go`.
-- Converters and schema parsers register under `Registry.Component`/`Registry.SchemaParser` and can be referenced in `core.MangleOptions`.
-- Declarative flows extend `config.tools`; prefer explicit dependency keys (e.g., `retriever: "hybrid"`, `embedder: "my_embedder"`) over ambiguous strings.
+- Register via `reg.Register*` on a `*Registry`, and register typed options with `reg.RegisterOptions("name", (*OptionsType)(nil))`.
+- Converters and schema parsers: `RegisterFactConverter` / `RegisterSchemaParser`; referenced by rules/flows.
+- Select orchestrator with `WithOrchestrator`; set the declarative flow with `WithFlow`.
 
 ---
 
