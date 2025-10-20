@@ -147,6 +147,7 @@ type Resolved struct {
 	TopK              int
 	MaxTokens         int
 	FallbackThreshold float64
+	Closers           []ResourceCloser
 }
 
 // OptionsLike is a temporary struct to hold global settings during the build process.
