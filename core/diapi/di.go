@@ -27,6 +27,11 @@ type APIKeyProvider interface {
 	GetAPIKey() string
 }
 
+// BaseURLProvider is an interface for provider options that expose a base URL.
+type BaseURLProvider interface {
+	GetBaseURL() string
+}
+
 // BuildRetrieverFunc defines a capability for building a retriever instance by name.
 // This is used by components like the hybrid retriever to dynamically construct
 // their sub-components without depending on the entire builder.

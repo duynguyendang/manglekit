@@ -90,9 +90,11 @@ MangleKit can be configured to read API keys from environment variables. The eas
     # For Google models (LLM or Embedder)
     GOOGLE_API_KEY="AIza..."
 
-    # For Groq's fast inference API
+    # For Groq's fast inference API (now configured via the OpenAI provider)
     GROQ_API_KEY="gsk_..."
     ```
+
+    **Note on Groq:** To use Groq, you will now configure an `openai` provider with a custom `base_url` pointing to the Groq API endpoint.
 
 3.  Use a library like `godotenv` to load this file when your application starts.
 
@@ -325,8 +327,7 @@ MangleKit includes a suite of built-in providers that can be configured in the b
 |                   | `in-memory`   | A simple, updatable in-memory store for testing.             | _None_             |
 | **Reranker**      | `cosine`      | Re-ranks documents based on cosine similarity of embeddings. | `Embedder`         |
 | **LLM**           | `google`      | Integrates with Google's generative models via Genkit.       | _None_             |
-|                   | `openai`      | Integrates with OpenAI's models (e.g., GPT-4).               | _None_             |
-|                   | `groq`        | Integrates with Groq's fast inference API.                   | _None_             |
+|                   | `openai`      | Integrates with OpenAI's models (e.g., GPT-4) and compatible APIs like Groq (via `base_url`). | _None_             |
 | **Embedder**      | `google-embedder` | Generates embeddings using Google's models.                  | _None_             |
 |                   | `openai-embedder` | Generates embeddings using OpenAI's models.                  | _None_             |
 | **Rules Engine**  | `mangle`      | The core Datalog engine for rules-based control.             | _None_             |

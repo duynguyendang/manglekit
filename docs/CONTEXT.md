@@ -110,7 +110,7 @@ The architecture is designed for testability. Since components depend on interfa
 ### 11. Provider Families
 
 - **`Orchestrator`**: `sandwich` (functional), `declarative` (non-functional).
-- **`LLM`**: `openai`, `google`, `groq`.
+- **`LLM`**: `openai`, `google`.
 - **`Retriever`**: `dense`, `bm25`, `hybrid`.
 - **`VectorStore`**: `localvec`, `redis`.
 - **`Reranker`**: `passthrough`.
