@@ -2,64 +2,49 @@ package main
 
 import (
 	"context"
-	"flag"
-	"io"
+	"fmt"
+	"io/ioutil"
 	"log"
+	"os"
 
 	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/diapi"
-	_ "github.com/duynguyendang/manglekit/providers/all" // Import to register all providers
+	"github.com/duynguyendang/manglekit/providers/all"
 	"github.com/duynguyendang/manglekit/sdk"
-	"github.com/google/mangle/ast"
+	"github.com/joho/godotenv"
 )
 
-type mockSchemaParser struct{}
-
-func (p *mockSchemaParser) Predicates() []ast.PredicateSym {
-	return []ast.PredicateSym{
-		{Symbol: "schema", Arity: 1},
-		{Symbol: "field", Arity: 3},
-	}
-}
-
-func (p *mockSchemaParser) Parse(source io.Reader) ([]ast.Atom, error) {
-	return []ast.Atom{
-		ast.NewAtom("schema", ast.String("mock-schema")),
-		ast.NewAtom("field", ast.String("mock-schema"), ast.String("field1"), ast.String("string")),
-	}, nil
-}
-
-type mockSchemaParserOptions struct{}
-
-func (o mockSchemaParserOptions) ProviderName() string { return "mock-schema-parser" }
-func (o mockSchemaParserOptions) ProviderKind() core.Kind   { return core.KindSchemaParser }
-
 func main() {
-	configFile := flag.String("config", "config.yaml", "Path to the configuration file")
-	flag.Parse()
-
-	registry := sdk.GlobalRegistry()
-	manglekit.Register(registry, mockSchemaParserOptions{},
-		func(ctx context.Context, deps diapi.NoopDeps, cfg mockSchemaParserOptions) (core.SchemaParser, error) {
-			return &mockSchemaParser{}, nil
-		},
-	)
-
-	cfg, err := config.LoadFromYAMLFile(*configFile)
-	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
-	}
-
-	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry, nil)
-	if err != nil {
-		log.Fatalf("failed to create builder: %v", err)
-	}
+	godotenv.Load()
 	ctx := context.Background()
-	orch, _, err := builder.Build(ctx)
+
+	// Read the configuration file.
+	configData, err := ioutil.ReadFile("config.yaml")
 	if err != nil {
-		log.Fatalf("failed to build orchestrator: %v", err)
+		log.Fatalf("Failed to read config file: %v", err)
+	}
+
+	// Create a new registry and register all the standard providers.
+	registry := manglekit.NewRegistry()
+	all.Register(registry)
+
+	// Load the orchestrator from the configuration data.
+	orch, err := sdk.FromConfig(ctx, registry, configData)
+	if err != nil {
+		log.Fatalf("Failed to build orchestrator: %v", err)
 	}
 	defer orch.Close(ctx)
+
+	// Execute a query.
+	query := core.Query{
+		Text: "What is Manglekit?",
+	}
+
+	answer, err := orch.Execute(ctx, "session-123", query)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Execution failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Answer:", answer.Text)
 }

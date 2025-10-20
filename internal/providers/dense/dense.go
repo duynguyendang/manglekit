@@ -13,13 +13,17 @@ import (
 )
 
 // DenseOptions provides a type-safe way to configure a dense (vector-based)
-// retriever. This struct is often a marker, as its primary dependencies,
-// such as an Embedder and a VectorStore, are expected to be configured
-// separately and injected by the central builder.
-type DenseOptions struct{}
+// retriever. It explicitly declares its dependencies by name, allowing the
+// builder to inject the correct components.
+type DenseOptions struct {
+	Embedder    string `yaml:"embedder"`
+	VectorStore string `yaml:"vectorStore"`
+}
 
 func (o DenseOptions) ProviderName() string { return "dense" }
 func (o DenseOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o DenseOptions) GetEmbedder() string    { return o.Embedder }
+func (o DenseOptions) GetVectorStore() string { return o.VectorStore }
 
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, DenseOptions{},

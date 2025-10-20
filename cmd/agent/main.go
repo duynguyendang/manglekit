@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -12,9 +13,8 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
-	_ "github.com/duynguyendang/manglekit/providers/all" // Import to register all providers
+	"github.com/duynguyendang/manglekit/providers/all"
 	"github.com/duynguyendang/manglekit/sdk"
 )
 
@@ -25,23 +25,18 @@ func main() {
 
 	log.Printf("Starting Manglekit agent with config: %s", *configFile)
 
-	// The global registry is populated by the `providers/all` import.
-	registry := sdk.GlobalRegistry()
-
-	// b. Load the configuration from the YAML file.
-	cfg, err := config.LoadFromYAMLFile(*configFile)
+	// b. Read the configuration file.
+	configData, err := ioutil.ReadFile(*configFile)
 	if err != nil {
-		log.Fatalf("Failed to load config file: %v", err)
+		log.Fatalf("Failed to read config file: %v", err)
 	}
 
-	// c. Initialize the Manglekit builder from the configuration object.
-	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry, nil)
-	if err != nil {
-		log.Fatalf("Failed to create builder from config: %v", err)
-	}
+	// c. Create a new registry and register all the standard providers.
+	registry := manglekit.NewRegistry()
+	all.Register(registry)
 
-	// d. Build the orchestrator.
-	orchestrator, _, err := builder.Build(context.Background())
+	// d. Load the orchestrator from the configuration data.
+	orchestrator, err := sdk.FromConfig(context.Background(), registry, configData)
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}

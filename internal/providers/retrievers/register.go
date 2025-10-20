@@ -6,12 +6,7 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/dense"
 	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers/inmemory"
-	"github.com/duynguyendang/manglekit/sdk"
 )
-
-func init() {
-	Register(sdk.GlobalRegistry())
-}
 
 // Register registers all retriever providers.
 func Register(r *manglekit.Registry) {

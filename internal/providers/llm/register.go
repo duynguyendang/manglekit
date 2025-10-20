@@ -2,12 +2,7 @@ package llm
 
 import (
 	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/sdk"
 )
-
-func init() {
-	Register(sdk.GlobalRegistry())
-}
 
 // Register registers all LLM providers.
 func Register(r *manglekit.Registry) {

@@ -1,23 +1,38 @@
-// Package all imports all standard Manglekit providers, causing their `init()`
-// functions to be executed. This allows users to register all standard components
-// with a single, simple import.
+// Package all provides a function to register all standard Manglekit providers.
 package all
 
 import (
-	// Import each provider package to trigger its init() function, which
-	// in turn calls the registration function on the global registry.
-	_ "github.com/duynguyendang/manglekit/internal/embedders/google"
-	_ "github.com/duynguyendang/manglekit/internal/embedders/openai"
-	_ "github.com/duynguyendang/manglekit/internal/providers/bm25"
-	_ "github.com/duynguyendang/manglekit/internal/providers/dense"
-	_ "github.com/duynguyendang/manglekit/internal/providers/hybrid"
-	_ "github.com/duynguyendang/manglekit/internal/providers/llm"
-	_ "github.com/duynguyendang/manglekit/internal/providers/mangle"
-	_ "github.com/duynguyendang/manglekit/internal/providers/orchestrators"
-	_ "github.com/duynguyendang/manglekit/internal/providers/rerank"
-	_ "github.com/duynguyendang/manglekit/internal/providers/retrievers"
-	_ "github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
-	_ "github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
-	_ "github.com/duynguyendang/manglekit/internal/providers/state"
-	_ "github.com/duynguyendang/manglekit/internal/vectorstores"
+	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/internal/embedders/google"
+	"github.com/duynguyendang/manglekit/internal/embedders/openai"
+	"github.com/duynguyendang/manglekit/internal/providers/bm25"
+	"github.com/duynguyendang/manglekit/internal/providers/dense"
+	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
+	"github.com/duynguyendang/manglekit/internal/providers/llm"
+	"github.com/duynguyendang/manglekit/internal/providers/mangle"
+	"github.com/duynguyendang/manglekit/internal/providers/orchestrators"
+	"github.com/duynguyendang/manglekit/internal/providers/rerank"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
+	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
+	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
+	"github.com/duynguyendang/manglekit/internal/providers/state"
+	"github.com/duynguyendang/manglekit/internal/vectorstores"
 )
+
+// Register registers all standard providers with the given registry.
+func Register(r *manglekit.Registry) {
+	google.Register(r)
+	openai.Register(r)
+	bm25.Register(r)
+	dense.Register(r)
+	hybrid.Register(r)
+	llm.Register(r)
+	mangle.Register(r)
+	orchestrators.Register(r)
+	rerank.Register(r)
+	retrievers.Register(r)
+	jsonschema.Register(r)
+	rdf.Register(r)
+	state.Register(r)
+	vectorstores.Register(r)
+}

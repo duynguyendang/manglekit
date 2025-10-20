@@ -1,24 +1,23 @@
-# Configuration for the 'chat-with-data' example using the default Sandwich orchestrator.
+components:
+  - name: "mangle-rules"
+    kind: "rules"
+    params:
+      provider: "mangle"
+      path:
+        - "./rules/kb.facts"
+        - "./rules/retrieval.dlog"
+      defaultConverters: true
+      fileFirst: true
 
-# The Mangle provider is configured to load our logic and run it in the pre-process stage.
-rules:
-  name: "mangle"
-  params:
-    path:
-      - "./rules/kb.facts"
-      - "./rules/retrieval.dlog"
-    defaultConverters: true
-    fileFirst: true
+  - name: "bm25-retriever"
+    kind: "retriever"
+    params:
+      provider: "bm25"
+      path: "./data"
 
-# A simple retriever to fetch the document content AFTER Mangle has identified it.
-retriever:
-  name: "bm25"
-  params:
-    path: "./data"
-
-# The LLM to generate the final answer.
-llm:
-  name: "google"
-  params:
-    model: "gemini-2.5-flash"
-    apiKey: "${GOOGLE_API_KEY}"
+  - name: "google-llm"
+    kind: "llm"
+    params:
+      provider: "google"
+      model: "gemini-1.5-flash"
+      apiKey: "${GOOGLE_API_KEY}"

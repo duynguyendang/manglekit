@@ -60,17 +60,6 @@ type Builder struct {
 	llms           map[string]core.LLMClient
 	stateProviders map[string]core.StateProvider
 
-	// The single-instance fields hold the *last built* component of their kind.
-	// This provides a default dependency for other components during the build process
-	// without requiring a full dependency-by-name resolution system.
-	embedder      ai.Embedder
-	vectorStore   core.VectorStore
-	retriever     core.Retriever
-	reranker      core.Reranker
-	ruleSet       core.RuleSet
-	llmClient     core.LLMClient
-	stateProvider core.StateProvider
-
 	// Shared clients for dependency injection.
 	openAIClient *openai.OpenAI
 
@@ -161,7 +150,6 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 			assign: func(b *Builder, name string, v any) {
 				comp := v.(ai.Embedder)
 				b.embedders[name] = comp
-				b.embedder = comp // Keep track of the last one for dependency injection.
 			},
 			registerCloser: func(b *Builder, v any) {
 				if c, ok := v.(interface{ Close(context.Context) error }); ok {
@@ -170,12 +158,15 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 			},
 		},
 		core.KindVectorStore: {
-			kind:     core.KindVectorStore,
-			makeDeps: func(b *Builder) any { return diapi.VectorStoreDeps{Embedder: b.embedder} },
+			kind: core.KindVectorStore,
+			makeDeps: func(b *Builder) any {
+				// This is a placeholder. The actual dependency resolution happens
+				// inside the buildAll loop, which has access to the component's config.
+				return diapi.VectorStoreDeps{}
+			},
 			assign: func(b *Builder, name string, v any) {
 				comp := v.(core.VectorStore)
 				b.vectorStores[name] = comp
-				b.vectorStore = comp
 			},
 			registerCloser: func(b *Builder, v any) {
 				if c, ok := v.(interface{ Close(context.Context) error }); ok {
@@ -186,25 +177,20 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 		core.KindRetriever: {
 			kind: core.KindRetriever,
 			makeDeps: func(b *Builder) any {
-				return diapi.RetrieverDeps{
-					Embedder:          b.embedder,
-					VectorStore:       b.vectorStore,
-					BuildSubRetriever: b.BuildRetriever,
-				}
+				// Placeholder. Dependencies are resolved in the build loop.
+				return diapi.RetrieverDeps{}
 			},
 			assign: func(b *Builder, name string, v any) {
 				comp := v.(core.Retriever)
 				b.retrievers[name] = comp
-				b.retriever = comp
 			},
 		},
 		core.KindReranker: {
 			kind:     core.KindReranker,
-			makeDeps: func(b *Builder) any { return diapi.RerankerDeps{Embedder: b.embedder} },
+			makeDeps: func(b *Builder) any { return diapi.RerankerDeps{} },
 			assign: func(b *Builder, name string, v any) {
 				comp := v.(core.Reranker)
 				b.rerankers[name] = comp
-				b.reranker = comp
 			},
 		},
 		core.KindRules: {
@@ -213,7 +199,6 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 			assign: func(b *Builder, name string, v any) {
 				comp := v.(core.RuleSet)
 				b.rules[name] = comp
-				b.ruleSet = comp
 			},
 		},
 		core.KindLLM: {
@@ -230,7 +215,6 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 			assign: func(b *Builder, name string, v any) {
 				comp := v.(core.LLMClient)
 				b.llms[name] = comp
-				b.llmClient = comp
 			},
 			registerCloser: func(b *Builder, v any) {
 				if c, ok := v.(interface{ Close(context.Context) error }); ok {
@@ -244,7 +228,6 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 			assign: func(b *Builder, name string, v any) {
 				comp := v.(core.StateProvider)
 				b.stateProviders[name] = comp
-				b.stateProvider = comp
 			},
 			registerCloser: func(b *Builder, v any) {
 				if c, ok := v.(interface{ Close(context.Context) error }); ok {
@@ -318,10 +301,14 @@ func (b *Builder) buildAll(ctx context.Context) error {
 				b.ensureOpenAIClient(c)
 			}
 
-			deps := spec.makeDeps(b)
 			var cfg any
 			if c.params != nil {
 				cfg = c.params["typedConfig"]
+			}
+
+			deps, err := b.resolveDeps(ctx, k, cfg)
+			if err != nil {
+				return err
 			}
 
 			built, err := factory.Build(ctx, deps, cfg)
@@ -339,36 +326,98 @@ func (b *Builder) buildAll(ctx context.Context) error {
 	return nil
 }
 
-// BuildRetriever constructs a retriever by name. This is used to support the
-// hybrid retriever pattern, which needs to build its sub-retrievers.
-func (b *Builder) BuildRetriever(ctx context.Context, name string, params map[string]any) (core.Retriever, error) {
-	// This function is tricky. It needs to build a sub-component that might not
-	// have been in the original config list. We look it up in the registry,
-	// create its dependencies, and build it, but we *don't* add it to the main
-	// builder's component maps, as it's a dependency of another component.
-	b.opts.Obs.Logger.Debugf("building sub-retriever %q", name)
-	factory, err := b.registry.Get(core.KindRetriever, name)
-	if err != nil {
-		return nil, err
-	}
+// resolveDeps is the core of the dependency injection system. It inspects the
+// configuration `cfg` for a component of `kind`, determines its dependencies
+// by name, looks them up in the builder's maps of already-built components,
+// and returns a fully populated `diapi` struct.
+func (b *Builder) resolveDeps(ctx context.Context, kind core.Kind, cfg any) (any, error) {
+	switch kind {
+	case core.KindEmbedder:
+		return diapi.EmbedderDeps{Genkit: b.genkit}, nil
 
-	// This is a critical assumption: the sub-retriever depends on the *last-built*
-	// embedder and vector store.
-	deps := diapi.RetrieverDeps{
-		Embedder:    b.embedder,
-		VectorStore: b.vectorStore,
-	}
+	case core.KindVectorStore:
+		if typedCfg, ok := cfg.(diapi.EmbedderDep); ok {
+			embedder, err := b.getEmbedder(typedCfg.GetEmbedder())
+			if err != nil {
+				return nil, err
+			}
+			return diapi.VectorStoreDeps{Embedder: embedder}, nil
+		}
+		return nil, fmt.Errorf("vector store config does not declare an embedder dependency")
 
-	var cfg any
-	if params != nil {
-		cfg = params["typedConfig"]
-	}
+	case core.KindRetriever:
+		deps := diapi.RetrieverDeps{}
+		if typedCfg, ok := cfg.(diapi.EmbedderDep); ok {
+			embedder, err := b.getEmbedder(typedCfg.GetEmbedder())
+			if err != nil {
+				return nil, err
+			}
+			deps.Embedder = embedder
+		}
+		if typedCfg, ok := cfg.(diapi.VectorStoreDep); ok {
+			vs, err := b.getVectorStore(typedCfg.GetVectorStore())
+			if err != nil {
+				return nil, err
+			}
+			deps.VectorStore = vs
+		}
+		if typedCfg, ok := cfg.(diapi.SubRetrieversDep); ok {
+			for _, name := range typedCfg.GetSubRetrievers() {
+				r, err := b.getRetriever(name)
+				if err != nil {
+					return nil, err
+				}
+				deps.SubRetrievers = append(deps.SubRetrievers, r)
+			}
+		}
+		return deps, nil
 
-	v, err := factory.Build(ctx, deps, cfg)
-	if err != nil {
-		return nil, err
+	case core.KindReranker:
+		// Currently, the main reranker (Cohere) does not have dependencies.
+		return diapi.RerankerDeps{}, nil
+
+	case core.KindRules:
+		return diapi.RuleSetDeps{}, nil
+
+	case core.KindLLM:
+		return struct {
+			diapi.LLMDeps
+			diapi.OpenAIClientProvider
+		}{
+			LLMDeps:              diapi.LLMDeps{Genkit: b.genkit},
+			OpenAIClientProvider: b,
+		}, nil
+
+	case core.KindStateProvider:
+		return diapi.StateProviderDeps{}, nil
+
+	default:
+		return nil, nil // No deps
 	}
-	return v.(core.Retriever), nil
+}
+
+func (b *Builder) getEmbedder(name string) (ai.Embedder, error) {
+	e, ok := b.embedders[name]
+	if !ok {
+		return nil, fmt.Errorf("dependency not found: embedder %q", name)
+	}
+	return e, nil
+}
+
+func (b *Builder) getVectorStore(name string) (core.VectorStore, error) {
+	vs, ok := b.vectorStores[name]
+	if !ok {
+		return nil, fmt.Errorf("dependency not found: vectorStore %q", name)
+	}
+	return vs, nil
+}
+
+func (b *Builder) getRetriever(name string) (core.Retriever, error) {
+	r, ok := b.retrievers[name]
+	if !ok {
+		return nil, fmt.Errorf("dependency not found: retriever %q", name)
+	}
+	return r, nil
 }
 
 // Build constructs the final Orchestrator.
@@ -426,13 +475,13 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updata
 	}
 	orchestrator := orchAny.(core.Orchestrator)
 
-	// Check if the retriever is updatable and return a typed handle if so.
-	// This now checks the *last-built* retriever for simplicity. A more advanced
-	// system might need to return multiple updatable handles.
+	// Check if any retriever is updatable and return a typed handle to the first one found.
 	var updatable retrieve.Updatable
-	if b.retriever != nil {
-		if u, ok := b.retriever.(retrieve.Updatable); ok {
+	for _, r := range b.retrievers {
+		if u, ok := r.(retrieve.Updatable); ok {
 			updatable = u
+			b.opts.Obs.Logger.Infof("found updatable retriever")
+			break
 		}
 	}
 

@@ -26,12 +26,6 @@ import (
 	"github.com/google/mangle/parse"
 )
 
-import "github.com/duynguyendang/manglekit/sdk"
-
-func init() {
-	Register(sdk.GlobalRegistry())
-}
-
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, core.MangleOptions{},
 		func(ctx context.Context, deps diapi.RuleSetDeps, cfg core.MangleOptions) (core.RuleSet, error) {

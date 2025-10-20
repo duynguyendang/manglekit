@@ -9,36 +9,26 @@ func (c *Config) Normalize() {
 	if c.TopK == 0 {
 		c.TopK = 10 // Default to 10 results
 	}
-	// TODO: Add normalization logic for all components, filling in default
-	// providers, models, etc. where they are not specified.
 }
 
 // Validate checks the configuration for semantic correctness. It ensures that
 // all required fields are present and that the values are valid.
 func (c *Config) Validate() error {
-	if c.LLM == nil {
-		return fmt.Errorf("llm configuration is required")
-	}
-	if c.LLM.Provider == "" {
-		return fmt.Errorf("llm.provider is required")
+	if len(c.Components) == 0 {
+		return fmt.Errorf("at least one component must be defined in the configuration")
 	}
 
-	if c.Embedder == nil {
-		return fmt.Errorf("embedder configuration is required")
+	for _, comp := range c.Components {
+		if comp.Name == "" {
+			return fmt.Errorf("component name is required")
+		}
+		if comp.Kind == "" {
+			return fmt.Errorf("component kind is required for component %q", comp.Name)
+		}
+		if comp.Params == nil {
+			return fmt.Errorf("component params are required for component %q", comp.Name)
+		}
 	}
-	if c.Embedder.Provider == "" {
-		return fmt.Errorf("embedder.provider is required")
-	}
-
-	if c.Retrieve == nil {
-		return fmt.Errorf("retrieve configuration is required")
-	}
-	if c.Retrieve.Provider == "" {
-		return fmt.Errorf("retrieve.provider is required")
-	}
-
-	// TODO: Add comprehensive validation for all components, checking for
-	// things like provider-specific required options.
 
 	return nil
 }

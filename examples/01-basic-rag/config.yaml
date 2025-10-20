@@ -1,10 +1,13 @@
-retriever:
-  name: "bm25"
-  params:
-    path: "./data"
+components:
+  - name: "bm25-retriever"
+    kind: "retriever"
+    params:
+      provider: "bm25"
+      path: "./data"
 
-llm:
-  name: "google"
-  params:
-    model: "gemini-2.5-flash"
-    apiKey: "${GOOGLE_API_KEY}"
+  - name: "google-llm"
+    kind: "llm"
+    params:
+      provider: "google"
+      model: "gemini-1.5-flash"
+      apiKey: "${GOOGLE_API_KEY}"
