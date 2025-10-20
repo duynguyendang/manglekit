@@ -1,5 +1,8 @@
 orchestrator:
   type: sandwich
+  params:
+    llm: google
+    retriever: in-memory
 
 llm:
   name: google

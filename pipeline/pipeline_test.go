@@ -41,7 +41,11 @@ func TestSandwich_Integration(t *testing.T) {
 		Retrievers: map[string]core.Retriever{"mock": &MockRetriever{}},
 		MaxTokens:  16,
 	}
-	orchestrator, err := NewSandwich(ctx, deps)
+	opts := SandwichOptions{
+		Retriever: "mock",
+		LLM:       "openai",
+	}
+	orchestrator, err := NewSandwich(ctx, deps, opts)
 	require.NoError(t, err)
 
 	// Execute the pipeline.

@@ -10,7 +10,7 @@
 **Location:** `pipeline/sandwich.go` (in `NewSandwich` factory)
 **Impact Analysis:** The `NewSandwich` factory iterates through the maps of resolved components (e.g., `deps.Retrievers`, `deps.LLMs`) and picks the *first one* it finds. This behavior is non-deterministic, as map iteration order in Go is not guaranteed. A user configuring multiple retrievers or LLMs has no control over which one the primary orchestrator will use, leading to unpredictable behavior.
 **Refactoring Suggestion:** The `Sandwich` orchestrator should be configurable. Introduce a `SandwichOptions` struct that allows the user to specify the names of the components it should use (e.g., `Retriever: "bm25"`, `LLM: "openai"`). The factory would then look up these specific components in the `deps` maps.
-**Status:** Open
+**Status:** Resolved
 
 ## Smell: Redundant `WithKind` Method in Builder API
 **Location:** `builder.go`

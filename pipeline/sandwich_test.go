@@ -36,7 +36,12 @@ func TestSandwich_Close(t *testing.T) {
 			Closers:    []core.ResourceCloser{closer1, closer2},
 		}
 
-		orch, err := NewSandwich(context.Background(), deps)
+		opts := SandwichOptions{
+			Retriever: "mock",
+			Reranker:  "mock",
+			LLM:       "mock",
+		}
+		orch, err := NewSandwich(context.Background(), deps, opts)
 		if err != nil {
 			t.Fatalf("NewSandwich() error = %v", err)
 		}
@@ -71,7 +76,12 @@ func TestSandwich_Close(t *testing.T) {
 			Closers:    []core.ResourceCloser{closer1, closer2},
 		}
 
-		orch, err := NewSandwich(context.Background(), deps)
+		opts := SandwichOptions{
+			Retriever: "mock",
+			Reranker:  "mock",
+			LLM:       "mock",
+		}
+		orch, err := NewSandwich(context.Background(), deps, opts)
 		if err != nil {
 			t.Fatalf("NewSandwich() error = %v", err)
 		}
