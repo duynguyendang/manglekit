@@ -305,6 +305,7 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updata
 		TopK:              b.opts.TopK,
 		MaxTokens:         b.opts.MaxTokens,
 		FallbackThreshold: b.opts.FallbackThreshold,
+		Closers:           b.opts.ResourceClosers,
 	}
 
 	// Build the orchestrator itself.

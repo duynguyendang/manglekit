@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -46,6 +47,7 @@ func NewSandwich(ctx context.Context, deps core.Resolved) (core.Orchestrator, er
 		llm:                 deps.LLM.(llm.Client),
 		stateProvider:       deps.StateProvider,
 		conversationManager: statehelper.NewConversationManager(),
+		closers:             deps.Closers,
 		opts: core.OptionsLike{ // Adapt to the new options-like struct
 			TopK:              deps.TopK,
 			MaxTokens:         deps.MaxTokens,
@@ -110,14 +112,15 @@ func (s *Sandwich) Execute(ctx context.Context, sessionID string, q core.Query) 
 
 // Close releases any external resources held by the orchestrator's components.
 func (s *Sandwich) Close(ctx context.Context) error {
-	var combined error
-	for i := len(s.closers) - 1; i >= 0; i-- {
-		if s.closers[i] == nil {
-			continue
-		}
-		if err := s.closers[i](ctx); err != nil {
-			combined = errors.Join(combined, err)
+	var errs []error
+	for _, closer := range s.closers {
+		if err := closer(ctx); err != nil {
+			s.opts.Obs.Logger.Warnf("error during resource cleanup: %v", err)
+			errs = append(errs, err)
 		}
 	}
-	return combined
+	if len(errs) > 0 {
+		return fmt.Errorf("errors occurred during resource cleanup: %w", errors.Join(errs...))
+	}
+	return nil
 }

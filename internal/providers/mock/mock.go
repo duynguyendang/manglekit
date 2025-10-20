@@ -244,3 +244,16 @@ func (e *Embedder) Register(r api.Registry) {}
 func (e *Embedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.EmbedResponse, error) {
 	return &ai.EmbedResponse{}, nil
 }
+
+// RuleSet is a mock ruleset.
+type RuleSet struct{}
+
+// NewRuleSet creates a new mock ruleset.
+func NewRuleSet() *RuleSet {
+	return &RuleSet{}
+}
+
+// Evaluate evaluates the rules.
+func (r *RuleSet) Evaluate(stage core.Stage, q core.Query, a *core.Answer) (core.RuleResult, error) {
+	return core.RuleResult{Allowed: true}, nil
+}
