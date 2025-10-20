@@ -3,14 +3,14 @@ context_type: low_level_design
 project: manglekit
 language: go
 version: 0.4.0
-last_updated: 2025-10-17
+last_updated: 2025-10-20
 stability: stable
 audience: developers
 ---
 
 ### 1. Purpose & Scope
 
-This Low-Level Design (LLD) document details the technical implementation of the Manglekit SDK's core systems as of version 0.4.0. It covers the `Builder` subsystem, the generic `Registry`, provider factory signatures, the `diapi` dependency injection layer, and the lifecycle of components within the functioning `Sandwich` orchestrator. It serves as a bridge between the high-level architecture in `CONTEXT.md` and the Go source code.
+This Low-Level Design (LLD) document details the technical implementation of the Manglekit SDK's core systems as of version 0.4.0. It covers the `Builder` subsystem, the generic `Registry`, provider factory signatures, the `diapi` dependency injection layer, and the lifecycle of components within the functioning `Sandwich` orchestrator. It serves as a bridge between the high-level architecture in `CONTEXT.md` and the Go source code. Content reflects the implementation in `builder.go`, `registry.go`, `core/*`, and `pipeline/*` as of the last_updated timestamp.
 
 ### 2. Component Diagram
 
@@ -50,13 +50,29 @@ classDiagram
     }
     class Resolved {
         +Retriever: any
+        +VectorStore: core.VectorStore
+        +Reranker: any
+        +Rules: core.RuleSet
         +LLM: any
-        +...
+        +Embedder: any
+        +StateProvider: core.StateProvider
+        +Obs: core.Observability
+        +TopK: int
+        +MaxTokens: int
+        +FallbackThreshold: float64
     }
     class diapi.RetrieverDeps {
         +Embedder: ai.Embedder
         +VectorStore: core.VectorStore
         +BuildSubRetriever()
+    }
+    class diapi.LLMDeps {
+        +Genkit: *genkit.Genkit
+        +Client: any
+    }
+    class diapi.EmbedderDeps {
+        +Genkit: *genkit.Genkit
+        +Client: any
     }
 
     Builder o-- Registry
@@ -77,7 +93,7 @@ The build process is orchestrated by `manglekit.Builder`. It is a stateful objec
 1.  **Initialization**: `NewBuilder(registry)` creates a builder instance.
 2.  **Configuration**: The user calls `With(opts)` for each component. The builder uses the `reflect.TypeOf(opts)` to look up the component's `Kind` and `Name` in the registry.
 3.  **Build Trigger**: The user calls `Build(ctx)`.
-4.  **`buildAll` Execution**: The builder iterates through a hard-coded `order` of `core.Kind`s (Embedder -> VectorStore -> Retriever, etc.).
+4.  **`buildAll` Execution**: The builder iterates through a hard-coded `order` of `core.Kind`s (Embedder -> VectorStore -> Retriever -> Reranker -> Rules -> LLM -> StateProvider -> SchemaParser). Note: `SchemaParser` is currently present in the order but has no corresponding spec entry in the builder's `specTable`.
 5.  **Factory Invocation**: For each component, it:
     a. Creates the required dependency struct (e.g., `diapi.RetrieverDeps`).
     b. Fetches the `GenericFactory` from the registry.
@@ -136,15 +152,15 @@ manglekit.Register(r, llm.OpenAIOptions{},
 
 Dependencies are provided to factories via typed structs defined in the `core/diapi` package. This avoids long, untyped function signatures.
 
--   **`diapi.EmbedderDeps`**: `{ Genkit: *genkit.Genkit }`
--   **`diapi.VectorStoreDeps`**: `{ Embedder: ai.Embedder }`
--   **`diapi.RetrieverDeps`**: `{ Embedder: ai.Embedder, VectorStore: core.VectorStore, BuildSubRetriever: func(...) }`
--   **`diapi.LLMDeps`**: `{ Genkit: *genkit.Genkit }`
--   **`diapi.RerankerDeps`**: `{ Embedder: ai.Embedder }`
--   **`diapi.StateProviderDeps`**: `{}` (empty)
--   **`diapi.RuleSetDeps`**: `{}` (empty)
+-   `diapi.EmbedderDeps`: `{ Genkit: *genkit.Genkit, Client: any }`
+-   `diapi.VectorStoreDeps`: `{ Embedder: ai.Embedder }`
+-   `diapi.RetrieverDeps`: `{ Embedder: ai.Embedder, VectorStore: core.VectorStore, BuildSubRetriever: func(...) }`
+-   `diapi.LLMDeps`: `{ Genkit: *genkit.Genkit, Client: any }`
+-   `diapi.RerankerDeps`: `{ Embedder: ai.Embedder }`
+-   `diapi.StateProviderDeps`: `{}` (empty)
+-   `diapi.RuleSetDeps`: `{}` (empty)
 
-**Initialization Order:** The `builder.go:buildAll` method defines a hard-coded build order to satisfy these dependencies implicitly. For example, `KindEmbedder` is always built before `KindVectorStore`.
+**Initialization Order:** The `builder.go:buildAll` method defines a hard-coded build order to satisfy these dependencies implicitly. For example, `KindEmbedder` is always built before `KindVectorStore`. The order currently includes `KindSchemaParser` even though there is no `specTable` entry for it.
 
 ### 6. Provider Family Details
 
@@ -156,19 +172,19 @@ Dependencies are provided to factories via typed structs defined in the `core/di
 
 #### LLM: `openai`
 -   **Factory Entrypoint**: `internal/providers/llm/RegisterOpenAI`
--   **Registered Key**: `openai-chat` (from `llm.OpenAIOptions{}.ProviderName()`)
+-   **Registered Key**: `openai` (from `llm.OpenAIOptions{}.ProviderName()`)
 -   **Config Struct**: `llm.OpenAIOptions`
 -   **Dependencies**: `diapi.LLMDeps`.
 
 ### 7. Configuration Binding
 
-Configuration from `config.yaml` is mapped to provider `Options` structs by the `FromConfig` function in `from_config.go`. This process relies on `mapstructure` tags.
+Configuration from `config.yaml` is mapped to provider `Options` structs by `NewBuilderFromConfig` in `from_config.go`. The loader resolves the concrete `Options` type for a given `(kind, provider)` using the registry, then marshals the generic `map[string]any` to JSON and unmarshals into the typed struct using its `json` tags.
 
 **YAML Example:**
 ```yaml
 llm:
-  provider: openai-chat
-  config:
+  provider: openai
+  options:
     apiKey: ${OPENAI_API_KEY}
     model: "gpt-4-turbo"
 ```
@@ -176,18 +192,20 @@ llm:
 **Go Mapping (`llm.OpenAIOptions`):**
 ```go
 type OpenAIOptions struct {
-	Model         string  `yaml:"model"`
-	APIKey        string  `yaml:"apiKey"`
-	// ... other fields
+    APIKey         string  `json:"apiKey,omitempty"`
+    Model          string  `json:"model,omitempty"`
+    PromptTemplate string  `json:"promptTemplate,omitempty"`
+    Temperature    float32 `json:"temperature,omitempty"`
+    MaxOutputTokens int    `json:"maxOutputTokens,omitempty"`
 }
 ```
-The `FromConfig` loader finds the `openai-chat` provider, gets its associated `Options` type from the registry, and uses `yaml.Unmarshal` to populate it.
+`NewBuilderFromConfig` resolves the `openai` provider, discovers its `Options` type via the registry, and uses JSON round-tripping to populate it.
 
 ### 8. Lifecycle & Resource Management
 
 1.  **Creation**: All components are created once during the `Builder.Build` call.
 2.  **Reuse**: The same component instances are used for the lifetime of the orchestrator.
-3.  **Closure**: **(CURRENTLY BROKEN)** Components that need cleanup (e.g., database clients) are supposed to have their `Close` methods collected by the builder as `core.ResourceCloser` functions. The orchestrator's `Close` method is then supposed to invoke all of them. This connection is currently missing, and resources are not cleaned up.
+3.  **Closure**: **(CURRENTLY BROKEN)** The builder collects `core.ResourceCloser` callbacks for components that implement `Close(context.Context) error`, but these closers are not propagated to the orchestrator. The Sandwich orchestrator defines a `closers` field and a `Close` method, yet no closers are injected, so resources are not cleaned up. The builder only attempts cleanup on build failures.
 
 ### 9. Logging & Observability Hooks
 
@@ -205,20 +223,21 @@ The `core.Observability` struct is the single injection point for logging, traci
 
 ### 11. Design Constraints & Guardrails
 
--   The build order is rigidly defined in `builder.go:buildAll`. A component cannot depend on another component that is later in the build order.
--   All provider options structs *must* embed `core.ProviderOptions` to be compatible with the registry.
+-   The build order is rigidly defined in `builder.go:buildAll`. A component cannot depend on another component that is later in the build order. The order currently includes `KindSchemaParser` without a matching `specTable` entry.
+-   All provider options structs must implement `core.ProviderOptions` (provide `ProviderName()` and `ProviderKind()`) to be compatible with the registry.
 -   Factories must not panic; they should return errors.
 
 ### 12. Deviations & Pending Refactors
 
 This section mirrors the "Known Gaps" in `CONTEXT.md` and the findings in `code-review.md`.
 
--   **`core.Resolved` Type Safety**: The `any` types in `core.Resolved` should be replaced with concrete interface types to eliminate runtime type assertions in factories.
+-   **`core.Resolved` Type Safety**: The `any` fields in `core.Resolved` should be replaced with concrete interface types to eliminate runtime type assertions in orchestrators and factories.
 -   **Resource Cleanup**: The `ResourceCloser` functions collected by the builder must be passed to and used by the orchestrator.
--   **Declarative Pipeline**: The `declarative` orchestrator is non-functional and needs to be either fully implemented within the builder system or removed.
--   **Hybrid Retriever Composition**: The `hybrid` retriever's dependencies should be specified in its configuration, not hard-coded in its factory.
--   **DI for Shared Clients**: Shared clients (like the OpenAI client) should be created once by the builder and injected into providers, not created by each provider factory.
+-   **Declarative Pipeline**: The `declarative` orchestrator exists but is not wired for use; either complete it or remove.
+-   **Hybrid Retriever Composition**: The `hybrid` retriever's child dependencies are still requested by name in the factory; move this to configuration.
+-   **DI for Shared Clients**: If providers require shared clients, they should be injected via `diapi` instead of being created ad-hoc in factories.
 
 ### 13. Changelog
 
+-   **2025-10-20**: Synchronized with current code. Updated DI structs (`diapi.LLMDeps`, `diapi.EmbedderDeps`), corrected provider names (LLM `openai`), clarified configuration binding via `NewBuilderFromConfig`, documented the presence of `KindSchemaParser` in build order without a spec entry, and expanded `core.Resolved` depiction.
 -   **2025-10-17**: Created LLD to document the v0.4.0 implementation. Detailed the builder, registry, and DI systems. Captured the current, flawed resource management lifecycle and the non-functional state of the declarative pipeline. Aligned design constraints and deviations with `CONTEXT.md`.
