@@ -49,12 +49,24 @@ type Builder struct {
 	cfgs []configItem
 
 	// Built components are stored here during the build process.
+	// The maps store all named components.
+	embedders      map[string]ai.Embedder
+	vectorStores   map[string]core.VectorStore
+	retrievers     map[string]core.Retriever
+	rerankers      map[string]core.Reranker
+	rules          map[string]core.RuleSet
+	llms           map[string]core.LLMClient
+	stateProviders map[string]core.StateProvider
+
+	// The single-instance fields hold the *last built* component of their kind.
+	// This provides a default dependency for other components during the build process
+	// without requiring a full dependency-by-name resolution system.
 	embedder      ai.Embedder
 	vectorStore   core.VectorStore
 	retriever     core.Retriever
 	reranker      core.Reranker
-	rules         core.RuleSet
-	llm           core.LLMClient
+	ruleSet       core.RuleSet
+	llmClient     core.LLMClient
 	stateProvider core.StateProvider
 
 	orchestratorName string
@@ -63,7 +75,14 @@ type Builder struct {
 // NewBuilder returns a new, empty instance of the fluent builder.
 func NewBuilder(r *Registry) *Builder {
 	b := &Builder{
-		registry: r,
+		registry:       r,
+		embedders:      make(map[string]ai.Embedder),
+		vectorStores:   make(map[string]core.VectorStore),
+		retrievers:     make(map[string]core.Retriever),
+		rerankers:      make(map[string]core.Reranker),
+		rules:          make(map[string]core.RuleSet),
+		llms:           make(map[string]core.LLMClient),
+		stateProviders: make(map[string]core.StateProvider),
 	}
 	b.opts.Obs.Logger = logger.NewStdLogger()
 	return b
@@ -118,7 +137,7 @@ func (b *Builder) WithKind(kind core.Kind, name string, opts any) BuilderAPI {
 type compSpec struct {
 	kind           core.Kind
 	makeDeps       func(*Builder) any
-	assign         func(*Builder, any)
+	assign         func(*Builder, string, any)
 	registerCloser func(*Builder, any)
 }
 
@@ -129,7 +148,11 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 		core.KindEmbedder: {
 			kind:     core.KindEmbedder,
 			makeDeps: func(b *Builder) any { return diapi.EmbedderDeps{Genkit: b.genkit} },
-			assign:   func(b *Builder, v any) { b.embedder = v.(ai.Embedder) },
+			assign: func(b *Builder, name string, v any) {
+				comp := v.(ai.Embedder)
+				b.embedders[name] = comp
+				b.embedder = comp // Keep track of the last one for dependency injection.
+			},
 			registerCloser: func(b *Builder, v any) {
 				if c, ok := v.(interface{ Close(context.Context) error }); ok {
 					b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
@@ -139,7 +162,11 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 		core.KindVectorStore: {
 			kind:     core.KindVectorStore,
 			makeDeps: func(b *Builder) any { return diapi.VectorStoreDeps{Embedder: b.embedder} },
-			assign:   func(b *Builder, v any) { b.vectorStore = v.(core.VectorStore) },
+			assign: func(b *Builder, name string, v any) {
+				comp := v.(core.VectorStore)
+				b.vectorStores[name] = comp
+				b.vectorStore = comp
+			},
 			registerCloser: func(b *Builder, v any) {
 				if c, ok := v.(interface{ Close(context.Context) error }); ok {
 					b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
@@ -155,22 +182,38 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 					BuildSubRetriever: b.BuildRetriever,
 				}
 			},
-			assign: func(b *Builder, v any) { b.retriever = v.(core.Retriever) },
+			assign: func(b *Builder, name string, v any) {
+				comp := v.(core.Retriever)
+				b.retrievers[name] = comp
+				b.retriever = comp
+			},
 		},
 		core.KindReranker: {
 			kind:     core.KindReranker,
 			makeDeps: func(b *Builder) any { return diapi.RerankerDeps{Embedder: b.embedder} },
-			assign:   func(b *Builder, v any) { b.reranker = v.(core.Reranker) },
+			assign: func(b *Builder, name string, v any) {
+				comp := v.(core.Reranker)
+				b.rerankers[name] = comp
+				b.reranker = comp
+			},
 		},
 		core.KindRules: {
 			kind:     core.KindRules,
 			makeDeps: func(b *Builder) any { return diapi.RuleSetDeps{} },
-			assign:   func(b *Builder, v any) { b.rules = v.(core.RuleSet) },
+			assign: func(b *Builder, name string, v any) {
+				comp := v.(core.RuleSet)
+				b.rules[name] = comp
+				b.ruleSet = comp
+			},
 		},
 		core.KindLLM: {
 			kind:     core.KindLLM,
 			makeDeps: func(b *Builder) any { return diapi.LLMDeps{Genkit: b.genkit} },
-			assign:   func(b *Builder, v any) { b.llm = v.(core.LLMClient) },
+			assign: func(b *Builder, name string, v any) {
+				comp := v.(core.LLMClient)
+				b.llms[name] = comp
+				b.llmClient = comp
+			},
 			registerCloser: func(b *Builder, v any) {
 				if c, ok := v.(interface{ Close(context.Context) error }); ok {
 					b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
@@ -180,7 +223,11 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 		core.KindStateProvider: {
 			kind:     core.KindStateProvider,
 			makeDeps: func(b *Builder) any { return diapi.StateProviderDeps{} },
-			assign:   func(b *Builder, v any) { b.stateProvider = v.(core.StateProvider) },
+			assign: func(b *Builder, name string, v any) {
+				comp := v.(core.StateProvider)
+				b.stateProviders[name] = comp
+				b.stateProvider = comp
+			},
 			registerCloser: func(b *Builder, v any) {
 				if c, ok := v.(interface{ Close(context.Context) error }); ok {
 					b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
@@ -236,7 +283,7 @@ func (b *Builder) buildAll(ctx context.Context) error {
 				return fmt.Errorf("factory for %s '%s' failed: %w", k, c.name, err)
 			}
 
-			spec.assign(b, built)
+			spec.assign(b, c.name, built)
 			if spec.registerCloser != nil {
 				spec.registerCloser(b, built)
 			}
@@ -249,12 +296,18 @@ func (b *Builder) buildAll(ctx context.Context) error {
 // BuildRetriever constructs a retriever by name. This is used to support the
 // hybrid retriever pattern, which needs to build its sub-retrievers.
 func (b *Builder) BuildRetriever(ctx context.Context, name string, params map[string]any) (core.Retriever, error) {
+	// This function is tricky. It needs to build a sub-component that might not
+	// have been in the original config list. We look it up in the registry,
+	// create its dependencies, and build it, but we *don't* add it to the main
+	// builder's component maps, as it's a dependency of another component.
 	b.opts.Obs.Logger.Debugf("building sub-retriever %q", name)
 	factory, err := b.registry.Get(core.KindRetriever, name)
 	if err != nil {
 		return nil, err
 	}
 
+	// This is a critical assumption: the sub-retriever depends on the *last-built*
+	// embedder and vector store.
 	deps := diapi.RetrieverDeps{
 		Embedder:    b.embedder,
 		VectorStore: b.vectorStore,
@@ -294,13 +347,13 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updata
 
 	// Assemble the strongly-typed Resolved struct for the orchestrator.
 	resolved := core.Resolved{
-		Retriever:         b.retriever,
-		VectorStore:       b.vectorStore,
-		Reranker:          b.reranker,
+		Retrievers:        b.retrievers,
+		VectorStores:      b.vectorStores,
+		Rerankers:         b.rerankers,
 		Rules:             b.rules,
-		LLM:               b.llm,
-		Embedder:          b.embedder,
-		StateProvider:     b.stateProvider,
+		LLMs:              b.llms,
+		Embedders:         b.embedders,
+		StateProviders:    b.stateProviders,
 		Obs:               b.opts.Obs,
 		TopK:              b.opts.TopK,
 		MaxTokens:         b.opts.MaxTokens,
@@ -328,6 +381,8 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updata
 	orchestrator := orchAny.(core.Orchestrator)
 
 	// Check if the retriever is updatable and return a typed handle if so.
+	// This now checks the *last-built* retriever for simplicity. A more advanced
+	// system might need to return multiple updatable handles.
 	var updatable retrieve.Updatable
 	if b.retriever != nil {
 		if u, ok := b.retriever.(retrieve.Updatable); ok {

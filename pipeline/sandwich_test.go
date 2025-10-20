@@ -29,11 +29,11 @@ func TestSandwich_Close(t *testing.T) {
 		}
 
 		deps := core.Resolved{
-			Retriever: &mock.Retriever{},
-			Reranker:  &mock.Reranker{},
-			Rules:     mock.NewRuleSet(),
-			LLM:       &mock.LLM{},
-			Closers:   []core.ResourceCloser{closer1, closer2},
+			Retrievers: map[string]core.Retriever{"mock": &mock.Retriever{}},
+			Rerankers:  map[string]core.Reranker{"mock": &mock.Reranker{}},
+			Rules:      map[string]core.RuleSet{"mock": mock.NewRuleSet()},
+			LLMs:       map[string]core.LLMClient{"mock": &mock.LLM{}},
+			Closers:    []core.ResourceCloser{closer1, closer2},
 		}
 
 		orch, err := NewSandwich(context.Background(), deps)
@@ -64,11 +64,11 @@ func TestSandwich_Close(t *testing.T) {
 		}
 
 		deps := core.Resolved{
-			Retriever: &mock.Retriever{},
-			Reranker:  &mock.Reranker{},
-			Rules:     mock.NewRuleSet(),
-			LLM:       &mock.LLM{},
-			Closers:   []core.ResourceCloser{closer1, closer2},
+			Retrievers: map[string]core.Retriever{"mock": &mock.Retriever{}},
+			Rerankers:  map[string]core.Reranker{"mock": &mock.Reranker{}},
+			Rules:      map[string]core.RuleSet{"mock": mock.NewRuleSet()},
+			LLMs:       map[string]core.LLMClient{"mock": &mock.LLM{}},
+			Closers:    []core.ResourceCloser{closer1, closer2},
 		}
 
 		orch, err := NewSandwich(context.Background(), deps)
