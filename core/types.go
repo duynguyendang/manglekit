@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/firebase/genkit/go/ai"
 )
@@ -137,19 +138,37 @@ type Citation struct {
 // that orchestrators receive their dependencies in a type-safe manner, free
 // from `any` types and runtime assertions.
 type Resolved struct {
-	Retriever     Retriever
-	VectorStore   VectorStore
-	Reranker      Reranker
-	Rules         RuleSet
-	LLM           LLMClient
-	Embedder      ai.Embedder
-	StateProvider StateProvider
+	Retrievers     map[string]Retriever
+	VectorStores   map[string]VectorStore
+	Rerankers      map[string]Reranker
+	Rules          map[string]RuleSet
+	LLMs           map[string]LLMClient
+	Embedders      map[string]ai.Embedder
+	StateProviders map[string]StateProvider
 
 	Obs               Observability
 	TopK              int
 	MaxTokens         int
 	FallbackThreshold float64
 	Closers           []ResourceCloser
+}
+
+// GetToolByName finds a component by its registered name and returns it wrapped
+// in a `core.Tool` adapter. This allows the declarative orchestrator to look up
+// its steps in a generic, type-safe way.
+func (r *Resolved) GetToolByName(name string) (Tool, error) {
+	if t, ok := r.Retrievers[name]; ok {
+		return &RetrieverTool{R: t}, nil
+	}
+	if t, ok := r.Rerankers[name]; ok {
+		return &RerankerTool{Rr: t}, nil
+	}
+	if t, ok := r.LLMs[name]; ok {
+		return &LLMTool{Llm: t}, nil
+	}
+	// Note: VectorStores, Embedders, and StateProviders are not currently adapted
+	// as tools because they don't represent standalone pipeline steps.
+	return nil, fmt.Errorf("tool with name '%s' not found", name)
 }
 
 // OptionsLike is a temporary struct to hold global settings during the build process.

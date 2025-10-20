@@ -37,21 +37,39 @@ type Sandwich struct {
 // `core.Resolved` struct, which contains all its dependencies, fully constructed
 // and strongly typed. This eliminates the need for runtime type assertions.
 func NewSandwich(ctx context.Context, deps core.Resolved) (core.Orchestrator, error) {
+	// The sandwich orchestrator represents a "default" linear pipeline.
+	// For simplicity, it will use the *first* available component of each kind.
 	s := &Sandwich{
-		retriever:           deps.Retriever,
-		reranker:            deps.Reranker,
-		ruleset:             deps.Rules,
-		llm:                 deps.LLM,
-		stateProvider:       deps.StateProvider,
 		conversationManager: statehelper.NewConversationManager(),
 		closers:             deps.Closers,
-		opts: core.OptionsLike{ // Adapt to the new options-like struct
+		opts: core.OptionsLike{
 			TopK:              deps.TopK,
 			MaxTokens:         deps.MaxTokens,
 			FallbackThreshold: deps.FallbackThreshold,
 			Obs:               deps.Obs,
 		},
 	}
+	for _, v := range deps.Retrievers {
+		s.retriever = v
+		break
+	}
+	for _, v := range deps.Rerankers {
+		s.reranker = v
+		break
+	}
+	for _, v := range deps.Rules {
+		s.ruleset = v
+		break
+	}
+	for _, v := range deps.LLMs {
+		s.llm = v
+		break
+	}
+	for _, v := range deps.StateProviders {
+		s.stateProvider = v
+		break
+	}
+
 	if s.opts.Obs.Logger == nil {
 		s.opts.Obs.Logger = obslogger.NewStdLogger()
 	}

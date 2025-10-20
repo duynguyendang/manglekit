@@ -1,5 +1,7 @@
 package declarative
 
+import "github.com/duynguyendang/manglekit/core"
+
 // ToolStepConfig defines a single tool to be executed.
 // The "Name" must match the name of a component defined elsewhere in the config.
 type ToolStepConfig struct {
@@ -10,3 +12,9 @@ type ToolStepConfig struct {
 type Options struct {
 	Steps []ToolStepConfig `yaml:"steps"`
 }
+
+// ProviderName returns the name of the provider.
+func (o Options) ProviderName() string { return "declarative" }
+
+// ProviderKind returns the kind of the provider.
+func (o Options) ProviderKind() core.Kind { return core.KindOrchestrator }

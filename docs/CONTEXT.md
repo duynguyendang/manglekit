@@ -100,7 +100,7 @@ The architecture is designed for testability. Since components depend on interfa
 | --- | ------------------------------------------ | -------------------------------------- | ------ |
 | 1   | Type Assertions in Core Component Factory  | `pipeline/sandwich.go`                 | Fixed   |
 | 2   | Broken Resource Cleanup Lifecycle          | `pipeline/sandwich.go`, `builder.go`     | Fixed   |
-| 3   | Dead Code - Declarative Orchestrator       | `pipeline/declarative/*`               | Open   |
+| 3   | Dead Code - Declarative Orchestrator       | `pipeline/declarative/*`               | Resolved   |
 | 4   | Magic Strings for Execution Context        | `pipeline/declarative/orchestrator.go` | Open   |
 | 5   | Violation of Open/Closed Principle         | `pipeline/declarative/orchestrator.go` | Open   |
 | 6   | Dependency Injection Bypass                | `internal/providers/llm/openai.go`     | Open   |
@@ -151,7 +151,7 @@ The project adheres to Semantic Versioning 2.0.0. Minor version bumps may introd
     {
       "id": 3,
       "description": "Dead Code - Declarative Orchestrator",
-      "status": "Open"
+      "status": "Resolved"
     },
     {
       "id": 4,
@@ -184,5 +184,6 @@ The project adheres to Semantic Versioning 2.0.0. Minor version bumps may introd
 
 ### 14. Changelog
 
+- **2025-10-19**: Implemented the `DeclarativeOrchestrator` factory and integrated it with the builder. The orchestrator is no longer dead code and can be configured and used in a pipeline.
 - **2025-10-19**: Fixed the broken resource cleanup lifecycle. The `Builder` now correctly passes `ResourceCloser` functions to the `Sandwich` orchestrator, which are executed on `Close()`.
 - **2025-10-17**: Full architectural review. Synchronized document with the state of the v0.4.0 codebase. Identified and documented 8 major architectural gaps, including dead code in the declarative pipeline and a broken resource cleanup lifecycle. Regenerated all 14 sections to conform to the Live Standard format.

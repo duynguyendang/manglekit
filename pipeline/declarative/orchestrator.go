@@ -21,84 +21,59 @@ const (
 	contextKeyDenialReason = "denial_reason"
 )
 
-// DeclarativeOrchestrator implements the `core.Orchestrator` interface with a
-// dynamic, rule-driven execution model. Unlike the linear `Sandwich` orchestrator,
-// this implementation's workflow is not hardcoded in Go. Instead, it is defined
-// declaratively as Mangle Datalog facts.
+// DeclarativeOrchestrator implements the `core.Orchestrator` interface. Its
+// workflow is defined as a statically configured sequence of steps, provided
+// via `declarative.Options`. This replaces the prior rule-driven, Datalog-based
+// execution model with a simpler, more direct approach.
 //
-// The orchestrator queries a `FlowController` at runtime to determine which
-// "tools" (configured components like retrievers or LLMs) to run and in what
-// order. This separates the pipeline's execution logic (the "how" and "when")
-// from the configuration of its components (the "what with"), allowing for
-// highly flexible and dynamically configurable workflows without recompiling the code.
-//
-// A typical flow is defined with facts like:
-//
-//	flow_stage("my_flow", "1", "retrieval_stage").
-//	stage_tool("retrieval_stage", "my_hybrid_retriever").
+// The orchestrator iterates through a list of `core.Tool` implementations,
+// executing them in order and passing a shared `core.ExecutionContext` between them.
 type DeclarativeOrchestrator struct {
-	// flowController is the Mangle engine instance used to query for the workflow
-	// definition and to evaluate pre/post rules.
-	flowController core.FlowController
-	// executionSteps is the configured sequence of tools to execute for this pipeline.
-	executionSteps []core.Tool
-	// stateProvider is the component responsible for persisting and retrieving session state.
-	stateProvider core.StateProvider
-	// obs holds the observability configuration (logger, meter, tracer).
-	obs core.Observability
-	// closers holds cleanup callbacks for external resources.
-	closers []core.ResourceCloser
-	// conversationManager is the helper for managing conversational state.
+	executionSteps      []core.Tool
+	stateProvider       core.StateProvider // Optional state provider.
+	obs                 core.Observability
+	closers             []core.ResourceCloser
 	conversationManager *statehelper.ConversationManager
 }
 
-// flowStage holds the information about a single stage in a declarative flow.
-type flowStage struct {
-	Name  string
-	Order int
-	Tool  string
-}
+// NewDeclarative is the factory function for creating a DeclarativeOrchestrator.
+// It resolves the tool names from the configuration against the built components
+// provided in the `deps` argument.
+func NewDeclarative(ctx context.Context, deps core.Resolved, cfg Options) (core.Orchestrator, error) {
+	logger := deps.Obs.Logger
+	if logger == nil {
+		logger = obslogger.NewStdLogger()
+	}
+	logger = logger.With("pipeline", "declarative")
 
-// New creates a new DeclarativeOrchestrator.
-func New(opts Options, fc core.FlowController, tools map[string]core.Tool, sp core.StateProvider, obs core.Observability, closers []core.ResourceCloser) (core.Orchestrator, error) {
-	if obs.Logger == nil {
-		obs.Logger = obslogger.NewStdLogger()
-	}
-	obs.Logger = obs.Logger.With("pipeline", "declarative")
-
-	if fc == nil {
-		err := fmt.Errorf("DeclarativeOrchestrator requires a non-nil FlowController")
-		obs.Logger.Errorf(err.Error())
-		return nil, err
-	}
-	if tools == nil {
-		err := fmt.Errorf("DeclarativeOrchestrator requires a non-nil tools map")
-		obs.Logger.Errorf(err.Error())
-		return nil, err
-	}
-	if len(opts.Steps) == 0 {
-		err := fmt.Errorf("DeclarativeOrchestrator requires at least one step")
-		obs.Logger.Errorf(err.Error())
-		return nil, err
+	if len(cfg.Steps) == 0 {
+		return nil, fmt.Errorf("declarative orchestrator requires at least one step")
 	}
 
-	executionSteps := make([]core.Tool, 0, len(opts.Steps))
-	for _, step := range opts.Steps {
-		tool, ok := tools[step.Name]
-		if !ok {
-			err := fmt.Errorf("tool '%s' not found in provided tools map", step.Name)
-			obs.Logger.Errorf(err.Error())
+	executionSteps := make([]core.Tool, 0, len(cfg.Steps))
+	for _, stepCfg := range cfg.Steps {
+		tool, err := deps.GetToolByName(stepCfg.Name)
+		if err != nil {
+			logger.Errorf("failed to resolve tool", "name", stepCfg.Name, "error", err)
 			return nil, err
 		}
+		logger.Debugf("resolved tool", "name", stepCfg.Name)
 		executionSteps = append(executionSteps, tool)
 	}
 
+	// For now, we arbitrarily pick the first state provider, if any.
+	// A more robust implementation might require an explicit state provider name.
+	var sp core.StateProvider
+	for _, provider := range deps.StateProviders {
+		sp = provider
+		break
+	}
+
 	return &DeclarativeOrchestrator{
-		flowController:      fc,
 		executionSteps:      executionSteps,
 		stateProvider:       sp,
-		obs:                 obs,
-		closers:             closers,
+		obs:                 deps.Obs,
+		closers:             deps.Closers,
 		conversationManager: statehelper.NewConversationManager(),
 	}, nil
 }

@@ -14,7 +14,7 @@
 **Location:** `pipeline/declarative/orchestrator.go`, `builder.go`
 **Impact Analysis:** The entire declarative orchestrator is dead code. The `builder.go` has no logic to construct the dependencies required by `declarative.New` (specifically the `core.FlowController` and the `map[string]any` of tools). The builder is hard-wired to always instantiate the `sandwich` orchestrator. This represents a significant amount of un-used, un-tested, and potentially bit-rotting code in the repository.
 **Refactoring Suggestion:** Either complete the implementation by adding logic to `builder.go` to build and configure the declarative orchestrator from a config file, or remove the `pipeline/declarative` package entirely to reduce codebase size and maintenance overhead. If kept, the builder would need to be ableto construct a `FlowController` (e.g., a Mangle engine) and dynamically build a `tools` map based on the config.
-**Status:** Open
+**Status:** Resolved
 
 ## Smell: Magic Strings for Execution Context
 **Location:** `pipeline/declarative/orchestrator.go`

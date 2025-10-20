@@ -6,6 +6,7 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/pipeline"
+	"github.com/duynguyendang/manglekit/pipeline/declarative"
 )
 
 func Register(r *manglekit.Registry) {
@@ -21,14 +22,11 @@ func Register(r *manglekit.Registry) {
 		},
 	)
 
-	// Register the "declarative" orchestrator (stubbed).
-	// This demonstrates how another orchestrator would be registered.
-	manglekit.Register[core.Orchestrator, core.Resolved, core.NilOptions](
+	// Register the "declarative" orchestrator.
+	// This orchestrator is configured with a list of tool steps.
+	manglekit.Register[core.Orchestrator, core.Resolved, declarative.Options](
 		r,
-		core.NilOptions{Name: "declarative", Kind: core.KindOrchestrator},
-		func(ctx context.Context, deps core.Resolved, _ core.NilOptions) (core.Orchestrator, error) {
-			// In a real implementation, this would return a new declarative orchestrator.
-			return pipeline.NewSandwich(ctx, deps) // Placeholder
-		},
+		declarative.Options{},
+		declarative.NewDeclarative,
 	)
 }

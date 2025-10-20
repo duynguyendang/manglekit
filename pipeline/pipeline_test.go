@@ -37,9 +37,9 @@ func TestSandwich_Integration(t *testing.T) {
 
 	// Create the orchestrator with the NewSandwich factory.
 	deps := core.Resolved{
-		LLM:       llmClient,
-		Retriever: &MockRetriever{},
-		MaxTokens: 16,
+		LLMs:       map[string]core.LLMClient{"openai": llmClient},
+		Retrievers: map[string]core.Retriever{"mock": &MockRetriever{}},
+		MaxTokens:  16,
 	}
 	orchestrator, err := NewSandwich(ctx, deps)
 	require.NoError(t, err)
