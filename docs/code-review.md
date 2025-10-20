@@ -4,7 +4,7 @@
 **Location:** `builder.go` (in `Build` method)
 **Impact Analysis:** The builder defaults to the `"sandwich"` orchestrator if no explicit choice is made. This creates a tight coupling between the core builder and a specific implementation, making the framework less modular. If the "sandwich" provider were ever removed or renamed, this would cause a runtime failure that is not obvious from the configuration.
 **Refactoring Suggestion:** Remove the hard-coded default. Require the orchestrator to be explicitly specified via `WithOrchestrator(name)` or in the configuration file. The `Build` method should return an error if no orchestrator is chosen, forcing a conscious decision by the user.
-**Status:** Open
+**Status:** Resolved
 
 ## Smell: Arbitrary Component Selection in Sandwich Orchestrator
 **Location:** `pipeline/sandwich.go` (in `NewSandwich` factory)
