@@ -13,6 +13,7 @@ import (
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 )
 
 // BuilderAPI defines the fluent interface for the MangleKit orchestrator builder.
@@ -69,7 +70,15 @@ type Builder struct {
 	llmClient     core.LLMClient
 	stateProvider core.StateProvider
 
+	// Shared clients for dependency injection.
+	openAIClient *openai.OpenAI
+
 	orchestratorName string
+}
+
+// OpenAIClient implements the diapi.OpenAIClientProvider interface.
+func (b *Builder) OpenAIClient() *openai.OpenAI {
+	return b.openAIClient
 }
 
 // NewBuilder returns a new, empty instance of the fluent builder.
@@ -207,8 +216,16 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 			},
 		},
 		core.KindLLM: {
-			kind:     core.KindLLM,
-			makeDeps: func(b *Builder) any { return diapi.LLMDeps{Genkit: b.genkit} },
+			kind: core.KindLLM,
+			makeDeps: func(b *Builder) any {
+				return struct {
+					diapi.LLMDeps
+					diapi.OpenAIClientProvider
+				}{
+					LLMDeps:              diapi.LLMDeps{Genkit: b.genkit},
+					OpenAIClientProvider: b,
+				}
+			},
 			assign: func(b *Builder, name string, v any) {
 				comp := v.(core.LLMClient)
 				b.llms[name] = comp
@@ -234,6 +251,25 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 				}
 			},
 		},
+	}
+}
+
+// ensureOpenAIClient inspects the config for an LLM provider and creates the shared
+// OpenAI client if it's needed and doesn't exist yet.
+func (b *Builder) ensureOpenAIClient(c configItem) {
+	// Only create the client for providers that are known to need it.
+	if c.name != "openai" && c.name != "groq" {
+		return
+	}
+	// If the shared client already exists, do nothing.
+	if b.openAIClient != nil {
+		return
+	}
+
+	cfg := c.params["typedConfig"]
+	if provider, ok := cfg.(diapi.APIKeyProvider); ok {
+		b.openAIClient = &openai.OpenAI{APIKey: provider.GetAPIKey()}
+		b.opts.Obs.Logger.Infof("created shared openai client for %s", c.name)
 	}
 }
 
@@ -270,6 +306,11 @@ func (b *Builder) buildAll(ctx context.Context) error {
 			factory, err := b.registry.Get(k, c.name)
 			if err != nil {
 				return err
+			}
+
+			// Pre-build step: Handle shared client creation.
+			if k == core.KindLLM {
+				b.ensureOpenAIClient(c)
 			}
 
 			deps := spec.makeDeps(b)

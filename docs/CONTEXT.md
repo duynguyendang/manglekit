@@ -103,7 +103,7 @@ The architecture is designed for testability. Since components depend on interfa
 | 3   | Dead Code - Declarative Orchestrator       | `pipeline/declarative/*`               | Resolved   |
 | 4   | Magic Strings for Execution Context        | `pipeline/declarative/orchestrator.go` | Open   |
 | 5   | Violation of Open/Closed Principle         | `pipeline/declarative/orchestrator.go` | Open   |
-| 6   | Dependency Injection Bypass                | `internal/providers/llm/openai.go`     | Open   |
+| 6   | Dependency Injection Bypass                | `internal/providers/llm/openai.go`     | Fixed   |
 | 7   | Hard-coded Dependencies in Factory         | `internal/providers/hybrid/hybrid.go`  | Open   |
 | 8   | Hard-coded Magic Number                    | `internal/providers/hybrid/hybrid.go`  | Open   |
 
@@ -166,7 +166,7 @@ The project adheres to Semantic Versioning 2.0.0. Minor version bumps may introd
     {
       "id": 6,
       "description": "Dependency Injection Bypass",
-      "status": "Open"
+      "status": "Fixed"
     },
     {
       "id": 7,

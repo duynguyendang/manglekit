@@ -14,7 +14,18 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 )
+
+// OpenAIClientProvider is an interface for components that can provide an OpenAI client.
+type OpenAIClientProvider interface {
+	OpenAIClient() *openai.OpenAI
+}
+
+// APIKeyProvider is an interface for provider options that expose an API key.
+type APIKeyProvider interface {
+	GetAPIKey() string
+}
 
 // BuildRetrieverFunc defines a capability for building a retriever instance by name.
 // This is used by components like the hybrid retriever to dynamically construct

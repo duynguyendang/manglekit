@@ -32,7 +32,7 @@
 **Location:** `internal/providers/llm/openai.go`
 **Impact Analysis:** The OpenAI and Groq provider factories create their own `openai.OpenAI` client instances directly, ignoring the `diapi.OpenAIClient` interface defined in the dependency injection layer. This bypasses the intended DI mechanism, which is designed to create a single, shared client instance in the builder and inject it into all providers that need it. The current implementation is inefficient as it creates multiple client objects where one would suffice.
 **Refactoring Suggestion:** The `Builder` should be responsible for creating a single `diapi.OpenAIClient`. This client should be added to a dependency struct (e.g., `diapi.LLMDeps`). The OpenAI and Groq factories should then *receive* this client via their `deps` struct instead of creating their own.
-**Status:** Open
+**Status:** Resolved
 
 ## Smell: Hard-coded Dependencies in Factory
 **Location:** `internal/providers/hybrid/hybrid.go`
