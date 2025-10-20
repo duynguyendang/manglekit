@@ -9,7 +9,6 @@ import (
 	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 )
 
 // OpenAIOptions provides typed configuration for OpenAI and compatible language
@@ -33,6 +32,7 @@ type OpenAIOptions struct {
 
 func (o OpenAIOptions) ProviderName() string { return "openai" }
 func (o OpenAIOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o OpenAIOptions) GetAPIKey() string       { return o.APIKey }
 
 // GroqOptions is an alias for OpenAIOptions, but it identifies itself as "groq".
 type GroqOptions struct {
@@ -43,30 +43,40 @@ func (o GroqOptions) ProviderName() string { return "groq" }
 
 func RegisterOpenAI(r *manglekit.Registry) {
 	// Factory function for OpenAI
-	openAIFactory := func(ctx context.Context, deps diapi.LLMDeps, cfg OpenAIOptions) (core.LLMClient, error) {
-		if deps.Genkit == nil {
+	openAIFactory := func(ctx context.Context, d struct {
+		diapi.LLMDeps
+		diapi.OpenAIClientProvider
+	}, cfg OpenAIOptions) (core.LLMClient, error) {
+		if d.Genkit == nil {
 			return nil, fmt.Errorf("missing required dependency 'genkit'")
 		}
-		oai := &openai.OpenAI{APIKey: cfg.APIKey}
-		model := oai.Model(deps.Genkit, cfg.Model)
+		if d.OpenAIClient() == nil {
+			return nil, fmt.Errorf("missing required dependency 'OpenAIClient'")
+		}
+		model := d.OpenAIClient().Model(d.Genkit, cfg.Model)
 		if model == nil {
 			return nil, fmt.Errorf("failed to get openai model %q from genkit", cfg.Model)
 		}
-		return NewOpenAI(cfg, model, deps.Genkit), nil
+		return NewOpenAI(cfg, model, d.Genkit), nil
 	}
 	manglekit.Register(r, OpenAIOptions{}, openAIFactory)
 
 	// Factory function for Groq (reuses OpenAI logic but with GroqOptions)
-	groqFactory := func(ctx context.Context, deps diapi.LLMDeps, cfg GroqOptions) (core.LLMClient, error) {
-		if deps.Genkit == nil {
+	groqFactory := func(ctx context.Context, d struct {
+		diapi.LLMDeps
+		diapi.OpenAIClientProvider
+	}, cfg GroqOptions) (core.LLMClient, error) {
+		if d.Genkit == nil {
 			return nil, fmt.Errorf("missing required dependency 'genkit'")
 		}
-		oai := &openai.OpenAI{APIKey: cfg.APIKey}
-		model := oai.Model(deps.Genkit, cfg.Model)
+		if d.OpenAIClient() == nil {
+			return nil, fmt.Errorf("missing required dependency 'OpenAIClient'")
+		}
+		model := d.OpenAIClient().Model(d.Genkit, cfg.Model)
 		if model == nil {
 			return nil, fmt.Errorf("failed to get groq model %q from genkit", cfg.Model)
 		}
-		return NewOpenAI(cfg.OpenAIOptions, model, deps.Genkit), nil
+		return NewOpenAI(cfg.OpenAIOptions, model, d.Genkit), nil
 	}
 	manglekit.Register(r, GroqOptions{}, groqFactory)
 }
