@@ -1,5 +1,9 @@
 orchestrator:
   type: sandwich
+  params:
+    llm: openai
+    retriever: in-memory
+    reranker: cosine
 logging:
   level: debug
   format: console

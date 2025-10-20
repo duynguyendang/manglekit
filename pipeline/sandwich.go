@@ -12,6 +12,16 @@ import (
 	"github.com/google/uuid"
 )
 
+// SandwichOptions defines the configuration for the Sandwich orchestrator.
+type SandwichOptions struct {
+	Retriever string `yaml:"retriever"`
+	Reranker  string `yaml:"reranker,omitempty"` // Optional
+	LLM       string `yaml:"llm"`
+}
+
+func (SandwichOptions) ProviderName() string { return "sandwich" }
+func (SandwichOptions) ProviderKind() core.Kind { return core.KindOrchestrator }
+
 // Sandwich implements the default MangleKit orchestrator. It has been refactored
 // to use a typed, stage-based pipeline architecture, where a `Runner` executes
 // a sequence of `Stage` implementations. This approach promotes separation of
@@ -34,11 +44,10 @@ type Sandwich struct {
 }
 
 // NewSandwich is the factory for the Sandwich orchestrator. It now receives a
-// `core.Resolved` struct, which contains all its dependencies, fully constructed
-// and strongly typed. This eliminates the need for runtime type assertions.
-func NewSandwich(ctx context.Context, deps core.Resolved) (core.Orchestrator, error) {
-	// The sandwich orchestrator represents a "default" linear pipeline.
-	// For simplicity, it will use the *first* available component of each kind.
+// `core.Resolved` struct, which contains all its dependencies, and a
+// `SandwichOptions` struct to explicitly configure which components to use.
+// This eliminates non-deterministic behavior from map iteration.
+func NewSandwich(ctx context.Context, deps core.Resolved, cfg SandwichOptions) (core.Orchestrator, error) {
 	s := &Sandwich{
 		conversationManager: statehelper.NewConversationManager(),
 		closers:             deps.Closers,
@@ -49,20 +58,26 @@ func NewSandwich(ctx context.Context, deps core.Resolved) (core.Orchestrator, er
 			Obs:               deps.Obs,
 		},
 	}
-	for _, v := range deps.Retrievers {
-		s.retriever = v
-		break
+
+	// Explicitly look up components based on configuration.
+	var ok bool
+	if s.retriever, ok = deps.Retrievers[cfg.Retriever]; !ok {
+		return nil, fmt.Errorf("retriever %q not found", cfg.Retriever)
 	}
-	for _, v := range deps.Rerankers {
-		s.reranker = v
-		break
+	if s.llm, ok = deps.LLMs[cfg.LLM]; !ok {
+		return nil, fmt.Errorf("llm %q not found", cfg.LLM)
 	}
+	if cfg.Reranker != "" {
+		if s.reranker, ok = deps.Rerankers[cfg.Reranker]; !ok {
+			return nil, fmt.Errorf("reranker %q not found", cfg.Reranker)
+		}
+	}
+
+	// The following components are still selected arbitrarily as the orchestrator
+	// currently only supports one of each. This could be updated in the future
+	// if multiple rulesets or state providers are needed.
 	for _, v := range deps.Rules {
 		s.ruleset = v
-		break
-	}
-	for _, v := range deps.LLMs {
-		s.llm = v
 		break
 	}
 	for _, v := range deps.StateProviders {
