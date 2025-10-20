@@ -28,18 +28,15 @@ type OpenAIOptions struct {
 	Temperature float32 `json:"temperature,omitempty"`
 	// MaxOutputTokens is the maximum number of tokens to generate in the response.
 	MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
+	// BaseURL is an optional override for the OpenAI API base URL. This is useful
+	// for pointing the client to a different compatible endpoint, such as Groq's.
+	BaseURL string `yaml:"base_url,omitempty"`
 }
 
 func (o OpenAIOptions) ProviderName() string { return "openai" }
 func (o OpenAIOptions) ProviderKind() core.Kind   { return core.KindLLM }
 func (o OpenAIOptions) GetAPIKey() string       { return o.APIKey }
-
-// GroqOptions is an alias for OpenAIOptions, but it identifies itself as "groq".
-type GroqOptions struct {
-	OpenAIOptions
-}
-
-func (o GroqOptions) ProviderName() string { return "groq" }
+func (o OpenAIOptions) GetBaseURL() string      { return o.BaseURL }
 
 func RegisterOpenAI(r *manglekit.Registry) {
 	// Factory function for OpenAI
@@ -60,25 +57,6 @@ func RegisterOpenAI(r *manglekit.Registry) {
 		return NewOpenAI(cfg, model, d.Genkit), nil
 	}
 	manglekit.Register(r, OpenAIOptions{}, openAIFactory)
-
-	// Factory function for Groq (reuses OpenAI logic but with GroqOptions)
-	groqFactory := func(ctx context.Context, d struct {
-		diapi.LLMDeps
-		diapi.OpenAIClientProvider
-	}, cfg GroqOptions) (core.LLMClient, error) {
-		if d.Genkit == nil {
-			return nil, fmt.Errorf("missing required dependency 'genkit'")
-		}
-		if d.OpenAIClient() == nil {
-			return nil, fmt.Errorf("missing required dependency 'OpenAIClient'")
-		}
-		model := d.OpenAIClient().Model(d.Genkit, cfg.Model)
-		if model == nil {
-			return nil, fmt.Errorf("failed to get groq model %q from genkit", cfg.Model)
-		}
-		return NewOpenAI(cfg.OpenAIOptions, model, d.Genkit), nil
-	}
-	manglekit.Register(r, GroqOptions{}, groqFactory)
 }
 
 // OpenAI is a wrapper around a genkit AI model from the OpenAI plugin.

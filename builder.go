@@ -14,6 +14,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
+	"github.com/openai/openai-go/option"
 )
 
 // BuilderAPI defines the fluent interface for the MangleKit orchestrator builder.
@@ -258,7 +259,7 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 // OpenAI client if it's needed and doesn't exist yet.
 func (b *Builder) ensureOpenAIClient(c configItem) {
 	// Only create the client for providers that are known to need it.
-	if c.name != "openai" && c.name != "groq" {
+	if c.name != "openai" {
 		return
 	}
 	// If the shared client already exists, do nothing.
@@ -268,7 +269,11 @@ func (b *Builder) ensureOpenAIClient(c configItem) {
 
 	cfg := c.params["typedConfig"]
 	if provider, ok := cfg.(diapi.APIKeyProvider); ok {
-		b.openAIClient = &openai.OpenAI{APIKey: provider.GetAPIKey()}
+		opts := []option.RequestOption{option.WithAPIKey(provider.GetAPIKey())}
+		if baseURLProvider, ok := cfg.(diapi.BaseURLProvider); ok && baseURLProvider.GetBaseURL() != "" {
+			opts = append(opts, option.WithBaseURL(baseURLProvider.GetBaseURL()))
+		}
+		b.openAIClient = &openai.OpenAI{APIKey: provider.GetAPIKey(), Opts: opts}
 		b.opts.Obs.Logger.Infof("created shared openai client for %s", c.name)
 	}
 }
