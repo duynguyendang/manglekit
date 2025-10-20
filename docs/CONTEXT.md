@@ -8,182 +8,194 @@ stability: stable
 audience: humans_and_agents
 ---
 
-### 0. Implementation Snapshot (Current State)
+# Manglekit: The Live Architecture Standard
 
-The Manglekit SDK is a Go framework for building Retrieval-Augmented Generation (RAG) applications. The current architecture is centered around a type-safe, spec-driven `Builder` (`builder.go`) that constructs pipelines. Components are registered via a generic `Registry` (`registry.go`) and instantiated via factories.
+This document is the canonical, single source of truth for the Manglekit SDK's architecture. It defines the non-negotiable rules, contracts, and patterns that govern the framework.
 
-The primary, and only functional, orchestrator is the `Sandwich` (`pipeline/sandwich.go`), which executes a fixed, linear sequence of stages (Rules -> Retrieve -> Rerank -> LLM -> Rules). A `Declarative` orchestrator exists but is unreachable dead code. Dependency injection is managed through typed `diapi` structs, though some providers bypass this. Resource management is handled via `core.ResourceCloser` callbacks.
+## 0. Implementation Snapshot (Current State)
 
 ```mermaid
 graph TD
-    subgraph "A. Build Time"
-        A1(Config YAML) --> A2{Builder};
-        A3(Registry) -- Contains --> A4(Provider Factories);
-        A4 --> A2;
-        A2 -- Builds --> A5(core.Resolved);
-        A5 -- Contains --> A6(Instantiated Components);
-        A6 -- Injected into --> A7(Sandwich Orchestrator);
+    subgraph "User Entrypoints"
+        A[config.yaml] --> C{from_config.NewBuilderFromConfig}
+        B[Programmatic API] --> D{builder.NewBuilder}
     end
 
-    subgraph "B. Run Time"
-        B1(User Query) --> B2{Sandwich Orchestrator};
-        B2 -- Executes --> B3(Pre-Rules Stage);
-        B3 --> B4(Retrieve Stage);
-        B4 --> B5(Rerank Stage);
-        B5 --> B6(LLM Stage);
-        B6 --> B7(Post-Rules Stage);
-        B7 --> B8(Final Answer);
+    subgraph "Core Engine"
+        C --> E[Builder]
+        D --> E
+        E -- Uses --> F[Registry]
+        F -- Contains --> G[Provider Factories]
+        E -- Produces --> H[core.Orchestrator]
     end
 
-    subgraph "C. Known Gaps"
-       C1[Declarative Orchestrator is Dead Code]
-       C2[~~Type Assertions in Core~~]
+    subgraph "Provider Implementations"
+        I[internal/providers/*] --> G
     end
 
-    A7 -.-> B2;
+    subgraph "Orchestration Models"
+        J[pipeline.Sandwich]
+        K[pipeline.declarative.DeclarativeOrchestrator]
+        H -- Is a --> J
+        H -- Is a --> K
+    end
+
+    subgraph "Core Contracts"
+        L[core/interfaces.go]
+        M[core/diapi]
+    end
+
+    E -- Adheres to --> M
+    G -- Adheres to --> L
+    J -- Adheres to --> L
+    K -- Adheres to --> L
 ```
 
-### 1. Architectural Overview
+## 1. Architectural Overview
 
-Manglekit is designed as a modular, extensible framework for building verifiable, rule-based RAG pipelines. Its architecture emphasizes loose coupling between components and a clear separation between the configuration of a pipeline (`Builder`, `Registry`) and its execution (`Orchestrator`). The core abstraction is the `Orchestrator`, which executes a flow to transform a user `Query` into a final `Answer` with verifiable `Citations`.
+Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) applications. Its architecture is designed to be modular, extensible, and configuration-driven. The core philosophy is based on a clean separation between component interfaces (the `core` contracts), component implementations (`internal/providers`), and the orchestration engine (`pipeline`). A central `Builder` is responsible for constructing the final application pipeline from a set of registered providers, handling dependency injection and resource lifecycle management.
 
-### 2. Dependency Rules (Non-Negotiable)
+## 2. Dependency Rules (Non-Negotiable)
 
-- **`core` is Central:** All packages may depend on `core`, but `core` must not depend on any other package in the project.
-- **Providers are Isolated:** Provider implementations (in `internal/providers/`) must not depend on each other. They depend on `core`, `diapi`, and their respective interface packages (e.g., `llm`, `retrieve`).
-- **Orchestrators Depend on Interfaces:** Orchestrators (`pipeline/`) must depend only on the component *interfaces* defined in `llm`, `retrieve`, etc., not on concrete provider implementations.
-- **DI is Mandatory:** Components must receive their dependencies (e.g., shared clients, loggers) via the `diapi` structs passed to their factories. Direct instantiation of shared clients is forbidden.
+1.  **`internal/providers` depends on `core`; `core` must NOT depend on `internal/providers`.** This is the fundamental rule ensuring modularity.
+2.  **`pipeline` depends on `core`; `core` must NOT depend on `pipeline`.** Orchestration logic is separate from core contracts.
+3.  **`builder.go` depends on `core` and `registry.go`; `core` must NOT depend on the builder.** The construction mechanism is an external client of the core contracts.
+4.  All inter-component dependencies during construction MUST be expressed via the typed structs in `core/diapi`. Direct, cross-provider package imports are forbidden.
+5.  Provider factories MUST NOT depend on other concrete provider implementations. They may only depend on `core` interfaces provided via `diapi`.
 
-### 3. Core Contracts
+## 3. Core Contracts
 
-- **`core.Orchestrator`**: The primary behavioral interface. Has `Execute` and `Close` methods. Does not expose its internal components.
-- **`core.ProviderOptions`**: The interface for all provider configuration structs. It enables type-safe, string-free registration by requiring providers to self-identify their `Kind` and `Name`.
-- **`manglekit.Registry`**: The central, generic registry. Uses `Register[T, D, O]` to store strongly-typed component factories.
-- **`manglekit.Builder`**: The fluent API for pipeline construction. Uses a spec-table to manage the build order and dependency injection.
-- **`core.ResourceCloser`**: The function signature (`func(ctx context.Context) error`) for all component cleanup logic.
+-   **`core.Orchestrator`**: The primary application interface. Defines `Execute` and `Close` methods.
+-   **`core.Factory`**: The interface for all component factories. Defines a `Build(ctx, deps, cfg)` method.
+-   **Component Interfaces**: `core.Retriever`, `core.Reranker`, `core.LLMClient`, `core.VectorStore`, `ai.Embedder`, `core.StateProvider`. These define the behavior of each component family.
+-   **`core.Tool`**: A behavioral interface (`Execute(ctx, execCtx)`) that adapts components for use in the declarative orchestrator.
+-   **`core.ResourceCloser`**: A function signature (`func(ctx) error`) used for standardized, graceful shutdown.
 
-### 4. Provider Composition
+## 4. Provider Composition
 
-Providers are composed at build time. The `Builder` is responsible for instantiating each configured provider in the correct order (e.g., Embedder -> VectorStore -> Retriever). More complex providers, like the `hybrid` retriever, can be composed of other providers, but this composition should be defined in configuration, not hard-coded in factories.
+Providers are self-contained modules in `internal/providers` that implement one or more `core` interfaces. They are registered with a central `Registry` at startup, mapping a string name (e.g., `"openai"`) and a `core.Kind` to a `core.Factory` instance. Composition is achieved at runtime by the `Builder`, which wires providers together based on configuration.
 
-### 5. Configuration Flow
+## 5. Configuration Flow
 
-1.  **YAML/Code:** Configuration is supplied either programmatically via the `Builder`'s `With(opts)` method or loaded from a YAML file via `from_config.go`.
-2.  **Builder Population:** The builder collects `configItem`s for each component.
-3.  **Ordered Build:** The builder walks a hard-coded dependency order (`specTable`), looks up the appropriate factory in the `Registry`, creates the dependency struct (`diapi.Deps`), and invokes the factory.
-4.  **Orchestrator Injection:** The final collection of built components is packaged into a `core.Resolved` struct and injected into the orchestrator's factory.
+1.  **Loading**: Configuration is loaded from a YAML file or defined programmatically.
+2.  **Resolution**: Provider names (e.g., `llm: { provider: "openai" }`) are used to look up the corresponding `Factory` and `Options` struct type in the `Registry`.
+3.  **Binding**: Raw configuration options (`map[string]any`) are unmarshaled into the provider's specific, strongly-typed `Options` struct.
+4.  **Construction**: The `Builder` receives the typed `Options` struct and uses it to invoke the factory, which constructs the component instance.
 
-### 6. Observability & Resource Lifecycle
+## 6. Observability & Resource Lifecycle
 
-- **Observability**: A `core.Observability` struct containing `Logger`, `Tracer`, and `Meter` interfaces is passed via `diapi` structs to all components.
-- **Resource Lifecycle**: Components requiring cleanup must return a `core.ResourceCloser` function from their factory. The `Builder` collects these and passes them to the `Sandwich` orchestrator, which executes them when its `Close()` method is called.
+-   **Lifecycle**: The `Builder` is responsible for the entire component lifecycle. It invokes factories to create instances and collects `ResourceCloser` functions for any component that requires cleanup.
+-   **Shutdown**: The final `Orchestrator` instance holds the list of all collected `ResourceCloser` functions. Its `Close` method must execute these functions to ensure no resources are leaked.
+-   **Observability**: A single `core.Observability` struct (containing a logger, tracer, and meter) is passed from the `Builder` to the `Orchestrator` and is made available to all pipeline stages during execution.
 
-### 7. Error & Metric Surfaces
+## 7. Error & Metric Surfaces
 
-- **Errors**: The framework defines sentinel errors in `core/types.go` (`ErrInvalidOptions`, `ErrNoEvidence`, `ErrDenied`).
-- **Metrics**: The `core.Meter` interface provides a `Record` method for capturing key performance indicators like latency and token usage. Standardized metrics should follow the `manglekit.<component>.<event>` convention.
+-   **Build Errors**: Factory errors during the build phase are fatal and must immediately halt the application startup.
+-   **Execution Errors**: Errors during pipeline execution (e.g., an API call fails) are handled by the `Orchestrator` and returned to the caller. Non-critical errors (e.g., failing to save conversation state) must be logged as warnings but should not fail the primary request.
+-   **Metrics**: Each pipeline `Stage` is responsible for emitting its own metrics (e.g., latency, token counts) using the `Meter` from the `core.Observability` struct.
 
-### 8. Testing & Replaceability
+## 8. Testing & Replaceability
 
-The architecture is designed for testability. Since components depend on interfaces, they can be easily tested with mocks. The `Builder` itself allows for the programmatic construction of test pipelines with mock components. Each provider should have its own unit tests.
+-   Component interfaces in `core` are the primary contract for testing.
+-   Mock implementations for all core interfaces are provided in `internal/providers/mock`.
+-   Tests should construct a `Builder` with mock providers to achieve isolated unit/integration testing of the orchestration logic. Because the `Builder` and `Registry` are configurable, any provider can be replaced with a mock at test time.
 
-### 9. Anti-Patterns (Red Lines)
+## 9. Anti-Patterns (Red Lines)
 
-- **Do Not Use `init()` for Registration:** All provider registration must happen explicitly via the `providers/all/all.go` package to ensure a clear and predictable registration flow.
-- **No Global State:** The framework is stateless. All state must be managed explicitly through the `core.StateProvider`.
-- **No Runtime Type Assertions in Orchestrators:** Orchestrators must receive their dependencies via the strongly-typed `core.Resolved` struct.
-- **No Direct Client Instantiation:** Providers must not create their own HTTP or gRPC clients. They must be injected via the DI system.
+-   **Global State**: The framework must not use global variables or singletons for component instances. All state must be managed by the `Builder` and contained within the constructed `Orchestrator`.
+-   **Type Assertions for DI**: Dependency injection must use the typed `diapi` structs. Using `any` and then performing runtime type assertions in a factory is strictly forbidden.
+-   **Hard-Coded Dependencies**: A provider factory must never directly instantiate another provider (e.g., `openai.New()`). All dependencies must be requested via its `diapi` struct.
 
-### 10. Known Gaps
+## 10. Known Gaps
 
-| ID  | Smell                                      | Location                               | Status |
-| --- | ------------------------------------------ | -------------------------------------- | ------ |
-| 1   | Type Assertions in Core Component Factory  | `pipeline/sandwich.go`                 | Fixed   |
-| 2   | Broken Resource Cleanup Lifecycle          | `pipeline/sandwich.go`, `builder.go`     | Fixed   |
-| 3   | Dead Code - Declarative Orchestrator       | `pipeline/declarative/*`               | Resolved   |
-| 4   | Magic Strings for Execution Context        | `pipeline/declarative/orchestrator.go` | Open   |
-| 5   | Violation of Open/Closed Principle         | `pipeline/declarative/orchestrator.go` | Open   |
-| 6   | Dependency Injection Bypass                | `internal/providers/llm/openai.go`     | Fixed   |
-| 7   | Hard-coded Dependencies in Factory         | `internal/providers/hybrid/hybrid.go`  | Resolved   |
-| 8   | Hard-coded Magic Number                    | `internal/providers/hybrid/hybrid.go`  | Resolved   |
+This section tracks architectural gaps identified during code review that deviate from this standard.
 
-### 11. Provider Families
+1.  **Implicit Dependency Resolution**: The builder's reliance on the "last-built" component for dependency injection is fragile and order-dependent. The architecture should move to explicit, named dependencies in configuration. (Status: Open)
+2.  **Monolithic Build Logic**: The builder's `specTable` centralizes all component creation logic, violating the Open/Closed Principle. This logic should be decentralized. (Status: Open)
+3.  **Non-Deterministic Orchestrator**: The default `Sandwich` orchestrator arbitrarily picks the first available component from its dependency maps, leading to unpredictable behavior when multiple components of the same kind are configured. (Status: Open)
+4.  **Hard-Coded Pipeline Parameters**: Tool adapters for the declarative orchestrator have hard-coded parameters (e.g., `TopK`), which should be configurable at the step level. (Status: Open)
+5.  **Hard-Coded Default Orchestrator**: The builder defaults to the `"sandwich"` orchestrator, coupling it to a specific implementation. The choice should be mandatory and explicit. (Status: Open)
+7.  **Redundant Builder API**: The builder exposes a legacy `WithKind` method that bypasses the type-safe registry lookup of the primary `With` method, creating an inconsistent and more complex API. (Status: Open)
 
-- **`Orchestrator`**: `sandwich` (functional), `declarative` (non-functional).
-- **`LLM`**: `openai`, `google`.
-- **`Retriever`**: `dense`, `bm25`, `hybrid`.
-- **`VectorStore`**: `localvec`, `redis`.
-- **`Reranker`**: `passthrough`.
-- **`StateProvider`**: `in-memory`, `redis`.
-- **`Embedder`**: `openai`, `google`.
+## 11. Provider Families
 
-### 12. Versioning & Compatibility Policy
+-   **LLM**: `core.LLMClient`
+-   **Embedder**: `ai.Embedder`
+-   **Retriever**: `core.Retriever`
+-   **Reranker**: `core.Reranker`
+-   **VectorStore**: `core.VectorStore`
+-   **StateProvider**: `core.StateProvider`
+-   **RuleSet**: `core.RuleSet`
+-   **Orchestrator**: `core.Orchestrator`
 
-The project adheres to Semantic Versioning 2.0.0. Minor version bumps may introduce new provider interfaces or builder features in a backward-compatible way. Breaking changes (e.g., modification of core interfaces) will result in a major version bump.
+## 12. Versioning & Compatibility Policy
 
-### 13. Machine Appendix (JSON Snapshot v1)
+The framework follows Semantic Versioning (SemVer). Breaking changes to the `core` contracts or `diapi` structs will result in a major version increment. Adding new providers or options is considered a minor version change.
+
+## 13. Machine Appendix (JSON Snapshot v1)
 
 ```json
 {
   "project": "manglekit",
   "version": "0.4.0",
-  "last_updated": "2025-10-19",
-  "schema_version": "1.0",
-  "core_contracts": [
+  "contracts": [
     "core.Orchestrator",
-    "core.ProviderOptions",
-    "manglekit.Registry",
-    "manglekit.Builder",
+    "core.Factory",
+    "core.Retriever",
+    "core.Reranker",
+    "core.LLMClient",
+    "core.VectorStore",
+    "ai.Embedder",
+    "core.StateProvider",
+    "core.Tool",
     "core.ResourceCloser"
   ],
-  "functional_orchestrator": "sandwich",
+  "dependency_interfaces": [
+    "diapi.LLMDeps",
+    "diapi.RetrieverDeps",
+    "diapi.VectorStoreDeps",
+    "diapi.EmbedderDeps",
+    "diapi.OpenAIClientProvider"
+  ],
   "known_gaps": [
     {
-      "id": 1,
-      "description": "Type Assertions in Core Component Factory",
-      "status": "Fixed"
-    },
-    {
-      "id": 2,
-      "description": "Broken Resource Cleanup Lifecycle",
-      "status": "Fixed"
-    },
-    {
-      "id": 3,
-      "description": "Dead Code - Declarative Orchestrator",
-      "status": "Resolved"
-    },
-    {
-      "id": 4,
-      "description": "Magic Strings for Execution Context",
+      "id": "GAP-001",
+      "smell": "Implicit Dependency Resolution",
       "status": "Open"
     },
     {
-      "id": 5,
-      "description": "Violation of Open/Closed Principle",
+      "id": "GAP-002",
+      "smell": "Monolithic Build Logic",
       "status": "Open"
     },
     {
-      "id": 6,
-      "description": "Dependency Injection Bypass",
-      "status": "Fixed"
+      "id": "GAP-003",
+      "smell": "Non-Deterministic Orchestrator",
+      "status": "Open"
     },
     {
-      "id": 7,
-      "description": "Hard-coded Dependencies in Factory",
-      "status": "Resolved"
+      "id": "GAP-004",
+      "smell": "Hard-Coded Pipeline Parameters",
+      "status": "Open"
     },
     {
-      "id": 8,
-      "description": "Hard-coded Magic Number",
-      "status": "Resolved"
+      "id": "GAP-005",
+      "smell": "Hard-Coded Default Orchestrator",
+      "status": "Open"
+    },
+    {
+      "id": "GAP-006",
+      "smell": "Redundant Builder API",
+      "status": "Open"
     }
+  ],
+  "orchestration_models": [
+    "pipeline.Sandwich",
+    "pipeline.declarative.DeclarativeOrchestrator"
   ]
 }
 ```
 
-### 14. Changelog
+## 14. Changelog
 
-- **2025-10-19**: Implemented the `DeclarativeOrchestrator` factory and integrated it with the builder. The orchestrator is no longer dead code and can be configured and used in a pipeline.
-- **2025-10-19**: Fixed the broken resource cleanup lifecycle. The `Builder` now correctly passes `ResourceCloser` functions to the `Sandwich` orchestrator, which are executed on `Close()`.
-- **2025-10-17**: Full architectural review. Synchronized document with the state of the v0.4.0 codebase. Identified and documented 8 major architectural gaps, including dead code in the declarative pipeline and a broken resource cleanup lifecycle. Regenerated all 14 sections to conform to the Live Standard format.
+-   **2025-10-19**: Regenerated the standard to reflect the data-driven builder and stage-based pipeline architecture. Added JSON appendix and synchronized Known Gaps with the latest code review.
