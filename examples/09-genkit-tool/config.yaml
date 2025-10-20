@@ -1,3 +1,4 @@
+orchestrator: "sandwich"
 components:
   - name: "in-memory-retriever"
     kind: "retriever"

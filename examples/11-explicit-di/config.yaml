@@ -1,3 +1,4 @@
+orchestrator: "sandwich"
 components:
   # Embedder
   - name: "openai-embedder"

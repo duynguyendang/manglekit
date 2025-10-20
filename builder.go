@@ -422,10 +422,10 @@ func (b *Builder) getRetriever(name string) (core.Retriever, error) {
 
 // Build constructs the final Orchestrator.
 func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updatable, error) {
-	orchestratorName := b.orchestratorName
-	if orchestratorName == "" {
-		orchestratorName = "sandwich" // Default orchestrator
+	if b.orchestratorName == "" {
+		return nil, nil, errors.New("no orchestrator specified in configuration")
 	}
+	orchestratorName := b.orchestratorName
 	b.opts.Obs.Logger.Infof("starting build for orchestrator type %q", orchestratorName)
 
 	if len(b.errs) > 0 {
