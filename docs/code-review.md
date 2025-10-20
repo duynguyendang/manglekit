@@ -2,7 +2,7 @@
 **Location:** `pipeline/sandwich.go` (function `NewSandwich`)
 **Impact Analysis:** The `core.Resolved` struct, which is intended to be a type-safe container for fully built components, uses `any` for its fields (e.g., `Retriever any`). This forces the `NewSandwich` factory to perform type assertions (e.g., `deps.Retriever.(retrieve.Retriever)`). This undermines the goal of end-to-end type safety, re-introducing runtime risks that the builder pattern was designed to eliminate. A failure here would cause a panic during orchestrator construction.
 **Refactoring Suggestion:** Modify the `core.Resolved` struct to use concrete interface types (e.g., `Retriever retrieve.Retriever`, `LLM llm.Client`). This will enforce type safety at compile time and remove the need for any type assertions in the factory, making the code more robust and self-documenting.
-**Status:** Open
+**Status:** Resolved
 
 ## Smell: Broken Resource Cleanup Lifecycle
 **Location:** `pipeline/sandwich.go` (struct `Sandwich`, method `Close`)

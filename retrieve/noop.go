@@ -10,6 +10,6 @@ import (
 type NoopRetriever struct{}
 
 // Retrieve implements the Retriever interface.
-func (r *NoopRetriever) Retrieve(ctx context.Context, req Request) (Result, error) {
-	return Result{Docs: []core.Doc{}}, nil
+func (r *NoopRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
+	return core.RetrieveResult{Docs: []core.Doc{}}, nil
 }

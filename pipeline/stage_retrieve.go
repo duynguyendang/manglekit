@@ -5,13 +5,12 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/retrieve"
 )
 
 // RetrieveStage is responsible for fetching relevant documents from a retriever
 // based on the user's query.
 type RetrieveStage struct {
-	Retriever retrieve.Retriever
+	Retriever core.Retriever
 	TopK      int
 	Logger    core.Logger
 	Meter     core.Meter
@@ -32,7 +31,7 @@ func (s *RetrieveStage) Execute(p *PipelineContext) error {
 	}
 
 	start := time.Now()
-	retrReq := retrieve.Request{Query: p.Query.Text, TopK: s.TopK, Meta: p.Query.Meta}
+	retrReq := core.RetrieveRequest{Query: p.Query.Text, TopK: s.TopK, Meta: p.Query.Meta}
 	s.Logger.Debugf("calling retriever", "filters", p.Query.Meta["filters"], "expansions", p.Query.Meta["expansion_terms"])
 
 	retrRes, err := s.Retriever.Retrieve(p.Ctx, retrReq)

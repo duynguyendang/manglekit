@@ -8,15 +8,32 @@ import (
 	"sort"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/rerank"
 	"github.com/firebase/genkit/go/ai"
 	"golang.org/x/sync/errgroup"
 )
 
+// CosineOptions provides typed configuration for a reranker that operates by
+// calculating the cosine similarity between the query embedding and each of the
+// document embeddings. This type of reranker requires an embedder to be
+// configured separately in the builder to generate the necessary vectors.
+type CosineOptions struct {
+	// TopK specifies the default number of top-scoring documents to return if a
+	// different limit is not specified in the reranking request itself.
+	TopK int `json:"topK,omitempty"`
+	// VectorDim is the expected dimensionality of the embedding vectors. While
+	// not always used directly by the reranker logic, it can be useful for
+	// validation or pre-allocation.
+	VectorDim int `json:"vectorDim,omitempty"`
+}
+
+func (o CosineOptions) ProviderName() string { return "cosine" }
+func (o CosineOptions) ProviderKind() core.Kind   { return core.KindReranker }
+
 func Register(r *manglekit.Registry) {
-	manglekit.Register(r, rerank.CosineOptions{},
-		func(ctx context.Context, deps diapi.RerankerDeps, cfg rerank.CosineOptions) (rerank.Reranker, error) {
+	manglekit.Register(r, CosineOptions{},
+		func(ctx context.Context, deps diapi.RerankerDeps, cfg CosineOptions) (core.Reranker, error) {
 			if deps.Embedder == nil {
 				return nil, fmt.Errorf("cosine reranker factory requires an 'embedder' dependency, but it was not provided")
 			}
@@ -40,8 +57,8 @@ type Reranker struct {
 // opts provides configuration, primarily the default `TopK` value.
 // embedder is the embedding model component used to generate vector embeddings
 // for both the query and the documents. This dependency is injected by the builder.
-// It returns a configured `rerank.Reranker` or an error if the embedder is missing.
-func New(opts rerank.CosineOptions, embedder ai.Embedder) (rerank.Reranker, error) {
+// It returns a configured `core.Reranker` or an error if the embedder is missing.
+func New(opts CosineOptions, embedder ai.Embedder) (core.Reranker, error) {
 	if embedder == nil {
 		return nil, fmt.Errorf("cosine reranker requires an embedder")
 	}
@@ -59,9 +76,9 @@ func New(opts rerank.CosineOptions, embedder ai.Embedder) (rerank.Reranker, erro
 //
 // ctx is the context for the API call.
 // req contains the query and the initial list of documents to be reranked.
-// It returns a sorted slice of `rerank.ScoredDoc`, trimmed to the configured
+// It returns a sorted slice of `core.ScoredDoc`, trimmed to the configured
 // `TopK` value, or an error if any of the embedding operations fail.
-func (r *Reranker) Rerank(ctx context.Context, req rerank.Request) ([]rerank.ScoredDoc, error) {
+func (r *Reranker) Rerank(ctx context.Context, req core.RerankRequest) ([]core.ScoredDoc, error) {
 	if len(req.Docs) == 0 {
 		return nil, nil // Nothing to rerank.
 	}
@@ -103,17 +120,17 @@ func (r *Reranker) Rerank(ctx context.Context, req rerank.Request) ([]rerank.Sco
 	}
 
 	// 3. Calculate cosine similarity and create ScoredDoc objects.
-	scoredDocs := make([]rerank.ScoredDoc, 0, len(req.Docs))
+	scoredDocs := make([]core.ScoredDoc, 0, len(req.Docs))
 	for i, doc := range req.Docs {
 		if docVectors[i] != nil {
 			score := cosineSimilarity(queryVector, docVectors[i])
-			scoredDocs = append(scoredDocs, rerank.ScoredDoc{
+			scoredDocs = append(scoredDocs, core.ScoredDoc{
 				Doc:   doc,
 				Score: float64(score),
 			})
 		} else {
 			// Handle cases where embedding might fail for a doc.
-			scoredDocs = append(scoredDocs, rerank.ScoredDoc{
+			scoredDocs = append(scoredDocs, core.ScoredDoc{
 				Doc:   doc,
 				Score: 0.0,
 			})

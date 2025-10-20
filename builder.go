@@ -7,10 +7,10 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/logger"
+	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 )
@@ -51,10 +51,10 @@ type Builder struct {
 	// Built components are stored here during the build process.
 	embedder      ai.Embedder
 	vectorStore   core.VectorStore
-	retriever     retrieve.Retriever
-	reranker      any // rerank.Reranker
+	retriever     core.Retriever
+	reranker      core.Reranker
 	rules         core.RuleSet
-	llm           any // llm.Client
+	llm           core.LLMClient
 	stateProvider core.StateProvider
 
 	orchestratorName string
@@ -155,12 +155,12 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 					BuildSubRetriever: b.BuildRetriever,
 				}
 			},
-			assign: func(b *Builder, v any) { b.retriever = v.(retrieve.Retriever) },
+			assign: func(b *Builder, v any) { b.retriever = v.(core.Retriever) },
 		},
 		core.KindReranker: {
 			kind:     core.KindReranker,
 			makeDeps: func(b *Builder) any { return diapi.RerankerDeps{Embedder: b.embedder} },
-			assign:   func(b *Builder, v any) { b.reranker = v },
+			assign:   func(b *Builder, v any) { b.reranker = v.(core.Reranker) },
 		},
 		core.KindRules: {
 			kind:     core.KindRules,
@@ -170,7 +170,7 @@ func (b *Builder) specTable() map[core.Kind]compSpec {
 		core.KindLLM: {
 			kind:     core.KindLLM,
 			makeDeps: func(b *Builder) any { return diapi.LLMDeps{Genkit: b.genkit} },
-			assign:   func(b *Builder, v any) { b.llm = v },
+			assign:   func(b *Builder, v any) { b.llm = v.(core.LLMClient) },
 			registerCloser: func(b *Builder, v any) {
 				if c, ok := v.(interface{ Close(context.Context) error }); ok {
 					b.opts.ResourceClosers = append(b.opts.ResourceClosers, c.Close)
@@ -248,7 +248,7 @@ func (b *Builder) buildAll(ctx context.Context) error {
 
 // BuildRetriever constructs a retriever by name. This is used to support the
 // hybrid retriever pattern, which needs to build its sub-retrievers.
-func (b *Builder) BuildRetriever(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error) {
+func (b *Builder) BuildRetriever(ctx context.Context, name string, params map[string]any) (core.Retriever, error) {
 	b.opts.Obs.Logger.Debugf("building sub-retriever %q", name)
 	factory, err := b.registry.Get(core.KindRetriever, name)
 	if err != nil {
@@ -269,7 +269,7 @@ func (b *Builder) BuildRetriever(ctx context.Context, name string, params map[st
 	if err != nil {
 		return nil, err
 	}
-	return v.(retrieve.Retriever), nil
+	return v.(core.Retriever), nil
 }
 
 // Build constructs the final Orchestrator.

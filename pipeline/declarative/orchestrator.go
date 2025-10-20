@@ -11,9 +11,6 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	obslogger "github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/statehelper"
-	"github.com/duynguyendang/manglekit/llm"
-	"github.com/duynguyendang/manglekit/rerank"
-	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/google/uuid"
 )
 
@@ -331,15 +328,15 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, logger cor
 	}
 
 	switch t := tool.(type) {
-	case retrieve.Retriever:
+	case core.Retriever:
 		// Ensure Meta is non-nil
 		if query.Meta == nil {
-			query.Meta = map[string]any{}
+			query.Meta = make(map[string]any)
 		}
 
 		logger.Debugf("calling retriever", "stage", stage.Name, "filters", query.Meta["filters"], "expansions", query.Meta["expansion_terms"])
 
-		req := retrieve.Request{Query: query.Text, Meta: query.Meta}
+		req := core.RetrieveRequest{Query: query.Text, Meta: query.Meta}
 		res, err := t.Retrieve(ctx, req)
 		if err != nil {
 			return err
@@ -361,12 +358,12 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, logger cor
 		ans.Meta["original_docs"] = res.Docs
 		execContext[contextKeyAnswer] = ans
 
-	case rerank.Reranker:
+	case core.Reranker:
 		docs, ok := execContext[contextKeyDocs].([]core.Doc)
 		if !ok {
 			return fmt.Errorf("no documents in context for reranker to process")
 		}
-		req := rerank.Request{Query: query.Text, Docs: docs}
+		req := core.RerankRequest{Query: query.Text, Docs: docs}
 		rerankedDocs, err := t.Rerank(ctx, req)
 		if err != nil {
 			return err
@@ -391,7 +388,7 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, logger cor
 			meta["best_score"] = rerankedDocs[0].Score
 		}
 
-	case llm.Client:
+	case core.LLMClient:
 		if denied, _ := execContext[contextKeyDenialFlag].(bool); denied {
 			return nil
 		}
@@ -400,7 +397,7 @@ func (o *DeclarativeOrchestrator) dispatchToTool(ctx context.Context, logger cor
 		for i, d := range docs {
 			passages[i] = d.Text
 		}
-		req := llm.Request{Prompt: query.Text, Context: passages, Data: query.Meta}
+		req := core.LLMRequest{Prompt: query.Text, Context: passages, Data: query.Meta}
 		res, err := t.Complete(ctx, req)
 		if err != nil {
 			return err

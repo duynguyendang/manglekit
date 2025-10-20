@@ -5,13 +5,12 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/rerank"
 )
 
 // RerankStage is responsible for re-scoring and re-ordering the documents
 // retrieved in the previous stage to improve their relevance.
 type RerankStage struct {
-	Reranker          rerank.Reranker
+	Reranker          core.Reranker
 	TopK              int
 	FallbackThreshold float64
 	Logger            core.Logger
@@ -35,7 +34,7 @@ func (s *RerankStage) Execute(p *PipelineContext) error {
 	}
 
 	start := time.Now()
-	rerankedDocs, err := s.Reranker.Rerank(p.Ctx, rerank.Request{Query: p.Query.Text, Docs: p.OriginalDocs, TopK: s.TopK})
+	rerankedDocs, err := s.Reranker.Rerank(p.Ctx, core.RerankRequest{Query: p.Query.Text, Docs: p.OriginalDocs, TopK: s.TopK})
 	p.RerankMS = float64(time.Since(start).Milliseconds())
 	if s.Meter != nil {
 		s.Meter.Record("manglekit.rerank_ms", p.RerankMS)

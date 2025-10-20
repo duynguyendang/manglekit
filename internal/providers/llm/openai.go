@@ -5,16 +5,45 @@ import (
 	"fmt"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/llm"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 )
 
+// OpenAIOptions provides typed configuration for OpenAI and compatible language
+// models (e.g., Groq). It specifies the model to use and how to authenticate.
+type OpenAIOptions struct {
+	// APIKey is the API key for authenticating with the OpenAI or a compatible service.
+	// If not set here, it is often read from an environment variable (e.g., OPENAI_API_KEY).
+	APIKey string `json:"apiKey,omitempty"`
+	// Model is the identifier for the specific model to be used for completions,
+	// for example, "gpt-4-turbo" or "llama3-8b-8192".
+	Model string `json:"model,omitempty"`
+	// PromptTemplate is an optional custom Go template string for formatting the
+	// final prompt that is sent to the LLM. If this is empty, a default
+	// prompt template will be used by the client.
+	PromptTemplate string `json:"promptTemplate,omitempty"`
+	// Temperature controls the randomness of the model's output.
+	Temperature float32 `json:"temperature,omitempty"`
+	// MaxOutputTokens is the maximum number of tokens to generate in the response.
+	MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
+}
+
+func (o OpenAIOptions) ProviderName() string { return "openai" }
+func (o OpenAIOptions) ProviderKind() core.Kind   { return core.KindLLM }
+
+// GroqOptions is an alias for OpenAIOptions, but it identifies itself as "groq".
+type GroqOptions struct {
+	OpenAIOptions
+}
+
+func (o GroqOptions) ProviderName() string { return "groq" }
+
 func RegisterOpenAI(r *manglekit.Registry) {
 	// Factory function for OpenAI
-	openAIFactory := func(ctx context.Context, deps diapi.LLMDeps, cfg llm.OpenAIOptions) (llm.Client, error) {
+	openAIFactory := func(ctx context.Context, deps diapi.LLMDeps, cfg OpenAIOptions) (core.LLMClient, error) {
 		if deps.Genkit == nil {
 			return nil, fmt.Errorf("missing required dependency 'genkit'")
 		}
@@ -25,10 +54,10 @@ func RegisterOpenAI(r *manglekit.Registry) {
 		}
 		return NewOpenAI(cfg, model, deps.Genkit), nil
 	}
-	manglekit.Register(r, llm.OpenAIOptions{}, openAIFactory)
+	manglekit.Register(r, OpenAIOptions{}, openAIFactory)
 
 	// Factory function for Groq (reuses OpenAI logic but with GroqOptions)
-	groqFactory := func(ctx context.Context, deps diapi.LLMDeps, cfg llm.GroqOptions) (llm.Client, error) {
+	groqFactory := func(ctx context.Context, deps diapi.LLMDeps, cfg GroqOptions) (core.LLMClient, error) {
 		if deps.Genkit == nil {
 			return nil, fmt.Errorf("missing required dependency 'genkit'")
 		}
@@ -39,18 +68,18 @@ func RegisterOpenAI(r *manglekit.Registry) {
 		}
 		return NewOpenAI(cfg.OpenAIOptions, model, deps.Genkit), nil
 	}
-	manglekit.Register(r, llm.GroqOptions{}, groqFactory)
+	manglekit.Register(r, GroqOptions{}, groqFactory)
 }
 
 // OpenAI is a wrapper around a genkit AI model from the OpenAI plugin.
 type OpenAI struct {
-	opts   llm.OpenAIOptions
+	opts   OpenAIOptions
 	model  ai.Model
 	genkit *genkit.Genkit
 }
 
 // NewOpenAI is the constructor for the OpenAI client wrapper.
-func NewOpenAI(opts llm.OpenAIOptions, model ai.Model, g *genkit.Genkit) llm.Client {
+func NewOpenAI(opts OpenAIOptions, model ai.Model, g *genkit.Genkit) core.LLMClient {
 	return &OpenAI{
 		opts:   opts,
 		model:  model,
@@ -58,10 +87,10 @@ func NewOpenAI(opts llm.OpenAIOptions, model ai.Model, g *genkit.Genkit) llm.Cli
 	}
 }
 
-// Complete implements the llm.Client interface.
-func (o *OpenAI) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
+// Complete implements the core.LLMClient interface.
+func (o *OpenAI) Complete(ctx context.Context, req core.LLMRequest) (core.LLMResponse, error) {
 	if o.model == nil {
-		return llm.Response{}, fmt.Errorf("openai llm client not initialized with a model")
+		return core.LLMResponse{}, fmt.Errorf("openai llm client not initialized with a model")
 	}
 
 	// Start with default provider options.
@@ -82,7 +111,7 @@ func (o *OpenAI) Complete(ctx context.Context, req llm.Request) (llm.Response, e
 		ai.WithConfig(config),
 	)
 	if err != nil {
-		return llm.Response{}, err
+		return core.LLMResponse{}, err
 	}
 
 	// Extract token usage.
@@ -93,7 +122,7 @@ func (o *OpenAI) Complete(ctx context.Context, req llm.Request) (llm.Response, e
 		usage["total"] = int(res.Usage.TotalTokens)
 	}
 
-	return llm.Response{
+	return core.LLMResponse{
 		Text:  res.Text(),
 		Usage: usage,
 	}, nil

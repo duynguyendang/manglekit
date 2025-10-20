@@ -10,13 +10,27 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/retrieve"
 	"golang.org/x/sync/errgroup"
 )
 
+// HybridOptions provides a type-safe way to configure the hybrid retriever.
+// This retriever combines results from multiple underlying retrievers (typically
+// a keyword-based one and a dense/vector-based one) to leverage the strengths
+// of both methods. The child retrievers are constructed by the builder and
+// injected into these fields.
+type HybridOptions struct {
+	// BM25Retriever is the keyword-based (sparse) retriever instance.
+	BM25Retriever core.Retriever
+	// DenseRetriever is the vector-based (dense) retriever instance.
+	DenseRetriever core.Retriever
+}
+
+func (o HybridOptions) ProviderName() string { return "hybrid" }
+func (o HybridOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+
 func Register(r *manglekit.Registry) {
-	manglekit.Register(r, retrieve.HybridOptions{},
-		func(ctx context.Context, deps diapi.RetrieverDeps, cfg retrieve.HybridOptions) (retrieve.Retriever, error) {
+	manglekit.Register(r, HybridOptions{},
+		func(ctx context.Context, deps diapi.RetrieverDeps, cfg HybridOptions) (core.Retriever, error) {
 			if deps.BuildSubRetriever == nil {
 				return nil, fmt.Errorf("hybrid retriever factory requires the BuildSubRetriever capability, but it was not provided")
 			}
@@ -42,8 +56,8 @@ func Register(r *manglekit.Registry) {
 // (vector-based) retriever. This approach leverages the strengths of both
 // keyword matching and semantic understanding.
 type Retriever struct {
-	bm25  retrieve.Retriever
-	dense retrieve.Retriever
+	bm25  core.Retriever
+	dense core.Retriever
 }
 
 // New is the constructor for the hybrid retriever. It is registered with the
@@ -53,9 +67,9 @@ type Retriever struct {
 // opts contains the pre-built child retrievers. A `BM25Retriever` is required,
 // while the `DenseRetriever` is optional. If the dense retriever is nil, the
 // hybrid retriever will fall back to using only the BM25 retriever.
-// It returns an initialized `retrieve.Retriever` or an error if the BM25
+// It returns an initialized `core.Retriever` or an error if the BM25
 // retriever dependency is missing.
-func New(opts retrieve.HybridOptions) (retrieve.Retriever, error) {
+func New(opts HybridOptions) (core.Retriever, error) {
 	if opts.BM25Retriever == nil {
 		return nil, fmt.Errorf("hybrid: BM25Retriever is required")
 	}
@@ -79,16 +93,16 @@ func New(opts retrieve.HybridOptions) (retrieve.Retriever, error) {
 // ctx is the context for the API call.
 // req contains the query string and `TopK` value, which are passed to the
 // underlying retrievers and used to trim the final fused result set.
-// It returns a single, fused, and re-ranked `retrieve.Result` or an error if
+// It returns a single, fused, and re-ranked `core.RetrieveResult` or an error if
 // either of the underlying retrieval operations fail.
-func (h *Retriever) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Result, error) {
+func (h *Retriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
 	if h.dense == nil {
 		// If dense retriever is not configured, just use BM25.
 		return h.bm25.Retrieve(ctx, req)
 	}
 
 	g, gCtx := errgroup.WithContext(ctx)
-	var bm25Result, denseResult retrieve.Result
+	var bm25Result, denseResult core.RetrieveResult
 
 	g.Go(func() error {
 		var err error
@@ -103,7 +117,7 @@ func (h *Retriever) Retrieve(ctx context.Context, req retrieve.Request) (retriev
 	})
 
 	if err := g.Wait(); err != nil {
-		return retrieve.Result{}, err
+		return core.RetrieveResult{}, err
 	}
 
 	// --- Reciprocal Rank Fusion (RRF) Logic ---
@@ -145,5 +159,5 @@ func (h *Retriever) Retrieve(ctx context.Context, req retrieve.Request) (retriev
 		finalDocs = finalDocs[:req.TopK]
 	}
 
-	return retrieve.Result{Docs: finalDocs}, nil
+	return core.RetrieveResult{Docs: finalDocs}, nil
 }

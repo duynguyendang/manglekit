@@ -37,7 +37,7 @@ graph TD
 
     subgraph "C. Known Gaps"
        C1[Declarative Orchestrator is Dead Code]
-       C2[Type Assertions in Core]
+       C2[~~Type Assertions in Core~~]
     end
 
     A7 -.-> B2;
@@ -98,7 +98,7 @@ The architecture is designed for testability. Since components depend on interfa
 
 | ID  | Smell                                      | Location                               | Status |
 | --- | ------------------------------------------ | -------------------------------------- | ------ |
-| 1   | Type Assertions in Core Component Factory  | `pipeline/sandwich.go`                 | Open   |
+| 1   | Type Assertions in Core Component Factory  | `pipeline/sandwich.go`                 | Fixed   |
 | 2   | Broken Resource Cleanup Lifecycle          | `pipeline/sandwich.go`, `builder.go`     | Fixed   |
 | 3   | Dead Code - Declarative Orchestrator       | `pipeline/declarative/*`               | Open   |
 | 4   | Magic Strings for Execution Context        | `pipeline/declarative/orchestrator.go` | Open   |
@@ -141,7 +141,7 @@ The project adheres to Semantic Versioning 2.0.0. Minor version bumps may introd
     {
       "id": 1,
       "description": "Type Assertions in Core Component Factory",
-      "status": "Open"
+      "status": "Fixed"
     },
     {
       "id": 2,
