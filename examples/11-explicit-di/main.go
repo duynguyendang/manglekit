@@ -42,7 +42,7 @@ func main() {
 
 	answer, err := orch.Execute(ctx, "session-123", query)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Execution failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Execution failed: %v", err)
 		os.Exit(1)
 	}
 

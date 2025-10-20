@@ -1,0 +1,32 @@
+components:
+  # Embedder
+  - name: "openai-embedder"
+    kind: "embedder"
+    params:
+      provider: "openai"
+      model: "text-embedding-3-small"
+      apiKey: "${OPENAI_API_KEY}"
+
+  # Vector Store
+  - name: "my-vector-store"
+    kind: "vectorStore"
+    params:
+      provider: "localvec"
+      path: "./data/vs"
+      embedder: "openai-embedder" # Explicitly depends on the embedder by name
+
+  # Retriever
+  - name: "my-dense-retriever"
+    kind: "retriever"
+    params:
+      provider: "dense"
+      embedder: "openai-embedder"    # Explicitly depends on the embedder by name
+      vectorStore: "my-vector-store" # Explicitly depends on the vector store by name
+
+  # LLM
+  - name: "openai-llm"
+    kind: "llm"
+    params:
+      provider: "openai"
+      model: "gpt-4"
+      apiKey: "${OPENAI_API_KEY}"

@@ -28,7 +28,7 @@
 **Location:** `builder.go`
 **Impact Analysis:** During the build process, the builder stores the "last-built" component of each kind (e.g., `b.embedder`, `b.vectorStore`) and injects it as a dependency for subsequent components. This is fragile. The correctness of the dependency injection relies entirely on the order of `With` calls or the order in the config file. It prevents the creation of parallel, independent pipelines that might use different embedders or vector stores.
 **Refactoring Suggestion:** Components should declare their dependencies by name. For example, a `RetrieverOptions` struct should have a field like `Embedder: "openai-embedder"`. The builder would then be responsible for resolving this dependency by looking up the named embedder from its map of built components. This makes the dependency graph explicit and configuration-driven.
-**Status:** Open
+**Status:** Resolved
 
 ## Smell: Hard-Coded TopK in Tool Adapters
 **Location:** `core/tool_adapters.go`

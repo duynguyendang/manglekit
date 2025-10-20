@@ -1,23 +1,24 @@
-providers:
-  google:
-    apiKey: "${GOOGLE_API_KEY}"
+components:
+  - name: "mangle-rules"
+    kind: "rules"
+    params:
+      provider: "mangle"
+      path:
+        - "./rules/logic.dlog"
+      schemaSources:
+        - type: "rdf"
+          path: "./rules/design_docs.ttl"
+      defaultConverters: true
 
-rules:
-  name: "mangle"
-  params:
-    path:
-      - "./rules/logic.dlog"
-    schemaSources:
-      - type: "rdf"
-        path: "./rules/design_docs.ttl"
-    defaultConverters: true
+  - name: "bm25-retriever"
+    kind: "retriever"
+    params:
+      provider: "bm25"
+      path: "./corpus"
 
-retriever:
-  name: "bm25"
-  params:
-    path: "./corpus"
-
-llm:
-  name: "google"
-  params:
-    model: "gemini-2.5-flash"
+  - name: "google-llm"
+    kind: "llm"
+    params:
+      provider: "google"
+      model: "gemini-1.5-flash"
+      apiKey: "${GOOGLE_API_KEY}"

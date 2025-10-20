@@ -27,31 +27,18 @@ type HybridOptions struct {
 	RRF_K float64 `yaml:"rrf_k,omitempty"`
 }
 
-func (o HybridOptions) ProviderName() string { return "hybrid" }
-func (o HybridOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o HybridOptions) ProviderName() string    { return "hybrid" }
+func (o HybridOptions) ProviderKind() core.Kind      { return core.KindRetriever }
+func (o HybridOptions) GetSubRetrievers() []string { return o.Retrievers }
 
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, HybridOptions{},
 		func(ctx context.Context, deps diapi.RetrieverDeps, cfg HybridOptions) (core.Retriever, error) {
-			if deps.BuildSubRetriever == nil {
-				return nil, fmt.Errorf("hybrid retriever factory requires the BuildSubRetriever capability, but it was not provided")
-			}
-
-			var retrievers []core.Retriever
-			for _, name := range cfg.Retrievers {
-				retriever, err := deps.BuildSubRetriever(ctx, name, nil)
-				if err != nil {
-					return nil, fmt.Errorf("failed to build sub-retriever '%s' for hybrid retriever: %w", name, err)
-				}
-				retrievers = append(retrievers, retriever)
-			}
-
 			rrf_k := cfg.RRF_K
 			if rrf_k == 0.0 {
 				rrf_k = 60.0 // Default value
 			}
-
-			return New(retrievers, rrf_k)
+			return New(deps.SubRetrievers, rrf_k)
 		},
 	)
 }

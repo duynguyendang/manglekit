@@ -9,8 +9,6 @@
 package diapi
 
 import (
-	"context"
-
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
@@ -32,16 +30,27 @@ type BaseURLProvider interface {
 	GetBaseURL() string
 }
 
-// BuildRetrieverFunc defines a capability for building a retriever instance by name.
-// This is used by components like the hybrid retriever to dynamically construct
-// their sub-components without depending on the entire builder.
-type BuildRetrieverFunc func(ctx context.Context, name string, params map[string]any) (core.Retriever, error)
+// EmbedderDep is an interface for components that depend on an `ai.Embedder`.
+type EmbedderDep interface {
+	GetEmbedder() string
+}
+
+// VectorStoreDep is an interface for components that depend on a `core.VectorStore`.
+type VectorStoreDep interface {
+	GetVectorStore() string
+}
+
+// SubRetrieversDep is an interface for components that depend on a list of
+// sub-retrievers, identified by their names.
+type SubRetrieversDep interface {
+	GetSubRetrievers() []string
+}
 
 // RetrieverDeps provides all possible dependencies that a retriever factory might need.
 type RetrieverDeps struct {
-	Embedder          ai.Embedder
-	VectorStore       core.VectorStore
-	BuildSubRetriever BuildRetrieverFunc // Capability, not a Builder reference.
+	Embedder      ai.Embedder
+	VectorStore   core.VectorStore
+	SubRetrievers []core.Retriever
 }
 
 // LLMDeps provides all possible dependencies that an LLM factory might need.

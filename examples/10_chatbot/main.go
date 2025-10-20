@@ -2,43 +2,49 @@ package main
 
 import (
 	"context"
-	"flag"
+	"fmt"
+	"io/ioutil"
 	"log"
+	"os"
 
 	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/config"
-	_ "github.com/duynguyendang/manglekit/providers/all" // Import to register all providers
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/providers/all"
 	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	configFile := flag.String("config", "config.yaml", "Path to the configuration file")
-	flag.Parse()
-
-	// The global registry is populated by the `providers/all` import.
-	registry := sdk.GlobalRegistry()
-
-	cfg, err := config.LoadFromYAMLFile(*configFile)
-	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
-	}
-
-	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry, nil)
-	if err != nil {
-		log.Fatalf("failed to create builder: %v", err)
-	}
+	godotenv.Load()
 	ctx := context.Background()
-	orch, _, err := builder.Build(ctx)
+
+	// Read the configuration file.
+	configData, err := ioutil.ReadFile("config.yaml")
 	if err != nil {
-		log.Fatalf("failed to build orchestrator: %v", err)
+		log.Fatalf("Failed to read config file: %v", err)
+	}
+
+	// Create a new registry and register all the standard providers.
+	registry := manglekit.NewRegistry()
+	all.Register(registry)
+
+	// Load the orchestrator from the configuration data.
+	orch, err := sdk.FromConfig(ctx, registry, configData)
+	if err != nil {
+		log.Fatalf("Failed to build orchestrator: %v", err)
 	}
 	defer orch.Close(ctx)
 
-	// Now you can use the orchestrator to execute queries.
-	// For example:
-	// answer, err := orch.Execute(ctx, "session-123", core.Query{Text: "What is Manglekit?"})
-	// if err != nil {
-	// 	log.Fatalf("failed to execute query: %v", err)
-	// }
-	// log.Printf("Answer: %s", answer.Text)
+	// Execute a query.
+	query := core.Query{
+		Text: "What is Manglekit?",
+	}
+
+	answer, err := orch.Execute(ctx, "session-123", query)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Execution failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Answer:", answer.Text)
 }
