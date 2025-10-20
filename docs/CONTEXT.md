@@ -104,8 +104,8 @@ The architecture is designed for testability. Since components depend on interfa
 | 4   | Magic Strings for Execution Context        | `pipeline/declarative/orchestrator.go` | Open   |
 | 5   | Violation of Open/Closed Principle         | `pipeline/declarative/orchestrator.go` | Open   |
 | 6   | Dependency Injection Bypass                | `internal/providers/llm/openai.go`     | Fixed   |
-| 7   | Hard-coded Dependencies in Factory         | `internal/providers/hybrid/hybrid.go`  | Open   |
-| 8   | Hard-coded Magic Number                    | `internal/providers/hybrid/hybrid.go`  | Open   |
+| 7   | Hard-coded Dependencies in Factory         | `internal/providers/hybrid/hybrid.go`  | Resolved   |
+| 8   | Hard-coded Magic Number                    | `internal/providers/hybrid/hybrid.go`  | Resolved   |
 
 ### 11. Provider Families
 
@@ -171,12 +171,12 @@ The project adheres to Semantic Versioning 2.0.0. Minor version bumps may introd
     {
       "id": 7,
       "description": "Hard-coded Dependencies in Factory",
-      "status": "Open"
+      "status": "Resolved"
     },
     {
       "id": 8,
       "description": "Hard-coded Magic Number",
-      "status": "Open"
+      "status": "Resolved"
     }
   ]
 }

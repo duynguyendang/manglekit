@@ -38,13 +38,13 @@
 **Location:** `internal/providers/hybrid/hybrid.go`
 **Impact Analysis:** The hybrid retriever's factory is hard-coded to build its "bm25" and "dense" sub-retrievers. This makes the component inflexible. It's impossible to configure a different set of sub-retrievers (e.g., two different dense retrievers, or a dense retriever and a graph retriever) without changing the factory's code. The composition of a component should be defined in configuration, not in code.
 **Refactoring Suggestion:** The `retrieve.HybridOptions` struct should contain the *names* of the sub-retrievers to use (e.g., `SparseRetrieverName: "bm25"`, `DenseRetrieverName: "dense"`). The factory would then use the `deps.BuildSubRetriever` function to build the retrievers specified in the configuration, making the component fully composable.
-**Status:** Open
+**Status:** Resolved
 
 ## Smell: Hard-coded Magic Number
 **Location:** `internal/providers/hybrid/hybrid.go` (function `Retrieve`)
 **Impact Analysis:** The Reciprocal Rank Fusion (RRF) algorithm contains a hard-coded constant `k = 60.0`. This "magic number" is a critical tuning parameter for the fusion algorithm. Having it hard-coded prevents users from tuning the retriever's behavior for their specific use case without modifying the source code.
 **Refactoring Suggestion:** Add a `RRF_K` field to the `retrieve.HybridOptions` struct with a sensible default value. The `Retrieve` method should use the value from the options struct instead of the hard-coded constant. This exposes the parameter for configuration and tuning.
-**Status:** Open
+**Status:** Resolved
 
 ## Smell: Deprecated Code Present in Core
 **Location:** `core/types.go`
