@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"errors"
+
+	"github.com/firebase/genkit/go/ai"
 )
 
 // Message represents a single message in a conversation from a specific role.
@@ -135,12 +137,12 @@ type Citation struct {
 // that orchestrators receive their dependencies in a type-safe manner, free
 // from `any` types and runtime assertions.
 type Resolved struct {
-	Retriever     any // retrieve.Retriever
+	Retriever     Retriever
 	VectorStore   VectorStore
-	Reranker      any // rerank.Reranker
+	Reranker      Reranker
 	Rules         RuleSet
-	LLM           any // llm.Client
-	Embedder      any // ai.Embedder
+	LLM           LLMClient
+	Embedder      ai.Embedder
 	StateProvider StateProvider
 
 	Obs               Observability

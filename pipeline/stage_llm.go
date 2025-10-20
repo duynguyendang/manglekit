@@ -6,13 +6,12 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/llm"
 )
 
 // LLMStage is responsible for synthesizing a final answer by calling a large
 // language model with the evidence gathered in previous stages.
 type LLMStage struct {
-	LLM       llm.Client
+	LLM       core.LLMClient
 	MaxTokens int
 	Logger    core.Logger
 	Meter     core.Meter
@@ -55,7 +54,7 @@ func (s *LLMStage) Execute(p *PipelineContext) error {
 
 	// 3. Call the LLM.
 	start := time.Now()
-	llmRes, err := s.LLM.Complete(p.Ctx, llm.Request{
+	llmRes, err := s.LLM.Complete(p.Ctx, core.LLMRequest{
 		Prompt:    fmt.Sprintf("%s context: %s", p.Query.Text, strings.Join(passages, " ")),
 		Context:   passages,
 		MaxTokens: s.MaxTokens,

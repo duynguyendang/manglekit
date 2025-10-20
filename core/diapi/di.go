@@ -12,7 +12,6 @@ import (
 	"context"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 )
@@ -20,7 +19,7 @@ import (
 // BuildRetrieverFunc defines a capability for building a retriever instance by name.
 // This is used by components like the hybrid retriever to dynamically construct
 // their sub-components without depending on the entire builder.
-type BuildRetrieverFunc func(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error)
+type BuildRetrieverFunc func(ctx context.Context, name string, params map[string]any) (core.Retriever, error)
 
 // RetrieverDeps provides all possible dependencies that a retriever factory might need.
 type RetrieverDeps struct {

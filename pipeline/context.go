@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/rerank"
 )
 
 // PipelineContext is a typed, mutable data carrier that flows through the stages
@@ -27,7 +26,7 @@ type PipelineContext struct {
 	// OriginalDocs are the documents returned by the initial retrieval stage.
 	OriginalDocs []core.Doc
 	// RerankedDocs are the scored and sorted documents from the reranking stage.
-	RerankedDocs []rerank.ScoredDoc
+	RerankedDocs []core.ScoredDoc
 	// FinalDocs are the documents selected to be used for the LLM context,
 	// typically after reranking or fallback logic has been applied.
 	FinalDocs []core.Doc

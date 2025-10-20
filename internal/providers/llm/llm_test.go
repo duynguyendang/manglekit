@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/llm"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
@@ -35,9 +35,9 @@ func TestLLMProviders_Integration(t *testing.T) {
 		model := oai.Model(g, "gpt-3.5-turbo")
 		require.NotNil(t, model)
 
-		client := NewOpenAI(llm.OpenAIOptions{}, model, g)
+		client := NewOpenAI(OpenAIOptions{}, model, g)
 
-		req := llm.Request{
+		req := core.LLMRequest{
 			Prompt:    "hello",
 			MaxTokens: 5,
 		}
@@ -56,10 +56,10 @@ func TestLLMProviders_Integration(t *testing.T) {
 		model := googlegenai.GoogleAIModel(g, "gemini-1.5-flash-latest")
 		require.NotNil(t, model)
 
-		client, err := NewGoogle(llm.GoogleOptions{}, model, g)
+		client, err := NewGoogle(GoogleOptions{}, model, g)
 		require.NoError(t, err)
 
-		req := llm.Request{
+		req := core.LLMRequest{
 			Prompt:    "hello",
 			MaxTokens: 5,
 		}

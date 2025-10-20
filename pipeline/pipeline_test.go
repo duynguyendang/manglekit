@@ -7,7 +7,6 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
-	manglekitllm "github.com/duynguyendang/manglekit/llm"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 	"github.com/stretchr/testify/assert"
@@ -17,8 +16,8 @@ import (
 // MockRetriever is a simple mock for the retriever.
 type MockRetriever struct{}
 
-func (r *MockRetriever) Retrieve(ctx context.Context, q string, k int) ([]core.Doc, error) {
-	return []core.Doc{{Text: "mock document"}}, nil
+func (r *MockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
+	return core.RetrieveResult{Docs: []core.Doc{{Text: "mock document"}}}, nil
 }
 
 func TestSandwich_Integration(t *testing.T) {
@@ -34,7 +33,7 @@ func TestSandwich_Integration(t *testing.T) {
 	oai := &openai.OpenAI{APIKey: openaiAPIKey}
 	model := oai.Model(g, "gpt-3.5-turbo")
 	require.NotNil(t, model)
-	llmClient := llm.NewOpenAI(manglekitllm.OpenAIOptions{}, model, g)
+	llmClient := llm.NewOpenAI(llm.OpenAIOptions{}, model, g)
 
 	// Create the orchestrator with the NewSandwich factory.
 	deps := core.Resolved{

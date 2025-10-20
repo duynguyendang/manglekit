@@ -9,9 +9,6 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/llm"
-	"github.com/duynguyendang/manglekit/rerank"
-	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
 	"github.com/google/mangle/ast"
@@ -19,17 +16,17 @@ import (
 
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, RetrieverOptions{},
-		func(ctx context.Context, deps diapi.RetrieverDeps, cfg RetrieverOptions) (retrieve.Retriever, error) {
+		func(ctx context.Context, deps diapi.RetrieverDeps, cfg RetrieverOptions) (core.Retriever, error) {
 			return NewRetriever(cfg.Pairs), nil
 		},
 	)
 	manglekit.Register(r, RerankerOptions{},
-		func(ctx context.Context, deps diapi.RerankerDeps, cfg RerankerOptions) (rerank.Reranker, error) {
+		func(ctx context.Context, deps diapi.RerankerDeps, cfg RerankerOptions) (core.Reranker, error) {
 			return NewReranker(cfg.Passthrough), nil
 		},
 	)
 	manglekit.Register(r, LLMOptions{},
-		func(ctx context.Context, deps diapi.LLMDeps, cfg LLMOptions) (llm.Client, error) {
+		func(ctx context.Context, deps diapi.LLMDeps, cfg LLMOptions) (core.LLMClient, error) {
 			return NewLLM(cfg.Model), nil
 		},
 	)
@@ -84,11 +81,11 @@ func NewRetriever(pairs map[string]string) *Retriever {
 	return &Retriever{pairs}
 }
 
-func (r *Retriever) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Result, error) {
+func (r *Retriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
 	if text, ok := r.pairs[req.Query]; ok {
-		return retrieve.Result{Docs: []core.Doc{{Text: text}}}, nil
+		return core.RetrieveResult{Docs: []core.Doc{{Text: text}}}, nil
 	}
-	return retrieve.Result{}, nil
+	return core.RetrieveResult{}, nil
 }
 
 // RetrieverOptions is the options for the mock retriever.
@@ -110,11 +107,11 @@ func NewReranker(passthrough map[string]bool) *Reranker {
 }
 
 // Rerank reranks the documents.
-func (r *Reranker) Rerank(ctx context.Context, req rerank.Request) ([]rerank.ScoredDoc, error) {
+func (r *Reranker) Rerank(ctx context.Context, req core.RerankRequest) ([]core.ScoredDoc, error) {
 	if r.passthrough[req.Query] {
-		var scoredDocs []rerank.ScoredDoc
+		var scoredDocs []core.ScoredDoc
 		for _, doc := range req.Docs {
-			scoredDocs = append(scoredDocs, rerank.ScoredDoc{Doc: doc})
+			scoredDocs = append(scoredDocs, core.ScoredDoc{Doc: doc})
 		}
 		return scoredDocs, nil
 	}
@@ -140,14 +137,14 @@ func NewLLM(model string) *LLM {
 }
 
 // Complete generates a response.
-func (l *LLM) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
+func (l *LLM) Complete(ctx context.Context, req core.LLMRequest) (core.LLMResponse, error) {
 	var fullPrompt strings.Builder
 	fullPrompt.WriteString(req.Prompt)
 	if len(req.Context) > 0 {
 		fullPrompt.WriteString(" context: ")
 		fullPrompt.WriteString(strings.Join(req.Context, " "))
 	}
-	return llm.Response{Text: fmt.Sprintf("model: %s prompt: %s", l.model, fullPrompt.String())}, nil
+	return core.LLMResponse{Text: fmt.Sprintf("model: %s prompt: %s", l.model, fullPrompt.String())}, nil
 }
 
 // Model returns the model name.

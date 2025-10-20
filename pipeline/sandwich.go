@@ -9,9 +9,6 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	obslogger "github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/statehelper"
-	"github.com/duynguyendang/manglekit/llm"
-	"github.com/duynguyendang/manglekit/rerank"
-	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/google/uuid"
 )
 
@@ -27,10 +24,10 @@ import (
 // 4.  **Post-retrieval rules**: Filter the final answer and citations for compliance.
 type Sandwich struct {
 	opts                core.OptionsLike
-	retriever           retrieve.Retriever
-	reranker            rerank.Reranker
+	retriever           core.Retriever
+	reranker            core.Reranker
 	ruleset             core.RuleSet
-	llm                 llm.Client
+	llm                 core.LLMClient
 	stateProvider       core.StateProvider
 	closers             []core.ResourceCloser
 	conversationManager *statehelper.ConversationManager
@@ -41,10 +38,10 @@ type Sandwich struct {
 // and strongly typed. This eliminates the need for runtime type assertions.
 func NewSandwich(ctx context.Context, deps core.Resolved) (core.Orchestrator, error) {
 	s := &Sandwich{
-		retriever:           deps.Retriever.(retrieve.Retriever),
-		reranker:            deps.Reranker.(rerank.Reranker),
+		retriever:           deps.Retriever,
+		reranker:            deps.Reranker,
 		ruleset:             deps.Rules,
-		llm:                 deps.LLM.(llm.Client),
+		llm:                 deps.LLM,
 		stateProvider:       deps.StateProvider,
 		conversationManager: statehelper.NewConversationManager(),
 		closers:             deps.Closers,
