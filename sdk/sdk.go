@@ -27,6 +27,7 @@ func FromConfig(ctx context.Context, registry *manglekit.Registry, data []byte) 
 		WithTopK(cfg.TopK).
 		WithMaxTokens(cfg.MaxTokens).
 		WithOrchestrator(cfg.Orchestrator).
+		WithUpdatable(cfg.Updatable).
 		WithFallbackThreshold(cfg.FallbackThreshold)
 
 	for _, comp := range cfg.Components {
