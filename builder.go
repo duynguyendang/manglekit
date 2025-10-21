@@ -25,6 +25,7 @@ type BuilderAPI interface {
 	WithFallbackThreshold(f float64) BuilderAPI
 	WithGenkit(g *genkit.Genkit) BuilderAPI
 	WithOrchestrator(name string) BuilderAPI
+	WithUpdatable(name string) BuilderAPI
 	Build(ctx context.Context) (core.Orchestrator, retrieve.Updatable, error)
 }
 
@@ -54,6 +55,7 @@ type Builder struct {
 	openAIClient *openai.OpenAI
 
 	orchestratorName string
+	updatableName    string
 }
 
 // NewBuilder returns a new, empty instance of the fluent builder.
@@ -98,19 +100,23 @@ func (b *Builder) With(name string, opts any) BuilderAPI {
 	return b
 }
 
-func (b *Builder) ensureOpenAIClient(c configItem) {
-	if c.cfg.ProviderName() != "openai" || b.openAIClient != nil {
-		return
+func (b *Builder) EnsureOpenAIClient(cfg core.ProviderOptions) error {
+	if b.openAIClient != nil {
+		return nil
 	}
 
-	if provider, ok := c.cfg.(diapi.APIKeyProvider); ok {
-		opts := []option.RequestOption{option.WithAPIKey(provider.GetAPIKey())}
-		if baseURLProvider, ok := c.cfg.(diapi.BaseURLProvider); ok && baseURLProvider.GetBaseURL() != "" {
-			opts = append(opts, option.WithBaseURL(baseURLProvider.GetBaseURL()))
-		}
-		b.openAIClient = &openai.OpenAI{APIKey: provider.GetAPIKey(), Opts: opts}
-		b.opts.Obs.Logger.Infof("created shared openai client for %s", c.name)
+	provider, ok := cfg.(diapi.APIKeyProvider)
+	if !ok {
+		return fmt.Errorf("OpenAI provider config does not implement APIKeyProvider")
 	}
+
+	opts := []option.RequestOption{option.WithAPIKey(provider.GetAPIKey())}
+	if baseURLProvider, ok := cfg.(diapi.BaseURLProvider); ok && baseURLProvider.GetBaseURL() != "" {
+		opts = append(opts, option.WithBaseURL(baseURLProvider.GetBaseURL()))
+	}
+	b.openAIClient = &openai.OpenAI{APIKey: provider.GetAPIKey(), Opts: opts}
+	b.opts.Obs.Logger.Infof("created shared openai client")
+	return nil
 }
 
 func (b *Builder) buildAll(ctx context.Context) error {
@@ -156,10 +162,6 @@ func (b *Builder) buildAll(ctx context.Context) error {
 				return err
 			}
 
-			if k == core.KindLLM {
-				b.ensureOpenAIClient(c)
-			}
-
 			closer, err := handler.BuildComponent(ctx, b, factory, resolved, c.cfg, c.name)
 			if err != nil {
 				return err
@@ -194,11 +196,17 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updata
 	}
 
 	var updatable retrieve.Updatable
-	for _, r := range b.retrievers {
-		if u, ok := r.(retrieve.Updatable); ok {
-			updatable = u
-			break
+	if b.updatableName != "" {
+		r, ok := b.retrievers[b.updatableName]
+		if !ok {
+			return nil, nil, fmt.Errorf("updatable component %q not found", b.updatableName)
 		}
+
+		u, ok := r.(retrieve.Updatable)
+		if !ok {
+			return nil, nil, fmt.Errorf("component %q was found, but it does not implement retrieve.Updatable", b.updatableName)
+		}
+		updatable = u
 	}
 
 	b.opts.Obs.Logger.Infof("successfully built %s orchestrator", b.orchestratorName)
@@ -223,6 +231,7 @@ func (b *Builder) WithObservability(obs core.Observability) BuilderAPI { b.opts.
 func (b *Builder) WithFallbackThreshold(f float64) BuilderAPI { b.opts.FallbackThreshold = f; return b }
 func (b *Builder) WithGenkit(g *genkit.Genkit) BuilderAPI    { b.genkit = g; return b }
 func (b *Builder) WithOrchestrator(name string) BuilderAPI  { b.orchestratorName = name; return b }
+func (b *Builder) WithUpdatable(name string) BuilderAPI    { b.updatableName = name; return b }
 
 func getComponent[T any](m map[string]T, name string) (T, error) {
 	c, ok := m[name]

@@ -9,6 +9,7 @@ type Config struct {
 	TopK              int               `yaml:"topK,omitempty"`
 	MaxTokens         int               `yaml:"maxTokens,omitempty"`
 	Orchestrator      string            `yaml:"orchestrator,omitempty"`
+	Updatable         string            `yaml:"updatable,omitempty"`
 	FallbackThreshold float64           `yaml:"fallbackThreshold,omitempty"`
 }
 

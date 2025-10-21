@@ -16,6 +16,7 @@ type Builder interface {
 	GetRetriever(name string) (core.Retriever, error)
 	OpenAIClient() *openai.OpenAI
 	Genkit() *genkit.Genkit
+	EnsureOpenAIClient(cfg core.ProviderOptions) error
 }
 
 // OpenAIClientProvider is an interface for components that can provide an OpenAI client.
