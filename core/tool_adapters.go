@@ -15,8 +15,16 @@ func (t *RetrieverTool) Execute(ctx context.Context, execCtx *ExecutionContext) 
 	if t.R == nil {
 		return fmt.Errorf("retriever is nil")
 	}
+
+	topK := 10 // Default value
+	if val, ok := execCtx.CurrentStepParams["topK"]; ok {
+		if intVal, ok := val.(int); ok {
+			topK = intVal
+		}
+	}
+
 	// The retriever operates on the raw query text.
-	result, err := t.R.Retrieve(ctx, RetrieveRequest{Query: execCtx.Input, TopK: 10}) // Assuming a default TopK
+	result, err := t.R.Retrieve(ctx, RetrieveRequest{Query: execCtx.Input, TopK: topK})
 	if err != nil {
 		return fmt.Errorf("retriever tool failed: %w", err)
 	}
@@ -34,8 +42,16 @@ func (t *RerankerTool) Execute(ctx context.Context, execCtx *ExecutionContext) e
 	if t.Rr == nil {
 		return fmt.Errorf("reranker is nil")
 	}
+
+	topK := 10 // Default value
+	if val, ok := execCtx.CurrentStepParams["topK"]; ok {
+		if intVal, ok := val.(int); ok {
+			topK = intVal
+		}
+	}
+
 	// The reranker needs the original query text and the documents from a previous step.
-	rerankedDocs, err := t.Rr.Rerank(ctx, RerankRequest{Query: execCtx.Input, Docs: execCtx.Documents, TopK: 10})
+	rerankedDocs, err := t.Rr.Rerank(ctx, RerankRequest{Query: execCtx.Input, Docs: execCtx.Documents, TopK: topK})
 	if err != nil {
 		return fmt.Errorf("reranker tool failed: %w", err)
 	}

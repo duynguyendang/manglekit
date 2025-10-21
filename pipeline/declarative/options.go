@@ -5,7 +5,8 @@ import "github.com/duynguyendang/manglekit/core"
 // ToolStepConfig defines a single tool to be executed.
 // The "Name" must match the name of a component defined elsewhere in the config.
 type ToolStepConfig struct {
-	Name string `yaml:"name"`
+	Name   string         `yaml:"name"`
+	Params map[string]any `yaml:"params,omitempty"`
 }
 
 // Options defines the configuration for the declarative orchestrator.
