@@ -240,6 +240,9 @@ type Meter interface {
 // cancellation signals while shutting down the resource.
 type ResourceCloser func(ctx context.Context) error
 
+// NopCloser is a ResourceCloser that does nothing.
+func NopCloser(ctx context.Context) error { return nil }
+
 var (
 	// ErrInvalidOptions is returned when the SDK is initialized with missing
 	// or invalid options, such as a nil Retriever or LLM, or when component

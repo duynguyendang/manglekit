@@ -8,56 +8,11 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 )
 
-// GenericFactory is a type-erased wrapper around a strongly-typed provider factory.
-// It allows the registry to store factories for different component types in a
-// single map while preserving type safety internally. The `Build` method uses
-// `any` for its parameters, but the concrete implementation (`typedFactory`)
-// immediately casts them back to their compile-time types.
-type GenericFactory interface {
-	Kind() core.Kind
-	Name() string
-	Build(ctx context.Context, deps any, cfg any) (any, error)
-}
-
-// typedFactory is the concrete implementation of GenericFactory. It holds the
-// actual, strongly-typed factory function `fn`. This generic struct ensures that
-// within a provider's ecosystem, all interactions (factory definition, dependency
-// injection, configuration) are type-safe from end to end.
-type typedFactory[T any, D any, O core.ProviderOptions] struct {
-	kind core.Kind
-	name string
-	fn   func(ctx context.Context, deps D, cfg O) (T, error)
-}
-
-// Kind returns the component kind (e.g., "llm", "retriever").
-func (f typedFactory[T, D, O]) Kind() core.Kind { return f.kind }
-
-// Name returns the provider's unique name (e.g., "openai-chat").
-func (f typedFactory[T, D, O]) Name() string { return f.name }
-
-// Build executes the wrapped factory function. It performs the crucial type
-// assertions that bridge the gap from the type-erased `any` parameters back
-// to the concrete types `D` (dependencies) and `O` (options) required by the
-// factory. This is the only place where such an assertion is needed for factories.
-func (f typedFactory[T, D, O]) Build(ctx context.Context, deps any, cfg any) (any, error) {
-	// Handle cases where dependencies or config might be nil.
-	var d D
-	if deps != nil {
-		d = deps.(D)
-	}
-
-	var o O
-	if cfg != nil {
-		o = cfg.(O)
-	}
-
-	return f.fn(ctx, d, o)
-}
-
 // Registry is the central store for all registered component constructors.
 // It has been refactored to use a single, generic, and type-safe mechanism.
 type Registry struct {
-	factories         map[core.Kind]map[string]GenericFactory
+	factories         map[core.Kind]map[string]core.GenericFactory
+	handlers          map[core.Kind]core.ComponentHandler
 	OptionsTypeToName map[reflect.Type]string
 	OptionsTypeToKind map[reflect.Type]core.Kind
 }
@@ -65,7 +20,8 @@ type Registry struct {
 // NewRegistry creates and returns a new, fully initialized Registry struct.
 func NewRegistry() *Registry {
 	return &Registry{
-		factories:         make(map[core.Kind]map[string]GenericFactory),
+		factories:         make(map[core.Kind]map[string]core.GenericFactory),
+		handlers:          make(map[core.Kind]core.ComponentHandler),
 		OptionsTypeToName: make(map[reflect.Type]string),
 		OptionsTypeToKind: make(map[reflect.Type]core.Kind),
 	}
@@ -94,14 +50,10 @@ func Register[T any, D any, O core.ProviderOptions](
 	name := optsSample.ProviderName()
 
 	if _, ok := r.factories[kind]; !ok {
-		r.factories[kind] = make(map[string]GenericFactory)
+		r.factories[kind] = make(map[string]core.GenericFactory)
 	}
 
-	factory := typedFactory[T, D, O]{
-		kind: kind,
-		name: name,
-		fn:   fn,
-	}
+	factory := core.NewTypedFactory[T, D, O](kind, name, fn)
 	r.factories[kind][name] = factory
 
 	t := reflect.TypeOf(optsSample)
@@ -110,13 +62,27 @@ func Register[T any, D any, O core.ProviderOptions](
 }
 
 // Get retrieves a generic factory from the registry by its kind and name.
-func (r *Registry) Get(kind core.Kind, name string) (GenericFactory, error) {
+func (r *Registry) Get(kind core.Kind, name string) (core.GenericFactory, error) {
 	if kindMap, ok := r.factories[kind]; ok {
 		if factory, ok := kindMap[name]; ok {
 			return factory, nil
 		}
 	}
 	return nil, fmt.Errorf("unknown %s provider: %s", kind, name)
+}
+
+// RegisterHandler registers a component handler for a specific kind.
+func (r *Registry) RegisterHandler(handler core.ComponentHandler) {
+	r.handlers[handler.Kind()] = handler
+}
+
+// GetHandler retrieves a component handler for a specific kind.
+func (r *Registry) GetHandler(kind core.Kind) (core.ComponentHandler, error) {
+	handler, ok := r.handlers[kind]
+	if !ok {
+		return nil, fmt.Errorf("no handler registered for kind %q", kind)
+	}
+	return handler, nil
 }
 
 // Get retrieves a constructor function from the specified registry map. It is a

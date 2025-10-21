@@ -22,7 +22,7 @@
 **Location:** `builder.go`
 **Impact Analysis:** The `specTable` function defines the entire build process for every component type in a single, large map. While data-driven, this centralizes all component-specific logic (dependency creation, assignment, resource closing) into the main builder. This violates the Open/Closed Principle; adding a new component kind requires modifying the builder itself.
 **Refactoring Suggestion:** Abstract the `compSpec` into an interface, `ComponentHandler` or similar. Each provider package could optionally register a handler for its kind. The builder would iterate through registered handlers instead of a hard-coded table. This would decentralize the build logic and make the framework more extensible.
-**Status:** Open
+**Status:** Resolved
 
 ## Smell: Implicit Dependency on Last-Built Component
 **Location:** `builder.go`
