@@ -1,37 +1,79 @@
 # Manglekit SDK - Code Review
 
-## Smell: Hard-Coded Default Orchestrator
-**Location:** `builder.go` (in `Build` method)
-**Impact Analysis:** The builder defaults to the `"sandwich"` orchestrator if no explicit choice is made. This creates a tight coupling between the core builder and a specific implementation, making the framework less modular. If the "sandwich" provider were ever removed or renamed, this would cause a runtime failure that is not obvious from the configuration.
-**Refactoring Suggestion:** Remove the hard-coded default. Require the orchestrator to be explicitly specified via `WithOrchestrator(name)` or in the configuration file. The `Build` method should return an error if no orchestrator is chosen, forcing a conscious decision by the user.
-**Status:** Resolved
+## Smell: Broken Resource Cleanup Lifecycle
+**Location:** `builder.go` and `core/`
+**Impact Analysis:** Components with resources that need explicit closing (e.g., database connections) may not be cleaned up properly on shutdown, leading to resource leaks.
+**Refactoring Suggestion:** Ensure all components that manage resources implement a `Close()` method and that the builder correctly collects and calls these methods during the application's graceful shutdown sequence.
+**Status:** Open
 
-## Smell: Arbitrary Component Selection in Sandwich Orchestrator
-**Location:** `pipeline/sandwich.go` (in `NewSandwich` factory)
-**Impact Analysis:** The `NewSandwich` factory iterates through the maps of resolved components (e.g., `deps.Retrievers`, `deps.LLMs`) and picks the *first one* it finds. This behavior is non-deterministic, as map iteration order in Go is not guaranteed. A user configuring multiple retrievers or LLMs has no control over which one the primary orchestrator will use, leading to unpredictable behavior.
-**Refactoring Suggestion:** The `Sandwich` orchestrator should be configurable. Introduce a `SandwichOptions` struct that allows the user to specify the names of the components it should use (e.g., `Retriever: "bm25"`, `LLM: "openai"`). The factory would then look up these specific components in the `deps` maps.
-**Status:** Resolved
-
-## Smell: Redundant `WithKind` Method in Builder API
+## Smell: Type Assertions in Core Component Factories
 **Location:** `builder.go`
-**Impact Analysis:** The `BuilderAPI` has two methods for adding components: `With(opts any)` and `WithKind(kind, name, opts)`. The `With` method is type-safe and looks up the kind and name in the registry, which is the preferred, modern pattern. The `WithKind` method is a remnant of the config-file-driven approach and adds complexity. It forces the builder to support two parallel configuration paths, increasing the surface area for bugs.
-**Refactoring Suggestion:** Deprecate and remove the `WithKind` method. The config loader (`from_config.go`) should be refactored to use the registry to look up the provider's options type from its name and kind. It can then instantiate that type and unmarshal the config options into it, before passing the typed options struct to the builder's `With` method. This makes `With` the single, canonical way to add a component.
-**Status:** Resolved
+**Impact Analysis:** Using `any` and runtime type assertions for dependency injection in factories is brittle and bypasses compile-time safety checks, leading to potential runtime panics.
+**Refactoring Suggestion:** Use the strongly-typed `diapi` structs for all dependency injection. Avoid `any` and type assertions in factory `Build` methods.
+**Status:** Open
 
-## Smell: Monolithic `specTable` in Builder
+## Smell: Dependency Injection Bypass
 **Location:** `builder.go`
-**Impact Analysis:** The `specTable` function defines the entire build process for every component type in a single, large map. While data-driven, this centralizes all component-specific logic (dependency creation, assignment, resource closing) into the main builder. This violates the Open/Closed Principle; adding a new component kind requires modifying the builder itself.
-**Refactoring Suggestion:** Abstract the `compSpec` into an interface, `ComponentHandler` or similar. Each provider package could optionally register a handler for its kind. The builder would iterate through registered handlers instead of a hard-coded table. This would decentralize the build logic and make the framework more extensible.
-**Status:** Resolved
+**Impact Analysis:** Some components may be bypassing the formal dependency injection mechanism, making the system harder to reason about, test, and maintain.
+**Refactoring Suggestion:** Enforce that all inter-component dependencies are resolved via the `diapi` structs and the builder. Forbid direct instantiation of dependencies within a factory.
+**Status:** Open
 
-## Smell: Implicit Dependency on Last-Built Component
+## Smell: Hard-coded Dependencies in Factory (Hybrid Retriever)
+**Location:** `internal/providers/hybrid/hybrid.go`
+**Impact Analysis:** The hybrid retriever factory hard-codes the names of its sub-retrievers (e.g., "bm25", "dense"), preventing users from configuring different combinations.
+**Refactoring Suggestion:** The list of sub-retrievers should be a configurable list of strings in the `HybridOptions` struct, allowing for dynamic composition.
+**Status:** Open
+
+## Smell: Hard-coded Magic Number (Hybrid Retriever k=60)
+**Location:** `internal/providers/hybrid/hybrid.go`
+**Impact Analysis:** The Reciprocal Rank Fusion constant `k` is hard-coded to 60.0, preventing users from tuning the retriever's fusion algorithm for their specific use case.
+**Refactoring Suggestion:** Expose `RRF_K` as a configurable `float64` field in the `HybridOptions` struct.
+**Status:** Open
+
+## Smell: Dead Code - Declarative Orchestrator
+**Location:** `pipeline/declarative/`
+**Impact Analysis:** The declarative orchestrator and its related components may be unused or untested, representing dead code that increases maintenance overhead.
+**Refactoring Suggestion:** Either fully integrate and test the declarative orchestrator as a first-class execution model or remove it from the codebase.
+**Status:** Open
+
+## Smell: Magic Strings for Execution Context
+**Location:** `pipeline/`
+**Impact Analysis:** Using magic strings as keys to pass data between pipeline stages is error-prone and lacks type safety, leading to potential runtime errors that are hard to debug.
+**Refactoring Suggestion:** Introduce a strongly-typed `PipelineContext` struct to pass data between stages, providing compile-time safety and better discoverability.
+**Status:** Open
+
+## Smell: Implicit Dependency Resolution
 **Location:** `builder.go`
-**Impact Analysis:** During the build process, the builder stores the "last-built" component of each kind (e.g., `b.embedder`, `b.vectorStore`) and injects it as a dependency for subsequent components. This is fragile. The correctness of the dependency injection relies entirely on the order of `With` calls or the order in the config file. It prevents the creation of parallel, independent pipelines that might use different embedders or vector stores.
-**Refactoring Suggestion:** Components should declare their dependencies by name. For example, a `RetrieverOptions` struct should have a field like `Embedder: "openai-embedder"`. The builder would then be responsible for resolving this dependency by looking up the named embedder from its map of built components. This makes the dependency graph explicit and configuration-driven.
-**Status:** Resolved
+**Impact Analysis:** The builder's reliance on the "last-built" component for dependency injection is fragile and order-dependent.
+**Refactoring Suggestion:** Components should declare their dependencies by name in their `Options` struct. The builder should resolve these dependencies explicitly.
+**Status:** Open
 
-## Smell: Hard-Coded TopK in Tool Adapters
+## Smell: Monolithic Build Logic (Violation of Open/Closed)
+**Location:** `builder.go` (the `specTable` function)
+**Impact Analysis:** The builder's `specTable` centralizes all component creation logic, violating the Open/Closed Principle.
+**Refactoring Suggestion:** Abstract the build logic into a `ComponentHandler` interface. Each provider package would register a handler for its kind.
+**Status:** Open
+
+## Smell: Non-Deterministic Orchestrator
+**Location:** `pipeline/sandwich.go`
+**Impact Analysis:** The default orchestrator arbitrarily picks the first available component from its dependency maps, leading to unpredictable behavior.
+**Refactoring Suggestion:** The `Sandwich` orchestrator should be configured with the specific names of the components it should use.
+**Status:** Open
+
+## Smell: Hard-Coded Pipeline Parameters (Tool Adapters)
 **Location:** `core/tool_adapters.go`
-**Impact Analysis:** The `RetrieverTool` and `RerankerTool` adapters have a hard-coded `TopK` value of 10. This prevents the declarative orchestrator from being able to configure this crucial parameter, limiting its flexibility. The behavior of the pipeline is fixed at compile time.
-**Refactoring Suggestion:** The `ToolStepConfig` in `pipeline/declarative/orchestrator.go` should be extended to include a generic `Params map[string]any` field. The tool adapters' `Execute` methods should look for relevant parameters (like `topK`) in this map within the `ExecutionContext` and use them if present, falling back to a default otherwise. This allows `TopK` to be configured per-step in the YAML file.
-**Status:** Resolved
+**Impact Analysis:** Tool adapters have hard-coded parameters (e.g., `TopK`), which should be configurable at the step level.
+**Refactoring Suggestion:** Allow passing a generic `Params map[string]any` to tool steps in the declarative orchestrator configuration.
+**Status:** Open
+
+## Smell: Hard-Coded Default Orchestrator
+**Location:** `builder.go`
+**Impact Analysis:** The builder defaults to a specific orchestrator, coupling it to one implementation. The choice should be explicit.
+**Refactoring Suggestion:** Remove the hard-coded default and return an error if no orchestrator is explicitly configured.
+**Status:** Open
+
+## Smell: Redundant Builder API (WithKind)
+**Location:** `builder.go`
+**Impact Analysis:** The builder has a legacy `WithKind` method that bypasses the type-safe `With` method, creating an inconsistent API.
+**Refactoring Suggestion:** Deprecate and remove the `WithKind` method, refactoring the config loader to use the type-safe `With` method exclusively.
+**Status:** Open
