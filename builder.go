@@ -21,7 +21,6 @@ import (
 // It is the primary API for programmatically configuring and constructing a pipeline.
 type BuilderAPI interface {
 	With(opts any) BuilderAPI
-	WithKind(kind core.Kind, name string, opts any) BuilderAPI
 	WithTopK(k int) BuilderAPI
 	WithMaxTokens(n int) BuilderAPI
 	WithObservability(obs core.Observability) BuilderAPI
@@ -95,14 +94,14 @@ func (b *Builder) With(opts any) BuilderAPI {
 		return b
 	}
 	t := reflect.TypeOf(opts)
-	name, ok := b.registry.optionsTypeToName[t]
+	name, ok := b.registry.OptionsTypeToName[t]
 	if !ok {
 		err := fmt.Errorf("unregistered options type: %T", opts)
 		b.errs = append(b.errs, err)
 		b.opts.Obs.Logger.Errorf(err.Error())
 		return b
 	}
-	kind, ok := b.registry.optionsTypeToKind[t]
+	kind, ok := b.registry.OptionsTypeToKind[t]
 	if !ok {
 		// This should be unreachable if the registry is populated correctly.
 		err := fmt.Errorf("internal error: no kind registered for options type %T", opts)
@@ -111,18 +110,6 @@ func (b *Builder) With(opts any) BuilderAPI {
 		return b
 	}
 
-	b.cfgs = append(b.cfgs, configItem{
-		kind:   kind,
-		name:   name,
-		params: map[string]any{"typedConfig": opts},
-	})
-	return b
-}
-
-// WithKind adds a component to the builder using an explicit kind, name, and options.
-// This is primarily used by the config loader, which reads kind and name strings
-// from a YAML file.
-func (b *Builder) WithKind(kind core.Kind, name string, opts any) BuilderAPI {
 	b.cfgs = append(b.cfgs, configItem{
 		kind:   kind,
 		name:   name,

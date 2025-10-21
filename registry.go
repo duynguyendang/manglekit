@@ -58,16 +58,16 @@ func (f typedFactory[T, D, O]) Build(ctx context.Context, deps any, cfg any) (an
 // It has been refactored to use a single, generic, and type-safe mechanism.
 type Registry struct {
 	factories         map[core.Kind]map[string]GenericFactory
-	optionsTypeToName map[reflect.Type]string
-	optionsTypeToKind map[reflect.Type]core.Kind
+	OptionsTypeToName map[reflect.Type]string
+	OptionsTypeToKind map[reflect.Type]core.Kind
 }
 
 // NewRegistry creates and returns a new, fully initialized Registry struct.
 func NewRegistry() *Registry {
 	return &Registry{
 		factories:         make(map[core.Kind]map[string]GenericFactory),
-		optionsTypeToName: make(map[reflect.Type]string),
-		optionsTypeToKind: make(map[reflect.Type]core.Kind),
+		OptionsTypeToName: make(map[reflect.Type]string),
+		OptionsTypeToKind: make(map[reflect.Type]core.Kind),
 	}
 }
 
@@ -105,8 +105,8 @@ func Register[T any, D any, O core.ProviderOptions](
 	r.factories[kind][name] = factory
 
 	t := reflect.TypeOf(optsSample)
-	r.optionsTypeToName[t] = name
-	r.optionsTypeToKind[t] = kind
+	r.OptionsTypeToName[t] = name
+	r.OptionsTypeToKind[t] = kind
 }
 
 // Get retrieves a generic factory from the registry by its kind and name.
