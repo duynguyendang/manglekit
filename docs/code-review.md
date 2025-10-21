@@ -4,7 +4,7 @@
 **Location:** `pipeline/sandwich.go`
 **Impact Analysis:** The `Sandwich` orchestrator arbitrarily selects the first available `RuleSet` and `StateProvider` from its dependency maps. If a user configures multiple components of these kinds, the behavior of the orchestrator will be non-deterministic and depend on map iteration order.
 **Refactoring Suggestion:** Extend the `SandwichOptions` struct to include `ruleSet` and `stateProvider` string fields. The orchestrator factory should use these names to explicitly look up the required components, ensuring deterministic behavior.
-**Status:** Open
+**Status:** Resolved
 
 ## Smell: Hard-coded Dependencies in Factory (Hybrid Retriever)
 **Location:** `internal/providers/hybrid/hybrid.go`

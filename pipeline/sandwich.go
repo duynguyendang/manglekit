@@ -14,9 +14,11 @@ import (
 
 // SandwichOptions defines the configuration for the Sandwich orchestrator.
 type SandwichOptions struct {
-	Retriever string `yaml:"retriever"`
-	Reranker  string `yaml:"reranker,omitempty"` // Optional
-	LLM       string `yaml:"llm"`
+	Retriever     string `yaml:"retriever"`
+	Reranker      string `yaml:"reranker,omitempty"` // Optional
+	LLM           string `yaml:"llm"`
+	RuleSet       string `yaml:"ruleSet,omitempty"`
+	StateProvider string `yaml:"stateProvider,omitempty"`
 }
 
 func (SandwichOptions) ProviderName() string { return "sandwich" }
@@ -73,16 +75,15 @@ func NewSandwich(ctx context.Context, deps core.Resolved, cfg SandwichOptions) (
 		}
 	}
 
-	// The following components are still selected arbitrarily as the orchestrator
-	// currently only supports one of each. This could be updated in the future
-	// if multiple rulesets or state providers are needed.
-	for _, v := range deps.Rules {
-		s.ruleset = v
-		break
+	if cfg.RuleSet != "" {
+		if s.ruleset, ok = deps.Rules[cfg.RuleSet]; !ok {
+			return nil, fmt.Errorf("ruleset %q not found", cfg.RuleSet)
+		}
 	}
-	for _, v := range deps.StateProviders {
-		s.stateProvider = v
-		break
+	if cfg.StateProvider != "" {
+		if s.stateProvider, ok = deps.StateProviders[cfg.StateProvider]; !ok {
+			return nil, fmt.Errorf("state provider %q not found", cfg.StateProvider)
+		}
 	}
 
 	if s.opts.Obs.Logger == nil {
