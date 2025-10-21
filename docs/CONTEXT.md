@@ -115,8 +115,8 @@ Providers are self-contained modules in `internal/providers` that implement one 
 This section tracks architectural gaps identified during code review that deviate from this standard.
 
 1.  **Arbitrary Singleton Component Selection**: The `Sandwich` orchestrator arbitrarily selects the first available `RuleSet` and `StateProvider`. This should be made explicit in its configuration to ensure deterministic behavior. (Status: Resolved)
-2.  **Hard-coded Dependencies in Factory (Hybrid Retriever)**: The `hybrid` retriever's factory does not yet consume the configurable list of sub-retrievers from its `Options` struct. (Status: Open)
-3.  **Hard-coded Magic Number (Hybrid Retriever k=60)**: The `hybrid` retriever's Reciprocal Rank Fusion constant `k` is hard-coded and should be configurable via its `Options` struct. (Status: Open)
+2.  **Hard-coded Dependencies in Factory (Hybrid Retriever)**: The `hybrid` retriever's factory does not yet consume the configurable list of sub-retrievers from its `Options` struct. (Status: Resolved)
+3.  **Hard-coded Magic Number (Hybrid Retriever k=60)**: The `hybrid` retriever's Reciprocal Rank Fusion constant `k` is hard-coded and should be configurable via its `Options` struct. (Status: Resolved)
 4.  **Dead Code (Declarative Orchestrator)**: The declarative orchestrator's role and maintenance status are unclear and it may represent unused code. (Status: Open)
 
 ## 11. Provider Families
@@ -166,12 +166,12 @@ The framework follows Semantic Versioning (SemVer). Breaking changes to the `cor
     {
       "id": "GAP-002",
       "smell": "Hard-coded Dependencies in Factory (Hybrid Retriever)",
-      "status": "Open"
+      "status": "Resolved"
     },
     {
       "id": "GAP-003",
       "smell": "Hard-coded Magic Number (Hybrid Retriever k=60)",
-      "status": "Open"
+      "status": "Resolved"
     },
     {
       "id": "GAP-004",
