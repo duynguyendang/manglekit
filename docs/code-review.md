@@ -16,7 +16,7 @@
 **Location:** `builder.go`
 **Impact Analysis:** The `BuilderAPI` has two methods for adding components: `With(opts any)` and `WithKind(kind, name, opts)`. The `With` method is type-safe and looks up the kind and name in the registry, which is the preferred, modern pattern. The `WithKind` method is a remnant of the config-file-driven approach and adds complexity. It forces the builder to support two parallel configuration paths, increasing the surface area for bugs.
 **Refactoring Suggestion:** Deprecate and remove the `WithKind` method. The config loader (`from_config.go`) should be refactored to use the registry to look up the provider's options type from its name and kind. It can then instantiate that type and unmarshal the config options into it, before passing the typed options struct to the builder's `With` method. This makes `With` the single, canonical way to add a component.
-**Status:** Open
+**Status:** Resolved
 
 ## Smell: Monolithic `specTable` in Builder
 **Location:** `builder.go`
