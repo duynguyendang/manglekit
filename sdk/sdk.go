@@ -58,20 +58,6 @@ func FromConfig(ctx context.Context, registry *manglekit.Registry, data []byte) 
 		builder.With(opts)
 	}
 
-	// Make sure to handle global config settings like orchestrator, top_k etc.
-	if cfg.Orchestrator != "" {
-		builder.WithOrchestrator(cfg.Orchestrator)
-	}
-	if cfg.TopK > 0 {
-		builder.WithTopK(cfg.TopK)
-	}
-	if cfg.MaxTokens > 0 {
-		builder.WithMaxTokens(cfg.MaxTokens)
-	}
-	if cfg.FallbackThreshold > 0 {
-		builder.WithFallbackThreshold(cfg.FallbackThreshold)
-	}
-
 	orch, _, err := builder.Build(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build orchestrator: %w", err)
