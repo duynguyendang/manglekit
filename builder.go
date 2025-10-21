@@ -18,7 +18,7 @@ import (
 
 // BuilderAPI defines the fluent interface for the MangleKit orchestrator builder.
 type BuilderAPI interface {
-	With(opts any) BuilderAPI
+	With(name string, opts any) BuilderAPI
 	WithTopK(k int) BuilderAPI
 	WithMaxTokens(n int) BuilderAPI
 	WithObservability(obs core.Observability) BuilderAPI
@@ -78,7 +78,7 @@ func (b *Builder) GetEmbedder(n string) (ai.Embedder, error)   { return getCompo
 func (b *Builder) GetVectorStore(n string) (core.VectorStore, error) { return getComponent(b.vectorStores, n) }
 func (b *Builder) GetRetriever(n string) (core.Retriever, error)   { return getComponent(b.retrievers, n) }
 
-func (b *Builder) With(opts any) BuilderAPI {
+func (b *Builder) With(name string, opts any) BuilderAPI {
 	if opts == nil {
 		return b
 	}
@@ -90,7 +90,7 @@ func (b *Builder) With(opts any) BuilderAPI {
 
 	b.cfgs = append(b.cfgs, configItem{
 		kind: providerOpts.ProviderKind(),
-		name: providerOpts.ProviderName(),
+		name: name,
 		cfg:  providerOpts,
 	})
 	return b

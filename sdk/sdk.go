@@ -23,19 +23,26 @@ func FromConfig(ctx context.Context, registry *manglekit.Registry, data []byte) 
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	builder := manglekit.NewBuilder(registry)
-	for _, comp := range cfg.Components {
+	builder := manglekit.NewBuilder(registry).
+		WithTopK(cfg.TopK).
+		WithMaxTokens(cfg.MaxTokens).
+		WithOrchestrator(cfg.Orchestrator).
+		WithFallbackThreshold(cfg.FallbackThreshold)
 
+	for _, comp := range cfg.Components {
+		if comp.Type == "" {
+			return nil, fmt.Errorf("component %q is missing required field 'type'", comp.Name)
+		}
 		var foundType reflect.Type
 		for t, name := range registry.OptionsTypeToName {
-			if name == comp.Name && registry.OptionsTypeToKind[t] == comp.Kind {
+			if name == comp.Type && registry.OptionsTypeToKind[t] == comp.Kind {
 				foundType = t
 				break
 			}
 		}
 
 		if foundType == nil {
-			return nil, fmt.Errorf("could not find options type for kind=%s, name=%s", comp.Kind, comp.Name)
+			return nil, fmt.Errorf("could not find options type for kind=%s, type=%s", comp.Kind, comp.Type)
 		}
 
 		// Create a new instance of the options struct.
@@ -55,7 +62,7 @@ func FromConfig(ctx context.Context, registry *manglekit.Registry, data []byte) 
 			return nil, fmt.Errorf("failed to decode params for %s '%s': %w", comp.Kind, comp.Name, err)
 		}
 
-		builder.With(opts)
+		builder.With(comp.Name, opts)
 	}
 
 	orch, _, err := builder.Build(ctx)

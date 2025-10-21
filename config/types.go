@@ -15,6 +15,7 @@ type Config struct {
 // ComponentConfig represents a single component in the configuration.
 type ComponentConfig struct {
 	Name   string         `yaml:"name"`
+	Type   string         `yaml:"type"`
 	Kind   core.Kind      `yaml:"kind"`
 	Params map[string]any `yaml:"params"`
 }
