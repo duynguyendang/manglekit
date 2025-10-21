@@ -10,13 +10,13 @@
 **Location:** `internal/providers/hybrid/hybrid.go`
 **Impact Analysis:** The hybrid retriever factory hard-codes the names of its sub-retrievers (e.g., "bm25", "dense"), preventing users from configuring different combinations. This has been partially mitigated by the new builder, but the core issue remains in the factory logic.
 **Refactoring Suggestion:** The list of sub-retrievers should be a configurable list of strings in the `HybridOptions` struct, allowing for dynamic composition.
-**Status:** Open
+**Status:** Resolved
 
 ## Smell: Hard-coded Magic Number (Hybrid Retriever k=60)
 **Location:** `internal/providers/hybrid/hybrid.go`
 **Impact Analysis:** The Reciprocal Rank Fusion constant `k` is hard-coded to 60.0, preventing users from tuning the retriever's fusion algorithm for their specific use case.
 **Refactoring Suggestion:** Expose `RRF_K` as a configurable `float64` field in the `HybridOptions` struct.
-**Status:** Open
+**Status:** Resolved
 
 ## Smell: Dead Code - Declarative Orchestrator
 **Location:** `pipeline/declarative/`
