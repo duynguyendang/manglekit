@@ -145,6 +145,7 @@ type Resolved struct {
 	LLMs           map[string]LLMClient
 	Embedders      map[string]ai.Embedder
 	StateProviders map[string]StateProvider
+	Orchestrators  map[string]Orchestrator
 
 	Obs               Observability
 	TopK              int
@@ -185,7 +186,7 @@ type OptionsLike struct {
 // and metrics into the MangleKit pipeline. This allows for detailed monitoring
 // and debugging of the system's behavior.
 type Observability struct {
-	// Logger is the structured logger instance used for recording events.
+	// Logger is the structured logger instance for recording events.
 	Logger Logger
 	// Tracer is the distributed tracing instance for creating and managing spans.
 	Tracer Tracer

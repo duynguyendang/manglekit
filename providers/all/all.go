@@ -19,6 +19,7 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
 	"github.com/duynguyendang/manglekit/internal/providers/state"
 	"github.com/duynguyendang/manglekit/internal/vectorstores"
+	"github.com/duynguyendang/manglekit/pipeline/declarative"
 )
 
 // Register registers all standard providers with the given registry.
@@ -46,4 +47,5 @@ func Register(r *manglekit.Registry) {
 	r.RegisterHandler(&retrievers.Handler{})
 	r.RegisterHandler(&rerank.Handler{})
 	r.RegisterHandler(&state.Handler{})
+	r.RegisterHandler(declarative.Handler)
 }

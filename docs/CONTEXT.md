@@ -3,7 +3,7 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 0.5.0
-last_updated: 2025-10-20
+last_updated: 2025-10-21
 stability: stable
 audience: humans_and_agents
 ---
@@ -117,7 +117,7 @@ This section tracks architectural gaps identified during code review that deviat
 1.  **Arbitrary Singleton Component Selection**: The `Sandwich` orchestrator arbitrarily selects the first available `RuleSet` and `StateProvider`. This should be made explicit in its configuration to ensure deterministic behavior. (Status: Resolved)
 2.  **Hard-coded Dependencies in Factory (Hybrid Retriever)**: The `hybrid` retriever's factory does not yet consume the configurable list of sub-retrievers from its `Options` struct. (Status: Resolved)
 3.  **Hard-coded Magic Number (Hybrid Retriever k=60)**: The `hybrid` retriever's Reciprocal Rank Fusion constant `k` is hard-coded and should be configurable via its `Options` struct. (Status: Resolved)
-4.  **Dead Code (Declarative Orchestrator)**: The declarative orchestrator's role and maintenance status are unclear and it may represent unused code. (Status: Open)
+4.  **Dead Code (Declarative Orchestrator)**: The declarative orchestrator's role and maintenance status are unclear and it may represent unused code. (Status: Resolved)
 
 ## 11. Provider Families
 
@@ -176,7 +176,7 @@ The framework follows Semantic Versioning (SemVer). Breaking changes to the `cor
     {
       "id": "GAP-004",
       "smell": "Dead Code (Declarative Orchestrator)",
-      "status": "Open"
+      "status": "Resolved"
     }
   ],
   "orchestration_models": [
@@ -188,5 +188,6 @@ The framework follows Semantic Versioning (SemVer). Breaking changes to the `cor
 
 ## 14. Changelog
 
+-   **2025-10-21**: Resolved GAP-004 by integrating the Declarative Orchestrator into the builder via a component handler, making it a selectable option in the configuration.
 -   **2025-10-20**: Regenerated the standard to reflect the decentralized, handler-based builder architecture. Updated diagrams, contracts, and flows. Synchronized Known Gaps with the latest code review.
 -   **2025-10-19**: Regenerated the standard to reflect the data-driven builder and stage-based pipeline architecture. Added JSON appendix and synchronized Known Gaps with the latest code review.
