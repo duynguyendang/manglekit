@@ -16,6 +16,8 @@ type ExecutionContext struct {
 	Answer Answer
 	// A map for arbitrary metadata that can be passed between tools.
 	Meta map[string]any
+	// CurrentStepParams holds the parameters for the current tool being executed.
+	CurrentStepParams map[string]any
 }
 
 // Tool is the interface for a single, executable step in a declarative pipeline.

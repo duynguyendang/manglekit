@@ -28,8 +28,13 @@ const (
 //
 // The orchestrator iterates through a list of `core.Tool` implementations,
 // executing them in order and passing a shared `core.ExecutionContext` between them.
+type executionStep struct {
+	tool   core.Tool
+	config ToolStepConfig
+}
+
 type DeclarativeOrchestrator struct {
-	executionSteps      []core.Tool
+	steps               []executionStep
 	stateProvider       core.StateProvider // Optional state provider.
 	obs                 core.Observability
 	closers             []core.ResourceCloser
@@ -50,7 +55,7 @@ func NewDeclarative(ctx context.Context, deps core.Resolved, cfg Options) (core.
 		return nil, fmt.Errorf("declarative orchestrator requires at least one step")
 	}
 
-	executionSteps := make([]core.Tool, 0, len(cfg.Steps))
+	steps := make([]executionStep, 0, len(cfg.Steps))
 	for _, stepCfg := range cfg.Steps {
 		tool, err := deps.GetToolByName(stepCfg.Name)
 		if err != nil {
@@ -58,7 +63,10 @@ func NewDeclarative(ctx context.Context, deps core.Resolved, cfg Options) (core.
 			return nil, err
 		}
 		logger.Debugf("resolved tool", "name", stepCfg.Name)
-		executionSteps = append(executionSteps, tool)
+		steps = append(steps, executionStep{
+			tool:   tool,
+			config: stepCfg,
+		})
 	}
 
 	// For now, we arbitrarily pick the first state provider, if any.
@@ -70,7 +78,7 @@ func NewDeclarative(ctx context.Context, deps core.Resolved, cfg Options) (core.
 	}
 
 	return &DeclarativeOrchestrator{
-		executionSteps:      executionSteps,
+		steps:               steps,
 		stateProvider:       sp,
 		obs:                 deps.Obs,
 		closers:             deps.Closers,
@@ -116,8 +124,10 @@ func (o *DeclarativeOrchestrator) Execute(ctx context.Context, sessionID string,
 	}
 
 	// 3. Loop through the configured execution steps.
-	for _, tool := range o.executionSteps {
-		if err := tool.Execute(ctx, execCtx); err != nil {
+	for _, step := range o.steps {
+		// Pass the step-specific parameters to the execution context.
+		execCtx.CurrentStepParams = step.config.Params
+		if err := step.tool.Execute(ctx, execCtx); err != nil {
 			// Immediately stop execution on error.
 			logger.Errorf("tool execution failed", "error", err)
 			return core.Answer{}, err

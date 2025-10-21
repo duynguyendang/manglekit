@@ -34,4 +34,4 @@
 **Location:** `core/tool_adapters.go`
 **Impact Analysis:** The `RetrieverTool` and `RerankerTool` adapters have a hard-coded `TopK` value of 10. This prevents the declarative orchestrator from being able to configure this crucial parameter, limiting its flexibility. The behavior of the pipeline is fixed at compile time.
 **Refactoring Suggestion:** The `ToolStepConfig` in `pipeline/declarative/orchestrator.go` should be extended to include a generic `Params map[string]any` field. The tool adapters' `Execute` methods should look for relevant parameters (like `topK`) in this map within the `ExecutionContext` and use them if present, falling back to a default otherwise. This allows `TopK` to be configured per-step in the YAML file.
-**Status:** Open
+**Status:** Resolved

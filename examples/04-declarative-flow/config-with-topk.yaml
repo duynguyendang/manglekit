@@ -1,0 +1,32 @@
+components:
+  - name: "google-llm"
+    kind: "llm"
+    params:
+      provider: "google"
+      apiKey: "${GOOGLE_API_KEY}"
+      model: "gemini-1.5-flash"
+
+  - name: "openai-embedder"
+    kind: "embedder"
+    params:
+      provider: "openai"
+      apiKey: "${OPENAI_API_KEY}"
+
+  - name: "in-memory-docs"
+    kind: "retriever"
+    params:
+      provider: "in-memory"
+      docs:
+        - "Manglekit is a framework for building RAG applications."
+        - "It is written in Go."
+        - "It is open source."
+
+  - name: "declarative-orchestrator"
+    kind: "orchestrator"
+    params:
+      provider: "declarative"
+      steps:
+        - name: "in-memory-docs"
+          params:
+            topK: 2
+        - name: "google-llm"
