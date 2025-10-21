@@ -1,11 +1,4 @@
 // Package diapi provides the type-safe dependency injection contracts for Manglekit.
-//
-// This package is designed to be a low-level, neutral dependency that is imported
-// by provider factories and the core builder. It MUST NOT import the builder,
-// registry, or any other high-level packages to avoid circular dependencies.
-//
-// Its purpose is to define the "what" (the dependency contracts), while the
-// builder's responsibility is to provide the "how" (the concrete implementations).
 package diapi
 
 import (
@@ -14,6 +7,16 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 )
+
+// Builder defines the dependency injection interface for the builder.
+// It provides methods for handlers to look up already-built components by name.
+type Builder interface {
+	GetEmbedder(name string) (ai.Embedder, error)
+	GetVectorStore(name string) (core.VectorStore, error)
+	GetRetriever(name string) (core.Retriever, error)
+	OpenAIClient() *openai.OpenAI
+	Genkit() *genkit.Genkit
+}
 
 // OpenAIClientProvider is an interface for components that can provide an OpenAI client.
 type OpenAIClientProvider interface {

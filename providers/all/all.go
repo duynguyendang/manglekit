@@ -3,6 +3,7 @@ package all
 
 import (
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/internal/embedders"
 	"github.com/duynguyendang/manglekit/internal/embedders/google"
 	"github.com/duynguyendang/manglekit/internal/embedders/openai"
 	"github.com/duynguyendang/manglekit/internal/providers/bm25"
@@ -13,6 +14,7 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/orchestrators"
 	"github.com/duynguyendang/manglekit/internal/providers/rerank"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
+	"github.com/duynguyendang/manglekit/internal/providers/rules"
 	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
 	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
 	"github.com/duynguyendang/manglekit/internal/providers/state"
@@ -35,4 +37,13 @@ func Register(r *manglekit.Registry) {
 	rdf.Register(r)
 	state.Register(r)
 	vectorstores.Register(r)
+
+	// Register component handlers.
+	r.RegisterHandler(&embedders.Handler{})
+	r.RegisterHandler(&vectorstores.Handler{})
+	r.RegisterHandler(&rules.Handler{})
+	r.RegisterHandler(&llm.Handler{})
+	r.RegisterHandler(&retrievers.Handler{})
+	r.RegisterHandler(&rerank.Handler{})
+	r.RegisterHandler(&state.Handler{})
 }
