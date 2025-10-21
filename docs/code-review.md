@@ -22,7 +22,7 @@
 **Location:** `pipeline/declarative/`
 **Impact Analysis:** The declarative orchestrator and its related components appear to be unused or untested in the main sandwich pipeline, representing dead code that increases maintenance overhead.
 **Refactoring Suggestion:** Either fully integrate and test the declarative orchestrator as a first-class execution model or remove it from the codebase.
-**Status:** Open
+**Status:** Resolved
 
 ---
 ## Resolved Smells

@@ -49,6 +49,7 @@ type Builder struct {
 	rules          map[string]core.RuleSet
 	llms           map[string]core.LLMClient
 	stateProviders map[string]core.StateProvider
+	orchestrators  map[string]core.Orchestrator
 
 	openAIClient *openai.OpenAI
 
@@ -66,6 +67,7 @@ func NewBuilder(r *Registry) *Builder {
 		rules:          make(map[string]core.RuleSet),
 		llms:           make(map[string]core.LLMClient),
 		stateProviders: make(map[string]core.StateProvider),
+		orchestrators:  make(map[string]core.Orchestrator),
 	}
 	b.opts.Obs.Logger = logger.NewStdLogger()
 	return b
@@ -97,7 +99,7 @@ func (b *Builder) With(name string, opts any) BuilderAPI {
 }
 
 func (b *Builder) ensureOpenAIClient(c configItem) {
-	if c.name != "openai" || b.openAIClient != nil {
+	if c.cfg.ProviderName() != "openai" || b.openAIClient != nil {
 		return
 	}
 
@@ -121,6 +123,7 @@ func (b *Builder) buildAll(ctx context.Context) error {
 		core.KindLLM,
 		core.KindStateProvider,
 		core.KindSchemaParser,
+		core.KindOrchestrator,
 	}
 
 	groups := make(map[core.Kind][]configItem)
@@ -136,6 +139,7 @@ func (b *Builder) buildAll(ctx context.Context) error {
 		LLMs:           b.llms,
 		Embedders:      b.embedders,
 		StateProviders: b.stateProviders,
+		Orchestrators:  b.orchestrators,
 	}
 
 	for _, k := range order {
@@ -146,7 +150,8 @@ func (b *Builder) buildAll(ctx context.Context) error {
 
 		for _, c := range groups[k] {
 			b.opts.Obs.Logger.Debugf("building %s %q", k, c.name)
-			factory, err := b.registry.Get(k, c.name)
+			// Use the provider name from the config to look up the factory.
+			factory, err := b.registry.Get(k, c.cfg.ProviderName())
 			if err != nil {
 				return err
 			}
@@ -183,33 +188,10 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updata
 		return nil, nil, errors.Join(err, closeErr)
 	}
 
-	resolved := core.Resolved{
-		Retrievers:        b.retrievers,
-		VectorStores:      b.vectorStores,
-		Rerankers:         b.rerankers,
-		Rules:             b.rules,
-		LLMs:              b.llms,
-		Embedders:         b.embedders,
-		StateProviders:    b.stateProviders,
-		Obs:               b.opts.Obs,
-		TopK:              b.opts.TopK,
-		MaxTokens:         b.opts.MaxTokens,
-		FallbackThreshold: b.opts.FallbackThreshold,
-		Closers:           b.opts.ResourceClosers,
+	orchestrator, ok := b.orchestrators[b.orchestratorName]
+	if !ok {
+		return nil, nil, fmt.Errorf("orchestrator %q not found", b.orchestratorName)
 	}
-
-	factory, err := b.registry.Get(core.KindOrchestrator, b.orchestratorName)
-	if err != nil {
-		closeErr := b.closeResources(ctx)
-		return nil, nil, errors.Join(fmt.Errorf("unknown orchestrator %q", b.orchestratorName), closeErr)
-	}
-
-	orchAny, err := factory.Build(ctx, resolved, nil)
-	if err != nil {
-		closeErr := b.closeResources(ctx)
-		return nil, nil, errors.Join(fmt.Errorf("factory for orchestrator %q failed: %w", b.orchestratorName, err), closeErr)
-	}
-	orchestrator := orchAny.(core.Orchestrator)
 
 	var updatable retrieve.Updatable
 	for _, r := range b.retrievers {
