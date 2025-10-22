@@ -9,6 +9,101 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/mock"
 )
 
+func TestNewSandwich(t *testing.T) {
+	t.Parallel()
+	deps := core.Resolved{
+		Retrievers: map[string]core.Retriever{"mock": mock.NewRetriever(nil)},
+		Rerankers:  map[string]core.Reranker{"mock": mock.NewReranker(nil)},
+		Rules:      map[string]core.RuleSet{"mock": mock.NewRuleSet()},
+		LLMs:       map[string]core.LLMClient{"mock": mock.NewLLM("test-model")},
+	}
+
+	t.Run("should create a new sandwich orchestrator", func(t *testing.T) {
+		t.Parallel()
+		opts := SandwichOptions{
+			Retriever: "mock",
+			Reranker:  "mock",
+			LLM:       "mock",
+		}
+		orch, err := NewSandwich(context.Background(), deps, opts)
+		if err != nil {
+			t.Fatalf("NewSandwich() error = %v", err)
+		}
+		if orch == nil {
+			t.Fatal("NewSandwich() returned a nil orchestrator")
+		}
+	})
+
+	t.Run("should return an error if retriever is not found", func(t *testing.T) {
+		t.Parallel()
+		opts := SandwichOptions{
+			Retriever: "not-found",
+			Reranker:  "mock",
+			LLM:       "mock",
+		}
+		_, err := NewSandwich(context.Background(), deps, opts)
+		if err == nil {
+			t.Fatal("NewSandwich() expected an error, but got nil")
+		}
+	})
+}
+
+func TestSandwich_Execute(t *testing.T) {
+	t.Parallel()
+
+	deps := core.Resolved{
+		Retrievers: map[string]core.Retriever{"mock": mock.NewRetriever(map[string]string{"test query": "test response"})},
+		Rerankers:  map[string]core.Reranker{"mock": mock.NewReranker(nil)},
+		Rules:      map[string]core.RuleSet{"mock": mock.NewRuleSet()},
+		LLMs:       map[string]core.LLMClient{"mock": mock.NewLLM("test-model")},
+	}
+
+	opts := SandwichOptions{
+		Retriever: "mock",
+		Reranker:  "mock",
+		LLM:       "mock",
+	}
+
+	t.Run("should execute successfully", func(t *testing.T) {
+		t.Parallel()
+		orch, err := NewSandwich(context.Background(), deps, opts)
+		if err != nil {
+			t.Fatalf("NewSandwich() error = %v", err)
+		}
+
+		query := core.Query{Text: "test query"}
+		_, err = orch.Execute(context.Background(), "test-session", query)
+		if err != nil {
+			t.Errorf("Execute() error = %v", err)
+		}
+	})
+
+	t.Run("should return an error if retriever fails", func(t *testing.T) {
+		t.Parallel()
+		deps := core.Resolved{
+			Retrievers: map[string]core.Retriever{"mock": &mock.Retriever{
+				RetrieveFunc: func(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
+					return core.RetrieveResult{}, errors.New("retriever failed")
+				},
+			}},
+			Rerankers: map[string]core.Reranker{"mock": mock.NewReranker(nil)},
+			Rules:     map[string]core.RuleSet{"mock": mock.NewRuleSet()},
+			LLMs:      map[string]core.LLMClient{"mock": mock.NewLLM("test-model")},
+		}
+
+		orch, err := NewSandwich(context.Background(), deps, opts)
+		if err != nil {
+			t.Fatalf("NewSandwich() error = %v", err)
+		}
+
+		query := core.Query{Text: "test query"}
+		_, err = orch.Execute(context.Background(), "test-session", query)
+		if err == nil {
+			t.Error("Execute() expected an error, but got nil")
+		}
+	})
+}
+
 func TestSandwich_Close(t *testing.T) {
 	t.Parallel()
 
@@ -29,10 +124,10 @@ func TestSandwich_Close(t *testing.T) {
 		}
 
 		deps := core.Resolved{
-			Retrievers: map[string]core.Retriever{"mock": &mock.Retriever{}},
-			Rerankers:  map[string]core.Reranker{"mock": &mock.Reranker{}},
+			Retrievers: map[string]core.Retriever{"mock": mock.NewRetriever(nil)},
+			Rerankers:  map[string]core.Reranker{"mock": mock.NewReranker(nil)},
 			Rules:      map[string]core.RuleSet{"mock": mock.NewRuleSet()},
-			LLMs:       map[string]core.LLMClient{"mock": &mock.LLM{}},
+			LLMs:       map[string]core.LLMClient{"mock": mock.NewLLM("test-model")},
 			Closers:    []core.ResourceCloser{closer1, closer2},
 		}
 
@@ -69,10 +164,10 @@ func TestSandwich_Close(t *testing.T) {
 		}
 
 		deps := core.Resolved{
-			Retrievers: map[string]core.Retriever{"mock": &mock.Retriever{}},
-			Rerankers:  map[string]core.Reranker{"mock": &mock.Reranker{}},
+			Retrievers: map[string]core.Retriever{"mock": mock.NewRetriever(nil)},
+			Rerankers:  map[string]core.Reranker{"mock": mock.NewReranker(nil)},
 			Rules:      map[string]core.RuleSet{"mock": mock.NewRuleSet()},
-			LLMs:       map[string]core.LLMClient{"mock": &mock.LLM{}},
+			LLMs:       map[string]core.LLMClient{"mock": mock.NewLLM("test-model")},
 			Closers:    []core.ResourceCloser{closer1, closer2},
 		}
 

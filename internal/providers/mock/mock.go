@@ -73,15 +73,19 @@ func ObjectToConstant(obj Object) (ast.Constant, error) {
 
 // Retriever is a mock retriever.
 type Retriever struct {
-	pairs map[string]string
+	pairs        map[string]string
+	RetrieveFunc func(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error)
 }
 
 // NewRetriever creates a new mock retriever.
 func NewRetriever(pairs map[string]string) *Retriever {
-	return &Retriever{pairs}
+	return &Retriever{pairs: pairs}
 }
 
 func (r *Retriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
+	if r.RetrieveFunc != nil {
+		return r.RetrieveFunc(ctx, req)
+	}
 	if text, ok := r.pairs[req.Query]; ok {
 		return core.RetrieveResult{Docs: []core.Doc{{Text: text}}}, nil
 	}
@@ -128,23 +132,30 @@ func (o RerankerOptions) ProviderKind() core.Kind   { return core.KindReranker }
 
 // LLM is a mock LLM.
 type LLM struct {
-	model string
+	model        string
+	CompleteFunc func(ctx context.Context, req core.LLMRequest) (core.LLMResponse, error)
 }
 
 // NewLLM creates a new mock LLM.
 func NewLLM(model string) *LLM {
-	return &LLM{model}
+	return &LLM{model: model}
 }
 
 // Complete generates a response.
 func (l *LLM) Complete(ctx context.Context, req core.LLMRequest) (core.LLMResponse, error) {
+	if l.CompleteFunc != nil {
+		return l.CompleteFunc(ctx, req)
+	}
 	var fullPrompt strings.Builder
 	fullPrompt.WriteString(req.Prompt)
 	if len(req.Context) > 0 {
 		fullPrompt.WriteString(" context: ")
 		fullPrompt.WriteString(strings.Join(req.Context, " "))
 	}
-	return core.LLMResponse{Text: fmt.Sprintf("model: %s prompt: %s", l.model, fullPrompt.String())}, nil
+	return core.LLMResponse{
+		Text:  fmt.Sprintf("model: %s prompt: %s", l.model, fullPrompt.String()),
+		Usage: make(map[string]int),
+	}, nil
 }
 
 // Model returns the model name.
