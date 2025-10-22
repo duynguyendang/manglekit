@@ -9,6 +9,8 @@ import (
 	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
+	"github.com/openai/openai-go/option"
 )
 
 // OpenAIOptions provides typed configuration for OpenAI and compatible language
@@ -40,21 +42,15 @@ func (o OpenAIOptions) GetBaseURL() string      { return o.BaseURL }
 
 func RegisterOpenAI(r *manglekit.Registry) {
 	// Factory function for OpenAI
-	openAIFactory := func(ctx context.Context, d struct {
-		diapi.LLMDeps
-		diapi.OpenAIClientProvider
-	}, cfg OpenAIOptions) (core.LLMClient, error) {
-		if d.Genkit == nil {
+	openAIFactory := func(ctx context.Context, deps diapi.LLMDeps, cfg OpenAIOptions) (core.LLMClient, error) {
+		if deps.Genkit == nil {
 			return nil, fmt.Errorf("missing required dependency 'genkit'")
 		}
-		if d.OpenAIClient() == nil {
-			return nil, fmt.Errorf("missing required dependency 'OpenAIClient'")
+		client, err := NewOpenAI(cfg, deps.Genkit)
+		if err != nil {
+			return nil, err
 		}
-		model := d.OpenAIClient().Model(d.Genkit, cfg.Model)
-		if model == nil {
-			return nil, fmt.Errorf("failed to get openai model %q from genkit", cfg.Model)
-		}
-		return NewOpenAI(cfg, model, d.Genkit), nil
+		return client, nil
 	}
 	manglekit.Register(r, OpenAIOptions{}, openAIFactory)
 }
@@ -67,12 +63,23 @@ type OpenAI struct {
 }
 
 // NewOpenAI is the constructor for the OpenAI client wrapper.
-func NewOpenAI(opts OpenAIOptions, model ai.Model, g *genkit.Genkit) core.LLMClient {
+func NewOpenAI(cfg OpenAIOptions, g *genkit.Genkit) (core.LLMClient, error) {
+
+	opts := []option.RequestOption{option.WithAPIKey(cfg.GetAPIKey())}
+	if cfg.GetBaseURL() != "" {
+		opts = append(opts, option.WithBaseURL(cfg.GetBaseURL()))
+	}
+	client := &openai.OpenAI{APIKey: cfg.GetAPIKey(), Opts: opts}
+
+	model := client.Model(g, cfg.Model)
+	if model == nil {
+		return nil, fmt.Errorf("failed to get openai model %q from genkit", cfg.Model)
+	}
 	return &OpenAI{
-		opts:   opts,
+		opts:   cfg,
 		model:  model,
 		genkit: g,
-	}
+	}, nil
 }
 
 // Complete implements the core.LLMClient interface.

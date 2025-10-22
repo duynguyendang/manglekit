@@ -5,23 +5,16 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 )
 
 // Builder defines the dependency injection interface for the builder.
 // It provides methods for handlers to look up already-built components by name.
 type Builder interface {
 	GetEmbedder(name string) (ai.Embedder, error)
+	GetLLMClient(name string) (core.LLMClient, error)
 	GetVectorStore(name string) (core.VectorStore, error)
 	GetRetriever(name string) (core.Retriever, error)
-	OpenAIClient() *openai.OpenAI
 	Genkit() *genkit.Genkit
-	EnsureOpenAIClient(cfg core.ProviderOptions) error
-}
-
-// OpenAIClientProvider is an interface for components that can provide an OpenAI client.
-type OpenAIClientProvider interface {
-	OpenAIClient() *openai.OpenAI
 }
 
 // APIKeyProvider is an interface for provider options that expose an API key.

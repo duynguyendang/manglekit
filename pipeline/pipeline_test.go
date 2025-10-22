@@ -8,7 +8,6 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,10 +29,8 @@ func TestSandwich_Integration(t *testing.T) {
 	g := genkit.Init(ctx, nil)
 
 	// Create a real OpenAI client.
-	oai := &openai.OpenAI{APIKey: openaiAPIKey}
-	model := oai.Model(g, "gpt-3.5-turbo")
-	require.NotNil(t, model)
-	llmClient := llm.NewOpenAI(llm.OpenAIOptions{}, model, g)
+	llmClient, err := llm.NewOpenAI(llm.OpenAIOptions{APIKey: openaiAPIKey, Model: "gpt-3.5-turbo"}, g)
+	require.NoError(t, err)
 
 	// Create the orchestrator with the NewSandwich factory.
 	deps := core.Resolved{
