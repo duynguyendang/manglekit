@@ -7,7 +7,6 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,12 +29,8 @@ func TestLLMProviders_Integration(t *testing.T) {
 	g := genkit.Init(ctx, nil)
 
 	t.Run("openai", func(t *testing.T) {
-		// The model is normally resolved by genkit, but we create it manually for the test.
-		oai := &openai.OpenAI{APIKey: openaiAPIKey}
-		model := oai.Model(g, "gpt-3.5-turbo")
-		require.NotNil(t, model)
-
-		client := NewOpenAI(OpenAIOptions{}, model, g)
+		client, err := NewOpenAI(OpenAIOptions{APIKey: openaiAPIKey, Model: "gpt-3.5-turbo"}, g)
+		require.NoError(t, err)
 
 		req := core.LLMRequest{
 			Prompt:    "hello",

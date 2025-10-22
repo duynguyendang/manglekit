@@ -7,13 +7,10 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
-	"github.com/openai/openai-go/option"
 )
 
 // BuilderAPI defines the fluent interface for the MangleKit orchestrator builder.
@@ -52,8 +49,6 @@ type Builder struct {
 	stateProviders map[string]core.StateProvider
 	orchestrators  map[string]core.Orchestrator
 
-	openAIClient *openai.OpenAI
-
 	orchestratorName string
 	updatableName    string
 }
@@ -76,9 +71,9 @@ func NewBuilder(r *Registry) *Builder {
 }
 
 // DI implementation
-func (b *Builder) OpenAIClient() *openai.OpenAI    { return b.openAIClient }
 func (b *Builder) Genkit() *genkit.Genkit          { return b.genkit }
 func (b *Builder) GetEmbedder(n string) (ai.Embedder, error)   { return getComponent(b.embedders, n) }
+func (b *Builder) GetLLMClient(n string) (core.LLMClient, error)   { return getComponent(b.llms, n) }
 func (b *Builder) GetVectorStore(n string) (core.VectorStore, error) { return getComponent(b.vectorStores, n) }
 func (b *Builder) GetRetriever(n string) (core.Retriever, error)   { return getComponent(b.retrievers, n) }
 
@@ -98,25 +93,6 @@ func (b *Builder) With(name string, opts any) BuilderAPI {
 		cfg:  providerOpts,
 	})
 	return b
-}
-
-func (b *Builder) EnsureOpenAIClient(cfg core.ProviderOptions) error {
-	if b.openAIClient != nil {
-		return nil
-	}
-
-	provider, ok := cfg.(diapi.APIKeyProvider)
-	if !ok {
-		return fmt.Errorf("OpenAI provider config does not implement APIKeyProvider")
-	}
-
-	opts := []option.RequestOption{option.WithAPIKey(provider.GetAPIKey())}
-	if baseURLProvider, ok := cfg.(diapi.BaseURLProvider); ok && baseURLProvider.GetBaseURL() != "" {
-		opts = append(opts, option.WithBaseURL(baseURLProvider.GetBaseURL()))
-	}
-	b.openAIClient = &openai.OpenAI{APIKey: provider.GetAPIKey(), Opts: opts}
-	b.opts.Obs.Logger.Infof("created shared openai client")
-	return nil
 }
 
 func (b *Builder) buildAll(ctx context.Context) error {

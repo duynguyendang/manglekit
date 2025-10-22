@@ -30,19 +30,7 @@ func (h *Handler) BuildComponent(
 		return nil, fmt.Errorf("invalid builder DI type for LLM handler")
 	}
 
-	if cfg.ProviderName() == "openai" {
-		if err := b.EnsureOpenAIClient(cfg); err != nil {
-			return nil, err
-		}
-	}
-
-	deps := struct {
-		diapi.LLMDeps
-		diapi.OpenAIClientProvider
-	}{
-		LLMDeps:              diapi.LLMDeps{Genkit: b.Genkit()},
-		OpenAIClientProvider: b,
-	}
+	deps := diapi.LLMDeps{Genkit: b.Genkit()}
 
 	f, ok := factory.(core.Factory)
 	if !ok {
