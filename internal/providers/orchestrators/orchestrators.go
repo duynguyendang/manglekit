@@ -24,4 +24,6 @@ func Register(r *manglekit.Registry) {
 		declarative.Options{},
 		declarative.NewDeclarative,
 	)
+
+	r.RegisterHandler(declarative.Handler)
 }
