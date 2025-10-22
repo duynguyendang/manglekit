@@ -8,10 +8,11 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers/inmemory"
 )
 
-// Register registers all retriever providers.
+// Register registers all retriever providers and the retriever kind handler.
 func Register(r *manglekit.Registry) {
 	inmemory.Register(r)
 	bm25.Register(r)
 	dense.Register(r)
 	hybrid.Register(r)
+	r.RegisterHandler(&Handler{})
 }

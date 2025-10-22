@@ -5,7 +5,8 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
 )
 
-// Register registers all reranker providers.
+// Register registers all reranker providers and the reranker kind handler.
 func Register(r *manglekit.Registry) {
 	cosine.Register(r)
+	r.RegisterHandler(&Handler{})
 }
