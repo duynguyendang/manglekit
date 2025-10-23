@@ -25,12 +25,26 @@ func (h *Handler) BuildComponent(
 	cfg core.ProviderOptions,
 	name string,
 ) (core.ResourceCloser, error) {
-	_, ok := builderDI.(diapi.Builder)
+	b, ok := builderDI.(diapi.Builder)
 	if !ok {
 		return nil, fmt.Errorf("invalid builder DI type for Reranker handler")
 	}
 
-	deps := diapi.RerankerDeps{}
+	type embedderProvider interface {
+		GetEmbedder() string
+	}
+
+	provider, ok := cfg.(embedderProvider)
+	if !ok {
+		return nil, fmt.Errorf("reranker options %T must provide GetEmbedder() string", cfg)
+	}
+	embedderName := provider.GetEmbedder()
+	embedder, err := b.GetEmbedder(embedderName)
+	if err != nil {
+		return nil, err
+	}
+
+	deps := diapi.RerankerDeps{Embedder: embedder}
 	f, ok := factory.(core.Factory)
 	if !ok {
 		return nil, fmt.Errorf("invalid factory type for Reranker handler")

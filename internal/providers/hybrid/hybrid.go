@@ -32,10 +32,10 @@ func (o HybridOptions) ProviderKind() core.Kind   { return core.KindRetriever }
 
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, HybridOptions{},
-		func(ctx context.Context, builder diapi.Builder, cfg HybridOptions) (core.Retriever, error) {
+		func(ctx context.Context, deps diapi.RetrieverDeps, cfg HybridOptions) (core.Retriever, error) {
 			var subRetrievers []core.Retriever
 			for _, name := range cfg.Retrievers {
-				r, err := builder.GetRetriever(name)
+				r, err := deps.GetRetriever(name)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get sub-retriever '%s': %w", name, err)
 				}

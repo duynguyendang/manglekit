@@ -175,6 +175,9 @@ func (b *BM25) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.Ret
 		if limit > 0 && len(results) >= limit {
 			break
 		}
+		if score.Score <= 0 {
+			continue
+		}
 		doc := b.docs[score.ID]
 		if len(doc.Content) > 0 {
 			var docID string
@@ -210,7 +213,9 @@ func parseFrontMatter(fileContent []byte, logger core.Logger) (map[string]any, [
 	}
 	var metadata map[string]any
 	if err := yaml.Unmarshal(parts[1], &metadata); err != nil {
-		logger.Warnf("could not parse front matter: %v, file content will be used as is", err)
+		if logger != nil {
+			logger.Warnf("could not parse front matter: %v, file content will be used as is", err)
+		}
 		return nil, fileContent
 	}
 	return metadata, parts[2]

@@ -19,6 +19,8 @@ import (
 // document embeddings. This type of reranker requires an embedder to be
 // configured separately in the builder to generate the necessary vectors.
 type CosineOptions struct {
+	// Embedder is the name of the embedder component to use.
+	Embedder string `json:"embedder"`
 	// TopK specifies the default number of top-scoring documents to return if a
 	// different limit is not specified in the reranking request itself.
 	TopK int `json:"topK,omitempty"`
@@ -30,6 +32,7 @@ type CosineOptions struct {
 
 func (o CosineOptions) ProviderName() string { return "cosine" }
 func (o CosineOptions) ProviderKind() core.Kind   { return core.KindReranker }
+func (o CosineOptions) GetEmbedder() string    { return o.Embedder }
 
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, CosineOptions{},
