@@ -11,8 +11,8 @@ import (
 
 // Register registers all vector store providers and the vector store kind handler.
 func Register(r *manglekit.Registry) {
-	manglekit.Register(r, core.LocalvecOptions{},
-		func(ctx context.Context, deps diapi.VectorStoreDeps, cfg core.LocalvecOptions) (core.VectorStore, error) {
+	manglekit.Register(r, localvec.Options{},
+		func(ctx context.Context, deps diapi.VectorStoreDeps, cfg localvec.Options) (core.VectorStore, error) {
 			return localvec.New(ctx, cfg, deps.Embedder)
 		},
 	)
