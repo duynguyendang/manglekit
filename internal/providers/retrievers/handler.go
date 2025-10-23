@@ -45,15 +45,7 @@ func (h *Handler) BuildComponent(
 		}
 		deps.VectorStore = vs
 	}
-	if typedCfg, ok := cfg.(diapi.SubRetrieversDep); ok {
-		for _, name := range typedCfg.GetSubRetrievers() {
-			r, err := b.GetRetriever(name)
-			if err != nil {
-				return nil, err
-			}
-			deps.SubRetrievers = append(deps.SubRetrievers, r)
-		}
-	}
+	deps.RetrieverResolver = b
 
 	f, ok := factory.(core.Factory)
 	if !ok {

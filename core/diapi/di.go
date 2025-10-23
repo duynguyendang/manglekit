@@ -43,11 +43,17 @@ type SubRetrieversDep interface {
 	GetSubRetrievers() []string
 }
 
+// RetrieverResolver defines an interface for components that need to resolve
+// sub-retrievers by name. This is a subset of the main Builder interface.
+type RetrieverResolver interface {
+	GetRetriever(name string) (core.Retriever, error)
+}
+
 // RetrieverDeps provides all possible dependencies that a retriever factory might need.
 type RetrieverDeps struct {
-	Embedder      ai.Embedder
-	VectorStore   core.VectorStore
-	SubRetrievers []core.Retriever
+	RetrieverResolver
+	Embedder    ai.Embedder
+	VectorStore core.VectorStore
 }
 
 // LLMDeps provides all possible dependencies that an LLM factory might need.
