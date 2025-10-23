@@ -36,17 +36,6 @@ type Doc struct {
 	Meta map[string]any
 }
 
-// LocalvecOptions provides configuration for the local vector store.
-//
-// Deprecated: This has been moved to the localvec provider's package.
-// It is kept here for backward compatibility but will be removed in a future version.
-type LocalvecOptions struct {
-	// Path is the file system path to the directory containing markdown files to be indexed.
-	Path string `yaml:"path" path:"resolve"`
-}
-
-func (o LocalvecOptions) ProviderName() string { return "localvec" }
-func (o LocalvecOptions) ProviderKind() Kind   { return KindVectorStore }
 
 // VectorStore defines the standard interface for vector database operations,
 // allowing for pluggable vector storage backends. Implementations of this
