@@ -145,6 +145,117 @@ Orchestrators accept a **typed Resolved** bundle (no `any`) and drive execution 
 * Orchestrators depend on contracts, not provider implementations.
 * Config package depends on nothing but stdlib and its own types.
 
+### 6.3 Component Interaction (Visual)
+
+```mermaid
+graph TD
+  %% Inputs
+  CFG[Config YAML/ENV] -->|Load| SDK[sdk.FromConfig]
+  SDK -->|With(opts)| BLD[Builder]
+
+  %% Builder + Registry
+  subgraph Construction
+    BLD -- GetHandler(kind) --> REG[Registry]
+    REG -- Returns --> HND[ComponentHandler]
+    BLD -- GetFactory(kind,name) --> REG
+    REG -- Returns --> FAC[Typed Factory]
+    HND -- BuildComponent(ctx, diapi.*Deps, cfg) --> FAC
+    FAC --> RES[core.Resolved]
+  end
+
+  %% Orchestrators
+  RES --> ORCH_S[Orchestrator: Sandwich]
+  RES --> ORCH_D[Orchestrator: Declarative]
+
+  %% Runtime stages
+  subgraph Runtime
+    ORCH_S --> PR[PreRules]
+    PR --> RET[Retrieve]
+    RET --> RR[Rerank]
+    RR --> LLM[LLM]
+    LLM --> PO[PostRules]
+    PO --> ANS[Answer]
+
+    ORCH_D --> TOOLS[Tools Sequence]
+    TOOLS --> ANS
+  end
+
+  %% Observability
+  OBS[(Logger/Tracer/Meter)]
+  RES -- Obs --> OBS
+  PR & RET & RR & LLM & PO -. metrics/logs .-> OBS
+```
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant User
+  participant SDK as sdk.FromConfig
+  participant Builder
+  participant Registry
+  participant Handler
+  participant Factory
+  participant Orchestrator
+
+  User->>SDK: Load YAML
+  SDK->>Builder: With(name, Options)
+  User->>Builder: Build(ctx)
+  loop per kind in order
+    Builder->>Registry: GetHandler(kind)
+    Registry-->>Builder: Handler
+    Builder->>Registry: Get(kind, providerName)
+    Registry-->>Builder: GenericFactory
+    Builder->>Handler: BuildComponent(ctx, diapi.Builder, factory, resolved, cfg, name)
+    Handler->>Factory: Build(ctx, diapi.*Deps, Options)
+    Factory-->>Handler: Component
+    Handler->>Builder: Assign into Resolved (+closer)
+  end
+  Builder-->>User: Orchestrator, Updatable?
+  User->>Orchestrator: Execute(ctx, sessionID, Query)
+  Orchestrator->>Orchestrator: Run stages (rules→retrieve→rerank→llm→rules)
+  Orchestrator-->>User: Answer (+metrics, citations)
+```
+
+### 6.4 Component Interaction (Text Diagram)
+
+Build time (config → orchestrator):
+
+```
+┌──────────────┐   With(opts)   ┌───────────┐   GetHandler/Factory   ┌──────────┐
+│  Config YAML │ ─────────────▶ │  sdk.From │ ──────────────────────▶ │ Registry │
+│   / ENV      │                │  Config   │                         └────┬─────┘
+└──────┬───────┘                └─────┬─────┘                              │
+       │  Parse/Decode                 │ Build(ctx)                         │
+       ▼                               ▼                                    │
+┌──────────────┐       diapi.*Deps  ┌────────────┐   Build(ctx,deps,cfg)    │
+│   Builder    │ ─────────────────▶ │  Handler   │ ────────────────────────▶│
+└────┬─────────┘                    └────┬───────┘                          │
+     │ Assign into Resolved              │ Component + closer                │
+     ▼                                   ▼                                    
+ ┌───────────────┐                  ┌──────────────┐
+ │ core.Resolved │◀──────────────── │  Factory     │
+ └──────┬────────┘                  └──────────────┘
+        │
+        ▼
+   ┌───────────────┐
+   │ Orchestrators │ (Sandwich | Declarative)
+   └───────────────┘
+```
+
+Run time (Sandwich stages):
+
+```
+Query → PreRules → Retrieve → Rerank → LLM → PostRules → Answer
+        (mutate)   (docs)     (scores)  (text)    (filter)     (text+citations)
+```
+
+Run time (Declarative):
+
+```
+Query → [Tool 1] → [Tool 2] → ... → [LLM Tool] → Answer
+         (params via Options.Steps; shared ExecutionContext across tools)
+```
+
 ---
 
 ## 7. Orchestrators
@@ -260,6 +371,7 @@ components:
 * **Schema export** (JSON Schema) for all options.
 * **Build‑graph introspection & DOT export**.
 * **WASM/plugin sandbox** for untrusted providers.
+* **Orchestrator handler generalization** so the Builder can construct both Sandwich and Declarative orchestrators.
 
 ---
 
@@ -268,9 +380,8 @@ components:
 ```
 github.com/duynguyendang/manglekit
 ├── builder.go
-├── from_config.go
 ├── registry.go
-├── sdk.go
+├── sdk/
 ├── config/
 ├── core/
 ├── retrieve/

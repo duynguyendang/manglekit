@@ -3,7 +3,7 @@ context_type: low_level_design
 project: manglekit
 language: go
 version: 0.5.0
-last_updated: 2025-10-20
+last_updated: 2025-10-23
 stability: stable
 audience: developers
 ---
@@ -42,8 +42,8 @@ graph TD
     end
 
     subgraph "Execution Layer"
-        K[pipeline/sandwich.go]
-        L[pipeline/declarative/orchestrator.go]
+        K["pipeline/sandwich.go\n(handler not registered)"]
+        L["pipeline/declarative/orchestrator.go\n(handler registered)"]
         C --> K
         C --> L
     end
@@ -89,6 +89,7 @@ sequenceDiagram
     ComponentHandler-->>-Builder: Returns closer
     Builder->>-Builder: Repeats for all components...
     Builder-->>-User/Config: Returns final orchestrator
+    Note over Builder,Orchestrator: Orchestrator kinds require a registered handler. Declarative handler is registered; Sandwich handler is currently missing.
 ```
 
 # 4. Factory Interface Layer
@@ -195,8 +196,7 @@ Tracing the `hybrid` retriever:
     *   It gets the `hybrid` factory from the registry.
     *   It calls `factory.Build(ctx, deps, cfg)`.
 5.  **Factory Execution:**
-    *   The `hybrid` factory receives the deps and its config.
-    *   It can now use `deps.GetRetriever("bm25")` and `deps.GetRetriever("dense")` to request its sub-components from the builder.
+    *   The `hybrid` factory currently expects a `diapi.Builder` (see GAP-006) and resolves sub-retrievers by name from the builder rather than consuming `diapi.RetrieverDeps`.
 6.  **Instance:** The fully constructed `hybrid` retriever is returned to the handler, which places it in the `resolved.Retrievers` map.
 
 # 11. Design Constraints & Guardrails
@@ -207,13 +207,10 @@ Tracing the `hybrid` retriever:
 
 # 12. Deviations & Pending Refactors
 
-This section lists technical debt and deviations from the ideal architecture, sourced from the code review.
-*   **Arbitrary Singleton Component Selection:** The `Sandwich` orchestrator still arbitrarily selects its `RuleSet` and `StateProvider`, which could be made explicit in its configuration.
-*   **Hard-coded Dependencies in Factory:** The `hybrid` retriever's factory logic should be updated to consume the configurable list of sub-retrievers from its `Options` struct.
-*   **Hard-coded Magic Numbers:** The `hybrid` retriever's `RRF_K` constant should be read from its `Options` struct.
-*   **Dead Code:** The `declarative` orchestrator's role and maintenance status are unclear.
+Moved to the centralized code review file. See: `docs/code-review.md` for current, open smells and remediation guidance (with file and line references).
 
 # 13. Changelog
 
+*   **2025-10-23:** Updated deviations to reflect current gaps (orchestrator handler coverage, hybrid factory signature, declarative state selection). Clarified hybrid construction path note.
 *   **2025-10-20:** Regenerated LLD to reflect the decentralized, handler-based builder architecture. Updated diagrams and construction path to show the new flow. Synchronized deviations with the latest code review.
 *   **2025-10-19:** Initial draft of the LLD.

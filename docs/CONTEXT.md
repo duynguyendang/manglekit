@@ -3,7 +3,7 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 0.5.0
-last_updated: 2025-10-21
+last_updated: 2025-10-23
 stability: stable
 audience: humans_and_agents
 ---
@@ -130,6 +130,15 @@ This section tracks architectural gaps identified during code review that deviat
 -   **RuleSet**: `core.RuleSet`
 -   **Orchestrator**: `core.Orchestrator`
 
+## Known Gaps (Current)
+
+- GAP-005 — Orchestrator handler coverage: only the Declarative handler is registered for kind `orchestrator`, so Sandwich cannot be built via the Builder. Registered factories exist for both, but the handler is specific to declarative options.
+  - Evidence: internal/providers/orchestrators/orchestrators.go:28; pipeline/declarative/handler.go:1
+- GAP-006 — Hybrid retriever factory signature mismatch: factory is registered to receive `diapi.Builder`, but the Retriever handler provides `diapi.RetrieverDeps`. This causes a type assertion failure in the generic factory at runtime.
+  - Evidence: internal/providers/hybrid/hybrid.go:35; internal/providers/retrievers/handler.go:63
+- GAP-007 — Declarative state provider selection is arbitrary (first map entry) and not configurable.
+  - Evidence: pipeline/declarative/orchestrator.go:72-78
+
 ## 12. Versioning & Compatibility Policy
 
 The framework follows Semantic Versioning (SemVer). Breaking changes to the `core` contracts, `diapi` interfaces, or the `core.ComponentHandler` interface will result in a major version increment. Adding new providers or options is a minor version change.
@@ -177,6 +186,27 @@ The framework follows Semantic Versioning (SemVer). Breaking changes to the `cor
       "id": "GAP-004",
       "smell": "Dead Code (Declarative Orchestrator)",
       "status": "Resolved"
+    },
+    {
+      "id": "GAP-005",
+      "smell": "Orchestrator handler coverage — Sandwich not buildable via Builder",
+      "status": "Open",
+      "file": "internal/providers/orchestrators/orchestrators.go",
+      "line": 28
+    },
+    {
+      "id": "GAP-006",
+      "smell": "Hybrid factory expects diapi.Builder but handler supplies diapi.RetrieverDeps",
+      "status": "Open",
+      "file": "internal/providers/hybrid/hybrid.go",
+      "line": 35
+    },
+    {
+      "id": "GAP-007",
+      "smell": "Declarative orchestrator selects the first StateProvider arbitrarily",
+      "status": "Open",
+      "file": "pipeline/declarative/orchestrator.go",
+      "line": 72
     }
   ],
   "orchestration_models": [
@@ -187,7 +217,7 @@ The framework follows Semantic Versioning (SemVer). Breaking changes to the `cor
 ```
 
 ## 14. Changelog
-
+-   **2025-10-23**: Added GAP-005/006/007 after validating current code: orchestrator handler coverage is declarative-only; hybrid retriever factory signature mismatches handler deps; declarative state provider selection is arbitrary.
 -   **2025-10-21**: Resolved GAP-004 by integrating the Declarative Orchestrator into the builder via a component handler, making it a selectable option in the configuration.
 -   **2025-10-20**: Regenerated the standard to reflect the decentralized, handler-based builder architecture. Updated diagrams, contracts, and flows. Synchronized Known Gaps with the latest code review.
 -   **2025-10-19**: Regenerated the standard to reflect the data-driven builder and stage-based pipeline architecture. Added JSON appendix and synchronized Known Gaps with the latest code review.

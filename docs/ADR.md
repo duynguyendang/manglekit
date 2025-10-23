@@ -230,3 +230,86 @@ Increase test coverage across config, builder, providers, and orchestrators; rem
 * Performance budgets & benchmarks for stage pipelines.
 
 ---
+
+## 7) Per-Kind Handlers and Typed DI Enforcement (2025‑10‑23)
+
+### Context
+
+As the generic registry and builder landed, providers still varied in how they received dependencies. Some factories accepted the builder directly; orchestrator construction logic was sometimes embedded instead of routed through kind handlers.
+
+### Decision
+
+Adopt a strict separation of responsibilities:
+
+* Per-kind `core.ComponentHandler` encapsulates build logic for that kind (assembling `diapi.*Deps`, calling the typed factory, storing the result on `Resolved`).
+* Provider factories MUST accept typed deps (`diapi.*Deps`) and MUST NOT accept the builder.
+* Every orchestrator must have a matching handler to be buildable via the builder.
+
+### Rationale
+
+* Keeps factories pure and testable; avoids leaking builder concerns into providers.
+* Centralizes DI in handlers, enabling static validation and consistent lifecycle handling.
+* Ensures the builder constructs all kinds, including orchestrators, deterministically.
+
+### Consequences
+
+* Some providers (e.g., hybrid retriever) require refactoring factory signatures to typed deps.
+* An orchestrator handler is required for Sandwich (currently missing), otherwise Sandwich cannot be built via the builder.
+
+### Migration
+
+* Refactor factories to use `diapi.*Deps`; remove any `diapi.Builder` parameters.
+* Add an orchestrator handler for Sandwich mirroring the Declarative handler pattern.
+
+---
+
+## 8) Static Architecture Rules & Tooling (2025‑10‑23)
+
+### Context
+
+To keep the codebase aligned with the architecture, we introduced static rules under `docs/rules/manglekit-arch.yml` and corresponding guidance in `AGENTS.md`.
+
+### Decision
+
+Codify rules for layering, registration, DI, and observability/lifecycle via static checks:
+
+* R2: forbid `init()` in providers (explicit registration only).
+* R3: pipeline must not import concrete providers.
+* R10: discourage magic numbers/names in hybrid.
+* R13: core must not import providers, pipeline, or root.
+* R14: factories must not accept `diapi.Builder` (typed deps only).
+* R15: declarative must not pick the first state provider (require config).
+* R18: no direct stdout logging in prod paths (use `core.Logger`).
+* R19: providers/orchestrators must not parse env directly (bind via config).
+
+### Rationale
+
+Automated enforcement reduces drift and speeds reviews. Agents can rely on clear failure signals to correct violations.
+
+### Consequences
+
+Short-term rule violations will surface (e.g., hybrid factory); they document the remaining migration work.
+
+### Migration
+
+Fix flagged findings as part of ongoing refactors; adjust severities as needed when transitioning.
+
+---
+
+## 9) Remediation Plan for Current Gaps (2025‑10‑23)
+
+### Context
+
+Recent review identified the following open gaps (see `docs/CONTEXT.md` Known Gaps and `docs/code-review.md`).
+
+### Items
+
+1. Orchestrator handler coverage — add Sandwich handler so the builder can construct Sandwich.
+2. Hybrid factory signature — change to `diapi.RetrieverDeps` and use `diapi.SubRetrieversDep` on options; avoid passing the builder.
+3. Declarative state provider — add explicit selection to options and stop using the first map entry.
+
+### Acceptance
+
+All static rules pass; tests cover deterministic selection; CONTEXT/LLD/HLD updated; changelog entries added.
+
+---

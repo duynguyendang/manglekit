@@ -1,5 +1,23 @@
 # Manglekit SDK - Code Review
 
+## Smell: Orchestrator Handler Coverage (Builder cannot build Sandwich)
+**Location:** `internal/providers/orchestrators/orchestrators.go:28`, `pipeline/declarative/handler.go:1`
+**Impact Analysis:** Only the Declarative handler is registered for kind `orchestrator`. While factories for both Sandwich and Declarative are registered, there is no handler to build Sandwich via the Builder. Configurations targeting `sandwich` will fail during handler dispatch.
+**Refactoring Suggestion:** Add a generic orchestrator handler that dispatches based on options type, or register a distinct Sandwich handler akin to the declarative one.
+**Status:** Open
+
+## Smell: Factory Signature Mismatch (Hybrid Retriever)
+**Location:** `internal/providers/hybrid/hybrid.go:35`, `internal/providers/retrievers/handler.go:63`
+**Impact Analysis:** The hybrid retriever factory is registered with `D=diapi.Builder`, but the retriever handler passes `diapi.RetrieverDeps` into `Factory.Build`. This will hit a type assertion failure in the generic factory.
+**Refactoring Suggestion:** Change the hybrid factory to accept `diapi.RetrieverDeps` and implement `diapi.SubRetrieversDep` on `HybridOptions`; alternatively change the retriever handler to pass the builder (not recommended as it breaks the uniform DI contract).
+**Status:** Open
+
+## Smell: Arbitrary StateProvider Selection (Declarative)
+**Location:** `pipeline/declarative/orchestrator.go:72-78`
+**Impact Analysis:** The declarative orchestrator selects the first `StateProvider` from a map if present, which is non-deterministic and makes state backend choice implicit.
+**Refactoring Suggestion:** Add a `stateProvider` field to declarative options (or make it part of a shared orchestrator options block) and perform explicit lookup.
+**Status:** Open
+
 ## Smell: Arbitrary Selection of Singleton Components
 **Location:** `pipeline/sandwich.go`
 **Impact Analysis:** The `Sandwich` orchestrator arbitrarily selects the first available `RuleSet` and `StateProvider` from its dependency maps. If a user configures multiple components of these kinds, the behavior of the orchestrator will be non-deterministic and depend on map iteration order.
