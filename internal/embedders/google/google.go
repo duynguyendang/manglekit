@@ -22,14 +22,20 @@ const (
 )
 
 func Register(r *manglekit.Registry) {
-	manglekit.Register(r, embed.GoogleEmbedderOptions{},
+	must := func(err error) {
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	must(manglekit.Register(r, embed.GoogleEmbedderOptions{},
 		func(ctx context.Context, deps diapi.EmbedderDeps, cfg embed.GoogleEmbedderOptions) (ai.Embedder, error) {
 			if deps.Genkit == nil {
 				return nil, fmt.Errorf("missing required dependency 'genkit'")
 			}
 			return New(cfg, deps.Genkit)
 		},
-	)
+	))
 }
 
 // GoogleEmbedder implements the `ai.Embedder` interface from Genkit, providing

@@ -79,20 +79,26 @@ func newTestBuilder(t *testing.T) *manglekit.Builder {
 
 	// Register mock orchestrator so the main Build() call can succeed.
 	reg.RegisterHandler(&mockOrchestratorHandler{})
-	manglekit.Register(reg, mockOrchestratorOptions{}, func(ctx context.Context, resolved *core.Resolved, cfg mockOrchestratorOptions) (core.Orchestrator, error) {
+	if err := manglekit.Register(reg, mockOrchestratorOptions{}, func(ctx context.Context, resolved *core.Resolved, cfg mockOrchestratorOptions) (core.Orchestrator, error) {
 		return &mockOrchestrator{}, nil
-	})
+	}); err != nil {
+		t.Fatalf("failed to register mock orchestrator: %v", err)
+	}
 	b.With("mock-orchestrator", mockOrchestratorOptions{})
 	b.WithOrchestrator("mock-orchestrator")
 
 	// Register mock sub-retrievers
 	reg.RegisterHandler(&retrievers.Handler{})
-	manglekit.Register(reg, mockRetrieverOptions{Name: "mock-r1"}, func(ctx context.Context, deps any, cfg mockRetrieverOptions) (core.Retriever, error) {
+	if err := manglekit.Register(reg, mockRetrieverOptions{Name: "mock-r1"}, func(ctx context.Context, deps any, cfg mockRetrieverOptions) (core.Retriever, error) {
 		return &mockRetriever{}, nil
-	})
-	manglekit.Register(reg, mockRetrieverOptions{Name: "mock-r2"}, func(ctx context.Context, deps any, cfg mockRetrieverOptions) (core.Retriever, error) {
+	}); err != nil {
+		t.Fatalf("failed to register mock retriever r1: %v", err)
+	}
+	if err := manglekit.Register(reg, mockRetrieverOptions{Name: "mock-r2"}, func(ctx context.Context, deps any, cfg mockRetrieverOptions) (core.Retriever, error) {
 		return &mockRetriever{}, nil
-	})
+	}); err != nil {
+		t.Fatalf("failed to register mock retriever r2: %v", err)
+	}
 
 	// Register the actual handlers and factories needed for the test.
 	hybrid.Register(reg)

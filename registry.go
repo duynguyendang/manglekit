@@ -45,12 +45,16 @@ func Register[T any, D any, O core.ProviderOptions](
 	r *Registry,
 	optsSample O,
 	fn func(ctx context.Context, deps D, cfg O) (T, error),
-) {
+) error {
 	kind := optsSample.ProviderKind()
 	name := optsSample.ProviderName()
 
 	if _, ok := r.factories[kind]; !ok {
 		r.factories[kind] = make(map[string]core.GenericFactory)
+	}
+
+	if _, ok := r.factories[kind][name]; ok {
+		return fmt.Errorf("provider with kind %q and name %q already registered", kind, name)
 	}
 
 	factory := core.NewTypedFactory[T, D, O](kind, name, fn)
@@ -59,6 +63,7 @@ func Register[T any, D any, O core.ProviderOptions](
 	t := reflect.TypeOf(optsSample)
 	r.OptionsTypeToName[t] = name
 	r.OptionsTypeToKind[t] = kind
+	return nil
 }
 
 // Get retrieves a generic factory from the registry by its kind and name.

@@ -8,16 +8,15 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/mock"
 	"github.com/duynguyendang/manglekit/internal/providers/state/inmemory"
 	"github.com/duynguyendang/manglekit/pipeline"
-	"github.com/duynguyendang/manglekit/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestSandwich_DeterministicSelection(t *testing.T) {
 	// 1. Setup: Create a `core.Resolved` with multiple mock components.
-	stateA, err := inmemory.New(state.InMemoryOptions{})
+	stateA, err := inmemory.New(inmemory.Options{})
 	require.NoError(t, err)
-	stateB, err := inmemory.New(state.InMemoryOptions{})
+	stateB, err := inmemory.New(inmemory.Options{})
 	require.NoError(t, err)
 
 	deps := core.Resolved{

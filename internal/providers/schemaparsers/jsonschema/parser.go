@@ -22,11 +22,16 @@ func (o Options) ProviderName() string { return "jsonschema" }
 func (o Options) ProviderKind() core.Kind   { return core.KindSchemaParser }
 
 func Register(r *manglekit.Registry) {
-	manglekit.Register(r, Options{},
+	must := func(err error) {
+		if err != nil {
+			panic(err)
+		}
+	}
+	must(manglekit.Register(r, Options{},
 		func(ctx context.Context, deps diapi.NoopDeps, cfg Options) (core.SchemaParser, error) {
 			return New(nil)
 		},
-	)
+	))
 }
 
 // JSONSchemaParser implements the `core.SchemaParser` interface for parsing

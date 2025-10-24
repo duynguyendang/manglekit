@@ -97,21 +97,27 @@ func newTestBuilder(t *testing.T) *manglekit.Builder {
 
 	// Register mock orchestrator so the main Build() call can succeed.
 	reg.RegisterHandler(&mockOrchestratorHandler{})
-	manglekit.Register(reg, mockOrchestratorOptions{}, func(ctx context.Context, resolved core.Resolved, cfg mockOrchestratorOptions) (core.Orchestrator, error) {
+	if err := manglekit.Register(reg, mockOrchestratorOptions{}, func(ctx context.Context, resolved core.Resolved, cfg mockOrchestratorOptions) (core.Orchestrator, error) {
 		return &mockOrchestrator{}, nil
-	})
+	}); err != nil {
+		t.Fatalf("failed to register mock orchestrator: %v", err)
+	}
 	b.With("mock-orchestrator", mockOrchestratorOptions{})
 	b.WithOrchestrator("mock-orchestrator")
 
 	// Register mock dependencies for the dense retriever
 	reg.RegisterHandler(&embedders.Handler{})
-	manglekit.Register(reg, mockEmbedderOptions{}, func(ctx context.Context, deps any, cfg mockEmbedderOptions) (ai.Embedder, error) {
+	if err := manglekit.Register(reg, mockEmbedderOptions{}, func(ctx context.Context, deps any, cfg mockEmbedderOptions) (ai.Embedder, error) {
 		return &mockEmbedder{}, nil
-	})
+	}); err != nil {
+		t.Fatalf("failed to register mock embedder: %v", err)
+	}
 	reg.RegisterHandler(&vectorstores.Handler{})
-	manglekit.Register(reg, mockVectorStoreOptions{}, func(ctx context.Context, deps any, cfg mockVectorStoreOptions) (core.VectorStore, error) {
+	if err := manglekit.Register(reg, mockVectorStoreOptions{}, func(ctx context.Context, deps any, cfg mockVectorStoreOptions) (core.VectorStore, error) {
 		return &mockVectorStore{}, nil
-	})
+	}); err != nil {
+		t.Fatalf("failed to register mock vector store: %v", err)
+	}
 
 	// Register the actual handlers and factories needed for the test.
 	reg.RegisterHandler(&retrievers.Handler{})

@@ -14,8 +14,14 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
+	must := func(err error) {
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	// Register OpenAI Embedder
-	manglekit.Register(r, embed.OpenAIEmbedderOptions{},
+	must(manglekit.Register(r, embed.OpenAIEmbedderOptions{},
 		func(ctx context.Context, deps diapi.EmbedderDeps, cfg embed.OpenAIEmbedderOptions) (ai.Embedder, error) {
 			if deps.Genkit == nil {
 				return nil, fmt.Errorf("missing required dependency 'genkit'")
@@ -27,10 +33,10 @@ func Register(r *manglekit.Registry) {
 			}
 			return embedder, nil
 		},
-	)
+	))
 
 	// Register Groq Embedder
-	manglekit.Register(r, embed.GroqEmbedderOptions{},
+	must(manglekit.Register(r, embed.GroqEmbedderOptions{},
 		func(ctx context.Context, deps diapi.EmbedderDeps, cfg embed.GroqEmbedderOptions) (ai.Embedder, error) {
 			if deps.Genkit == nil {
 				return nil, fmt.Errorf("missing required dependency 'genkit'")
@@ -42,6 +48,5 @@ func Register(r *manglekit.Registry) {
 			}
 			return embedder, nil
 		},
-	)
+	))
 }
-
