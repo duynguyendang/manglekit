@@ -114,10 +114,12 @@ Providers are self-contained modules in `internal/providers` that implement one 
 
 This section tracks architectural gaps identified during code review that deviate from this standard.
 
-1.  **Arbitrary Singleton Component Selection**: The `Sandwich` orchestrator arbitrarily selects the first available `RuleSet` and `StateProvider`. This should be made explicit in its configuration to ensure deterministic behavior. (Status: Resolved)
-2.  **Hard-coded Dependencies in Factory (Hybrid Retriever)**: The `hybrid` retriever's factory does not yet consume the configurable list of sub-retrievers from its `Options` struct. (Status: Resolved)
-3.  **Hard-coded Magic Number (Hybrid Retriever k=60)**: The `hybrid` retriever's Reciprocal Rank Fusion constant `k` is hard-coded and should be configurable via its `Options` struct. (Status: Resolved)
-4.  **Dead Code (Declarative Orchestrator)**: The declarative orchestrator's role and maintenance status are unclear and it may represent unused code. (Status: Resolved)
+- GAP-005 — Orchestrator handler coverage: only the Declarative handler is registered for kind `orchestrator`, so Sandwich cannot be built via the Builder. Registered factories exist for both, but the handler is specific to declarative options.
+  - Evidence: internal/providers/orchestrators/orchestrators.go:28; pipeline/declarative/handler.go:1
+- GAP-006 — Hybrid retriever factory signature mismatch: factory is registered to receive `diapi.Builder`, but the Retriever handler provides `diapi.RetrieverDeps`. This causes a type assertion failure in the generic factory at runtime.
+  - Evidence: internal/providers/hybrid/hybrid.go:35; internal/providers/retrievers/handler.go:63
+- GAP-007 — Declarative state provider selection is arbitrary (first map entry) and not configurable.
+  - Evidence: pipeline/declarative/orchestrator.go:72-78
 
 ## 11. Provider Families
 
@@ -130,91 +132,10 @@ This section tracks architectural gaps identified during code review that deviat
 -   **RuleSet**: `core.RuleSet`
 -   **Orchestrator**: `core.Orchestrator`
 
-## Known Gaps (Current)
-
-- GAP-005 — Orchestrator handler coverage: only the Declarative handler is registered for kind `orchestrator`, so Sandwich cannot be built via the Builder. Registered factories exist for both, but the handler is specific to declarative options.
-  - Evidence: internal/providers/orchestrators/orchestrators.go:28; pipeline/declarative/handler.go:1
-- GAP-006 — Hybrid retriever factory signature mismatch: factory is registered to receive `diapi.Builder`, but the Retriever handler provides `diapi.RetrieverDeps`. This causes a type assertion failure in the generic factory at runtime.
-  - Evidence: internal/providers/hybrid/hybrid.go:35; internal/providers/retrievers/handler.go:63
-- GAP-007 — Declarative state provider selection is arbitrary (first map entry) and not configurable.
-  - Evidence: pipeline/declarative/orchestrator.go:72-78
-
 ## 12. Versioning & Compatibility Policy
 
 The framework follows Semantic Versioning (SemVer). Breaking changes to the `core` contracts, `diapi` interfaces, or the `core.ComponentHandler` interface will result in a major version increment. Adding new providers or options is a minor version change.
 
-## 13. Machine Appendix (JSON Snapshot v1)
-
-```json
-{
-  "project": "manglekit",
-  "version": "0.5.0",
-  "contracts": [
-    "core.Orchestrator",
-    "core.Factory",
-    "core.ComponentHandler",
-    "core.Retriever",
-    "core.Reranker",
-    "core.LLMClient",
-    "core.VectorStore",
-    "ai.Embedder",
-    "core.StateProvider",
-    "core.Tool",
-    "core.ResourceCloser"
-  ],
-  "dependency_interfaces": [
-    "diapi.Builder",
-    "diapi.OpenAIClientProvider"
-  ],
-  "known_gaps": [
-    {
-      "id": "GAP-001",
-      "smell": "Arbitrary Singleton Component Selection",
-      "status": "Resolved"
-    },
-    {
-      "id": "GAP-002",
-      "smell": "Hard-coded Dependencies in Factory (Hybrid Retriever)",
-      "status": "Resolved"
-    },
-    {
-      "id": "GAP-003",
-      "smell": "Hard-coded Magic Number (Hybrid Retriever k=60)",
-      "status": "Resolved"
-    },
-    {
-      "id": "GAP-004",
-      "smell": "Dead Code (Declarative Orchestrator)",
-      "status": "Resolved"
-    },
-    {
-      "id": "GAP-005",
-      "smell": "Orchestrator handler coverage — Sandwich not buildable via Builder",
-      "status": "Open",
-      "file": "internal/providers/orchestrators/orchestrators.go",
-      "line": 28
-    },
-    {
-      "id": "GAP-006",
-      "smell": "Hybrid factory expects diapi.Builder but handler supplies diapi.RetrieverDeps",
-      "status": "Open",
-      "file": "internal/providers/hybrid/hybrid.go",
-      "line": 35
-    },
-    {
-      "id": "GAP-007",
-      "smell": "Declarative orchestrator selects the first StateProvider arbitrarily",
-      "status": "Open",
-      "file": "pipeline/declarative/orchestrator.go",
-      "line": 72
-    }
-  ],
-  "orchestration_models": [
-    "pipeline.Sandwich",
-    "pipeline.declarative.DeclarativeOrchestrator"
-  ]
-}
-```
 
 ## 14. Changelog
 -   **2025-10-23**: Added GAP-005/006/007 after validating current code: orchestrator handler coverage is declarative-only; hybrid retriever factory signature mismatches handler deps; declarative state provider selection is arbitrary.
