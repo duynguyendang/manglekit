@@ -97,10 +97,13 @@ func (m *mockBuilder) GetRetriever(name string) (core.Retriever, error) {
 	}
 	return nil, errors.New("retriever not found")
 }
-func (m *mockBuilder) GetEmbedder(n string) (ai.Embedder, error)     { return nil, nil }
-func (m *mockBuilder) GetLLMClient(n string) (core.LLMClient, error)   { return nil, nil }
-func (m *mockBuilder) GetVectorStore(n string) (core.VectorStore, error) { return nil, nil }
-func (m *mockBuilder) Genkit() *genkit.Genkit                          { return nil }
+func (m *mockBuilder) GetEmbedder(n string) (ai.Embedder, error)           { return nil, nil }
+func (m *mockBuilder) GetLLMClient(n string) (core.LLMClient, error)         { return nil, nil }
+func (m *mockBuilder) GetVectorStore(n string) (core.VectorStore, error)   { return nil, nil }
+func (m *mockBuilder) GetReranker(n string) (core.Reranker, error)           { return nil, nil }
+func (m *mockBuilder) GetStateProvider(n string) (core.StateProvider, error) { return nil, nil }
+func (m *mockBuilder) GetRuleSet(n string) (core.RuleSet, error)             { return nil, nil }
+func (m *mockBuilder) Genkit() *genkit.Genkit                                { return nil }
 
 
 func TestHybrid_Factory(t *testing.T) {
