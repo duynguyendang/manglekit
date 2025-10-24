@@ -14,6 +14,9 @@ type Builder interface {
 	GetLLMClient(name string) (core.LLMClient, error)
 	GetVectorStore(name string) (core.VectorStore, error)
 	GetRetriever(name string) (core.Retriever, error)
+	GetReranker(name string) (core.Reranker, error)
+	GetStateProvider(name string) (core.StateProvider, error)
+	GetRuleSet(name string) (core.RuleSet, error)
 	Genkit() *genkit.Genkit
 }
 

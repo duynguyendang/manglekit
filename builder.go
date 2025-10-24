@@ -71,11 +71,18 @@ func NewBuilder(r *Registry) *Builder {
 }
 
 // DI implementation
-func (b *Builder) Genkit() *genkit.Genkit          { return b.genkit }
-func (b *Builder) GetEmbedder(n string) (ai.Embedder, error)   { return getComponent(b.embedders, n) }
-func (b *Builder) GetLLMClient(n string) (core.LLMClient, error)   { return getComponent(b.llms, n) }
-func (b *Builder) GetVectorStore(n string) (core.VectorStore, error) { return getComponent(b.vectorStores, n) }
-func (b *Builder) GetRetriever(n string) (core.Retriever, error)   { return getComponent(b.retrievers, n) }
+func (b *Builder) Genkit() *genkit.Genkit                        { return b.genkit }
+func (b *Builder) GetEmbedder(n string) (ai.Embedder, error) { return getComponent(b.embedders, n) }
+func (b *Builder) GetLLMClient(n string) (core.LLMClient, error) { return getComponent(b.llms, n) }
+func (b *Builder) GetVectorStore(n string) (core.VectorStore, error) {
+	return getComponent(b.vectorStores, n)
+}
+func (b *Builder) GetRetriever(n string) (core.Retriever, error) { return getComponent(b.retrievers, n) }
+func (b *Builder) GetReranker(n string) (core.Reranker, error)   { return getComponent(b.rerankers, n) }
+func (b *Builder) GetStateProvider(n string) (core.StateProvider, error) {
+	return getComponent(b.stateProviders, n)
+}
+func (b *Builder) GetRuleSet(n string) (core.RuleSet, error) { return getComponent(b.rules, n) }
 
 func (b *Builder) With(name string, opts any) BuilderAPI {
 	if opts == nil {
