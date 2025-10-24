@@ -16,7 +16,7 @@ func (h *Handler) Kind() core.Kind {
 	return core.KindRetriever
 }
 
-// BuildComponent builds the Retriever component and assigns it to the resolved map.
+// BuildComponent builds the Retriever component by multiplexing based on the options type.
 func (h *Handler) BuildComponent(
 	ctx context.Context,
 	builderDI any,
@@ -30,22 +30,47 @@ func (h *Handler) BuildComponent(
 		return nil, fmt.Errorf("invalid builder DI type for Retriever handler: got %T", builderDI)
 	}
 
-	deps := diapi.RetrieverDeps{}
-	if typedCfg, ok := cfg.(diapi.EmbedderDep); ok {
-		embedder, err := b.GetEmbedder(typedCfg.GetEmbedder())
-		if err != nil {
-			return nil, err
-		}
-		deps.Embedder = embedder
+	providerWithOptions, ok := cfg.(diapi.ProviderWithOptions)
+	if !ok {
+		return nil, fmt.Errorf("provider options for %s do not implement diapi.ProviderWithOptions", name)
 	}
-	if typedCfg, ok := cfg.(diapi.VectorStoreDep); ok {
-		vs, err := b.GetVectorStore(typedCfg.GetVectorStore())
-		if err != nil {
-			return nil, err
+	opts := providerWithOptions.GetProviderOptions()
+
+	var deps any
+	switch typedOpts := opts.(type) {
+	case diapi.SubRetrieversDep:
+		hybridDeps := diapi.RetrieverDeps{SubRetrievers: make(map[string]core.Retriever)}
+		for _, subName := range typedOpts.GetSubRetrievers() {
+			r, err := b.GetRetriever(subName)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get sub-retriever '%s' for hybrid retriever '%s': %w", subName, name, err)
+			}
+			hybridDeps.SubRetrievers[subName] = r
 		}
-		deps.VectorStore = vs
+		deps = hybridDeps
+
+	case diapi.EmbedderDep:
+		embedder, err := b.GetEmbedder(typedOpts.GetEmbedder())
+		if err != nil {
+			return nil, fmt.Errorf("failed to get embedder '%s' for dense retriever '%s': %w", typedOpts.GetEmbedder(), name, err)
+		}
+
+		if vsDep, ok := opts.(diapi.VectorStoreDep); ok {
+			vs, err := b.GetVectorStore(vsDep.GetVectorStore())
+			if err != nil {
+				return nil, fmt.Errorf("failed to get vector store '%s' for dense retriever '%s': %w", vsDep.GetVectorStore(), name, err)
+			}
+			deps = diapi.DenseRetrieverDeps{
+				Embedder:    embedder,
+				VectorStore: vs,
+			}
+		} else {
+			return nil, fmt.Errorf("dense retriever '%s' is missing a vector store dependency", name)
+		}
+
+	default:
+		deps = diapi.NoopDeps{}
 	}
-	deps.RetrieverResolver = b
 
 	f, ok := factory.(core.Factory)
 	if !ok {

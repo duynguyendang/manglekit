@@ -65,6 +65,7 @@ type mockRetrieverOptions struct {
 
 func (o mockRetrieverOptions) ProviderName() string { return o.Name }
 func (o mockRetrieverOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o mockRetrieverOptions) GetProviderOptions() any   { return o }
 
 // mockRetriever is a mock implementation of core.Retriever for testing.
 type mockRetriever struct{}

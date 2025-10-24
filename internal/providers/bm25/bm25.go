@@ -40,10 +40,11 @@ type BM25Options struct {
 
 func (o BM25Options) ProviderName() string { return "bm25" }
 func (o BM25Options) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o BM25Options) GetProviderOptions() any { return o }
 
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, BM25Options{},
-		func(ctx context.Context, deps diapi.RetrieverDeps, cfg BM25Options) (core.Retriever, error) {
+		func(ctx context.Context, deps diapi.NoopDeps, cfg BM25Options) (core.Retriever, error) {
 			return New(cfg)
 		},
 	)
