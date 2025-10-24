@@ -14,14 +14,21 @@ import (
 
 // Register registers all embedder providers and the embedder kind handler.
 func Register(r *manglekit.Registry) {
+	must := func(err error) {
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	// Google
-	manglekit.Register(r, embed.GoogleEmbedderOptions{},
+	must(manglekit.Register(r, embed.GoogleEmbedderOptions{},
 		func(ctx context.Context, deps diapi.EmbedderDeps, cfg embed.GoogleEmbedderOptions) (ai.Embedder, error) {
 			return google.New(cfg, deps.Genkit)
 		},
-	)
+	))
+
 	// OpenAI
-	manglekit.Register(r, embed.OpenAIEmbedderOptions{},
+	must(manglekit.Register(r, embed.OpenAIEmbedderOptions{},
 		func(ctx context.Context, deps diapi.EmbedderDeps, cfg embed.OpenAIEmbedderOptions) (ai.Embedder, error) {
 			plugin := &oai.OpenAI{APIKey: cfg.APIKey}
 			embedder := plugin.Embedder(deps.Genkit, cfg.Model)
@@ -30,9 +37,10 @@ func Register(r *manglekit.Registry) {
 			}
 			return embedder, nil
 		},
-	)
+	))
+
 	// Groq
-	manglekit.Register(r, embed.GroqEmbedderOptions{},
+	must(manglekit.Register(r, embed.GroqEmbedderOptions{},
 		func(ctx context.Context, deps diapi.EmbedderDeps, cfg embed.GroqEmbedderOptions) (ai.Embedder, error) {
 			plugin := &oai.OpenAI{APIKey: cfg.APIKey}
 			embedder := plugin.Embedder(deps.Genkit, cfg.Model)
@@ -41,7 +49,7 @@ func Register(r *manglekit.Registry) {
 			}
 			return embedder, nil
 		},
-	)
+	))
 
 	r.RegisterHandler(&Handler{})
 }

@@ -69,9 +69,11 @@ func newTestBuilder(t *testing.T) *manglekit.Builder {
 
 	// Register the mock orchestrator and its CORRECT handler.
 	reg.RegisterHandler(&mockOrchestratorHandler{})
-	manglekit.Register(reg, mockOrchestratorOptions{}, func(ctx context.Context, resolved core.Resolved, cfg mockOrchestratorOptions) (core.Orchestrator, error) {
+	if err := manglekit.Register(reg, mockOrchestratorOptions{}, func(ctx context.Context, resolved core.Resolved, cfg mockOrchestratorOptions) (core.Orchestrator, error) {
 		return &mockOrchestrator{}, nil
-	})
+	}); err != nil {
+		t.Fatalf("failed to register mock orchestrator: %v", err)
+	}
 	b.With("mock-orchestrator", mockOrchestratorOptions{})
 	b.WithOrchestrator("mock-orchestrator")
 
