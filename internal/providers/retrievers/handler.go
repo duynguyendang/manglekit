@@ -27,7 +27,7 @@ func (h *Handler) BuildComponent(
 ) (core.ResourceCloser, error) {
 	b, ok := builderDI.(diapi.Builder)
 	if !ok {
-		return nil, fmt.Errorf("invalid builder DI type for Retriever handler")
+		return nil, fmt.Errorf("invalid builder DI type for Retriever handler: got %T", builderDI)
 	}
 
 	deps := diapi.RetrieverDeps{}

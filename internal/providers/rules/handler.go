@@ -25,11 +25,6 @@ func (h *Handler) BuildComponent(
 	cfg core.ProviderOptions,
 	name string,
 ) (core.ResourceCloser, error) {
-	_, ok := builderDI.(diapi.Builder)
-	if !ok {
-		return nil, fmt.Errorf("invalid builder DI type for RuleSet handler")
-	}
-
 	deps := diapi.RuleSetDeps{}
 	f, ok := factory.(core.Factory)
 	if !ok {
