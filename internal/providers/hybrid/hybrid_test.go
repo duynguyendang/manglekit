@@ -8,8 +8,6 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -91,21 +89,6 @@ type mockBuilder struct {
 	retrievers map[string]core.Retriever
 }
 
-func (m *mockBuilder) GetRetriever(name string) (core.Retriever, error) {
-	if r, ok := m.retrievers[name]; ok {
-		return r, nil
-	}
-	return nil, errors.New("retriever not found")
-}
-func (m *mockBuilder) GetEmbedder(n string) (ai.Embedder, error)           { return nil, nil }
-func (m *mockBuilder) GetLLMClient(n string) (core.LLMClient, error)         { return nil, nil }
-func (m *mockBuilder) GetVectorStore(n string) (core.VectorStore, error)   { return nil, nil }
-func (m *mockBuilder) GetReranker(n string) (core.Reranker, error)           { return nil, nil }
-func (m *mockBuilder) GetStateProvider(n string) (core.StateProvider, error) { return nil, nil }
-func (m *mockBuilder) GetRuleSet(n string) (core.RuleSet, error)             { return nil, nil }
-func (m *mockBuilder) Genkit() *genkit.Genkit                                { return nil }
-
-
 func TestHybrid_Factory(t *testing.T) {
 	r := manglekit.NewRegistry()
 	Register(r)
@@ -113,18 +96,16 @@ func TestHybrid_Factory(t *testing.T) {
 	factory, err := r.Get(core.KindRetriever, "hybrid")
 	require.NoError(t, err)
 
-	resolver := &mockBuilder{
-		retrievers: map[string]core.Retriever{
-			"r1": &mockRetriever{},
-			"r2": &mockRetriever{},
-		},
-	}
-
 	t.Run("success", func(t *testing.T) {
 		opts := HybridOptions{
 			Retrievers: []string{"r1", "r2"},
 		}
-		deps := diapi.RetrieverDeps{RetrieverResolver: resolver}
+		deps := diapi.RetrieverDeps{
+			SubRetrievers: map[string]core.Retriever{
+				"r1": &mockRetriever{},
+				"r2": &mockRetriever{},
+			},
+		}
 		retriever, err := factory.Build(context.Background(), deps, opts)
 		require.NoError(t, err)
 		assert.NotNil(t, retriever)
@@ -134,7 +115,11 @@ func TestHybrid_Factory(t *testing.T) {
 		opts := HybridOptions{
 			Retrievers: []string{"r1", "r3"}, // r3 does not exist
 		}
-		deps := diapi.RetrieverDeps{RetrieverResolver: resolver}
+		deps := diapi.RetrieverDeps{
+			SubRetrievers: map[string]core.Retriever{
+				"r1": &mockRetriever{},
+			},
+		}
 		_, err := factory.Build(context.Background(), deps, opts)
 		assert.Error(t, err)
 	})

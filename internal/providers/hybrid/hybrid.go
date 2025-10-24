@@ -29,15 +29,17 @@ type HybridOptions struct {
 
 func (o HybridOptions) ProviderName() string { return "hybrid" }
 func (o HybridOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o HybridOptions) GetProviderOptions() any { return o }
+func (o HybridOptions) GetSubRetrievers() []string { return o.Retrievers }
 
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, HybridOptions{},
 		func(ctx context.Context, deps diapi.RetrieverDeps, cfg HybridOptions) (core.Retriever, error) {
 			var subRetrievers []core.Retriever
 			for _, name := range cfg.Retrievers {
-				r, err := deps.GetRetriever(name)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get sub-retriever '%s': %w", name, err)
+				r, ok := deps.SubRetrievers[name]
+				if !ok {
+					return nil, fmt.Errorf("failed to get sub-retriever '%s': not found in dependencies", name)
 				}
 				subRetrievers = append(subRetrievers, r)
 			}

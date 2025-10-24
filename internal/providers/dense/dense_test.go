@@ -130,7 +130,7 @@ func TestDense_Factory(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("success", func(t *testing.T) {
-		deps := diapi.RetrieverDeps{
+		deps := diapi.DenseRetrieverDeps{
 			Embedder:    &mockEmbedder{},
 			VectorStore: &mockVectorStore{},
 		}
@@ -140,7 +140,7 @@ func TestDense_Factory(t *testing.T) {
 	})
 
 	t.Run("missing_embedder", func(t *testing.T) {
-		deps := diapi.RetrieverDeps{
+		deps := diapi.DenseRetrieverDeps{
 			VectorStore: &mockVectorStore{},
 		}
 		_, err := factory.Build(context.Background(), deps, DenseOptions{})
@@ -148,7 +148,7 @@ func TestDense_Factory(t *testing.T) {
 	})
 
 	t.Run("missing_vectorstore", func(t *testing.T) {
-		deps := diapi.RetrieverDeps{
+		deps := diapi.DenseRetrieverDeps{
 			Embedder: &mockEmbedder{},
 		}
 		_, err := factory.Build(context.Background(), deps, DenseOptions{})

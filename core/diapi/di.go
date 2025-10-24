@@ -46,15 +46,18 @@ type SubRetrieversDep interface {
 	GetSubRetrievers() []string
 }
 
-// RetrieverResolver defines an interface for components that need to resolve
-// sub-retrievers by name. This is a subset of the main Builder interface.
-type RetrieverResolver interface {
-	GetRetriever(name string) (core.Retriever, error)
+// ProviderWithOptions is an interface for provider options that expose the underlying options.
+type ProviderWithOptions interface {
+	GetProviderOptions() any
 }
 
-// RetrieverDeps provides all possible dependencies that a retriever factory might need.
+// RetrieverDeps provides dependencies for a retriever that depends on other sub-retrievers.
 type RetrieverDeps struct {
-	RetrieverResolver
+	SubRetrievers map[string]core.Retriever
+}
+
+// DenseRetrieverDeps provides dependencies for a dense retriever.
+type DenseRetrieverDeps struct {
 	Embedder    ai.Embedder
 	VectorStore core.VectorStore
 }

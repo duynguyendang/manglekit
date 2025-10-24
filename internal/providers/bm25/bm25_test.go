@@ -131,7 +131,7 @@ func TestBM25_Factory(t *testing.T) {
 	factory, err := r.Get(core.KindRetriever, "bm25")
 	require.NoError(t, err)
 
-	retriever, err := factory.Build(context.Background(), diapi.RetrieverDeps{}, opts)
+	retriever, err := factory.Build(context.Background(), diapi.NoopDeps{}, opts)
 	require.NoError(t, err)
 	assert.NotNil(t, retriever)
 }
