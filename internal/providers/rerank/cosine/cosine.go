@@ -140,9 +140,14 @@ func (r *Reranker) Rerank(ctx context.Context, req core.RerankRequest) ([]core.S
 		}
 	}
 
-	// 4. Sort documents by their new score in descending order.
-	sort.Slice(scoredDocs, func(i, j int) bool {
-		return scoredDocs[i].Score > scoredDocs[j].Score
+	// 4. Sort documents by their new score in descending order. For documents
+	// with the same score, a secondary sort on the document ID is used to
+	// guarantee a stable, deterministic ordering.
+	sort.SliceStable(scoredDocs, func(i, j int) bool {
+		if scoredDocs[i].Score != scoredDocs[j].Score {
+			return scoredDocs[i].Score > scoredDocs[j].Score
+		}
+		return scoredDocs[i].Doc.ID < scoredDocs[j].Doc.ID
 	})
 
 	// 5. Trim the results to the specified TopK.
