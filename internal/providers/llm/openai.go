@@ -35,24 +35,24 @@ type OpenAIOptions struct {
 	BaseURL string `yaml:"base_url,omitempty"`
 }
 
-func (o OpenAIOptions) ProviderName() string { return "openai" }
-func (o OpenAIOptions) ProviderKind() core.Kind   { return core.KindLLM }
-func (o OpenAIOptions) GetAPIKey() string       { return o.APIKey }
-func (o OpenAIOptions) GetBaseURL() string      { return o.BaseURL }
+func (o *OpenAIOptions) ProviderName() string { return "openai" }
+func (o *OpenAIOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o *OpenAIOptions) GetAPIKey() string       { return o.APIKey }
+func (o *OpenAIOptions) GetBaseURL() string      { return o.BaseURL }
 
 func RegisterOpenAI(r *manglekit.Registry) {
 	// Factory function for OpenAI
-	openAIFactory := func(ctx context.Context, deps diapi.LLMDeps, cfg OpenAIOptions) (core.LLMClient, error) {
+	openAIFactory := func(ctx context.Context, deps diapi.LLMDeps, cfg *OpenAIOptions) (core.LLMClient, error) {
 		if deps.Genkit == nil {
 			return nil, fmt.Errorf("missing required dependency 'genkit'")
 		}
-		client, err := NewOpenAI(cfg, deps.Genkit)
+		client, err := NewOpenAI(*cfg, deps.Genkit)
 		if err != nil {
 			return nil, err
 		}
 		return client, nil
 	}
-	manglekit.Register(r, OpenAIOptions{}, openAIFactory)
+	manglekit.Register(r, &OpenAIOptions{}, openAIFactory)
 }
 
 // OpenAI is a wrapper around a genkit AI model from the OpenAI plugin.

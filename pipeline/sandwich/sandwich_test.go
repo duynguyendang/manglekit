@@ -16,12 +16,12 @@ func TestNewSandwich(t *testing.T) {
 		Retrievers: map[string]core.Retriever{"mock": mock.NewRetriever(nil)},
 		Rerankers:  map[string]core.Reranker{"mock": mock.NewReranker(nil)},
 		Rules:      map[string]core.RuleSet{"mock": mock.NewRuleSet()},
-		LLMs:       map[string]core.LLMClient{"mock": mock.NewLLM("test-model")},
+		LLMs:       map[string]core.LLMClient{"mock": mock.NewLLM("test-model", "")},
 	}
 
 	t.Run("should create a new sandwich orchestrator", func(t *testing.T) {
 		t.Parallel()
-		opts := sandwich.SandwichOptions{
+		opts := &sandwich.SandwichOptions{
 			Retriever: "mock",
 			Reranker:  "mock",
 			LLM:       "mock",
@@ -37,7 +37,7 @@ func TestNewSandwich(t *testing.T) {
 
 	t.Run("should return an error if retriever is not found", func(t *testing.T) {
 		t.Parallel()
-		opts := sandwich.SandwichOptions{
+		opts := &sandwich.SandwichOptions{
 			Retriever: "not-found",
 			Reranker:  "mock",
 			LLM:       "mock",
@@ -56,10 +56,10 @@ func TestSandwich_Execute(t *testing.T) {
 		Retrievers: map[string]core.Retriever{"mock": mock.NewRetriever(map[string]string{"test query": "test response"})},
 		Rerankers:  map[string]core.Reranker{"mock": mock.NewReranker(nil)},
 		Rules:      map[string]core.RuleSet{"mock": mock.NewRuleSet()},
-		LLMs:       map[string]core.LLMClient{"mock": mock.NewLLM("test-model")},
+		LLMs:       map[string]core.LLMClient{"mock": mock.NewLLM("test-model", "")},
 	}
 
-	opts := sandwich.SandwichOptions{
+	opts := &sandwich.SandwichOptions{
 		Retriever: "mock",
 		Reranker:  "mock",
 		LLM:       "mock",
@@ -89,7 +89,7 @@ func TestSandwich_Execute(t *testing.T) {
 			}},
 			Rerankers: map[string]core.Reranker{"mock": mock.NewReranker(nil)},
 			Rules:     map[string]core.RuleSet{"mock": mock.NewRuleSet()},
-			LLMs:      map[string]core.LLMClient{"mock": mock.NewLLM("test-model")},
+			LLMs:      map[string]core.LLMClient{"mock": mock.NewLLM("test-model", "")},
 		}
 
 		orch, err := sandwich.NewSandwich(context.Background(), deps, opts)
@@ -128,11 +128,11 @@ func TestSandwich_Close(t *testing.T) {
 			Retrievers: map[string]core.Retriever{"mock": mock.NewRetriever(nil)},
 			Rerankers:  map[string]core.Reranker{"mock": mock.NewReranker(nil)},
 			Rules:      map[string]core.RuleSet{"mock": mock.NewRuleSet()},
-			LLMs:       map[string]core.LLMClient{"mock": mock.NewLLM("test-model")},
+			LLMs:       map[string]core.LLMClient{"mock": mock.NewLLM("test-model", "")},
 			Closers:    []core.ResourceCloser{closer1, closer2},
 		}
 
-		opts := sandwich.SandwichOptions{
+		opts := &sandwich.SandwichOptions{
 			Retriever: "mock",
 			Reranker:  "mock",
 			LLM:       "mock",
@@ -168,11 +168,11 @@ func TestSandwich_Close(t *testing.T) {
 			Retrievers: map[string]core.Retriever{"mock": mock.NewRetriever(nil)},
 			Rerankers:  map[string]core.Reranker{"mock": mock.NewReranker(nil)},
 			Rules:      map[string]core.RuleSet{"mock": mock.NewRuleSet()},
-			LLMs:       map[string]core.LLMClient{"mock": mock.NewLLM("test-model")},
+			LLMs:       map[string]core.LLMClient{"mock": mock.NewLLM("test-model", "")},
 			Closers:    []core.ResourceCloser{closer1, closer2},
 		}
 
-		opts := sandwich.SandwichOptions{
+		opts := &sandwich.SandwichOptions{
 			Retriever: "mock",
 			Reranker:  "mock",
 			LLM:       "mock",

@@ -1,0 +1,29 @@
+orchestrator: main_sandwich
+
+components:
+- name: mock_llm
+  type: mock-llm
+  kind: llm
+  params:
+    model: "mock-model"
+    response: "Response from mock_llm: This is a mock response from the Sandwich orchestrator."
+
+- name: mock_retriever
+  type: mock-retriever
+  kind: retriever
+  params:
+    pairs:
+      "what is the meaning of life?": "42"
+
+- name: mock_state
+  type: in-memory
+  kind: state_provider
+  params: {}
+
+- name: main_sandwich
+  type: sandwich
+  kind: orchestrator
+  params:
+    llm: mock_llm
+    retriever: mock_retriever
+    state_provider: mock_state

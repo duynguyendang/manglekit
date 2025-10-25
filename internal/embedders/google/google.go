@@ -28,12 +28,12 @@ func Register(r *manglekit.Registry) {
 		}
 	}
 
-	must(manglekit.Register(r, embed.GoogleEmbedderOptions{},
-		func(ctx context.Context, deps diapi.EmbedderDeps, cfg embed.GoogleEmbedderOptions) (ai.Embedder, error) {
+	must(manglekit.Register(r, &embed.GoogleEmbedderOptions{},
+		func(ctx context.Context, deps diapi.EmbedderDeps, cfg *embed.GoogleEmbedderOptions) (ai.Embedder, error) {
 			if deps.Genkit == nil {
 				return nil, fmt.Errorf("missing required dependency 'genkit'")
 			}
-			return New(cfg, deps.Genkit)
+			return New(*cfg, deps.Genkit)
 		},
 	))
 }

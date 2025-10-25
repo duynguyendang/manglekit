@@ -10,8 +10,8 @@ type GoogleEmbedderOptions struct {
 	Model string `json:"model,omitempty"`
 }
 
-func (o GoogleEmbedderOptions) ProviderName() string { return "google" }
-func (o GoogleEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *GoogleEmbedderOptions) ProviderName() string { return "google" }
+func (o *GoogleEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
 
 // OpenAIEmbedderOptions provides typed configuration for OpenAI and compatible
 // embedding models.
@@ -28,13 +28,13 @@ type OpenAIEmbedderOptions struct {
 	Dimensions int `json:"dimensions,omitempty"`
 }
 
-func (o OpenAIEmbedderOptions) ProviderName() string { return "openai" }
-func (o OpenAIEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *OpenAIEmbedderOptions) ProviderName() string { return "openai" }
+func (o *OpenAIEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
 
 // GroqEmbedderOptions is an alias for OpenAIEmbedderOptions, but for the Groq provider.
 type GroqEmbedderOptions struct {
 	OpenAIEmbedderOptions
 }
 
-func (o GroqEmbedderOptions) ProviderName() string { return "groq" }
-func (o GroqEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *GroqEmbedderOptions) ProviderName() string { return "groq" }
+func (o *GroqEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }

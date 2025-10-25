@@ -25,8 +25,8 @@ type InMemoryOptions struct {
 	Logger core.Logger `yaml:"-"`
 }
 
-func (o InMemoryOptions) ProviderName() string { return "in-memory" }
-func (o InMemoryOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o *InMemoryOptions) ProviderName() string { return "in-memory" }
+func (o *InMemoryOptions) ProviderKind() core.Kind   { return core.KindRetriever }
 
 // InMemoryRetriever is a simple, thread-safe in-memory document store. It uses
 // a map for efficient O(1) lookups, upserts, and deletes by document ID.
@@ -39,9 +39,9 @@ type InMemoryRetriever struct {
 }
 
 func Register(r *manglekit.Registry) {
-	manglekit.Register(r, InMemoryOptions{},
-		func(ctx context.Context, deps diapi.RetrieverDeps, cfg InMemoryOptions) (core.Retriever, error) {
-			return New(cfg)
+	manglekit.Register(r, &InMemoryOptions{},
+		func(ctx context.Context, deps diapi.RetrieverDeps, cfg *InMemoryOptions) (core.Retriever, error) {
+			return New(*cfg)
 		},
 	)
 }

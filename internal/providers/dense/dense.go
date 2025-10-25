@@ -20,16 +20,16 @@ type DenseOptions struct {
 	VectorStore string `yaml:"vectorStore"`
 }
 
-func (o DenseOptions) ProviderName() string { return "dense" }
-func (o DenseOptions) ProviderKind() core.Kind   { return core.KindRetriever }
-func (o DenseOptions) GetEmbedderName() string { return o.Embedder }
-func (o DenseOptions) GetEmbedder() string    { return o.Embedder }
-func (o DenseOptions) GetVectorStore() string { return o.VectorStore }
-func (o DenseOptions) GetProviderOptions() any { return o }
+func (o *DenseOptions) ProviderName() string { return "dense" }
+func (o *DenseOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o *DenseOptions) GetEmbedderName() string { return o.Embedder }
+func (o *DenseOptions) GetEmbedder() string    { return o.Embedder }
+func (o *DenseOptions) GetVectorStore() string { return o.VectorStore }
+func (o *DenseOptions) GetProviderOptions() any { return o }
 
 func Register(r *manglekit.Registry) {
-	manglekit.Register(r, DenseOptions{},
-		func(ctx context.Context, deps diapi.DenseRetrieverDeps, cfg DenseOptions) (core.Retriever, error) {
+	manglekit.Register(r, &DenseOptions{},
+		func(ctx context.Context, deps diapi.DenseRetrieverDeps, cfg *DenseOptions) (core.Retriever, error) {
 			if deps.Embedder == nil {
 				return nil, fmt.Errorf("dense retriever factory requires an 'embedder' dependency, but it was not provided")
 			}

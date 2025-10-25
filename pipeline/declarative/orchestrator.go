@@ -35,7 +35,7 @@ type executionStep struct {
 
 type DeclarativeOrchestrator struct {
 	steps               []executionStep
-	stateProvider       core.StateProvider // Optional state provider.
+	StateProvider       core.StateProvider // Optional state provider.
 	obs                 core.Observability
 	closers             []core.ResourceCloser
 	conversationManager *statehelper.ConversationManager
@@ -44,7 +44,7 @@ type DeclarativeOrchestrator struct {
 // NewDeclarative is the factory function for creating a DeclarativeOrchestrator.
 // It resolves the tool names from the configuration against the built components
 // provided in the `deps` argument.
-func NewDeclarative(ctx context.Context, deps core.Resolved, sp core.StateProvider, cfg Options) (core.Orchestrator, error) {
+func NewDeclarative(ctx context.Context, deps core.Resolved, cfg *Options) (core.Orchestrator, error) {
 	logger := deps.Obs.Logger
 	if logger == nil {
 		logger = obslogger.NewStdLogger()
@@ -71,7 +71,6 @@ func NewDeclarative(ctx context.Context, deps core.Resolved, sp core.StateProvid
 
 	return &DeclarativeOrchestrator{
 		steps:               steps,
-		stateProvider:       sp,
 		obs:                 deps.Obs,
 		closers:             deps.Closers,
 		conversationManager: statehelper.NewConversationManager(),
@@ -99,7 +98,7 @@ func (o *DeclarativeOrchestrator) Execute(ctx context.Context, sessionID string,
 	logger.Infof("pipeline run started", "query", q.Text)
 
 	// 1. RETRIEVE STATE: If a state provider and sessionID are available, get the history.
-	history := o.conversationManager.LoadHistory(ctx, sessionID, o.stateProvider, logger)
+	history := o.conversationManager.LoadHistory(ctx, sessionID, o.StateProvider, logger)
 	if q.Meta == nil {
 		q.Meta = make(map[string]any)
 	}
@@ -127,7 +126,7 @@ func (o *DeclarativeOrchestrator) Execute(ctx context.Context, sessionID string,
 	}
 
 	// 4. UPDATE AND SAVE STATE: After a successful run, update and save the history.
-	o.conversationManager.UpdateAndSaveHistory(ctx, sessionID, o.stateProvider, logger, history, q, execCtx.Answer)
+	o.conversationManager.UpdateAndSaveHistory(ctx, sessionID, o.StateProvider, logger, history, q, execCtx.Answer)
 
 	logger.Infof("pipeline run finished successfully")
 	return execCtx.Answer, nil

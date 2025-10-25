@@ -27,12 +27,12 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	manglekit.Register(r, core.MangleOptions{},
-		func(ctx context.Context, deps diapi.RuleSetDeps, cfg core.MangleOptions) (core.RuleSet, error) {
+	manglekit.Register(r, &core.MangleOptions{},
+		func(ctx context.Context, deps diapi.RuleSetDeps, cfg *core.MangleOptions) (core.RuleSet, error) {
 			// The registry is no longer passed as a dependency.
 			// For now, we pass nil, as the default converters don't need it.
 			// A future refactoring could inject the specific converter/parser factories needed.
-			return New(ctx, cfg, nil)
+			return New(ctx, *cfg, nil)
 		},
 	)
 }

@@ -24,7 +24,7 @@ func TestSandwich_DeterministicSelection(t *testing.T) {
 			"mock-retriever": mock.NewRetriever(nil),
 		},
 		LLMs: map[string]core.LLMClient{
-			"mock-llm": mock.NewLLM(""),
+			"mock-llm": mock.NewLLM("", ""),
 		},
 		Rules: map[string]core.RuleSet{
 			"ruleset-A": mock.NewRuleSet(),
@@ -37,7 +37,7 @@ func TestSandwich_DeterministicSelection(t *testing.T) {
 	}
 
 	// 2. Configuration: Explicitly select which components to use.
-	cfg := sandwich.SandwichOptions{
+	cfg := &sandwich.SandwichOptions{
 		Retriever:     "mock-retriever",
 		LLM:           "mock-llm",
 		RuleSet:       "ruleset-B",
@@ -67,17 +67,17 @@ func TestSandwich_DeterministicSelection(t *testing.T) {
 
 	// Let's test the negative case to be certain.
 	t.Run("returns error for non-existent ruleset", func(t *testing.T) {
-		badCfg := cfg
+		badCfg := *cfg
 		badCfg.RuleSet = "ruleset-C" // This one does not exist
-		_, err := sandwich.NewSandwich(context.Background(), deps, badCfg)
+		_, err := sandwich.NewSandwich(context.Background(), deps, &badCfg)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), `ruleset "ruleset-C" not found`)
 	})
 
 	t.Run("returns error for non-existent state provider", func(t *testing.T) {
-		badCfg := cfg
+		badCfg := *cfg
 		badCfg.StateProvider = "state-C" // This one does not exist
-		_, err := sandwich.NewSandwich(context.Background(), deps, badCfg)
+		_, err := sandwich.NewSandwich(context.Background(), deps, &badCfg)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), `state provider "state-C" not found`)
 	})

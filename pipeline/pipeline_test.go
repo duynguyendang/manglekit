@@ -39,7 +39,7 @@ func TestSandwich_Integration(t *testing.T) {
 		Retrievers: map[string]core.Retriever{"mock": &MockRetriever{}},
 		MaxTokens:  16,
 	}
-	opts := sandwich.SandwichOptions{
+	opts := &sandwich.SandwichOptions{
 		Retriever: "mock",
 		LLM:       "openai",
 	}

@@ -22,8 +22,8 @@ type SandwichOptions struct {
 	StateProvider string `yaml:"stateProvider,omitempty"`
 }
 
-func (SandwichOptions) ProviderName() string { return "sandwich" }
-func (SandwichOptions) ProviderKind() core.Kind { return core.KindOrchestrator }
+func (o *SandwichOptions) ProviderName() string { return "sandwich" }
+func (o *SandwichOptions) ProviderKind() core.Kind { return core.KindOrchestrator }
 
 // Sandwich implements the default MangleKit orchestrator. It has been refactored
 // to use a typed, stage-based pipeline architecture, where a `Runner` executes
@@ -50,7 +50,7 @@ type Sandwich struct {
 // `core.Resolved` struct, which contains all its dependencies, and a
 // `SandwichOptions` struct to explicitly configure which components to use.
 // This eliminates non-deterministic behavior from map iteration.
-func NewSandwich(ctx context.Context, deps core.Resolved, cfg SandwichOptions) (core.Orchestrator, error) {
+func NewSandwich(ctx context.Context, deps core.Resolved, cfg *SandwichOptions) (core.Orchestrator, error) {
 	s := &Sandwich{
 		conversationManager: statehelper.NewConversationManager(),
 		closers:             deps.Closers,
