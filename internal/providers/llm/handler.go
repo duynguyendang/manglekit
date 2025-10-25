@@ -30,7 +30,28 @@ func (h *Handler) BuildComponent(
 		return nil, fmt.Errorf("invalid builder DI type for LLM handler")
 	}
 
-	deps := diapi.LLMDeps{Genkit: b.Genkit()}
+	var deps any
+	var err error
+
+	switch c := cfg.(type) {
+	default:
+		// Default case for LLMs that only need the Genkit instance.
+		deps = diapi.LLMDeps{Genkit: b.Genkit()}
+	case diapi.ProviderWithOptions:
+		// This case allows for more complex dependency resolution if needed in the future,
+		// by inspecting the underlying options. For now, it defaults to basic LLMDeps.
+		underlyingOpts := c.GetProviderOptions()
+		switch underlyingOpts.(type) {
+		// Add cases here for specific option types that require different dependencies.
+		// e.g., case *MyAdvancedLLMOptions:
+		default:
+			deps = diapi.LLMDeps{Genkit: b.Genkit()}
+		}
+	}
+
+	if err != nil {
+		return nil, err
+	}
 
 	f, ok := factory.(core.Factory)
 	if !ok {

@@ -39,8 +39,8 @@ type NilOptions struct {
 	Kind Kind
 }
 
-func (o NilOptions) ProviderName() string { return o.Name }
-func (o NilOptions) ProviderKind() Kind   { return o.Kind }
+func (o *NilOptions) ProviderName() string { return o.Name }
+func (o *NilOptions) ProviderKind() Kind   { return o.Kind }
 
 // NameOf is a helper function that returns the reflect.Type name for a given value.
 func NameOf(v any) string {

@@ -22,10 +22,10 @@ type Options struct {
 }
 
 // ProviderKind returns the kind of the provider.
-func (o Options) ProviderKind() core.Kind { return core.KindVectorStore }
+func (o *Options) ProviderKind() core.Kind { return core.KindVectorStore }
 
 // ProviderName returns the name of the provider.
-func (o Options) ProviderName() string { return "localvec" }
+func (o *Options) ProviderName() string { return "localvec" }
 
 const (
 	collectionName = "manglekit-localvec-collection"

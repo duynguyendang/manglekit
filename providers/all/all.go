@@ -14,7 +14,9 @@ import (
 	"github.com/duynguyendang/manglekit/internal/vectorstores"
 )
 
-// ComponentHandlers collects ALL handlers for the Builder
+// ComponentHandlers collects ALL handlers for the Builder.
+// Note: This function intentionally omits mock provider handlers,
+// as they are intended for manual registration within specific tests.
 func ComponentHandlers() []core.ComponentHandler {
 	// Start with standard component handlers
 	handlers := []core.ComponentHandler{
