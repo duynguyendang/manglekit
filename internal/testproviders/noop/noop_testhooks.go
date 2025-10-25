@@ -30,11 +30,11 @@ var _ core.Tool = &NoopTool{}
 // to be registered with the manglekit.Register function.
 type NoopOptions struct{}
 
-func (o NoopOptions) ProviderName() string { return "noop" }
+func (o *NoopOptions) ProviderName() string { return "noop" }
 // We'll register our test tool under the SchemaParser kind for this smoke test.
-func (o NoopOptions) ProviderKind() core.Kind { return core.KindSchemaParser }
+func (o *NoopOptions) ProviderKind() core.Kind { return core.KindSchemaParser }
 
 // New creates a new NoopTool. The dependencies argument is ignored.
-func New(ctx context.Context, deps any, cfg NoopOptions) (core.Tool, error) {
+func New(ctx context.Context, deps any, cfg *NoopOptions) (core.Tool, error) {
 	return &NoopTool{}, nil
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
+	"github.com/firebase/genkit/go/ai"
 )
 
 // VectorStoreOptions is an interface that all vector store options must satisfy.
@@ -36,22 +37,30 @@ func (h *Handler) BuildComponent(
 		return nil, fmt.Errorf("invalid builder DI type for VectorStore handler: got %T", builderDI)
 	}
 
-	// Assert the options to your common interface
-	vcfg, ok := cfg.(VectorStoreOptions)
-	if !ok {
-		// This is a safety check
-		return nil, fmt.Errorf("vectorstore options do not implement GetEmbedderName(): %T", cfg)
+	var deps any
+	var err error
+
+	switch vcfg := cfg.(type) {
+	case VectorStoreOptions:
+		var emb ai.Embedder
+		embedderName := vcfg.GetEmbedderName()
+		if embedderName != "" {
+			emb, err = b.GetEmbedder(embedderName)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get embedder '%s' for vector store '%s': %w", embedderName, name, err)
+			}
+		}
+		deps = diapi.VectorStoreDeps{
+			Embedder: emb,
+		}
+	default:
+		// This case handles vector stores that might not have or need an embedder.
+		// For example, a purely lexical vector store.
+		deps = diapi.NoopDeps{}
 	}
 
-	// Get the *single dependency* all vector stores need
-	emb, err := b.GetEmbedder(vcfg.GetEmbedderName())
 	if err != nil {
 		return nil, err
-	}
-
-	// Create the *single dependency struct* all factories expect
-	deps := diapi.VectorStoreDeps{
-		Embedder: emb,
 	}
 
 	f, ok := factory.(core.Factory)

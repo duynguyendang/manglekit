@@ -17,7 +17,7 @@ func TestRegistry_Smoke(t *testing.T) {
 		t.Cleanup(registry.ResetForTest)
 		reg := registry.Global()
 
-		err := manglekit.Register(reg, noop.NoopOptions{}, noop.New)
+		err := manglekit.Register(reg, &noop.NoopOptions{}, noop.New)
 		if err != nil {
 			t.Fatalf("failed to register noop provider: %v", err)
 		}
@@ -27,7 +27,7 @@ func TestRegistry_Smoke(t *testing.T) {
 			t.Fatalf("resolve noop factory: %v", err)
 		}
 
-		instance, err := factory.Build(context.Background(), nil, noop.NoopOptions{})
+		instance, err := factory.Build(context.Background(), nil, &noop.NoopOptions{})
 		if err != nil {
 			t.Fatalf("build noop: %v", err)
 		}
@@ -52,10 +52,10 @@ func TestRegistry_Smoke(t *testing.T) {
 		t.Cleanup(registry.ResetForTest)
 		reg := registry.Global()
 
-		if err := manglekit.Register(reg, noop.NoopOptions{}, noop.New); err != nil {
+		if err := manglekit.Register(reg, &noop.NoopOptions{}, noop.New); err != nil {
 			t.Fatalf("first registration failed: %v", err)
 		}
-		err := manglekit.Register(reg, noop.NoopOptions{}, noop.New)
+		err := manglekit.Register(reg, &noop.NoopOptions{}, noop.New)
 		if err == nil {
 			t.Fatalf("expected error on duplicate registration, got nil")
 		}
@@ -63,7 +63,7 @@ func TestRegistry_Smoke(t *testing.T) {
 
 	t.Run("reset_clears_registry", func(t *testing.T) {
 		regBeforeReset := registry.Global()
-		if err := manglekit.Register(regBeforeReset, noop.NoopOptions{}, noop.New); err != nil {
+		if err := manglekit.Register(regBeforeReset, &noop.NoopOptions{}, noop.New); err != nil {
 			t.Fatalf("registration failed: %v", err)
 		}
 
