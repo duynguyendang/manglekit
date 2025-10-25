@@ -1,0 +1,66 @@
+[
+  {
+    "id": "R2",
+    "title": "No init() in providers",
+    "severity": "error",
+    "scope": "internal/providers/**",
+    "description": "Providers must not use init() for registration to ensure a clear and explicit registration flow.",
+    "fix": "Use the explicit Register(...) function within the designated registration files (e.g., providers/all/all.go)."
+  },
+  {
+    "id": "R3",
+    "title": "Orchestrators must not import concrete providers",
+    "severity": "error",
+    "scope": "pipeline/**",
+    "description": "Orchestrators must depend only on 'core' interfaces, not on concrete provider implementations in 'internal/providers'. This maintains separation of concerns.",
+    "fix": "Remove any imports from 'internal/providers' and rely on the dependency injection mechanism to provide components."
+  },
+  {
+    "id": "R6",
+    "title": "LLM providers must not create clients directly",
+    "severity": "error",
+    "scope": "internal/providers/llm/**",
+    "description": "LLM providers should not construct their own HTTP or API clients (e.g., openai.New..., http.Client{}). They must receive them via dependency injection.",
+    "fix": "Request the client from the dependency injection system (diapi.Builder) instead of creating it directly."
+  },
+  {
+    "id": "R7",
+    "title": "No runtime type assertions on concrete providers",
+    "severity": "warning",
+    "scope": "*",
+    "description": "Avoid runtime type assertions on concrete provider types. Use the 'core' and 'diapi' interfaces for dependency resolution.",
+    "fix": "Refactor to use interfaces from 'core/diapi' to access components and their methods."
+  },
+  {
+    "id": "R8",
+    "title": "Orchestrator must correctly drain resource closers",
+    "severity": "error",
+    "scope": "pipeline/**",
+    "description": "The orchestrator's Close() method must correctly iterate over and execute all registered ResourceCloser functions to prevent resource leaks.",
+    "fix": "Ensure the Close() method on the orchestrator implementation properly calls the collected ResourceCloser functions."
+  },
+  {
+    "id": "R10",
+    "title": "Hybrid retriever must not hard-code RRF-K or sub-retrievers",
+    "severity": "warning",
+    "scope": "internal/providers/hybrid/**",
+    "description": "The hybrid retriever should not have hard-coded values for the RRF-K constant or the names of its sub-retrievers.",
+    "fix": "These values must be exposed as configurable fields in the HybridOptions struct."
+  },
+  {
+    "id": "R12",
+    "title": "Detect dead/unimported packages",
+    "severity": "warning",
+    "scope": "internal/**",
+    "description": "Code and packages that are not imported or used by other parts of the application should be identified and removed to reduce maintenance overhead.",
+    "fix": "Remove the unused package or integrate it into the application."
+  },
+  {
+    "id": "R13",
+    "title": "Core package dependency violations",
+    "severity": "error",
+    "scope": "core/**",
+    "description": "The 'core' package must not import 'internal/providers', 'pipeline', or the root 'builder'.",
+    "fix": "Remove the invalid import statements to maintain the core's independence."
+  }
+]

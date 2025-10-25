@@ -1,0 +1,23 @@
+orchestrator: "sandwich"
+components:
+  - name: "mangle-rules"
+    kind: "rules"
+    params:
+      provider: "mangle"
+      path:
+        - "./rules/kg_query.dlog"
+      schemaSources:
+        - type: "rdf"
+          path: "./data/ontology.ttl"
+
+  - name: "in-memory-retriever"
+    kind: "retriever"
+    params:
+      provider: "in-memory"
+
+  - name: "google-llm"
+    kind: "llm"
+    params:
+      provider: "google"
+      model: "gemini-1.5-flash"
+      apiKey: "${GOOGLE_API_KEY}"

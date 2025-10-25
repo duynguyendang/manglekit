@@ -1,0 +1,25 @@
+orchestrator: "sandwich"
+components:
+  - name: "mangle-rules"
+    kind: "rules"
+    params:
+      provider: "mangle"
+      path:
+        - "./rules/logic.dlog"
+      schemaSources:
+        - type: "rdf"
+          path: "./rules/design_docs.ttl"
+      defaultConverters: true
+
+  - name: "bm25-retriever"
+    kind: "retriever"
+    params:
+      provider: "bm25"
+      path: "./corpus"
+
+  - name: "google-llm"
+    kind: "llm"
+    params:
+      provider: "google"
+      model: "gemini-1.5-flash"
+      apiKey: "${GOOGLE_API_KEY}"

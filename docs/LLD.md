@@ -1,176 +1,216 @@
-# Manglekit SDK — Low-Level Design (LLD)
-
-> Module path: `github.com/duynguyendang/manglekit`  
-> Go version: 1.24.1  
-> Last Updated: 2025-10-15
-> Status: **Major architectural refactoring complete.** The builder and registry architecture is now significantly more robust, type-safe, and extensible. Sandwich and Declarative orchestrators are production-ready.
-
+---
+context_type: low_level_design
+project: manglekit
+language: go
+version: 0.5.0
+last_updated: 2025-10-25
+stability: stable
+audience: developers
 ---
 
-## 1. Design Tenets
-- Public entry points: `sdk.New` and the fluent builder (`builder.go`). They enforce defaults (`TopK=8`, `MaxTokens=512`), assert concrete types for registry‑constructed components, and accumulate LIFO `ResourceClosers` for clean shutdown.
-- **Dependency Injection over global state.** The component `Registry` is now an instance created in the application entry point (`main.go`). Providers are explicitly registered with this instance, which is then injected into the `Builder`. This pattern eliminates global state and ensures clear, testable dependency resolution.
-- Sandwich orchestrator (`pipeline/sandwich.go`) executes a fixed, rule‑wrapped flow; records timings in `Answer.Meta` (`retrieve_ms`, `rerank_ms`, `llm_ms`); and stores pre‑rule evidence as `Meta["original_docs"]`.
-- Declarative orchestrator (`pipeline/declarative/orchestrator.go`) queries a `core.FlowController` to determine stage order, dispatches tools via a shared execution context, and supports `core.PostRuleEvaluator` for pre‑LLM gating.
-- Observability is pluggable. If `core.Observability.Logger` is nil, a lightweight structured `StdLogger` is installed; tracing and metrics hooks are optional and skipped when unset. No direct `fmt.Printf` is used in production paths.
+# 1. Purpose & Scope
 
----
+This document provides a detailed low-level design for the Manglekit SDK's core framework components. It covers the decentralized, handler-based Builder, the Registry, provider factories, the dependency injection mechanism, and the stage-based pipeline architecture. It is intended to be a technical reference for developers extending the framework or diagnosing its behavior.
 
-## 2. Package Layout (authoritative)
-```
-github.com/duynguyendang/manglekit
-├── builder.go                 # Fluent builder + dependency resolution/runtime clients
-├── builder_test.go           
-├── config.go                  # YAML/env loaders feeding the builder
-├── registry.go                # Global registries for provider constructors
-├── sdk.go                     # Convenience wrapper around pipeline.NewSandwich
-├── typemap.go                 # Option-type ↔ provider-name lookup tables
-├── core/
-│   ├── rules.go               # Stage enums, RuleSet/FlowController/PostRule contracts
-│   ├── schema.go              # SchemaParser contract
-│   └── types.go               # Doc/Query/Answer/Options, observability, errors
-├── retrieve/
-│   ├── options.go             # Typed options structs for public APIs
-│   └── retrieve.go            # Request/Result + Retriever interfaces
-├── rerank/
-│   ├── options.go             # Reranker option structs
-│   └── rerank.go              # Request struct + Reranker interface
-├── embed/
-│   └── options.go             # Google/OpenAI embedder options
-├── llm/
-│   ├── llm.go                 # Request/Response + Client interface
-│   ├── options.go             # Google/OpenAI options
-│   └── prompt.go              # PromptBuilder + default RAG template
-├── pipeline/
-│   ├── sandwich.go            # Default orchestrator implementation
-│   ├── sandwich_test.go       # Stage-level unit tests
-│   └── declarative/
-│       ├── orchestrator.go    # Flow-driven orchestrator
-│       └── orchestrator_test.go
-├── internal/
-│   ├── embedders/{google,openai}/
-│   ├── providers/
-│   │   ├── bm25/              # Sparse retriever
-│   │   ├── dense/             # Dense retriever
-│   │   ├── hybrid/            # Reciprocal rank fusion retriever
-│   │   ├── llm/{google,openai}/
-│   │   ├── mangle/            # Rules engine + converters
-│   │   ├── rerank/cosine/
-│   │   ├── retrievers/inmemory/
-│   │   ├── schemaparsers/{jsonschema,rdf}/
-│   │   └── state/{inmemory,redis}/
-│   ├── vectorstores/localvec/
-│   └── logger/
-│       ├── std_logger.go
-│       └── zap_adapter.go
-├── providers/all/all.go       # Blank import of bundled providers
-├── examples/                  # 01-basic-rag … 10_chatbot runnable demos
-├── docs/                      # HLD, LLD, CONTEXT, CSD, LOGGING, code-review
-└── state/                     # State provider option types
+# 2. Component Diagram
+
+```mermaid
+graph TD
+    subgraph "Configuration Layer"
+        A[YAML Config] --> B{sdk.FromConfig}
+    end
+
+    subgraph "Construction Layer"
+        B --> C[builder.go]
+        C --> D[registry.go]
+        D -- Contains --> E[Component Handlers]
+        D -- Contains --> F[Provider Factories]
+    end
+
+    subgraph "Core Contracts"
+        G[core/interfaces.go]
+        H[core/handler.go]
+        I[core/diapi]
+    end
+
+    subgraph "Implementation Layer"
+        E -- Implements --> H
+        F -- Consumes --> I
+        C -- Provides --> I
+        J[internal/providers/*] --> E
+        J -- Also provides --> F
+    end
+
+    subgraph "Execution Layer"
+        K["pipeline/sandwich.go"]
+        L["pipeline/declarative/orchestrator.go"]
+        C --> K
+        C --> L
+    end
+
+    G --> K
+    G --> L
 ```
 
----
+# 3. Builder Subsystem
 
-## 3. Core Contracts & Observability
-- `core.Doc` contains chunk identifiers, provenance, payload text, and free-form metadata. Provider implementations populate common keys (`doc_id`, `source`, sparse scores) for rules to inspect.
-- `core.Query.Meta` acts as the coordination channel for filters, expansion terms, `user_context`, and conversation `history`. Mangle Pre rules mutate these keys so retrievers receive policy-compliant constraints.
-- `core.Answer.Meta` aggregates timings (`retrieve_ms`, `rerank_ms`, `llm_ms`), best rerank score, `original_docs`, LLM token usage, and rule emissions (`rule_results`, `redactions`, `denial_reason`, etc.).
-- `core.Options` stores components as `any` to avoid import cycles; the builder fills them with concrete instances, applies defaults, and appends provider-specific `ResourceClosers`.
-- Observability hooks are optional interfaces (`Logger`, `Tracer`, `Meter`). When `Logger` is nil, the builder installs a default structured `StdLogger`; tracing/metrics are no-ops when unset.
+The `Builder` is the central component for constructing an orchestrator. It follows a handler-based process that is decentralized and respects the Open/Closed Principle.
 
----
+**Process Flow:**
+1.  **Configuration:** The builder is configured programmatically via `With(opts)` calls. The `sdk.FromConfig` function translates YAML into these calls.
+2.  **Component Grouping:** All configured components are grouped by their `core.Kind`.
+3.  **Ordered Build:** The builder iterates through a hard-coded build order (`Embedder` -> `VectorStore` -> `Retriever`, etc.).
+4.  **Handler Invocation:** For each component, it looks up the corresponding `core.ComponentHandler` in the `Registry`.
+5.  **Delegated Build:** The builder calls the handler's `BuildComponent` method, passing itself as a dependency provider (`builderDI`), the component's factory, its configuration, and the map of already resolved components.
+6.  **Component Construction:** The handler is responsible for creating the dependency struct, calling the factory, and placing the resulting component instance into the resolved map.
+7.  **Orchestrator Creation:** After all components are built, the `Resolved` struct is assembled and passed to the selected orchestrator's factory.
 
-## 4. Builder & Configuration
-- The `Builder` is instantiated with a configured `Registry` instance (`builder.New(registry)`). It no longer holds global state.
-- Configuration can be loaded from YAML (`config.NewBuilderFromYAML`) or environment variables (`config.NewBuilderFromEnv`). These helpers now populate a configuration struct that is passed to the builder, separating configuration loading from component construction.
-- `builder.Build()` is a type-safe construction process. For each required component, it looks up the corresponding **strongly-typed factory** (e.g., `RetrieverFactory`) from the injected registry.
-- The builder is now **OCP-compliant**. It contains no `switch` statements or special-case logic for specific providers (like the `hybrid` retriever). All construction complexity, including dependency resolution (e.g., a retriever needing an embedder), is encapsulated within the provider's own factory. The factory receives a `BuilderAPI` to recursively build its dependencies.
+```mermaid
+sequenceDiagram
+    participant User/Config
+    participant Builder
+    participant Registry
+    participant ComponentHandler
+    participant ProviderFactory
 
----
+    User/Config->>+Builder: With(opts)
+    Builder->>+Builder: Stores opts in cfgs list
+    User/Config->>+Builder: Build(ctx)
+    Builder->>+Builder: Groups cfgs by kind
+    Builder->>+Builder: Iterates through build order...
+    Builder->>+Registry: GetHandler(kind)
+    Registry-->>-Builder: Returns handler
+    Builder->>+Registry: Get(kind, name)
+    Registry-->>-Builder: Returns factory
+    Builder->>+ComponentHandler: BuildComponent(ctx, builder, factory, resolved, cfg, name)
+    ComponentHandler->>+ProviderFactory: Build(ctx, deps, cfg)
+    ProviderFactory-->>-ComponentHandler: Returns component instance
+    ComponentHandler->>+Builder: Places instance in resolved map
+    ComponentHandler-->>-Builder: Returns closer
+    Builder->>-Builder: Repeats for all components...
+    Builder-->>-User/Config: Returns final orchestrator
+```
 
-## 5. Provider Wiring
-- Provider registration is now explicit and centralized in the application entry point (e.g., `main.go`). A fluent "Registration Builder" (`providers.NewSet()`) is used to register provider factories with a `Registry` instance. The `init()`-based side-effect-driven registration has been removed.
-- Option structs exposed to users live in public packages (`retrieve/options.go`, `rerank/options.go`, `embed/options.go`, `llm/options.go`) so programmatic flows remain type-safe.
-- The builder infers dependencies: dense retrievers and cosine rerankers automatically request the configured embedder; localvec requires both an embedder and corpus path; declarative tools declare dependencies by referencing other tool names in their params.
-- Rules providers (`internal/providers/mangle`) support both code-first (converters define EDB) and file-first (rule files declare EDB) modes, selectable via `core.MangleOptions.FileFirst`.
+# 4. Factory Interface Layer
 
----
+All component factories must adhere to the `core.Factory` interface.
 
-## 6. Retrieval & Vector Storage
-- BM25 (`internal/providers/bm25`) indexes Markdown directories, parses YAML front matter into metadata, and attaches Okapi scores to each document’s metadata.
-- Dense retrieval (`internal/providers/dense`) embeds the query through the configured Genkit/OpenAI embedder, passes metadata filters to the injected `core.VectorStore`, and searches for semantic matches.
-- Hybrid retrieval (`internal/providers/hybrid`) executes sparse and dense lookups concurrently via `errgroup`, fuses rankings with Reciprocal Rank Fusion, and truncates to `TopK`.
-- Local vector storage (`internal/vectorstores/localvec`) relies on Genkit’s localvec plugin: it initializes a collection, indexes corpus documents (front matter included), and filters matches using metadata. Resource cleanup is a known gap.
-- The in-memory retriever (`internal/providers/retrievers/inmemory`) implements `retrieve.Updatable` for demos and small corpora.
+```go
+// core/factory.go
+type Factory interface {
+	Build(ctx context.Context, deps any, cfg any) (any, error)
+}
+```
 
----
+This generic interface is made type-safe by the `ComponentHandler`, which is responsible for creating the specific, typed dependency (`diapi.*`) and configuration structs required by the factory.
 
-## 7. Sandwich Pipeline Mechanics
-- Pre rules: `pipeline.Sandwich.Run` calls `RuleSet.Evaluate(core.Pre)` to normalize the query, seed filters/expansions, and optionally deny the request early.
-- Retrieval: the configured retriever receives `retrieve.Request{Query, TopK, Meta}`, with filters/expansions forwarded via `Meta`.
-- Rerank: if configured, `rerank.Reranker` reorders documents, captures the best score, and materializes citations.
-- Fallback threshold: `FallbackThreshold > 0` short-circuits the pipeline with `core.ErrNoEvidence` when the best score is insufficient.
-- LLM call: `llm.Client.Complete` receives the query prompt, grounded context, max tokens, and metadata; responses log token usage and latency.
-- Post rules: `RuleSet.Evaluate(core.Post)` filters citations, applies redactions, or denies the answer. The orchestrator records rule timings and finalizes `Answer.Meta`.
-- Cleanup: `Sandwich.Close` drains `ResourceClosers` in LIFO order so clients like Genkit shut down cleanly.
+```go
+// internal/providers/retrievers/handler.go
+func (h *Handler) BuildComponent(...) (core.ResourceCloser, error) {
+    // The handler knows the specific types needed.
+    b, _ := builderDI.(diapi.Builder)
+    f, _ := factory.(core.Factory)
 
----
+    // It constructs the typed dependency struct.
+    deps := diapi.RetrieverDeps{
+        Embedder:     b.GetEmbedder(...),
+        VectorStore:  b.GetVectorStore(...),
+    }
 
-## 8. Declarative Orchestrator Mechanics
-- Stage discovery: `getFlowStages` queries `flow_stage/3` and `stage_tool/2` facts from the `FlowController`, builds an ordered stage list, and validates tool assignments.
-- Pre evaluation: `flowController.Evaluate(core.Pre)` can deny requests, mutate the query, or flag stages to skip.
-- Execution context: a shared map holds the evolving `query`, `docs`, `answer`, `meta`, and denial flags. Each tool updates this map.
-- Tool dispatch:  
-  * Retrievers populate `docs`, `meta["retrieved_count"]`, and stash `original_docs` in the answer.  
-  * Rerankers embed in parallel, emit citations, and set `meta["best_score"]`.  
-  * LLM clients build prompts via `llm.PromptBuilder` and capture token usage.  
-  * `core.PostRuleEvaluator` instances (e.g., the Mangle engine) can drop/redact evidence, deny the request, and emit audit metadata.
-- Skips & denials propagate through the context so later tools respect prior decisions.
+    // It calls the factory with the typed structs.
+    built, err := f.Build(ctx, deps, cfg)
+    // ...
+}
+```
 
----
+# 5. Dependency Injection Layer
 
-## 9. Examples & Integration
-- `examples/01-basic-rag`: Sandwich pipeline loaded from YAML with local Markdown evidence.
-- `examples/02-logic-layer-mode`: Focuses on pre-rule normalization and filter emission without custom retrievers.
-- `examples/03-custom-prompt`: Overrides the default prompt template via configuration.
-- `examples/04-declarative-flow`: Runs a Datalog-defined flow featuring stage skipping and LLM opt-out.
-- `examples/05-chat-with-data`: Full Sandwich pipeline using `.env`, `providers/all`, and vector retrieval.
-- `examples/06-schema-validation`: Demonstrates schema parser integration and post-rule enforcement.
-- `examples/07-rdf-knowledge-base`: Consumes RDF triples and surfaces canonicalized metadata through rules.
-- `examples/08-symbolic-rag`: Emphasizes deterministic post-rule gating.
-- `examples/09-genkit-tool`: Shows Genkit tool registration inside orchestrated flows.
-- `examples/10_chatbot`: Chatbot sample wiring stateful sessions.
+The builder implements the `diapi.Builder` interface, which exposes methods like `GetEmbedder(name)` and `GetVectorStore(name)`. This allows component handlers and factories to request specific, named dependencies.
 
----
+*   `diapi.Builder`: The core DI interface, implemented by `manglekit.Builder`.
+*   The handler for a given component is responsible for using the `diapi.Builder` to construct the correct dependency struct for its factory.
 
-## 10. Testing Coverage
-- `pipeline/sandwich_test.go` covers the happy path, retriever failures, pre-rule denials, and fallback thresholds.
-- `pipeline/declarative/orchestrator_test.go` validates flow resolution, tool dispatch, and denial handling.
-- Provider suites exercise BM25 indexing, dense/hybrid retrieval, cosine reranking, embedders, and Mangle rule evaluation.
-- Additional targets: localvec lifecycle, tool dependency resolution ordering, and LLM error handling.
+Circular dependencies are prevented by the hard-coded linear build order defined in `builder.go`.
 
----
+# 6. Provider Family Details
 
-## 11. Open Items / Known Issues
-- **Resolved:** Global registry state hinders testing. (The registry is now an injected instance).
-- **Resolved:** Lack of type safety due to `any` and reflection in factories. (Factories are now strongly-typed).
-- **Resolved:** Builder is not OCP compliant. (Provider-specific logic has been moved into their respective factories).
-- **Duplicated orchestration logic:** Conversational state handling exists in both orchestrators and could be centralized.
-- **LLM `MaxTokens` ignored:** Current OpenAI/Google clients do not propagate `req.MaxTokens`, so orchestrator defaults cannot constrain completion length.
-- **Hybrid RRF constant:** `internal/providers/hybrid/hybrid.go` uses a hard‑coded `k=60` with no configuration hook.
-- **Context propagation:** Some providers may not consistently thread `context.Context` through external calls.
+### LLM: `openai`
+*   **Handler:** `internal/providers/llm/handler.go`
+*   **Factory Entrypoint:** `openai.New`
+*   **Registered Key:** `openai`
+*   **Config Struct:** `openai.Options`
+*   **Dependencies:** `diapi.LLMDeps` (constructed by the handler).
 
----
+### Retriever: `hybrid`
+*   **Handler:** `internal/providers/retrievers/handler.go`
+*   **Factory Entrypoint:** `hybrid.New`
+*   **Registered Key:** `hybrid`
+*   **Config Struct:** `hybrid.HybridOptions`
+*   **Dependencies:** `diapi.RetrieverDeps` (constructed by the handler). The factory uses `deps.SubRetrievers` to access its dependencies.
 
-## 12. Extension Hooks
-- Register providers via `manglekit.Register*` and a typed options struct mirrored in `typemap.go`.
-- Converters and schema parsers register under `Registry.Component`/`Registry.SchemaParser` and can be referenced in `core.MangleOptions`.
-- Declarative flows extend `config.tools`; prefer explicit dependency keys (e.g., `retriever: "hybrid"`, `embedder: "my_embedder"`) over ambiguous strings.
+# 7. Configuration Binding
 
----
+Configuration from YAML is mapped to provider-specific `Options` structs using `mapstructure`. The `sdk.FromConfig` function looks up the `reflect.Type` of a provider's `Options` struct in the registry and uses it to decode the raw `map[string]any` from the YAML.
 
-## 13. Alignment with HLD
-- Principles (SDK-first, dual orchestrators, registry-driven extensibility, fail-fast construction, stateless engines with external state) match HLD §1.2.
-- Components map to packages: builder/config/registry manage dependency graphs; providers cover BM25/dense/hybrid retrievers, cosine reranker, Google/OpenAI embedders and LLMs, localvec vector store, Mangle rules and schema parsing; orchestrators ship as Sandwich and Declarative implementations.
-- Observability, lifecycle, and usage patterns align with HLD §4 via examples 01–10.
-- Non-functionals—concurrency, scaling, enforcement via rules, and observability hooks—align with HLD §5; open items tracked in §11.
+**YAML Example (`config.yaml`):**
+```yaml
+retrievers:
+  - name: my_hybrid
+    provider: hybrid
+    options:
+      retrievers: ["bm25", "dense"]
+      rrf_k: 60.0
+```
+
+**Go Mapping:**
+The loader finds the `hybrid.HybridOptions` type associated with the `hybrid` retriever, creates an instance of it, and `mapstructure` decodes the `options` map into the struct. This typed options object is then passed to `builder.With()`.
+
+# 8. Lifecycle & Resource Management
+
+Resource cleanup is handled via the `core.ResourceCloser` function type.
+
+1.  A `ComponentHandler` is responsible for checking if a newly built component has a `Close(ctx) error` method.
+2.  If it does, the handler returns the method as a `core.ResourceCloser`.
+3.  The `Builder` collects all returned `ResourceCloser` functions.
+4.  This list is passed to the final orchestrator inside the `core.Resolved` struct.
+5.  The orchestrator's `Close` method iterates through these functions and executes them, ensuring graceful shutdown.
+
+# 9. Logging & Observability Hooks
+
+The `core.Observability` struct (logger, tracer, meter) is the central point for instrumentation. It is configured on the `Builder` and passed to the final orchestrator via the `core.Resolved` struct. The `Sandwich` orchestrator then passes the logger and meter to each of its pipeline stages.
+
+# 10. Example Construction Path
+
+Tracing the `hybrid` retriever:
+1.  **Config:** YAML defines a retriever named `my_hybrid` with provider `hybrid`.
+2.  **SDK Loader:** `sdk.FromConfig` finds the `hybrid.HybridOptions` type, decodes the YAML into it, and calls `builder.With("my_hybrid", hybrid.HybridOptions{...})`.
+3.  **Build Process:**
+    *   The `buildAll` method reaches `core.KindRetriever`.
+    *   It gets the retriever `ComponentHandler` from the registry.
+    *   It calls `handler.BuildComponent` for the `my_hybrid` component.
+4.  **Handler Execution (Multiplexer):**
+    *   The `retrievers.Handler` acts as a multiplexer. It performs a type switch on the provider's `Options` struct (`cfg`) to determine which dependency struct to build.
+    *   For `hybrid.HybridOptions`, it constructs `diapi.RetrieverDeps`, resolving the sub-retrievers named in the config (e.g., `bm25`, `dense`) from the `resolved` map.
+    *   For `dense.DenseOptions`, it would construct `diapi.DenseRetrieverDeps` instead.
+5.  **Factory Execution:**
+    *   The handler gets the `hybrid` factory from the registry.
+    *   It calls `factory.Build(ctx, diapi.RetrieverDeps{...}, cfg)`.
+    *   The factory correctly consumes the `diapi.RetrieverDeps` struct to access its sub-retrievers.
+6.  **Instance:** The fully constructed `hybrid` retriever is returned to the handler, which places it in the `resolved.Retrievers` map.
+
+# 11. Design Constraints & Guardrails
+
+*   **No Global Singletons:** All component instances are managed by the builder and contained within the orchestrator.
+*   **Stateless Factories & Handlers:** Provider factories and handlers should be stateless.
+*   **Type-Safe DI:** The combination of `ComponentHandler` and `diapi` structs ensures that dependency injection is type-safe without runtime reflection.
+
+# 12. Deviations & Blockers
+
+All known architectural GAPs (GAP-005, GAP-006, GAP-007, GAP-008) have been resolved. The codebase is now in full compliance with the architecture described in this document and in `docs/CONTEXT.md`.
+
+# 13. Changelog
+
+*   **2025-10-25:** Synchronized LLD with final, audited architecture. Updated diagram, construction path, and deviations section to reflect that all architectural GAPs are resolved.
+*   **2025-10-23:** Updated deviations to reflect current gaps (orchestrator handler coverage, hybrid factory signature, declarative state selection). Clarified hybrid construction path note.
+*   **2025-10-20:** Regenerated LLD to reflect the decentralized, handler-based builder architecture. Updated diagrams and construction path to show the new flow. Synchronized deviations with the latest code review.
+*   **2025-10-19:** Initial draft of the LLD.

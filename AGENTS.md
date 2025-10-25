@@ -1,6 +1,6 @@
 # AGENTS.md — Manglekit Coding Agent Configuration (2025.10)
 
-*Last updated: 2025-10-13*
+*Last updated: 2025-10-23*
 
 ---
 
@@ -26,13 +26,17 @@ Coding agents working in this repository should be capable of:
 
 ## 2. File Structure Awareness
 
-Agents must recognize the following key directories and their purposes:
+Agents must recognize the following key locations and their purposes (aligned with repo layout):
 
-* `core/`: Shared data structures and observability interfaces.
-* `builder/`: SDK initialization, registry logic, and provider wiring.
-* `pipeline/`: Execution orchestrators (Sandwich and Declarative).
-* `internal/providers/`: Families of retrievers, rerankers, embedders, LLMs, and vector stores.
-* `docs/`: Technical documentation and agent context files.
+* `core/`: Contracts, types, diapi, handler/factory interfaces, observability.
+* Root: `builder.go`, `registry.go` (builder + registry), `go.mod`.
+* `sdk/`: Config→builder bridge (`sdk.FromConfig`).
+* `config/`: YAML parsing, normalization, validation.
+* `pipeline/`: Orchestrators and stages (Sandwich, Declarative).
+* `internal/providers/`: Families of retrievers, rerankers, LLMs, rules, state, schema parsers.
+* `internal/embedders/`, `internal/vectorstores/`: Embedder and vector store providers and handlers.
+* `providers/all/`: Convenience registrar for standard providers.
+* `docs/`: Technical docs and architecture rules (`docs/rules/manglekit-arch.yml`).
 
 ---
 
@@ -156,7 +160,8 @@ or
 agent_tool_call: update-context --auto
 ```
 
-after any commit that modifies Go source files under `core/`, `builder/`, or `pipeline/`.
+after any commit that modifies Go source files under `core/`, root `builder.go`, or `pipeline/`.
+If `make context-refresh` is unavailable, prefer the agent tool call.
 
 ---
 
@@ -175,9 +180,8 @@ Agents must preserve the following principles:
 
 Agents must maintain or extend test coverage when altering code in these areas:
 
-* `pipeline/sandwich_test.go`
-* `pipeline/declarative/orchestrator_test.go`
-* Provider families under `internal/providers/*`
+* Pipeline orchestrator and stages: `pipeline/sandwich_test.go`, `pipeline/sandwich_selection_test.go`, `pipeline/stage_llm_test.go`, `pipeline/pipeline_test.go`; add or update `pipeline/declarative/*_test.go` when modifying declarative.
+* Provider families under `internal/providers/*`.
 
 Test names should follow `Test<Component>_<Behavior>` naming pattern.
 
@@ -189,3 +193,75 @@ This file defines how coding agents maintain, reason about, and update Manglekit
 The automation described here ensures that `docs/CONTEXT.md` always mirrors the true state of the codebase.
 
 > *“An agent is only as smart as its context — keep it fresh, structured, and faithful.”*
+
+---
+
+## 11. Architecture Rules (Enforced)
+
+These rules codify the new Builder/Registry/Factory/Provider pattern. Agents must adhere to them for every change.
+
+- Layered dependencies
+  - core must not import internal/providers, pipeline, or the root module.
+  - pipeline must not import internal/providers (or any concrete providers).
+  - Providers import only core (and standard/external libs). No provider imports the builder.
+- Provider registration
+  - Every provider exposes an Options struct implementing `core.ProviderOptions` (name + kind) with `yaml` tags for config.
+  - Register providers via the generic `manglekit.Register[T, D, O]` with a typed factory; avoid ad‑hoc maps or stringly registration.
+  - Use typed Deps (from `core/diapi`) in factories. Do not accept the builder as a dependency in factories; handlers construct deps.
+- Handlers per kind
+  - Build logic belongs to `core.ComponentHandler` implementations, one per kind. Handlers assemble `diapi.*Deps` and call factories.
+  - When adding a new kind, include: (1) a handler, (2) a build order slot in `builder.go`, and (3) provider registration.
+- Orchestrators
+  - Orchestrator options implement `core.ProviderOptions` with kind `core.KindOrchestrator`.
+  - Register an orchestrator factory and a matching handler; selection of component names must be explicit in options (no map iteration).
+  - State provider selection must be configured (not “first entry”).
+- Configuration binding
+  - All options must be yaml‑tagged and mapstructure‑friendly; file path fields should use `path:"resolve"` when applicable.
+  - `sdk.FromConfig` is the only bridge from YAML to builder calls; do not parse config inside providers or orchestrators.
+- Observability & lifecycle
+  - No direct stdout prints in production paths; use `core.Logger`.
+  - Collect `core.ResourceCloser` from components (via handler) and drain LIFO in orchestrators.
+  - Record standard metrics for stages and LLM token usage; wire `core.Tracer` if provided.
+
+Automated checks:
+- Keep `docs/rules/manglekit-arch.yml` passing. If a rule must be relaxed, add rationale to `docs/ADR.md` and update the rule.
+- If you add or modify kinds/handlers/factories, update diagrams and Known Gaps in `docs/CONTEXT.md`.
+
+---
+
+## 12. Implementation Checklists
+
+When adding or changing components, follow the checklists below.
+
+- New provider (retriever, reranker, embedder, LLM, vector store, rules, state)
+  - Define `Options` implementing `core.ProviderOptions` with proper `yaml` tags.
+  - If dependencies are required, declare through `diapi` dep marker interfaces (e.g., `EmbedderDep`, `VectorStoreDep`, `SubRetrieversDep`).
+  - Register with `manglekit.Register[T, D, O]` using a typed factory that accepts the matching `diapi.*Deps`.
+  - Ensure a handler for the kind exists (or add one under `internal/providers/<kind>/handler.go`).
+  - Add tests under the provider folder; ensure determinism and lifecycle coverage.
+  - Run context refresh and update Known Gaps if behavior or wiring differs from the standard.
+
+- New orchestrator
+  - Create `Options` implementing `core.ProviderOptions` (kind = `core.KindOrchestrator`).
+  - Register a typed factory and a dedicated handler; avoid arbitrary dependency selection (require names in options).
+  - Cover stage metrics, logging, and closers. Add tests for explicit component selection.
+  - Refresh docs and Known Gaps; update HLD/LLD diagrams if flow semantics differ.
+
+- Core or DI changes
+  - Never import providers or pipeline from core.
+  - If `diapi` contracts change, update all handlers and factories to keep signatures aligned.
+  - Bump `last_updated` across `CONTEXT.md`, `LLD.md`, and refresh `docs/rules/` as needed.
+
+Reject / fix anti‑patterns:
+- Factories that accept the builder directly (use typed deps instead).
+- Orchestrators or providers picking the “first” dependency from a map.
+- init() registration inside providers (use explicit `Register` functions).
+- Magic strings for execution context; use typed contexts or adapters where applicable.
+
+---
+
+## 13. Post‑Change Actions
+
+- Run tests: `go test ./...` and ensure provider/orchestrator coverage.
+- Run static checks that use `docs/rules/manglekit-arch.yml`.
+- Trigger context update: `make context-refresh` or `agent_tool_call: update-context --auto`.

@@ -8,37 +8,29 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/localvec"
 	"gopkg.in/yaml.v3"
 )
 
+// Options provides configuration for the local vector store.
+type Options struct {
+	// Path is the file system path to the directory containing markdown files to be indexed.
+	Path string `yaml:"path" path:"resolve"`
+}
+
+// ProviderKind returns the kind of the provider.
+func (o Options) ProviderKind() core.Kind { return core.KindVectorStore }
+
+// ProviderName returns the name of the provider.
+func (o Options) ProviderName() string { return "localvec" }
+
 const (
 	collectionName = "manglekit-localvec-collection"
 )
 
-func Register(r *manglekit.Registry) {
-	r.RegisterVectorStore("localvec", func(ctx context.Context, deps diapi.VectorStoreDeps, cfg any) (core.VectorStore, error) {
-		var opts core.LocalvecOptions
-		if cfg != nil {
-			if typedOpts, ok := cfg.(*core.LocalvecOptions); ok {
-				opts = *typedOpts
-			} else {
-				return nil, fmt.Errorf("invalid options type, expected *core.LocalvecOptions, got %T", cfg)
-			}
-		}
-
-		if deps.Embedder == nil {
-			return nil, fmt.Errorf("missing required dependency 'embedder' of type ai.Embedder")
-		}
-		return New(ctx, opts, deps.Embedder)
-	})
-	r.RegisterOptions("localvec", (*core.LocalvecOptions)(nil))
-}
 
 // LocalVecStore implements the core.VectorStore interface using Genkit's localvec.
 type LocalVecStore struct {
@@ -58,7 +50,7 @@ func (l *LocalVecStore) Close(ctx context.Context) error {
 }
 
 // New creates a new LocalVecStore with explicit dependencies.
-func New(ctx context.Context, opts core.LocalvecOptions, embedder ai.Embedder) (core.VectorStore, error) {
+func New(ctx context.Context, opts Options, embedder ai.Embedder) (core.VectorStore, error) {
 	if embedder == nil {
 		return nil, fmt.Errorf("localvec: an embedder is required")
 	}

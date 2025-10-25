@@ -1,45 +1,35 @@
-// Package all provides a convenient way to register all standard Manglekit providers.
+// Package all provides a function to register all standard Manglekit providers.
 package all
 
 import (
-	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/internal/embedders/google"
-	"github.com/duynguyendang/manglekit/internal/embedders/openai"
-	"github.com/duynguyendang/manglekit/internal/providers/bm25"
-	"github.com/duynguyendang/manglekit/internal/providers/dense"
-	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/embedders"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
-	"github.com/duynguyendang/manglekit/internal/providers/mangle"
-	"github.com/duynguyendang/manglekit/internal/providers/mock"
 	"github.com/duynguyendang/manglekit/internal/providers/orchestrators"
-	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
-	"github.com/duynguyendang/manglekit/internal/providers/retrievers/inmemory"
-	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
-	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
-	inmemorystate "github.com/duynguyendang/manglekit/internal/providers/state/inmemory"
-	"github.com/duynguyendang/manglekit/internal/providers/state/redis"
-	"github.com/duynguyendang/manglekit/providers"
+	"github.com/duynguyendang/manglekit/internal/providers/rerank"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
+	"github.com/duynguyendang/manglekit/internal/providers/rules"
+	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers"
+	"github.com/duynguyendang/manglekit/internal/providers/state"
+	"github.com/duynguyendang/manglekit/internal/vectorstores"
 )
 
-// Standard is a provider set that includes all standard Manglekit providers.
-var Standard = providers.NewSet().
-	With(orchestrators.Register).
-	With(llm.Register).
-	With(google.Register).
-	With(openai.Register).
-	With(bm25.Register).
-	With(dense.Register).
-	With(hybrid.Register).
-	With(inmemory.Register).
-	With(cosine.Register).
-	With(mangle.Register).
-	With(jsonschema.Register).
-	With(rdf.Register).
-	With(inmemorystate.Register).
-	With(redis.Register).
-	With(mock.Register)
+// ComponentHandlers collects ALL handlers for the Builder
+func ComponentHandlers() []core.ComponentHandler {
+	// Start with standard component handlers
+	handlers := []core.ComponentHandler{
+		retrievers.NewHandler(),
+		llm.NewHandler(),
+		rerank.NewHandler(),
+		rules.NewHandler(),
+		schemaparsers.NewHandler(),
+		state.NewHandler(),
+		embedders.NewHandler(),
+		vectorstores.NewHandler(),
+	}
 
-// RegisterAll applies all standard provider registrations to the given registry.
-func RegisterAll(r *manglekit.Registry) {
-	Standard.ApplyTo(r)
+	// Add the orchestrator handlers to the list
+	handlers = append(handlers, orchestrators.Handlers()...)
+
+	return handlers
 }

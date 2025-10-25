@@ -1,32 +1,66 @@
 // Package diapi provides the type-safe dependency injection contracts for Manglekit.
-//
-// This package is designed to be a low-level, neutral dependency that is imported
-// by provider factories and the core builder. It MUST NOT import the builder,
-// registry, or any other high-level packages to avoid circular dependencies.
-//
-// Its purpose is to define the "what" (the dependency contracts), while the
-// builder's responsibility is to provide the "how" (the concrete implementations).
 package diapi
 
 import (
-	"context"
-
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 )
 
-// BuildRetrieverFunc defines a capability for building a retriever instance by name.
-// This is used by components like the hybrid retriever to dynamically construct
-// their sub-components without depending on the entire builder.
-type BuildRetrieverFunc func(ctx context.Context, name string, params map[string]any) (retrieve.Retriever, error)
+// Builder defines the dependency injection interface for the builder.
+// It provides methods for handlers to look up already-built components by name.
+type Builder interface {
+	GetEmbedder(name string) (ai.Embedder, error)
+	GetLLMClient(name string) (core.LLMClient, error)
+	GetVectorStore(name string) (core.VectorStore, error)
+	GetRetriever(name string) (core.Retriever, error)
+	GetReranker(name string) (core.Reranker, error)
+	GetStateProvider(name string) (core.StateProvider, error)
+	GetRuleSet(name string) (core.RuleSet, error)
+	GetSchemaParser(name string) (core.SchemaParser, error)
+	Genkit() *genkit.Genkit
+}
 
-// RetrieverDeps provides all possible dependencies that a retriever factory might need.
+// APIKeyProvider is an interface for provider options that expose an API key.
+type APIKeyProvider interface {
+	GetAPIKey() string
+}
+
+// BaseURLProvider is an interface for provider options that expose a base URL.
+type BaseURLProvider interface {
+	GetBaseURL() string
+}
+
+// EmbedderDep is an interface for components that depend on an `ai.Embedder`.
+type EmbedderDep interface {
+	GetEmbedder() string
+}
+
+// VectorStoreDep is an interface for components that depend on a `core.VectorStore`.
+type VectorStoreDep interface {
+	GetVectorStore() string
+}
+
+// SubRetrieversDep is an interface for components that depend on a list of
+// sub-retrievers, identified by their names.
+type SubRetrieversDep interface {
+	GetSubRetrievers() []string
+}
+
+// ProviderWithOptions is an interface for provider options that expose the underlying options.
+type ProviderWithOptions interface {
+	GetProviderOptions() any
+}
+
+// RetrieverDeps provides dependencies for a retriever that depends on other sub-retrievers.
 type RetrieverDeps struct {
-	Embedder          ai.Embedder
-	VectorStore       core.VectorStore
-	BuildSubRetriever BuildRetrieverFunc // Capability, not a Builder reference.
+	SubRetrievers map[string]core.Retriever
+}
+
+// DenseRetrieverDeps provides dependencies for a dense retriever.
+type DenseRetrieverDeps struct {
+	Embedder    ai.Embedder
+	VectorStore core.VectorStore
 }
 
 // LLMDeps provides all possible dependencies that an LLM factory might need.

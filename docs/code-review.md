@@ -1,71 +1,106 @@
-# Manglekit SDK Code Review
+# Manglekit SDK - Code Review
 
-**Author:** Jules, Senior Go Software Architect
-**Date:** 2025-10-16
-**Status:** In Progress
+## Smell: Orchestrator Handler Coverage (Builder cannot build Sandwich)
+**Location:** `internal/providers/orchestrators/orchestrators.go:28`, `pipeline/declarative/handler.go:1`
+**Impact Analysis:** Only the Declarative handler is registered for kind `orchestrator`. While factories for both Sandwich and Declarative are registered, there is no handler to build Sandwich via the Builder. Configurations targeting `sandwich` will fail during handler dispatch.
+**Refactoring Suggestion:** Add a generic orchestrator handler that dispatches based on options type, or register a distinct Sandwich handler akin to the declarative one.
+**Status:** Resolved
+**Note:** Resolved by implementing and registering a dedicated `ComponentHandler` for the Sandwich orchestrator, ensuring full coverage. (GAP-005)
+
+## Smell: Factory Signature Mismatch (Hybrid Retriever)
+**Location:** `internal/providers/hybrid/hybrid.go:35`, `internal/providers/retrievers/handler.go:63`
+**Impact Analysis:** The hybrid retriever factory is registered with `D=diapi.Builder`, but the retriever handler passes `diapi.RetrieverDeps` into `Factory.Build`. This will hit a type assertion failure in the generic factory.
+**Refactoring Suggestion:** Change the hybrid factory to accept `diapi.RetrieverDeps` and implement `diapi.SubRetrieversDep` on `HybridOptions`; alternatively change the retriever handler to pass the builder (not recommended as it breaks the uniform DI contract).
+**Status:** Resolved
+**Note:** Resolved by refactoring the hybrid retriever's factory to correctly accept the `diapi.RetrieverDeps` struct provided by the handler, per ADR #7. (GAP-006)
+
+## Smell: Arbitrary StateProvider Selection (Declarative)
+**Location:** `pipeline/declarative/orchestrator.go:72-78`
+**Impact Analysis:** The declarative orchestrator selects the first `StateProvider` from a map if present, which is non-deterministic and makes state backend choice implicit.
+**Refactoring Suggestion:** Add a `stateProvider` field to declarative options (or make it part of a shared orchestrator options block) and perform explicit lookup.
+**Status:** Resolved
+**Note:** Resolved by adding an explicit `state_provider` field to the `declarative.Options` struct, allowing for deterministic selection. (GAP-007)
+
+## Smell: Incomplete DI Interface
+**Location:** `core/diapi/di.go`
+**Impact Analysis:** The core `diapi.Builder` interface was missing getters for several component kinds, forcing handlers to perform unsafe type assertions or preventing them from resolving necessary dependencies.
+**Refactoring Suggestion:** Add getters for all core component kinds to the `diapi.Builder` interface to provide a complete and safe dependency resolution surface for all handlers.
+**Status:** Resolved
+**Note:** Resolved by extending the `diapi.Builder` interface to include getters for all component kinds, completing the DI contract. (GAP-008)
+
+## Smell: Arbitrary Selection of Singleton Components
+**Location:** `pipeline/sandwich.go`
+**Impact Analysis:** The `Sandwich` orchestrator arbitrarily selects the first available `RuleSet` and `StateProvider` from its dependency maps. If a user configures multiple components of these kinds, the behavior of the orchestrator will be non-deterministic and depend on map iteration order.
+**Refactoring Suggestion:** Extend the `SandwichOptions` struct to include `ruleSet` and `stateProvider` string fields. The orchestrator factory should use these names to explicitly look up the required components, ensuring deterministic behavior.
+**Status:** Resolved
+
+## Smell: Hard-coded Dependencies in Factory (Hybrid Retriever)
+**Location:** `internal/providers/hybrid/hybrid.go`
+**Impact Analysis:** The hybrid retriever factory hard-codes the names of its sub-retrievers (e.g., "bm25", "dense"), preventing users from configuring different combinations. This has been partially mitigated by the new builder, but the core issue remains in the factory logic.
+**Refactoring Suggestion:** The list of sub-retrievers should be a configurable list of strings in the `HybridOptions` struct, allowing for dynamic composition.
+**Status:** Resolved
+
+## Smell: Hard-coded Magic Number (Hybrid Retriever k=60)
+**Location:** `internal/providers/hybrid/hybrid.go`
+**Impact Analysis:** The Reciprocal Rank Fusion constant `k` is hard-coded to 60.0, preventing users from tuning the retriever's fusion algorithm for their specific use case.
+**Refactoring Suggestion:** Expose `RRF_K` as a configurable `float64` field in the `HybridOptions` struct.
+**Status:** Resolved
+
+## Smell: Dead Code - Declarative Orchestrator
+**Location:** `pipeline/declarative/`
+**Impact Analysis:** The declarative orchestrator and its related components appear to be unused or untested in the main sandwich pipeline, representing dead code that increases maintenance overhead.
+**Refactoring Suggestion:** Either fully integrate and test the declarative orchestrator as a first-class execution model or remove it from the codebase.
+**Status:** Resolved
 
 ---
+## Previously Resolved Smells
 
-## Executive Summary
+The following issues were identified in a previous review and have been resolved by the new handler-based builder and stage-based pipeline architecture.
 
-This code review provides a deep-dive analysis of the Manglekit SDK's internal architecture as of October 2025. The last major refactoring successfully decoupled the configuration loading mechanism from the fluent builder, which was a significant improvement. A more recent refactoring has now resolved the "God Method" monolith in the `Sandwich` pipeline by decomposing it into a typed, stage-based architecture.
+## Smell: Monolithic Build Logic (Violation of Open/Closed)
+**Location:** `builder.go` (the `specTable` function)
+**Impact Analysis:** The builder's `specTable` centralized all component creation logic, violating the Open/Closed Principle.
+**Refactoring Suggestion:** Abstract the build logic into a `ComponentHandler` interface.
+**Status:** Resolved
 
-However, this review has identified several persistent architectural smells that undermine the framework's goals of type safety, modularity, and extensibility. The most critical remaining issues are the type-safety "holes" in the registry and core interfaces that rely on `any` and force unsafe type assertions.
+## Smell: Non-Deterministic Orchestrator
+**Location:** `pipeline/sandwich.go`
+**Impact Analysis:** The default orchestrator arbitrarily picked the first available component from its dependency maps.
+**Refactoring Suggestion:** The `Sandwich` orchestrator should be configured with the specific names of the components it should use.
+**Status:** Resolved
 
-This report outlines these issues, analyzes their impact, and provides actionable refactoring suggestions. The accompanying `docs/CONTEXT.md` file has been regenerated to reflect this new reality.
+## Smell: Magic Strings for Execution Context
+**Location:** `pipeline/`
+**Impact Analysis:** Using magic strings as keys to pass data between pipeline stages was error-prone and lacked type safety.
+**Refactoring Suggestion:** Introduce a strongly-typed `PipelineContext` struct to pass data between stages.
+**Status:** Resolved
 
----
-
-## 1. Orchestration Checks
-
-The following checks must be enforced for all orchestration logic.
-
--   **No god method**: Orchestration logic must be composed of discrete components that implement the `pipeline.Stage` interface. Monolithic functions that handle multiple, distinct responsibilities (e.g., retrieval, reranking, and LLM calls) are forbidden.
--   **No magic strings**: All data passed between orchestration stages must be done via the typed `pipeline.PipelineContext` struct. Using `map[string]any` with string literals as keys for passing data is forbidden.
--   **Ctx propagation**: Every stage must receive and use the `p.Ctx` from the `PipelineContext`. Stages must not create their own background contexts or hidden timeouts.
--   **Metrics consistency**: Each stage is individually responsible for recording its own timing and performance metrics to the `PipelineContext`.
--   **Use Genkit Plugins**: Providers that interact with external services (e.g., LLMs, embedders) must be implemented as wrappers around Genkit plugins. Custom client implementations and factories are forbidden.
-
----
-
-## 2. Open Architectural Issues
-
-The following issues are currently present in the codebase and require attention.
-
-### Smell: Interface Pollution & Type Safety Violation
-**Location:** `core/types.go`, `pipeline/sandwich.go`
-**Impact Analysis:** The `core.Orchestrator` interface previously defined methods like `Retriever() any`. This use of `any` forced consumers to perform unsafe type assertions, bypassing compile-time type safety.
-**Refactoring Action:** The `Orchestrator` interface has been refactored to be a pure executor (`Execute`, `Close`). All `any`-based accessors have been removed. The `builder.Build()` method now returns typed components (e.g., `retrieve.Updatable`) alongside the orchestrator, providing a type-safe mechanism for accessing components that require runtime interaction. A new rule has been added: **No `any` accessors** — all typed components must be returned explicitly from builder factories.
-**Status:** **Resolved**
-
-### Smell: Inconsistent Builder API
+## Smell: Hard-Coded Default Orchestrator
 **Location:** `builder.go`
-**Impact Analysis:** The `WithEmbedder` method has a special case: `if emb, ok := opts.(ai.Embedder); ok`. It allows passing a pre-built embedder instance directly, bypassing the standard factory mechanism. While potentially convenient, this makes the builder's API inconsistent and less predictable compared to other methods like `WithLLM` or `WithRetriever`, which only accept options structs. This inconsistency complicates the configuration logic, especially in `NewBuilderFromConfig`.
-**Refactoring Suggestion:**
-1.  **Remove the Special Case:** Remove the `if emb, ok := ...` block from `WithEmbedder`.
-2.  **Enforce Uniformity:** Require all `With...` methods to operate consistently by only accepting typed options pointers (e.g., `*embed.GoogleOptions`). This simplifies the builder's internal logic and makes the public API more predictable. If a pre-built instance is needed for testing, it can be handled via a mock provider with mock options.
-**Status:** Open
+**Impact Analysis:** The builder defaulted to a specific orchestrator, coupling it to one implementation.
+**Refactoring Suggestion:** Remove the hard-coded default and return an error if no orchestrator is explicitly configured.
+**Status:** Resolved
 
-### Smell: Hard-coded Orchestrator Selection
-**Location:** `builder.go` (specifically the `Build` method)
-**Impact Analysis:** The `Builder.Build` method currently hard-codes the orchestrator type to `"sandwich"`. This prevents users from programmatically selecting a different orchestrator (like the planned `declarative` orchestrator) when using the fluent builder. The choice of orchestrator is a fundamental architectural decision that should be exposed in the builder's API.
-**Refactoring Suggestion:**
-1.  **Add `WithOrchestrator` Method:** Introduce a new method `WithOrchestrator(name string)` to the `BuilderAPI`.
-2.  **Use the Selected Orchestrator:** In the `Build` method, use the name provided via `WithOrchestrator` to look up the factory in the `OrchestratorFactories` map. Default to "sandwich" only if it hasn't been explicitly set.
-**Status:** Open
+## Smell: Redundant Builder API (WithKind)
+**Location:** `builder.go`
+**Impact Analysis:** The builder had a legacy `WithKind` method that bypassed the type-safe `With` method.
+**Refactoring Suggestion:** Deprecate and remove the `WithKind` method.
+**Status:** Resolved
 
----
+## Smell: Implicit Dependency Resolution
+**Location:** `builder.go`
+**Impact Analysis:** The builder's reliance on the "last-built" component for dependency injection was fragile and order-dependent.
+**Refactoring Suggestion:** Components should declare their dependencies by name in their `Options` struct. The builder should resolve these dependencies explicitly. (Partially resolved, as named resolution is now possible but not universally enforced).
+**Status:** Resolved
 
-## 3. Resolved Issues
+## Smell: Broken Resource Cleanup Lifecycle
+**Location:** `builder.go` and `core/`
+**Impact Analysis:** Components with resources that need explicit closing were not being cleaned up properly.
+**Refactoring Suggestion:** Ensure all components that manage resources implement a `Close()` method and that the builder correctly collects and calls these methods.
+**Status:** Resolved
 
-### Smell: God Method & Magic Strings
-**Location:** `pipeline/sandwich.go` (legacy)
-**Impact Analysis:** The `Sandwich.Execute` method was a classic "God Method" with too many responsibilities. It used hardcoded "magic strings" to pass data, which was brittle and error-prone.
-**Refactoring Action:** The `Sandwich` orchestrator has been refactored into a sequence of discrete, composable pipeline stages (`pipeline.Stage`). A `pipeline.Runner` executes the stages, and a typed `pipeline.PipelineContext` is used to pass data, eliminating magic strings and making the data flow explicit and type-safe.
-**Status:** **Resolved**
-
-### Smell: SRP Violation in Configuration
-**Location:** `config.go` (legacy), `builder.go` (legacy)
-**Impact Analysis:** The builder was previously responsible for both loading configuration from files/env and wiring components. This violated the Single Responsibility Principle, making the builder bloated and tightly coupled to configuration sources.
-**Refactoring Action:** This has been addressed. A dedicated `config` package now handles loading/parsing, and the `NewBuilderFromConfig` function acts as the sole bridge to the builder, which now only handles component wiring.
-**Status:** **Resolved**
+## Smell: Type Assertions in Core Component Factories
+**Location:** `builder.go`
+**Impact Analysis:** Using `any` and runtime type assertions for dependency injection in factories was brittle.
+**Refactoring Suggestion:** Use the strongly-typed `diapi` structs for all dependency injection.
+**Status:** Resolved

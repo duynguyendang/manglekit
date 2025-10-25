@@ -13,7 +13,6 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 	obslogger "github.com/duynguyendang/manglekit/internal/logger"
-	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/go-nlp/bm25"
 	"github.com/go-nlp/tfidf"
@@ -25,17 +24,30 @@ const (
 	b_param = 0.75
 )
 
+// BM25Options provides a type-safe way to configure the BM25 retriever, which
+// performs keyword-based search.
+type BM25Options struct {
+	// Path is the file system path to a directory of documents that will be
+	// indexed by the retriever for keyword search.
+	Path string `yaml:"path" path:"resolve"`
+	// TopK specifies the default number of documents to return if a different
+	// limit is not specified in the retrieval request.
+	TopK int `yaml:"topK"`
+	// Logger is the logger to be used by the retriever. If nil, a default
+	// logger will be used.
+	Logger core.Logger `yaml:"-"`
+}
+
+func (o BM25Options) ProviderName() string { return "bm25" }
+func (o BM25Options) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o BM25Options) GetProviderOptions() any { return o }
+
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("bm25", func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error) {
-		typedOpts, ok := cfg.(*retrieve.BM25Options)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type for bm25: expected *retrieve.BM25Options, got %T", cfg)
-		}
-		return New(*typedOpts)
-	})
-	if err := r.RegisterOptions("bm25", (*retrieve.BM25Options)(nil)); err != nil {
-		panic(err)
-	}
+	manglekit.Register(r, BM25Options{},
+		func(ctx context.Context, deps diapi.NoopDeps, cfg BM25Options) (core.Retriever, error) {
+			return New(cfg)
+		},
+	)
 }
 
 // tfidfDoc is a wrapper for ai.Document to implement the tfidf.Document interface.
@@ -75,9 +87,9 @@ type BM25 struct {
 //
 // opts are the configuration options, requiring at least a `Path` to the
 // directory of documents to be indexed.
-// It returns an initialized `retrieve.Retriever` or an error if the document
+// It returns an initialized `core.Retriever` or an error if the document
 // path is invalid or document loading/parsing fails.
-func New(opts retrieve.BM25Options) (retrieve.Retriever, error) {
+func New(opts BM25Options) (core.Retriever, error) {
 	if opts.Path == "" {
 		return nil, fmt.Errorf("path option is required for bm25 retriever")
 	}
@@ -140,9 +152,9 @@ func New(opts retrieve.BM25Options) (retrieve.Retriever, error) {
 //
 // ctx is the context for the API call.
 // req contains the query string and the number of results to return (`TopK`).
-// It returns a `retrieve.Result` containing the ranked documents or an error if
+// It returns a `core.RetrieveResult` containing the ranked documents or an error if
 // the retrieval fails.
-func (b *BM25) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Result, error) {
+func (b *BM25) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
 	queryTokens := strings.Fields(strings.ToLower(req.Query))
 	var queryIDs []int
 	for _, token := range queryTokens {
@@ -163,6 +175,9 @@ func (b *BM25) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Res
 	for _, score := range docScores {
 		if limit > 0 && len(results) >= limit {
 			break
+		}
+		if score.Score <= 0 {
+			continue
 		}
 		doc := b.docs[score.ID]
 		if len(doc.Content) > 0 {
@@ -185,7 +200,7 @@ func (b *BM25) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Res
 			})
 		}
 	}
-	return retrieve.Result{Docs: results}, nil
+	return core.RetrieveResult{Docs: results}, nil
 }
 
 func parseFrontMatter(fileContent []byte, logger core.Logger) (map[string]any, []byte) {
@@ -199,7 +214,9 @@ func parseFrontMatter(fileContent []byte, logger core.Logger) (map[string]any, [
 	}
 	var metadata map[string]any
 	if err := yaml.Unmarshal(parts[1], &metadata); err != nil {
-		logger.Warnf("could not parse front matter: %v, file content will be used as is", err)
+		if logger != nil {
+			logger.Warnf("could not parse front matter: %v, file content will be used as is", err)
+		}
 		return nil, fileContent
 	}
 	return metadata, parts[2]

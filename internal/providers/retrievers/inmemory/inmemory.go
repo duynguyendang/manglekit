@@ -6,19 +6,31 @@ package inmemory
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 	obslogger "github.com/duynguyendang/manglekit/internal/logger"
-	"github.com/duynguyendang/manglekit/retrieve"
 )
+
+// InMemoryOptions provides typed configuration for the in-memory retriever.
+// This retriever is useful for simple applications, testing, or scenarios where
+// the document set is small and can be held entirely in memory.
+type InMemoryOptions struct {
+	// Documents is a slice of core.Doc that will be pre-loaded into the
+	// retriever's memory store upon initialization.
+	Documents []core.Doc
+	// Logger provides structured logging for lifecycle events.
+	Logger core.Logger `yaml:"-"`
+}
+
+func (o InMemoryOptions) ProviderName() string { return "in-memory" }
+func (o InMemoryOptions) ProviderKind() core.Kind   { return core.KindRetriever }
 
 // InMemoryRetriever is a simple, thread-safe in-memory document store. It uses
 // a map for efficient O(1) lookups, upserts, and deletes by document ID.
-// It implements both the `retrieve.Retriever` and `retrieve.Updatable` interfaces,
+// It implements both the `core.Retriever` and `retrieve.Updatable` interfaces,
 // making it a fully functional component for dynamic applications.
 type InMemoryRetriever struct {
 	mu   sync.RWMutex
@@ -27,29 +39,20 @@ type InMemoryRetriever struct {
 }
 
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("in-memory", func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error) {
-		var opts retrieve.InMemoryOptions
-		if cfg != nil {
-			if typedOpts, ok := cfg.(*retrieve.InMemoryOptions); ok {
-				opts = *typedOpts
-			} else {
-				return nil, fmt.Errorf("invalid options type, expected *retrieve.InMemoryOptions, got %T", cfg)
-			}
-		}
-		return New(opts)
-	})
-	if err := r.RegisterOptions("in-memory", (*retrieve.InMemoryOptions)(nil)); err != nil {
-		panic(err)
-	}
+	manglekit.Register(r, InMemoryOptions{},
+		func(ctx context.Context, deps diapi.RetrieverDeps, cfg InMemoryOptions) (core.Retriever, error) {
+			return New(cfg)
+		},
+	)
 }
 
 // New is the constructor for the InMemoryRetriever. It is registered with the
 // MangleKit registry for the "in-memory" provider name.
 //
 // opts can contain an initial set of documents to populate the retriever with.
-// It returns an initialized `retrieve.Retriever` or an error if any provided
+// It returns an initialized `core.Retriever` or an error if any provided
 // document is missing a required ID.
-func New(opts retrieve.InMemoryOptions) (retrieve.Retriever, error) {
+func New(opts InMemoryOptions) (core.Retriever, error) {
 	docMap := make(map[string]core.Doc)
 	// opts.Documents can be nil if the retriever is initialized empty.
 	if opts.Documents != nil {
@@ -77,8 +80,8 @@ func New(opts retrieve.InMemoryOptions) (retrieve.Retriever, error) {
 // query text; it returns all stored documents, respecting the requested `TopK`
 // limit. This method is thread-safe.
 //
-// It satisfies the `retrieve.Retriever` interface.
-func (r *InMemoryRetriever) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Result, error) {
+// It satisfies the `core.Retriever` interface.
+func (r *InMemoryRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -92,7 +95,7 @@ func (r *InMemoryRetriever) Retrieve(ctx context.Context, req retrieve.Request) 
 		resultDocs = resultDocs[:req.TopK]
 	}
 
-	return retrieve.Result{Docs: resultDocs}, nil
+	return core.RetrieveResult{Docs: resultDocs}, nil
 }
 
 // Upsert adds new documents to the store or updates existing ones if they share

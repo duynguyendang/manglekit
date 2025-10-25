@@ -5,80 +5,120 @@ import (
 	"fmt"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/llm"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
+	"github.com/openai/openai-go/option"
 )
 
+// OpenAIOptions provides typed configuration for OpenAI and compatible language
+// models (e.g., Groq). It specifies the model to use and how to authenticate.
+type OpenAIOptions struct {
+	// APIKey is the API key for authenticating with the OpenAI or a compatible service.
+	// If not set here, it is often read from an environment variable (e.g., OPENAI_API_KEY).
+	APIKey string `json:"apiKey,omitempty"`
+	// Model is the identifier for the specific model to be used for completions,
+	// for example, "gpt-4-turbo" or "llama3-8b-8192".
+	Model string `json:"model,omitempty"`
+	// PromptTemplate is an optional custom Go template string for formatting the
+	// final prompt that is sent to the LLM. If this is empty, a default
+	// prompt template will be used by the client.
+	PromptTemplate string `json:"promptTemplate,omitempty"`
+	// Temperature controls the randomness of the model's output.
+	Temperature float32 `json:"temperature,omitempty"`
+	// MaxOutputTokens is the maximum number of tokens to generate in the response.
+	MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
+	// BaseURL is an optional override for the OpenAI API base URL. This is useful
+	// for pointing the client to a different compatible endpoint, such as Groq's.
+	BaseURL string `yaml:"base_url,omitempty"`
+}
+
+func (o OpenAIOptions) ProviderName() string { return "openai" }
+func (o OpenAIOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o OpenAIOptions) GetAPIKey() string       { return o.APIKey }
+func (o OpenAIOptions) GetBaseURL() string      { return o.BaseURL }
+
 func RegisterOpenAI(r *manglekit.Registry) {
-	factory := func(ctx context.Context, deps diapi.LLMDeps, cfg any) (llm.Client, error) {
-		opts, ok := cfg.(*llm.OpenAIOptions)
-		if !ok {
-			return nil, fmt.Errorf("invalid options type, expected *llm.OpenAIOptions, got %T", cfg)
-		}
+	// Factory function for OpenAI
+	openAIFactory := func(ctx context.Context, deps diapi.LLMDeps, cfg OpenAIOptions) (core.LLMClient, error) {
 		if deps.Genkit == nil {
 			return nil, fmt.Errorf("missing required dependency 'genkit'")
 		}
-
-		// The Genkit OpenAI plugin is initialized differently. We create the plugin instance
-		// and then get the model from it. The plugin itself is not registered with Genkit
-		// in the same way as other plugins.
-		oai := &openai.OpenAI{
-			APIKey: opts.APIKey,
+		client, err := NewOpenAI(cfg, deps.Genkit)
+		if err != nil {
+			return nil, err
 		}
-		model := oai.Model(deps.Genkit, opts.Model)
-		if model == nil {
-			return nil, fmt.Errorf("failed to get openai model %q from genkit", opts.Model)
-		}
-
-		return NewOpenAI(*opts, model, deps.Genkit), nil
+		return client, nil
 	}
-	r.RegisterLLM("openai", factory)
-	r.RegisterLLM("groq", factory) // Groq uses the same machinery
-	if err := r.RegisterOptions("openai", (*llm.OpenAIOptions)(nil)); err != nil {
-		panic(err)
-	}
-	if err := r.RegisterOptions("groq", (*llm.OpenAIOptions)(nil)); err != nil {
-		panic(err)
-	}
+	manglekit.Register(r, OpenAIOptions{}, openAIFactory)
 }
 
 // OpenAI is a wrapper around a genkit AI model from the OpenAI plugin.
 type OpenAI struct {
-	opts   llm.OpenAIOptions
+	opts   OpenAIOptions
 	model  ai.Model
 	genkit *genkit.Genkit
 }
 
 // NewOpenAI is the constructor for the OpenAI client wrapper.
-func NewOpenAI(opts llm.OpenAIOptions, model ai.Model, g *genkit.Genkit) llm.Client {
+func NewOpenAI(cfg OpenAIOptions, g *genkit.Genkit) (core.LLMClient, error) {
+
+	opts := []option.RequestOption{option.WithAPIKey(cfg.GetAPIKey())}
+	if cfg.GetBaseURL() != "" {
+		opts = append(opts, option.WithBaseURL(cfg.GetBaseURL()))
+	}
+	client := &openai.OpenAI{APIKey: cfg.GetAPIKey(), Opts: opts}
+
+	model := client.Model(g, cfg.Model)
+	if model == nil {
+		return nil, fmt.Errorf("failed to get openai model %q from genkit", cfg.Model)
+	}
 	return &OpenAI{
-		opts:   opts,
+		opts:   cfg,
 		model:  model,
 		genkit: g,
-	}
+	}, nil
 }
 
-// Complete implements the llm.Client interface.
-func (o *OpenAI) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
+// Complete implements the core.LLMClient interface.
+func (o *OpenAI) Complete(ctx context.Context, req core.LLMRequest) (core.LLMResponse, error) {
 	if o.model == nil {
-		return llm.Response{}, fmt.Errorf("openai llm client not initialized with a model")
+		return core.LLMResponse{}, fmt.Errorf("openai llm client not initialized with a model")
+	}
+
+	// Start with default provider options.
+	config := &ai.GenerationCommonConfig{
+		Temperature:     float64(o.opts.Temperature),
+		MaxOutputTokens: o.opts.MaxOutputTokens,
+	}
+
+	// Override with request-specific options if provided.
+	if req.MaxTokens > 0 {
+		config.MaxOutputTokens = req.MaxTokens
 	}
 
 	// Use the standard genkit.Generate function.
 	res, err := genkit.Generate(ctx, o.genkit,
 		ai.WithModel(o.model),
 		ai.WithPrompt(req.Prompt),
-		ai.WithConfig(&ai.GenerationCommonConfig{
-			Temperature: float64(o.opts.Temperature),
-			MaxOutputTokens: o.opts.MaxOutputTokens,
-		}),
+		ai.WithConfig(config),
 	)
 	if err != nil {
-		return llm.Response{}, err
+		return core.LLMResponse{}, err
 	}
 
-	return llm.Response{Text: res.Text()}, nil
+	// Extract token usage.
+	usage := make(map[string]int)
+	if res.Usage != nil {
+		usage["prompt"] = int(res.Usage.InputTokens)
+		usage["completion"] = int(res.Usage.OutputTokens)
+		usage["total"] = int(res.Usage.TotalTokens)
+	}
+
+	return core.LLMResponse{
+		Text:  res.Text(),
+		Usage: usage,
+	}, nil
 }

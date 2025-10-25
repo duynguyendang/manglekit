@@ -18,13 +18,20 @@ import (
 // It is currently empty but is defined for future use and consistency.
 type Options struct{}
 
+func (o Options) ProviderName() string { return "jsonschema" }
+func (o Options) ProviderKind() core.Kind   { return core.KindSchemaParser }
+
 func Register(r *manglekit.Registry) {
-	r.RegisterSchemaParser("jsonschema", func(ctx context.Context, deps diapi.NoopDeps, cfg any) (core.SchemaParser, error) {
-		return New(nil)
-	})
-	if err := r.RegisterOptions("jsonschema", (*Options)(nil)); err != nil {
-		panic(err)
+	must := func(err error) {
+		if err != nil {
+			panic(err)
+		}
 	}
+	must(manglekit.Register(r, Options{},
+		func(ctx context.Context, deps diapi.NoopDeps, cfg Options) (core.SchemaParser, error) {
+			return New(nil)
+		},
+	))
 }
 
 // JSONSchemaParser implements the `core.SchemaParser` interface for parsing

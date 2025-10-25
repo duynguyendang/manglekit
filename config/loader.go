@@ -8,15 +8,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LoadFromYAML reads a YAML configuration from the provided reader and returns a
-// Config object. It also expands environment variables in the YAML content.
-func LoadFromYAML(r io.Reader) (*Config, error) {
-	content, err := io.ReadAll(r)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read from reader: %w", err)
-	}
-
-	expandedContent := []byte(os.ExpandEnv(string(content)))
+// ParseConfig unmarshals a byte slice into a Config object.
+// It also expands environment variables in the YAML content.
+func ParseConfig(data []byte) (*Config, error) {
+	expandedContent := []byte(os.ExpandEnv(string(data)))
 
 	var cfg Config
 	if err := yaml.Unmarshal(expandedContent, &cfg); err != nil {
@@ -26,15 +21,23 @@ func LoadFromYAML(r io.Reader) (*Config, error) {
 	return &cfg, nil
 }
 
-// LoadFromYAMLFile reads a YAML configuration file from the given path.
-func LoadFromYAMLFile(path string) (*Config, error) {
-	f, err := os.Open(path)
+// LoadConfig reads a YAML configuration file from the given path.
+func LoadConfig(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open config file %q: %w", path, err)
+		return nil, fmt.Errorf("failed to read config file %q: %w", path, err)
 	}
-	defer f.Close()
+	return ParseConfig(data)
+}
 
-	return LoadFromYAML(f)
+// LoadFromYAML reads a YAML configuration from the provided reader and returns a
+// Config object. It also expands environment variables in the YAML content.
+func LoadFromYAML(r io.Reader) (*Config, error) {
+	content, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read from reader: %w", err)
+	}
+	return ParseConfig(content)
 }
 
 // LoadFromEnv loads configuration from environment variables.

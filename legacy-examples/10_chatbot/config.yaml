@@ -1,0 +1,25 @@
+orchestrator: "sandwich"
+components:
+  - name: "google-llm"
+    kind: "llm"
+    params:
+      provider: "google"
+      model: "gemini-1.5-flash"
+      apiKey: "${GOOGLE_API_KEY}"
+
+  - name: "in-memory-retriever"
+    kind: "retriever"
+    params:
+      provider: "in-memory"
+      documents:
+        - id: "doc1"
+          text: "Manglekit is a framework for building verifiable RAG applications."
+        - id: "doc2"
+          text: "It uses a declarative, rule-based approach to control the flow of information."
+        - id: "doc3"
+          text: "The capital of France is Paris."
+
+  - name: "in-memory-state"
+    kind: "stateProvider"
+    params:
+      provider: "inmemory"

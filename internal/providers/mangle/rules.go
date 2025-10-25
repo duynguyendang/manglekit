@@ -27,26 +27,14 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	r.RegisterRuleSet("mangle", func(ctx context.Context, deps diapi.RuleSetDeps, cfg any) (core.RuleSet, error) {
-		var opts core.MangleOptions
-		if cfg != nil {
-			if o, ok := cfg.(*core.MangleOptions); ok && o != nil {
-				opts = *o
-			} else if o, ok := cfg.(core.MangleOptions); ok {
-				opts = o
-			} else {
-				return nil, fmt.Errorf("invalid options type, expected *core.MangleOptions or core.MangleOptions, got %T", cfg)
-			}
-		}
-
-		// The registry is no longer passed as a dependency.
-		// For now, we pass nil, as the default converters don't need it.
-		// A future refactoring could inject the specific converter/parser factories needed.
-		return New(ctx, opts, nil)
-	})
-	if err := r.RegisterOptions("mangle", (*core.MangleOptions)(nil)); err != nil {
-		panic(err)
-	}
+	manglekit.Register(r, core.MangleOptions{},
+		func(ctx context.Context, deps diapi.RuleSetDeps, cfg core.MangleOptions) (core.RuleSet, error) {
+			// The registry is no longer passed as a dependency.
+			// For now, we pass nil, as the default converters don't need it.
+			// A future refactoring could inject the specific converter/parser factories needed.
+			return New(ctx, cfg, nil)
+		},
+	)
 }
 
 var builtinRedactions = map[string]*regexp.Regexp{
@@ -192,15 +180,15 @@ func loadConverter(name string, r *manglekit.Registry) (core.FactConverter, erro
 	if r == nil {
 		return nil, fmt.Errorf("cannot load converter '%s': registry is nil", name)
 	}
-	factory, err := manglekit.Get(r.FactConverters, name)
+	factory, err := r.Get(core.Kind("fact_converter"), name)
 	if err != nil {
 		return nil, err
 	}
-	instance, err := factory(context.Background(), diapi.NoopDeps{}, nil)
+	instance, err := factory.Build(context.Background(), diapi.NoopDeps{}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct converter '%s': %w", name, err)
 	}
-	return instance, nil
+	return instance.(core.FactConverter), nil
 }
 
 // parseSchemas handles reading and parsing schema definition files.
@@ -217,16 +205,17 @@ func parseSchemas(sources []core.SchemaSource, r *manglekit.Registry) ([]ast.Ato
 			return nil, nil, fmt.Errorf("cannot parse schema '%s': registry is nil", source.Path)
 		}
 		// 1. Lookup parser factory
-		factory, err := manglekit.Get(r.SchemaParsers, source.Type)
+		factory, err := r.Get(core.KindSchemaParser, source.Type)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get schema parser factory '%s': %w", source.Type, err)
 		}
 
 		// 2. Construct parser
-		parser, err := factory(context.Background(), diapi.NoopDeps{}, nil) // Assume no params for now.
+		instance, err := factory.Build(context.Background(), diapi.NoopDeps{}, nil) // Assume no params for now.
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to construct schema parser '%s': %w", source.Type, err)
 		}
+		parser := instance.(core.SchemaParser)
 
 		// 3. Collect predicate declarations from the parser.
 		allDecls = append(allDecls, parser.Predicates()...)

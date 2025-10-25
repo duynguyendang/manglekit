@@ -10,41 +10,48 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/retrieve"
 	"golang.org/x/sync/errgroup"
 )
 
+// HybridOptions provides a type-safe way to configure the hybrid retriever.
+// This retriever combines results from multiple underlying retrievers (typically
+// a keyword-based one and a dense/vector-based one) to leverage the strengths
+// of both methods. The child retrievers are constructed by the builder and
+// injected into these fields.
+type HybridOptions struct {
+	// Retrievers is a list of names of the sub-retrievers to be used.
+	// These retrievers will be resolved by the builder and injected.
+	Retrievers []string `yaml:"retrievers"`
+	// RRF_K is the constant used in the Reciprocal Rank Fusion (RRF) algorithm.
+	// A value of 0.0 indicates that the default should be used.
+	RRF_K float64 `yaml:"rrf_k,omitempty"`
+}
+
+func (o HybridOptions) ProviderName() string { return "hybrid" }
+func (o HybridOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o HybridOptions) GetProviderOptions() any { return o }
+func (o HybridOptions) GetSubRetrievers() []string { return o.Retrievers }
+
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("hybrid", func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error) {
-		var opts retrieve.HybridOptions
-		if cfg != nil {
-			if typedOpts, ok := cfg.(*retrieve.HybridOptions); ok {
-				opts = *typedOpts
-			} else {
-				return nil, fmt.Errorf("invalid options type, expected *retrieve.HybridOptions, got %T", cfg)
+	manglekit.Register(r, HybridOptions{},
+		func(ctx context.Context, deps diapi.RetrieverDeps, cfg HybridOptions) (core.Retriever, error) {
+			var subRetrievers []core.Retriever
+			for _, name := range cfg.Retrievers {
+				r, ok := deps.SubRetrievers[name]
+				if !ok {
+					return nil, fmt.Errorf("failed to get sub-retriever '%s': not found in dependencies", name)
+				}
+				subRetrievers = append(subRetrievers, r)
 			}
-		}
 
-		if deps.BuildSubRetriever == nil {
-			return nil, fmt.Errorf("hybrid retriever factory requires the BuildSubRetriever capability, but it was not provided")
-		}
+			rrf_k := cfg.RRF_K
+			if rrf_k == 0.0 {
+				rrf_k = 60.0 // Default value
+			}
 
-		// Build sub-components using the provided capability function.
-		bm25Retriever, err := deps.BuildSubRetriever(ctx, "bm25", nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build bm25 component for hybrid retriever: %w", err)
-		}
-		denseRetriever, err := deps.BuildSubRetriever(ctx, "dense", nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build dense component for hybrid retriever: %w", err)
-		}
-		opts.BM25Retriever = bm25Retriever
-		opts.DenseRetriever = denseRetriever
-		return New(opts)
-	})
-	if err := r.RegisterOptions("hybrid", (*retrieve.HybridOptions)(nil)); err != nil {
-		panic(err)
-	}
+			return New(subRetrievers, rrf_k)
+		},
+	)
 }
 
 // Retriever implements the `retrieve.Retriever` interface by combining results
@@ -52,8 +59,8 @@ func Register(r *manglekit.Registry) {
 // (vector-based) retriever. This approach leverages the strengths of both
 // keyword matching and semantic understanding.
 type Retriever struct {
-	bm25  retrieve.Retriever
-	dense retrieve.Retriever
+	retrievers []core.Retriever
+	rrf_k      float64
 }
 
 // New is the constructor for the hybrid retriever. It is registered with the
@@ -63,16 +70,15 @@ type Retriever struct {
 // opts contains the pre-built child retrievers. A `BM25Retriever` is required,
 // while the `DenseRetriever` is optional. If the dense retriever is nil, the
 // hybrid retriever will fall back to using only the BM25 retriever.
-// It returns an initialized `retrieve.Retriever` or an error if the BM25
+// It returns an initialized `core.Retriever` or an error if the BM25
 // retriever dependency is missing.
-func New(opts retrieve.HybridOptions) (retrieve.Retriever, error) {
-	if opts.BM25Retriever == nil {
-		return nil, fmt.Errorf("hybrid: BM25Retriever is required")
+func New(retrievers []core.Retriever, rrf_k float64) (core.Retriever, error) {
+	if len(retrievers) == 0 {
+		return nil, fmt.Errorf("hybrid: at least one retriever is required")
 	}
-	// The dense retriever is optional.
 	return &Retriever{
-		bm25:  opts.BM25Retriever,
-		dense: opts.DenseRetriever,
+		retrievers: retrievers,
+		rrf_k:      rrf_k,
 	}, nil
 }
 
@@ -89,54 +95,45 @@ func New(opts retrieve.HybridOptions) (retrieve.Retriever, error) {
 // ctx is the context for the API call.
 // req contains the query string and `TopK` value, which are passed to the
 // underlying retrievers and used to trim the final fused result set.
-// It returns a single, fused, and re-ranked `retrieve.Result` or an error if
+// It returns a single, fused, and re-ranked `core.RetrieveResult` or an error if
 // either of the underlying retrieval operations fail.
-func (h *Retriever) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Result, error) {
-	if h.dense == nil {
-		// If dense retriever is not configured, just use BM25.
-		return h.bm25.Retrieve(ctx, req)
+func (h *Retriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
+	if len(h.retrievers) == 1 {
+		return h.retrievers[0].Retrieve(ctx, req)
 	}
 
 	g, gCtx := errgroup.WithContext(ctx)
-	var bm25Result, denseResult retrieve.Result
+	results := make(chan core.RetrieveResult, len(h.retrievers))
 
-	g.Go(func() error {
-		var err error
-		bm25Result, err = h.bm25.Retrieve(gCtx, req)
-		return err
-	})
-
-	g.Go(func() error {
-		var err error
-		denseResult, err = h.dense.Retrieve(gCtx, req)
-		return err
-	})
+	for _, r := range h.retrievers {
+		retriever := r // Capture loop variable
+		g.Go(func() error {
+			res, err := retriever.Retrieve(gCtx, req)
+			if err != nil {
+				return err
+			}
+			results <- res
+			return nil
+		})
+	}
 
 	if err := g.Wait(); err != nil {
-		return retrieve.Result{}, err
+		return core.RetrieveResult{}, err
 	}
+	close(results)
 
 	// --- Reciprocal Rank Fusion (RRF) Logic ---
 	scores := make(map[string]float64)
-	const k = 60.0 // RRF constant
-
-	// Process BM25 results.
-	for rank, doc := range bm25Result.Docs {
-		scores[doc.ID] += 1.0 / (k + float64(rank))
-	}
-
-	// Process Dense results.
-	for rank, doc := range denseResult.Docs {
-		scores[doc.ID] += 1.0 / (k + float64(rank))
-	}
-
-	// Combine all unique documents.
 	allDocsMap := make(map[string]core.Doc)
-	for _, doc := range bm25Result.Docs {
-		allDocsMap[doc.ID] = doc
-	}
-	for _, doc := range denseResult.Docs {
-		allDocsMap[doc.ID] = doc
+	k := h.rrf_k
+
+	for result := range results {
+		for rank, doc := range result.Docs {
+			scores[doc.ID] += 1.0 / (k + float64(rank))
+			if _, exists := allDocsMap[doc.ID]; !exists {
+				allDocsMap[doc.ID] = doc
+			}
+		}
 	}
 
 	// Create the final list and sort it by the new RRF score.
@@ -155,5 +152,5 @@ func (h *Retriever) Retrieve(ctx context.Context, req retrieve.Request) (retriev
 		finalDocs = finalDocs[:req.TopK]
 	}
 
-	return retrieve.Result{Docs: finalDocs}, nil
+	return core.RetrieveResult{Docs: finalDocs}, nil
 }

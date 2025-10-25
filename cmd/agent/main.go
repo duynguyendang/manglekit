@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -14,7 +15,8 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/providers" // Import the new providers package
+	"github.com/duynguyendang/manglekit/providers/all"
+	"gopkg.in/yaml.v3"
 )
 
 func main() {
@@ -24,49 +26,39 @@ func main() {
 
 	log.Printf("Starting Manglekit agent with config: %s", *configFile)
 
-	// Create the registry.
+	// b. Read the configuration file.
+	configData, err := ioutil.ReadFile(*configFile)
+	if err != nil {
+		log.Fatalf("Failed to read config file: %v", err)
+	}
+
+	// c. Create a new registry.
 	registry := manglekit.NewRegistry()
 
-	// Simple, elegant registration for most users:
-	providers.RegisterDefaults(registry)
-
-	/*
-	   // Example for advanced users who want selective registration:
-	   providers.NewSet().
-	       WithGoogleLLM().
-	       WithBM25Retriever().
-	       ApplyTo(registry)
-	*/
-
-	// b. Load the configuration from the YAML file.
-	cfg, err := config.LoadFromYAMLFile(*configFile)
-	if err != nil {
-		log.Fatalf("Failed to load config file: %v", err)
+	// d. Parse the config to get the orchestrator name.
+	var cfg config.Config
+	if err := yaml.Unmarshal(configData, &cfg); err != nil {
+		log.Fatalf("Error unmarshalling config: %v", err)
 	}
 
-	// c. Initialize the Manglekit builder from the configuration object.
-	builder, err := manglekit.NewBuilderFromConfig(context.Background(), cfg, registry, nil)
-	if err != nil {
-		log.Fatalf("Failed to create builder from config: %v", err)
-	}
-
-	// d. Build the orchestrator.
-	orchestrator, _, err := builder.Build(context.Background())
+	// e. Create a new builder and load from config.
+	builder := manglekit.NewBuilder(registry).WithHandlers(all.ComponentHandlers()...)
+	orchestrator, _, err := builder.FromConfig(context.Background(), configData)
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}
 
-	// d. Set up the HTTP handler.
+	// f. Set up the HTTP handler.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/query", queryHandler(orchestrator))
 
-	// e. Set up the HTTP server struct.
+	// g. Set up the HTTP server struct.
 	server := &http.Server{
 		Addr:    ":8080",
 		Handler: mux,
 	}
 
-	// f. Start the server in a separate goroutine.
+	// h. Start the server in a separate goroutine.
 	go func() {
 		log.Println("Server starting on port 8080")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -74,7 +66,7 @@ func main() {
 		}
 	}()
 
-	// g. Set up and block on the graceful shutdown signal handler.
+	// i. Set up and block on the graceful shutdown signal handler.
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop

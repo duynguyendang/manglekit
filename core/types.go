@@ -3,6 +3,9 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
+
+	"github.com/firebase/genkit/go/ai"
 )
 
 // Message represents a single message in a conversation from a specific role.
@@ -33,14 +36,6 @@ type Doc struct {
 	Meta map[string]any
 }
 
-// LocalvecOptions provides configuration for the local vector store.
-//
-// Deprecated: This has been moved to the localvec provider's package.
-// It is kept here for backward compatibility but will be removed in a future version.
-type LocalvecOptions struct {
-	// Path is the file system path to the directory containing markdown files to be indexed.
-	Path string `yaml:"path" path:"resolve"`
-}
 
 // VectorStore defines the standard interface for vector database operations,
 // allowing for pluggable vector storage backends. Implementations of this
@@ -127,47 +122,61 @@ type Citation struct {
 	Score float64 `json:"score,omitempty"`
 }
 
-// Options configures the MangleKit SDK's orchestrator. It serves as a container
-// for all the components and settings that define a pipeline. The fields are
-// left as `any` to be populated by the builder, which avoids circular dependencies
-// between packages.
-type Options struct {
-	// Retriever is the component responsible for fetching relevant documents.
-	// The builder ensures this is of type `retrieve.Retriever`.
-	Retriever any
-	// Reranker is an optional component to re-score and re-order retrieved documents
-	// for better relevance before passing them to the LLM.
-	// The builder ensures this is of type `rerank.Reranker`.
-	Reranker any
-	// LLM is the language model client used for generating the final answer.
-	// The builder ensures this is of type `llm.Client`.
-	LLM any
-	// StateProvider is the component responsible for persisting and retrieving session state.
-	// The builder ensures this is of type `core.StateProvider`.
-	StateProvider any
-	// Rules is the engine responsible for evaluating Mangle Datalog rules at
-	// different stages of the pipeline.
-	Rules RuleSet
-	// TopK is the number of documents to retrieve from the retriever.
-	TopK int
-	// MaxTokens is the maximum number of tokens to generate in the LLM response.
-	MaxTokens int
-	// FallbackThreshold is a confidence score (often from the reranker) below which
-	// the pipeline may exit early and return a fallback answer.
+// Resolved is the final, strongly-typed container of all built components and
+// configuration settings. It is passed to the orchestrator factory, ensuring
+// that orchestrators receive their dependencies in a type-safe manner, free
+// from `any` types and runtime assertions.
+type Resolved struct {
+	Retrievers     map[string]Retriever
+	VectorStores   map[string]VectorStore
+	Rerankers      map[string]Reranker
+	Rules          map[string]RuleSet
+	LLMs           map[string]LLMClient
+	Embedders      map[string]ai.Embedder
+	StateProviders map[string]StateProvider
+	Orchestrators  map[string]Orchestrator
+	SchemaParsers  map[string]SchemaParser
+
+	Obs               Observability
+	TopK              int
+	MaxTokens         int
 	FallbackThreshold float64
-	// Obs provides hooks for observability, including logging, tracing, and metrics.
-	Obs Observability
-	// ResourceClosers contains cleanup callbacks that should be invoked when the
-	// orchestrator is shut down. The builder populates this with provider-specific
-	// shutdown hooks (e.g., API clients) that need explicit closure.
-	ResourceClosers []ResourceCloser
+	Closers           []ResourceCloser
+}
+
+// GetToolByName finds a component by its registered name and returns it wrapped
+// in a `core.Tool` adapter. This allows the declarative orchestrator to look up
+// its steps in a generic, type-safe way.
+func (r *Resolved) GetToolByName(name string) (Tool, error) {
+	if t, ok := r.Retrievers[name]; ok {
+		return &RetrieverTool{R: t}, nil
+	}
+	if t, ok := r.Rerankers[name]; ok {
+		return &RerankerTool{Rr: t}, nil
+	}
+	if t, ok := r.LLMs[name]; ok {
+		return &LLMTool{Llm: t}, nil
+	}
+	// Note: VectorStores, Embedders, and StateProviders are not currently adapted
+	// as tools because they don't represent standalone pipeline steps.
+	return nil, fmt.Errorf("tool with name '%s' not found", name)
+}
+
+// OptionsLike is a temporary struct to hold global settings during the build process.
+// It will be replaced by a more robust configuration management system in the future.
+type OptionsLike struct {
+	TopK              int
+	MaxTokens         int
+	FallbackThreshold float64
+	Obs               Observability
+	ResourceClosers   []ResourceCloser
 }
 
 // Observability provides a set of interfaces for integrating logging, tracing,
 // and metrics into the MangleKit pipeline. This allows for detailed monitoring
 // and debugging of the system's behavior.
 type Observability struct {
-	// Logger is the structured logger instance used for recording events.
+	// Logger is the structured logger instance for recording events.
 	Logger Logger
 	// Tracer is the distributed tracing instance for creating and managing spans.
 	Tracer Tracer
@@ -221,6 +230,9 @@ type Meter interface {
 // The provided context can be used by the closer to respect deadlines or propagate
 // cancellation signals while shutting down the resource.
 type ResourceCloser func(ctx context.Context) error
+
+// NopCloser is a ResourceCloser that does nothing.
+func NopCloser(ctx context.Context) error { return nil }
 
 var (
 	// ErrInvalidOptions is returned when the SDK is initialized with missing

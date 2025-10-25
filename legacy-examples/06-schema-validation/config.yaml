@@ -1,0 +1,26 @@
+orchestrator: "sandwich"
+components:
+  - name: "mangle-rules"
+    kind: "rules"
+    params:
+      provider: "mangle"
+      path:
+        - "./rules/validation.dlog"
+      schemaSources:
+        - type: "jsonschema"
+          path: "./user.schema.json"
+      preProcess:
+        - "requestConverter"
+      defaultConverters: false
+
+  - name: "in-memory-retriever"
+    kind: "retriever"
+    params:
+      provider: "in-memory"
+
+  - name: "google-llm"
+    kind: "llm"
+    params:
+      provider: "google"
+      model: "gemini-1.5-flash"
+      apiKey: "${GOOGLE_API_KEY}"

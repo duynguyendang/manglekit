@@ -8,37 +8,37 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/state"
 )
 
+var ErrProviderClosed = fmt.Errorf("provider is closed")
+
+type Options struct {
+	ContextWindow int
+}
+
+func (o Options) ProviderName() string { return "in-memory" }
+func (o Options) ProviderKind() core.Kind   { return core.KindStateProvider }
+
 func Register(r *manglekit.Registry) {
-	r.RegisterStateProvider("inmemory", func(ctx context.Context, deps diapi.StateProviderDeps, cfg any) (core.StateProvider, error) {
-		var typedOpts state.InMemoryOptions
-		if cfg != nil {
-			if castedOpts, ok := cfg.(*state.InMemoryOptions); ok {
-				typedOpts = *castedOpts
-			} else {
-				return nil, fmt.Errorf("invalid options type, expected *state.InMemoryOptions, got %T", cfg)
-			}
-		}
-		return New(typedOpts)
-	})
-	if err := r.RegisterOptions("inmemory", (*state.InMemoryOptions)(nil)); err != nil {
-		panic(err)
-	}
+	manglekit.Register(r, Options{},
+		func(ctx context.Context, deps diapi.StateProviderDeps, cfg Options) (core.StateProvider, error) {
+			return New(cfg)
+		},
+	)
 }
 
 // Provider is a thread-safe, in-memory implementation of the core.StateProvider
 // interface. It is intended for development, testing, and simple applications
 // where state persistence is not required across application restarts.
 type Provider struct {
-	mu   sync.RWMutex
-	data map[string]interface{}
+	mu     sync.RWMutex
+	data   map[string]interface{}
+	closed bool
 }
 
 // New creates and returns a new in-memory state provider.
 // It accepts an Options struct which is currently unused.
-func New(opts state.InMemoryOptions) (core.StateProvider, error) {
+func New(opts Options) (core.StateProvider, error) {
 	return &Provider{
 		data: make(map[string]interface{}),
 	}, nil
@@ -50,6 +50,9 @@ func New(opts state.InMemoryOptions) (core.StateProvider, error) {
 func (p *Provider) Get(ctx context.Context, sessionID string) (interface{}, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
+	if p.closed {
+		return nil, ErrProviderClosed
+	}
 	state, ok := p.data[sessionID]
 	if !ok {
 		return nil, nil
@@ -62,6 +65,9 @@ func (p *Provider) Get(ctx context.Context, sessionID string) (interface{}, erro
 func (p *Provider) Set(ctx context.Context, sessionID string, state interface{}) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.closed {
+		return ErrProviderClosed
+	}
 	p.data[sessionID] = state
 	return nil
 }
@@ -72,6 +78,9 @@ func (p *Provider) Set(ctx context.Context, sessionID string, state interface{})
 func (p *Provider) Delete(ctx context.Context, sessionID string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.closed {
+		return ErrProviderClosed
+	}
 	delete(p.data, sessionID)
 	return nil
 }
@@ -79,5 +88,8 @@ func (p *Provider) Delete(ctx context.Context, sessionID string) error {
 // Close is a no-op for the in-memory provider as there are no external
 // resources to release. It fulfills the core.ResourceCloser interface.
 func (p *Provider) Close(ctx context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.closed = true
 	return nil
 }

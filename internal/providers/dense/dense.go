@@ -9,29 +9,36 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 )
 
-// Options defines the configuration for a Dense retriever.
-type Options struct {
-	Embedder    string `json:"embedder"`
-	VectorStore string `json:"vectorStore"`
+// DenseOptions provides a type-safe way to configure a dense (vector-based)
+// retriever. It explicitly declares its dependencies by name, allowing the
+// builder to inject the correct components.
+type DenseOptions struct {
+	Embedder    string `yaml:"embedder"`
+	VectorStore string `yaml:"vectorStore"`
 }
 
+func (o DenseOptions) ProviderName() string { return "dense" }
+func (o DenseOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o DenseOptions) GetEmbedderName() string { return o.Embedder }
+func (o DenseOptions) GetEmbedder() string    { return o.Embedder }
+func (o DenseOptions) GetVectorStore() string { return o.VectorStore }
+func (o DenseOptions) GetProviderOptions() any { return o }
+
 func Register(r *manglekit.Registry) {
-	r.RegisterRetriever("dense", func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error) {
-		if deps.Embedder == nil {
-			return nil, fmt.Errorf("dense retriever factory requires an 'embedder' dependency, but it was not provided")
-		}
-		if deps.VectorStore == nil {
-			return nil, fmt.Errorf("dense retriever factory requires a 'vectorStore' dependency, but it was not provided")
-		}
-		return New(deps.Embedder, deps.VectorStore)
-	})
-	if err := r.RegisterOptions("dense", (*Options)(nil)); err != nil {
-		panic(err)
-	}
+	manglekit.Register(r, DenseOptions{},
+		func(ctx context.Context, deps diapi.DenseRetrieverDeps, cfg DenseOptions) (core.Retriever, error) {
+			if deps.Embedder == nil {
+				return nil, fmt.Errorf("dense retriever factory requires an 'embedder' dependency, but it was not provided")
+			}
+			if deps.VectorStore == nil {
+				return nil, fmt.Errorf("dense retriever factory requires a 'vectorStore' dependency, but it was not provided")
+			}
+			return New(deps.Embedder, deps.VectorStore)
+		},
+	)
 }
 
 // Dense implements the `retrieve.Retriever` interface for dense, vector-based
@@ -50,8 +57,8 @@ type Dense struct {
 //
 // embedder is the component used to convert the query text into a vector embedding.
 // vectorStore is the vector database used to store and search for document vectors.
-// It returns an initialized `retrieve.Retriever` or an error if dependencies are missing.
-func New(embedder ai.Embedder, vectorStore core.VectorStore) (retrieve.Retriever, error) {
+// It returns an initialized `core.Retriever` or an error if dependencies are missing.
+func New(embedder ai.Embedder, vectorStore core.VectorStore) (core.Retriever, error) {
 	if embedder == nil {
 		return nil, fmt.Errorf("dense: an embedder is required")
 	}
@@ -72,19 +79,19 @@ func New(embedder ai.Embedder, vectorStore core.VectorStore) (retrieve.Retriever
 // ctx is the context for the API call.
 // req contains the query string, the number of results to return (`TopK`), and
 // any metadata to be used for filtering within the vector store.
-// It returns a `retrieve.Result` containing the documents found by the vector
+// It returns a `core.RetrieveResult` containing the documents found by the vector
 // store, or an error if the query embedding or vector search fails.
-func (d *Dense) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Result, error) {
+func (d *Dense) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
 	// 1. Embed the query text.
 	embedReq := &ai.EmbedRequest{
 		Input: []*ai.Document{ai.DocumentFromText(req.Query, nil)},
 	}
 	embedResp, err := d.embedder.Embed(ctx, embedReq)
 	if err != nil {
-		return retrieve.Result{}, fmt.Errorf("dense: failed to embed query: %w", err)
+		return core.RetrieveResult{}, fmt.Errorf("dense: failed to embed query: %w", err)
 	}
 	if len(embedResp.Embeddings) == 0 {
-		return retrieve.Result{}, fmt.Errorf("dense: embedder returned no embeddings for query")
+		return core.RetrieveResult{}, fmt.Errorf("dense: embedder returned no embeddings for query")
 	}
 	queryVector := embedResp.Embeddings[0].Embedding
 
@@ -96,8 +103,8 @@ func (d *Dense) Retrieve(ctx context.Context, req retrieve.Request) (retrieve.Re
 
 	docs, err := d.vectorStore.Search(ctx, req.Query, queryVector, req.TopK, filter)
 	if err != nil {
-		return retrieve.Result{}, fmt.Errorf("dense: vector store search failed: %w", err)
+		return core.RetrieveResult{}, fmt.Errorf("dense: vector store search failed: %w", err)
 	}
 
-	return retrieve.Result{Docs: docs}, nil
+	return core.RetrieveResult{Docs: docs}, nil
 }
