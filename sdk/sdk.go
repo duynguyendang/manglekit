@@ -8,8 +8,27 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/providers/all"
 	"github.com/mitchellh/mapstructure"
 )
+
+// Load is a high-level function that loads a Manglekit orchestrator from a YAML
+// configuration byte slice. It handles registry creation and component handler
+// registration automatically.
+func Load(ctx context.Context, data []byte) (core.Orchestrator, error) {
+	// 1. Create a new registry.
+	registry := manglekit.NewRegistry()
+
+	// 2. Create a new builder and register all component handlers.
+	builder := manglekit.NewBuilder(registry).WithHandlers(all.ComponentHandlers()...)
+
+	// 3. Build the orchestrator from the configuration.
+	orch, _, err := builder.FromConfig(ctx, data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build orchestrator from config: %w", err)
+	}
+	return orch, nil
+}
 
 // FromConfig loads a Manglekit orchestrator from a YAML configuration byte slice.
 // The caller is responsible for creating and populating the registry.
