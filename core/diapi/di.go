@@ -17,6 +17,7 @@ type Builder interface {
 	GetReranker(name string) (core.Reranker, error)
 	GetStateProvider(name string) (core.StateProvider, error)
 	GetRuleSet(name string) (core.RuleSet, error)
+	GetSchemaParser(name string) (core.SchemaParser, error)
 	Genkit() *genkit.Genkit
 }
 

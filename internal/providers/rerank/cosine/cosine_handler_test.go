@@ -99,7 +99,7 @@ func newTestBuilder(t *testing.T) *manglekit.Builder {
 	}
 
 	// Register the actual handlers and factories needed for the test.
-	rerank.Register(reg) // This registers the reranker handler
+	reg.RegisterHandler(rerank.NewHandler())
 	cosine.Register(reg)
 
 	return b

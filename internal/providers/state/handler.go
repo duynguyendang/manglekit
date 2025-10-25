@@ -16,7 +16,7 @@ func (h *Handler) Kind() core.Kind {
 	return core.KindStateProvider
 }
 
-// BuildComponent builds the StateProvider component and assigns it to the resolved map.
+// BuildComponent builds the StateProvider component.
 func (h *Handler) BuildComponent(
 	ctx context.Context,
 	builderDI any,
@@ -25,24 +25,23 @@ func (h *Handler) BuildComponent(
 	cfg core.ProviderOptions,
 	name string,
 ) (core.ResourceCloser, error) {
-	deps := diapi.StateProviderDeps{}
+
+	deps := diapi.NoopDeps{}
+
 	f, ok := factory.(core.Factory)
 	if !ok {
 		return nil, fmt.Errorf("invalid factory type for StateProvider handler")
 	}
+
 	built, err := f.Build(ctx, deps, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("factory for %s '%s' failed: %w", core.KindStateProvider, name, err)
 	}
 
-	stateProvider, ok := built.(core.StateProvider)
+	provider, ok := built.(core.StateProvider)
 	if !ok {
 		return nil, fmt.Errorf("component %s is not a valid StateProvider", name)
 	}
-	resolved.StateProviders[name] = stateProvider
-
-	if c, ok := built.(interface{ Close(context.Context) error }); ok {
-		return c.Close, nil
-	}
-	return core.NopCloser, nil
+	resolved.StateProviders[name] = provider
+	return provider.Close, nil
 }

@@ -1,4 +1,4 @@
-package pipeline
+package pipeline_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
+	"github.com/duynguyendang/manglekit/pipeline/sandwich"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,11 +39,11 @@ func TestSandwich_Integration(t *testing.T) {
 		Retrievers: map[string]core.Retriever{"mock": &MockRetriever{}},
 		MaxTokens:  16,
 	}
-	opts := SandwichOptions{
+	opts := sandwich.SandwichOptions{
 		Retriever: "mock",
 		LLM:       "openai",
 	}
-	orchestrator, err := NewSandwich(ctx, deps, opts)
+	orchestrator, err := sandwich.NewSandwich(ctx, deps, opts)
 	require.NoError(t, err)
 
 	// Execute the pipeline.

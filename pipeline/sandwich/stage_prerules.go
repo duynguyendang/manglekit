@@ -1,10 +1,11 @@
-package pipeline
+package sandwich
 
 import (
 	"fmt"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/pipeline"
 )
 
 // PreRulesStage evaluates the set of rules configured to run at the "pre" stage.
@@ -25,7 +26,7 @@ func (s *PreRulesStage) Name() string {
 // It reads the initial query from the context, evaluates the rules, and then
 // applies any mutations back to the context's query object. If the rules
 // deny the request, it returns a `core.ErrDenied` error to halt the pipeline.
-func (s *PreRulesStage) Execute(p *PipelineContext) error {
+func (s *PreRulesStage) Execute(p *pipeline.PipelineContext) error {
 	if s.RuleSet == nil {
 		return nil
 	}

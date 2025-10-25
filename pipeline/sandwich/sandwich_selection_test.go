@@ -1,4 +1,4 @@
-package pipeline_test
+package sandwich_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/providers/mock"
 	"github.com/duynguyendang/manglekit/internal/providers/state/inmemory"
-	"github.com/duynguyendang/manglekit/pipeline"
+	"github.com/duynguyendang/manglekit/pipeline/sandwich"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -37,7 +37,7 @@ func TestSandwich_DeterministicSelection(t *testing.T) {
 	}
 
 	// 2. Configuration: Explicitly select which components to use.
-	cfg := pipeline.SandwichOptions{
+	cfg := sandwich.SandwichOptions{
 		Retriever:     "mock-retriever",
 		LLM:           "mock-llm",
 		RuleSet:       "ruleset-B",
@@ -45,7 +45,7 @@ func TestSandwich_DeterministicSelection(t *testing.T) {
 	}
 
 	// 3. Execution: Build the orchestrator.
-	orch, err := pipeline.NewSandwich(context.Background(), deps, cfg)
+	orch, err := sandwich.NewSandwich(context.Background(), deps, cfg)
 
 	// 4. Assertion: Verify that the orchestrator was created successfully
 	//    and that the correct components were selected.
@@ -69,7 +69,7 @@ func TestSandwich_DeterministicSelection(t *testing.T) {
 	t.Run("returns error for non-existent ruleset", func(t *testing.T) {
 		badCfg := cfg
 		badCfg.RuleSet = "ruleset-C" // This one does not exist
-		_, err := pipeline.NewSandwich(context.Background(), deps, badCfg)
+		_, err := sandwich.NewSandwich(context.Background(), deps, badCfg)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), `ruleset "ruleset-C" not found`)
 	})
@@ -77,7 +77,7 @@ func TestSandwich_DeterministicSelection(t *testing.T) {
 	t.Run("returns error for non-existent state provider", func(t *testing.T) {
 		badCfg := cfg
 		badCfg.StateProvider = "state-C" // This one does not exist
-		_, err := pipeline.NewSandwich(context.Background(), deps, badCfg)
+		_, err := sandwich.NewSandwich(context.Background(), deps, badCfg)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), `state provider "state-C" not found`)
 	})

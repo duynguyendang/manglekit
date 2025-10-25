@@ -1,4 +1,4 @@
-package pipeline
+package sandwich
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/pipeline"
 )
 
 // LLMStage is responsible for synthesizing a final answer by calling a large
@@ -25,7 +26,7 @@ func (s *LLMStage) Name() string {
 // Execute prepares the LLM request, calls the LLM, and populates the context
 // with the final response text and token usage metrics. It also generates
 // the final citations for the answer.
-func (s *LLMStage) Execute(p *PipelineContext) error {
+func (s *LLMStage) Execute(p *pipeline.PipelineContext) error {
 	if s.LLM == nil {
 		s.Logger.Warnf("LLM client is nil, skipping llm stage")
 		return fmt.Errorf("LLM client is not configured")
@@ -82,7 +83,7 @@ func (s *LLMStage) Execute(p *PipelineContext) error {
 
 // prepareLlmRequest generates citations from the documents in the context and
 // returns a simple slice of document text (passages) for the LLM prompt.
-func (s *LLMStage) prepareLlmRequest(p *PipelineContext) ([]string, error) {
+func (s *LLMStage) prepareLlmRequest(p *pipeline.PipelineContext) ([]string, error) {
 	passages := make([]string, len(p.FinalDocs))
 	for i, d := range p.FinalDocs {
 		passages[i] = d.Text

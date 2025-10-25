@@ -1,4 +1,4 @@
-package pipeline
+package sandwich
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	obslogger "github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/statehelper"
+	"github.com/duynguyendang/manglekit/pipeline"
 	"github.com/google/uuid"
 )
 
@@ -106,7 +107,7 @@ func (s *Sandwich) Execute(ctx context.Context, sessionID string, q core.Query) 
 	}
 
 	// 1. Initialize the PipelineContext, the typed data carrier for the run.
-	p := &PipelineContext{
+	p := &pipeline.PipelineContext{
 		Ctx:       ctx,
 		Query:     q,
 		SessionID: sessionID,
@@ -120,7 +121,7 @@ func (s *Sandwich) Execute(ctx context.Context, sessionID string, q core.Query) 
 	p.History = s.conversationManager.LoadHistory(ctx, sessionID, s.stateProvider, logger)
 
 	// 3. Assemble the pipeline runner with stages.
-	runner := &Runner{}
+	runner := &pipeline.Runner{}
 	runner.Add(&PreRulesStage{RuleSet: s.ruleset, Logger: logger, Meter: s.opts.Obs.Meter})
 	runner.Add(&RetrieveStage{Retriever: s.retriever, TopK: s.opts.TopK, Logger: logger, Meter: s.opts.Obs.Meter})
 	runner.Add(&RerankStage{Reranker: s.reranker, TopK: s.opts.TopK, FallbackThreshold: s.opts.FallbackThreshold, Logger: logger, Meter: s.opts.Obs.Meter})

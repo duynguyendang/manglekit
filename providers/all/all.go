@@ -2,7 +2,7 @@
 package all
 
 import (
-	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/embedders"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
 	"github.com/duynguyendang/manglekit/internal/providers/orchestrators"
@@ -14,15 +14,22 @@ import (
 	"github.com/duynguyendang/manglekit/internal/vectorstores"
 )
 
-// Register registers all standard providers with the given registry.
-func Register(r *manglekit.Registry) {
-	embedders.Register(r)
-	llm.Register(r)
-	orchestrators.Register(r)
-	rerank.Register(r)
-	retrievers.Register(r)
-	rules.Register(r)
-	schemaparsers.Register(r)
-	state.Register(r)
-	vectorstores.Register(r)
+// ComponentHandlers collects ALL handlers for the Builder
+func ComponentHandlers() []core.ComponentHandler {
+	// Start with standard component handlers
+	handlers := []core.ComponentHandler{
+		retrievers.NewHandler(),
+		llm.NewHandler(),
+		rerank.NewHandler(),
+		rules.NewHandler(),
+		schemaparsers.NewHandler(),
+		state.NewHandler(),
+		embedders.NewHandler(),
+		vectorstores.NewHandler(),
+	}
+
+	// Add the orchestrator handlers to the list
+	handlers = append(handlers, orchestrators.Handlers()...)
+
+	return handlers
 }
