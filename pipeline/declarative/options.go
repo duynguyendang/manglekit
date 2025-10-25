@@ -11,7 +11,8 @@ type ToolStepConfig struct {
 
 // Options defines the configuration for the declarative orchestrator.
 type Options struct {
-	Steps []ToolStepConfig `yaml:"steps"`
+	Steps         []ToolStepConfig `yaml:"steps"`
+	StateProvider string           `yaml:"state_provider,omitempty"`
 }
 
 // ProviderName returns the name of the provider.
