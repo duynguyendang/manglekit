@@ -30,14 +30,9 @@ func (h *declarativeHandler) BuildComponent(
 	cfg core.ProviderOptions,
 	name string,
 ) (core.ResourceCloser, error) {
-	// Assert builderDI type for consistency, even if not used directly.
-	if _, ok := builderDI.(diapi.Builder); !ok {
-		return nil, fmt.Errorf("invalid builderDI type: %T", builderDI)
-	}
-
-	f, ok := factory.(func(context.Context, core.Resolved, Options) (core.Orchestrator, error))
+	builder, ok := builderDI.(diapi.Builder)
 	if !ok {
-		return nil, fmt.Errorf("invalid factory type for declarative orchestrator, got %T", factory)
+		return nil, fmt.Errorf("invalid builderDI type: %T", builderDI)
 	}
 
 	opts, ok := cfg.(Options)
@@ -45,7 +40,23 @@ func (h *declarativeHandler) BuildComponent(
 		return nil, fmt.Errorf("invalid options type for declarative orchestrator, got %T", cfg)
 	}
 
-	orch, err := f(ctx, *resolved, opts)
+	var stateProvider core.StateProvider
+	if opts.StateProvider != "" {
+		sp, err := builder.GetStateProvider(opts.StateProvider)
+		if err != nil {
+			return nil, fmt.Errorf("declarative orchestrator: failed to get state provider %q: %w", opts.StateProvider, err)
+		}
+		stateProvider = sp
+	} else if len(resolved.StateProviders) > 0 {
+		return nil, fmt.Errorf("declarative orchestrator: 'state_provider' must be specified when state providers are available")
+	}
+
+	f, ok := factory.(func(context.Context, core.Resolved, core.StateProvider, Options) (core.Orchestrator, error))
+	if !ok {
+		return nil, fmt.Errorf("invalid factory type for declarative orchestrator, got %T", factory)
+	}
+
+	orch, err := f(ctx, *resolved, stateProvider, opts)
 	if err != nil {
 		return nil, err
 	}

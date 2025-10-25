@@ -44,7 +44,7 @@ type DeclarativeOrchestrator struct {
 // NewDeclarative is the factory function for creating a DeclarativeOrchestrator.
 // It resolves the tool names from the configuration against the built components
 // provided in the `deps` argument.
-func NewDeclarative(ctx context.Context, deps core.Resolved, cfg Options) (core.Orchestrator, error) {
+func NewDeclarative(ctx context.Context, deps core.Resolved, sp core.StateProvider, cfg Options) (core.Orchestrator, error) {
 	logger := deps.Obs.Logger
 	if logger == nil {
 		logger = obslogger.NewStdLogger()
@@ -67,14 +67,6 @@ func NewDeclarative(ctx context.Context, deps core.Resolved, cfg Options) (core.
 			tool:   tool,
 			config: stepCfg,
 		})
-	}
-
-	// For now, we arbitrarily pick the first state provider, if any.
-	// A more robust implementation might require an explicit state provider name.
-	var sp core.StateProvider
-	for _, provider := range deps.StateProviders {
-		sp = provider
-		break
 	}
 
 	return &DeclarativeOrchestrator{
