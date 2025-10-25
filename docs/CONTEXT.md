@@ -3,7 +3,7 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 0.5.0
-last_updated: 2025-10-24
+last_updated: 2025-10-25
 stability: stable
 audience: humans_and_agents
 ---
@@ -125,7 +125,7 @@ This section tracks architectural gaps identified during code review that deviat
 ## 13. Machine Appendix (JSON Snapshot v1)
 ```json
 {
-  "last_updated": "2025-10-24",
+  "last_updated": "2025-10-25",
   "gaps": [
     {
       "id": "GAP-005",
@@ -164,6 +164,7 @@ The framework follows Semantic Versioning (SemVer). Breaking changes to the `cor
 
 
 ## 14. Changelog
+-   **2025-10-25**: Final architectural audit complete. All GAPs (005, 006, 007, 008) are confirmed resolved and documentation is synchronized with the stable, handler-based architecture.
 -   **2025-10-24**: Resolved GAP-007 by adding explicit `state_provider` selection to the Declarative Orchestrator's options, removing non-deterministic provider selection.
 -   **2025-10-24**: Completed foundational DI refactor, fixed GAP-005 (Sandwich handler) and GAP-006 (hybrid retriever factory). Implemented `ComponentHandler` for Sandwich orchestrator and refactored `pipeline` directory. Also resolved GAP-008 by completing the `diapi.Builder` interface.
 -   **2025-10-23**: Added GAP-005/006/007 after validating current code: orchestrator handler coverage is declarative-only; hybrid retriever factory signature mismatches handler deps; declarative state provider selection is arbitrary.

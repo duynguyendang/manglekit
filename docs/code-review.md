@@ -4,19 +4,29 @@
 **Location:** `internal/providers/orchestrators/orchestrators.go:28`, `pipeline/declarative/handler.go:1`
 **Impact Analysis:** Only the Declarative handler is registered for kind `orchestrator`. While factories for both Sandwich and Declarative are registered, there is no handler to build Sandwich via the Builder. Configurations targeting `sandwich` will fail during handler dispatch.
 **Refactoring Suggestion:** Add a generic orchestrator handler that dispatches based on options type, or register a distinct Sandwich handler akin to the declarative one.
-**Status:** Open
+**Status:** Resolved
+**Note:** Resolved by implementing and registering a dedicated `ComponentHandler` for the Sandwich orchestrator, ensuring full coverage. (GAP-005)
 
 ## Smell: Factory Signature Mismatch (Hybrid Retriever)
 **Location:** `internal/providers/hybrid/hybrid.go:35`, `internal/providers/retrievers/handler.go:63`
 **Impact Analysis:** The hybrid retriever factory is registered with `D=diapi.Builder`, but the retriever handler passes `diapi.RetrieverDeps` into `Factory.Build`. This will hit a type assertion failure in the generic factory.
 **Refactoring Suggestion:** Change the hybrid factory to accept `diapi.RetrieverDeps` and implement `diapi.SubRetrieversDep` on `HybridOptions`; alternatively change the retriever handler to pass the builder (not recommended as it breaks the uniform DI contract).
-**Status:** Open
+**Status:** Resolved
+**Note:** Resolved by refactoring the hybrid retriever's factory to correctly accept the `diapi.RetrieverDeps` struct provided by the handler, per ADR #7. (GAP-006)
 
 ## Smell: Arbitrary StateProvider Selection (Declarative)
 **Location:** `pipeline/declarative/orchestrator.go:72-78`
 **Impact Analysis:** The declarative orchestrator selects the first `StateProvider` from a map if present, which is non-deterministic and makes state backend choice implicit.
 **Refactoring Suggestion:** Add a `stateProvider` field to declarative options (or make it part of a shared orchestrator options block) and perform explicit lookup.
-**Status:** Open
+**Status:** Resolved
+**Note:** Resolved by adding an explicit `state_provider` field to the `declarative.Options` struct, allowing for deterministic selection. (GAP-007)
+
+## Smell: Incomplete DI Interface
+**Location:** `core/diapi/di.go`
+**Impact Analysis:** The core `diapi.Builder` interface was missing getters for several component kinds, forcing handlers to perform unsafe type assertions or preventing them from resolving necessary dependencies.
+**Refactoring Suggestion:** Add getters for all core component kinds to the `diapi.Builder` interface to provide a complete and safe dependency resolution surface for all handlers.
+**Status:** Resolved
+**Note:** Resolved by extending the `diapi.Builder` interface to include getters for all component kinds, completing the DI contract. (GAP-008)
 
 ## Smell: Arbitrary Selection of Singleton Components
 **Location:** `pipeline/sandwich.go`
@@ -43,7 +53,7 @@
 **Status:** Resolved
 
 ---
-## Resolved Smells
+## Previously Resolved Smells
 
 The following issues were identified in a previous review and have been resolved by the new handler-based builder and stage-based pipeline architecture.
 

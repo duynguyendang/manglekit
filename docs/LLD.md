@@ -3,7 +3,7 @@ context_type: low_level_design
 project: manglekit
 language: go
 version: 0.5.0
-last_updated: 2025-10-23
+last_updated: 2025-10-25
 stability: stable
 audience: developers
 ---
@@ -42,8 +42,8 @@ graph TD
     end
 
     subgraph "Execution Layer"
-        K["pipeline/sandwich.go\n(handler not registered)"]
-        L["pipeline/declarative/orchestrator.go\n(handler registered)"]
+        K["pipeline/sandwich.go"]
+        L["pipeline/declarative/orchestrator.go"]
         C --> K
         C --> L
     end
@@ -89,7 +89,6 @@ sequenceDiagram
     ComponentHandler-->>-Builder: Returns closer
     Builder->>-Builder: Repeats for all components...
     Builder-->>-User/Config: Returns final orchestrator
-    Note over Builder,Orchestrator: Orchestrator kinds require a registered handler. Declarative handler is registered; Sandwich handler is currently missing.
 ```
 
 # 4. Factory Interface Layer
@@ -126,10 +125,9 @@ func (h *Handler) BuildComponent(...) (core.ResourceCloser, error) {
 
 # 5. Dependency Injection Layer
 
-The builder implements the `diapi.Builder` interface, which exposes methods like `GetEmbedder(name)` and `GetVectorStore(name)`. This allows component handlers and factories to request specific, named dependencies. This is a significant improvement over the previous "last-built" implicit dependency injection.
+The builder implements the `diapi.Builder` interface, which exposes methods like `GetEmbedder(name)` and `GetVectorStore(name)`. This allows component handlers and factories to request specific, named dependencies.
 
 *   `diapi.Builder`: The core DI interface, implemented by `manglekit.Builder`.
-*   `diapi.OpenAIClientProvider`: A specialized interface also implemented by the builder to provide a shared OpenAI client.
 *   The handler for a given component is responsible for using the `diapi.Builder` to construct the correct dependency struct for its factory.
 
 Circular dependencies are prevented by the hard-coded linear build order defined in `builder.go`.
@@ -141,14 +139,14 @@ Circular dependencies are prevented by the hard-coded linear build order defined
 *   **Factory Entrypoint:** `openai.New`
 *   **Registered Key:** `openai`
 *   **Config Struct:** `openai.Options`
-*   **Dependencies:** `diapi.Builder` (used by handler to create `diapi.LLMDeps` and provide `diapi.OpenAIClientProvider`).
+*   **Dependencies:** `diapi.LLMDeps` (constructed by the handler).
 
 ### Retriever: `hybrid`
 *   **Handler:** `internal/providers/retrievers/handler.go`
 *   **Factory Entrypoint:** `hybrid.New`
 *   **Registered Key:** `hybrid`
 *   **Config Struct:** `hybrid.HybridOptions`
-*   **Dependencies:** `diapi.Builder` (used by handler to create `diapi.RetrieverDeps`). The factory can then use `deps.GetRetriever(name)` to build its sub-retrievers.
+*   **Dependencies:** `diapi.RetrieverDeps` (constructed by the handler). The factory uses `deps.SubRetrievers` to access its dependencies.
 
 # 7. Configuration Binding
 
@@ -185,18 +183,19 @@ The `core.Observability` struct (logger, tracer, meter) is the central point for
 
 Tracing the `hybrid` retriever:
 1.  **Config:** YAML defines a retriever named `my_hybrid` with provider `hybrid`.
-2.  **SDK Loader:** `sdk.FromConfig` finds the `hybrid.HybridOptions` type, decodes the YAML into it, and calls `builder.With(hybrid.HybridOptions{...})`.
+2.  **SDK Loader:** `sdk.FromConfig` finds the `hybrid.HybridOptions` type, decodes the YAML into it, and calls `builder.With("my_hybrid", hybrid.HybridOptions{...})`.
 3.  **Build Process:**
     *   The `buildAll` method reaches `core.KindRetriever`.
     *   It gets the retriever `ComponentHandler` from the registry.
     *   It calls `handler.BuildComponent` for the `my_hybrid` component.
-4.  **Handler Execution:**
-    *   The retriever handler receives the `builder` as the `builderDI`.
-    *   It constructs `diapi.RetrieverDeps` by calling `builder.GetEmbedder(...)` and `builder.GetVectorStore(...)`.
-    *   It gets the `hybrid` factory from the registry.
-    *   It calls `factory.Build(ctx, deps, cfg)`.
+4.  **Handler Execution (Multiplexer):**
+    *   The `retrievers.Handler` acts as a multiplexer. It performs a type switch on the provider's `Options` struct (`cfg`) to determine which dependency struct to build.
+    *   For `hybrid.HybridOptions`, it constructs `diapi.RetrieverDeps`, resolving the sub-retrievers named in the config (e.g., `bm25`, `dense`) from the `resolved` map.
+    *   For `dense.DenseOptions`, it would construct `diapi.DenseRetrieverDeps` instead.
 5.  **Factory Execution:**
-    *   The `hybrid` factory currently expects a `diapi.Builder` (see GAP-006) and resolves sub-retrievers by name from the builder rather than consuming `diapi.RetrieverDeps`.
+    *   The handler gets the `hybrid` factory from the registry.
+    *   It calls `factory.Build(ctx, diapi.RetrieverDeps{...}, cfg)`.
+    *   The factory correctly consumes the `diapi.RetrieverDeps` struct to access its sub-retrievers.
 6.  **Instance:** The fully constructed `hybrid` retriever is returned to the handler, which places it in the `resolved.Retrievers` map.
 
 # 11. Design Constraints & Guardrails
@@ -205,12 +204,13 @@ Tracing the `hybrid` retriever:
 *   **Stateless Factories & Handlers:** Provider factories and handlers should be stateless.
 *   **Type-Safe DI:** The combination of `ComponentHandler` and `diapi` structs ensures that dependency injection is type-safe without runtime reflection.
 
-# 12. Deviations & Pending Refactors
+# 12. Deviations & Blockers
 
-Moved to the centralized code review file. See: `docs/code-review.md` for current, open smells and remediation guidance (with file and line references).
+All known architectural GAPs (GAP-005, GAP-006, GAP-007, GAP-008) have been resolved. The codebase is now in full compliance with the architecture described in this document and in `docs/CONTEXT.md`.
 
 # 13. Changelog
 
+*   **2025-10-25:** Synchronized LLD with final, audited architecture. Updated diagram, construction path, and deviations section to reflect that all architectural GAPs are resolved.
 *   **2025-10-23:** Updated deviations to reflect current gaps (orchestrator handler coverage, hybrid factory signature, declarative state selection). Clarified hybrid construction path note.
 *   **2025-10-20:** Regenerated LLD to reflect the decentralized, handler-based builder architecture. Updated diagrams and construction path to show the new flow. Synchronized deviations with the latest code review.
 *   **2025-10-19:** Initial draft of the LLD.
