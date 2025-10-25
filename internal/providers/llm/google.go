@@ -28,12 +28,12 @@ type GoogleOptions struct {
 	MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
 }
 
-func (o GoogleOptions) ProviderName() string { return "google" }
-func (o GoogleOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o *GoogleOptions) ProviderName() string { return "google" }
+func (o *GoogleOptions) ProviderKind() core.Kind   { return core.KindLLM }
 
 func RegisterGoogle(r *manglekit.Registry) {
-	manglekit.Register(r, GoogleOptions{},
-		func(ctx context.Context, deps diapi.LLMDeps, cfg GoogleOptions) (core.LLMClient, error) {
+	manglekit.Register(r, &GoogleOptions{},
+		func(ctx context.Context, deps diapi.LLMDeps, cfg *GoogleOptions) (core.LLMClient, error) {
 			if deps.Genkit == nil {
 				return nil, fmt.Errorf("missing required dependency 'genkit' of type *genkit.Genkit")
 			}
@@ -41,10 +41,10 @@ func RegisterGoogle(r *manglekit.Registry) {
 			model := googlegenai.GoogleAIModel(deps.Genkit, cfg.Model)
 			if model == nil {
 				// Fallback for when the model isn't pre-registered in genkit init.
-				return NewGoogle(cfg, nil, deps.Genkit)
+				return NewGoogle(*cfg, nil, deps.Genkit)
 			}
 
-			return NewGoogle(cfg, model, deps.Genkit)
+			return NewGoogle(*cfg, model, deps.Genkit)
 		},
 	)
 }

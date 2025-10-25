@@ -134,7 +134,7 @@ func TestDense_Factory(t *testing.T) {
 			Embedder:    &mockEmbedder{},
 			VectorStore: &mockVectorStore{},
 		}
-		retriever, err := factory.Build(context.Background(), deps, DenseOptions{})
+		retriever, err := factory.Build(context.Background(), deps, &DenseOptions{})
 		require.NoError(t, err)
 		assert.NotNil(t, retriever)
 	})
@@ -143,7 +143,7 @@ func TestDense_Factory(t *testing.T) {
 		deps := diapi.DenseRetrieverDeps{
 			VectorStore: &mockVectorStore{},
 		}
-		_, err := factory.Build(context.Background(), deps, DenseOptions{})
+		_, err := factory.Build(context.Background(), deps, &DenseOptions{})
 		assert.Error(t, err)
 	})
 
@@ -151,7 +151,7 @@ func TestDense_Factory(t *testing.T) {
 		deps := diapi.DenseRetrieverDeps{
 			Embedder: &mockEmbedder{},
 		}
-		_, err := factory.Build(context.Background(), deps, DenseOptions{})
+		_, err := factory.Build(context.Background(), deps, &DenseOptions{})
 		assert.Error(t, err)
 	})
 }

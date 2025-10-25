@@ -27,14 +27,14 @@ type HybridOptions struct {
 	RRF_K float64 `yaml:"rrf_k,omitempty"`
 }
 
-func (o HybridOptions) ProviderName() string { return "hybrid" }
-func (o HybridOptions) ProviderKind() core.Kind   { return core.KindRetriever }
-func (o HybridOptions) GetProviderOptions() any { return o }
-func (o HybridOptions) GetSubRetrievers() []string { return o.Retrievers }
+func (o *HybridOptions) ProviderName() string { return "hybrid" }
+func (o *HybridOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o *HybridOptions) GetProviderOptions() any { return o }
+func (o *HybridOptions) GetSubRetrievers() []string { return o.Retrievers }
 
 func Register(r *manglekit.Registry) {
-	manglekit.Register(r, HybridOptions{},
-		func(ctx context.Context, deps diapi.RetrieverDeps, cfg HybridOptions) (core.Retriever, error) {
+	manglekit.Register(r, &HybridOptions{},
+		func(ctx context.Context, deps diapi.RetrieverDeps, cfg *HybridOptions) (core.Retriever, error) {
 			var subRetrievers []core.Retriever
 			for _, name := range cfg.Retrievers {
 				r, ok := deps.SubRetrievers[name]

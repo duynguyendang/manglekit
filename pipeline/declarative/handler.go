@@ -35,11 +35,12 @@ func (h *declarativeHandler) BuildComponent(
 		return nil, fmt.Errorf("invalid builderDI type: %T", builderDI)
 	}
 
-	opts, ok := cfg.(Options)
+	opts, ok := cfg.(*Options)
 	if !ok {
 		return nil, fmt.Errorf("invalid options type for declarative orchestrator, got %T", cfg)
 	}
 
+	// The handler is responsible for resolving the state provider dependency.
 	var stateProvider core.StateProvider
 	if opts.StateProvider != "" {
 		sp, err := builder.GetStateProvider(opts.StateProvider)
@@ -47,19 +48,24 @@ func (h *declarativeHandler) BuildComponent(
 			return nil, fmt.Errorf("declarative orchestrator: failed to get state provider %q: %w", opts.StateProvider, err)
 		}
 		stateProvider = sp
-	} else if len(resolved.StateProviders) > 0 {
-		return nil, fmt.Errorf("declarative orchestrator: 'state_provider' must be specified when state providers are available")
 	}
 
-	f, ok := factory.(func(context.Context, core.Resolved, core.StateProvider, Options) (core.Orchestrator, error))
+	// Now, build the orchestrator using the standard factory mechanism.
+	genericFactory, ok := factory.(core.GenericFactory)
 	if !ok {
-		return nil, fmt.Errorf("invalid factory type for declarative orchestrator, got %T", factory)
+		return nil, fmt.Errorf("invalid factory type: %T; expected core.GenericFactory", factory)
 	}
-
-	orch, err := f(ctx, *resolved, stateProvider, opts)
+	instance, err := genericFactory.Build(ctx, *resolved, cfg)
 	if err != nil {
 		return nil, err
 	}
+	orch, ok := instance.(*DeclarativeOrchestrator)
+	if !ok {
+		return nil, fmt.Errorf("factory for %q returned type %T, but expected *DeclarativeOrchestrator", name, instance)
+	}
+
+	// Inject the state provider.
+	orch.StateProvider = stateProvider
 
 	resolved.Orchestrators[name] = orch
 	return orch.Close, nil

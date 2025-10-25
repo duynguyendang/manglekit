@@ -35,22 +35,23 @@ func (h *handler) BuildComponent(
 		return nil, fmt.Errorf("invalid builderDI type: %T", builderDI)
 	}
 
-	// 2. Type-assert the options to the SandwichOptions type.
-	sandwichOpts, ok := cfg.(*SandwichOptions)
+	// 2. Type-assert the factory to the GenericFactory interface.
+	genericFactory, ok := factory.(core.GenericFactory)
 	if !ok {
-		return nil, fmt.Errorf("invalid options type: %T", cfg)
+		return nil, fmt.Errorf("invalid factory type: %T; expected core.GenericFactory", factory)
 	}
 
-	// 3. Type-assert the factory to the expected factory type.
-	sandwichFactory, ok := factory.(func(context.Context, core.Resolved, SandwichOptions) (core.Orchestrator, error))
-	if !ok {
-		return nil, fmt.Errorf("invalid factory type: %T", factory)
-	}
-
-	// 4. Call the factory to create the orchestrator.
-	orch, err := sandwichFactory(ctx, *resolved, *sandwichOpts)
+	// 3. Call the factory's Build method, passing the fully resolved struct
+	// as the dependency, which is the special contract for orchestrators.
+	instance, err := genericFactory.Build(ctx, *resolved, cfg)
 	if err != nil {
 		return nil, err
+	}
+
+	// 4. Type-assert the resulting instance to a core.Orchestrator.
+	orch, ok := instance.(core.Orchestrator)
+	if !ok {
+		return nil, fmt.Errorf("factory for %q returned type %T, but expected core.Orchestrator", name, instance)
 	}
 
 	// 5. Store the new orchestrator in the resolved map.

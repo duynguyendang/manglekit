@@ -102,13 +102,13 @@ func TestFactory(t *testing.T) {
 		deps := diapi.RerankerDeps{
 			Embedder: &mockEmbedder{},
 		}
-		reranker, err := factory.Build(context.Background(), deps, CosineOptions{})
+		reranker, err := factory.Build(context.Background(), deps, &CosineOptions{})
 		require.NoError(t, err)
 		assert.NotNil(t, reranker)
 	})
 
 	t.Run("missing_embedder", func(t *testing.T) {
-		_, err := factory.Build(context.Background(), diapi.RerankerDeps{}, CosineOptions{})
+		_, err := factory.Build(context.Background(), diapi.RerankerDeps{}, &CosineOptions{})
 		assert.Error(t, err)
 	})
 }

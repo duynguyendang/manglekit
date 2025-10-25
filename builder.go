@@ -263,7 +263,12 @@ func (b *Builder) FromConfig(ctx context.Context, data []byte) (core.Orchestrato
 		}
 
 		// Create a new instance of the options struct.
-		optsPtr := reflect.New(foundType)
+		var optsPtr reflect.Value
+		if foundType.Kind() == reflect.Ptr {
+			optsPtr = reflect.New(foundType.Elem())
+		} else {
+			optsPtr = reflect.New(foundType)
+		}
 		opts := optsPtr.Interface()
 
 		// Unmarshal the YAML params into the new options struct.

@@ -19,8 +19,8 @@ import (
 // mockOrchestratorOptions provides a dummy options struct for the mock orchestrator.
 type mockOrchestratorOptions struct{}
 
-func (o mockOrchestratorOptions) ProviderName() string { return "mock-orch" }
-func (o mockOrchestratorOptions) ProviderKind() core.Kind   { return core.KindOrchestrator }
+func (o *mockOrchestratorOptions) ProviderName() string { return "mock-orch" }
+func (o *mockOrchestratorOptions) ProviderKind() core.Kind   { return core.KindOrchestrator }
 
 // mockOrchestrator is a minimal implementation of core.Orchestrator for testing.
 type mockOrchestrator struct{}
@@ -64,8 +64,9 @@ func (h *mockOrchestratorHandler) BuildComponent(
 // mockEmbedderOptions provides a dummy options struct for the mock embedder.
 type mockEmbedderOptions struct{}
 
-func (o mockEmbedderOptions) ProviderName() string { return "mock-embedder" }
-func (o mockEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *mockEmbedderOptions) ProviderName() string { return "mock-embedder" }
+func (o *mockEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *mockEmbedderOptions) GetProviderOptions() any { return o }
 
 // mockEmbedder is a mock implementation of ai.Embedder for testing.
 type mockEmbedder struct{}
@@ -82,17 +83,17 @@ func newTestBuilder(t *testing.T) *manglekit.Builder {
 
 	// Register mock orchestrator so the main Build() call can succeed.
 	reg.RegisterHandler(&mockOrchestratorHandler{})
-	if err := manglekit.Register(reg, mockOrchestratorOptions{}, func(ctx context.Context, resolved *core.Resolved, cfg mockOrchestratorOptions) (core.Orchestrator, error) {
+	if err := manglekit.Register(reg, &mockOrchestratorOptions{}, func(ctx context.Context, resolved *core.Resolved, cfg *mockOrchestratorOptions) (core.Orchestrator, error) {
 		return &mockOrchestrator{}, nil
 	}); err != nil {
 		t.Fatalf("failed to register mock orchestrator: %v", err)
 	}
-	b.With("mock-orchestrator", mockOrchestratorOptions{})
+	b.With("mock-orchestrator", &mockOrchestratorOptions{})
 	b.WithOrchestrator("mock-orchestrator")
 
 	// Register mock dependencies for the cosine reranker
 	reg.RegisterHandler(&embedders.Handler{})
-	if err := manglekit.Register(reg, mockEmbedderOptions{}, func(ctx context.Context, deps any, cfg mockEmbedderOptions) (ai.Embedder, error) {
+	if err := manglekit.Register(reg, &mockEmbedderOptions{}, func(ctx context.Context, deps any, cfg *mockEmbedderOptions) (ai.Embedder, error) {
 		return &mockEmbedder{}, nil
 	}); err != nil {
 		t.Fatalf("failed to register mock embedder: %v", err)
@@ -108,8 +109,8 @@ func newTestBuilder(t *testing.T) *manglekit.Builder {
 func TestCosine_Handler_HappyPath(t *testing.T) {
 	b := newTestBuilder(t)
 
-	b.With("mock-embedder", mockEmbedderOptions{})
-	b.With("my-cosine", cosine.CosineOptions{Embedder: "mock-embedder"})
+	b.With("mock-embedder", &mockEmbedderOptions{})
+	b.With("my-cosine", &cosine.CosineOptions{Embedder: "mock-embedder"})
 
 	_, _, err := b.Build(context.Background())
 	require.NoError(t, err)
@@ -119,7 +120,7 @@ func TestCosine_Handler_MissingDependency(t *testing.T) {
 	b := newTestBuilder(t)
 
 	// "missing-embedder" is not registered with the builder
-	b.With("my-cosine", cosine.CosineOptions{Embedder: "missing-embedder"})
+	b.With("my-cosine", &cosine.CosineOptions{Embedder: "missing-embedder"})
 
 	_, _, err := b.Build(context.Background())
 	assert.Error(t, err)

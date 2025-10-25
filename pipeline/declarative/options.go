@@ -16,7 +16,7 @@ type Options struct {
 }
 
 // ProviderName returns the name of the provider.
-func (o Options) ProviderName() string { return "declarative" }
+func (o *Options) ProviderName() string { return "declarative" }
 
 // ProviderKind returns the kind of the provider.
-func (o Options) ProviderKind() core.Kind { return core.KindOrchestrator }
+func (o *Options) ProviderKind() core.Kind { return core.KindOrchestrator }

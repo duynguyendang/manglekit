@@ -97,7 +97,7 @@ func TestHybrid_Factory(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("success", func(t *testing.T) {
-		opts := HybridOptions{
+		opts := &HybridOptions{
 			Retrievers: []string{"r1", "r2"},
 		}
 		deps := diapi.RetrieverDeps{
@@ -112,7 +112,7 @@ func TestHybrid_Factory(t *testing.T) {
 	})
 
 	t.Run("missing_retriever", func(t *testing.T) {
-		opts := HybridOptions{
+		opts := &HybridOptions{
 			Retrievers: []string{"r1", "r3"}, // r3 does not exist
 		}
 		deps := diapi.RetrieverDeps{

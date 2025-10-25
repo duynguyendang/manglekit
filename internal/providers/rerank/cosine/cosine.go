@@ -30,17 +30,17 @@ type CosineOptions struct {
 	VectorDim int `json:"vectorDim,omitempty"`
 }
 
-func (o CosineOptions) ProviderName() string { return "cosine" }
-func (o CosineOptions) ProviderKind() core.Kind   { return core.KindReranker }
-func (o CosineOptions) GetEmbedder() string    { return o.Embedder }
+func (o *CosineOptions) ProviderName() string { return "cosine" }
+func (o *CosineOptions) ProviderKind() core.Kind   { return core.KindReranker }
+func (o *CosineOptions) GetEmbedder() string    { return o.Embedder }
 
 func Register(r *manglekit.Registry) {
-	manglekit.Register(r, CosineOptions{},
-		func(ctx context.Context, deps diapi.RerankerDeps, cfg CosineOptions) (core.Reranker, error) {
+	manglekit.Register(r, &CosineOptions{},
+		func(ctx context.Context, deps diapi.RerankerDeps, cfg *CosineOptions) (core.Reranker, error) {
 			if deps.Embedder == nil {
 				return nil, fmt.Errorf("cosine reranker factory requires an 'embedder' dependency, but it was not provided")
 			}
-			return New(cfg, deps.Embedder)
+			return New(*cfg, deps.Embedder)
 		},
 	)
 }

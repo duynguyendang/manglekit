@@ -33,7 +33,7 @@ func TestLLMStage_Execute(t *testing.T) {
 	t.Run("should execute successfully", func(t *testing.T) {
 		t.Parallel()
 
-		llmClient := mock.NewLLM("test-model")
+		llmClient := mock.NewLLM("test-model", "")
 		stage := &sandwich.LLMStage{
 			LLM:    llmClient,
 			Logger: &mockLogger{},

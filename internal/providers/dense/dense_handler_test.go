@@ -20,8 +20,8 @@ import (
 // mockOrchestratorOptions provides a dummy options struct for the mock orchestrator.
 type mockOrchestratorOptions struct{}
 
-func (o mockOrchestratorOptions) ProviderName() string { return "mock-orch" }
-func (o mockOrchestratorOptions) ProviderKind() core.Kind   { return core.KindOrchestrator }
+func (o *mockOrchestratorOptions) ProviderName() string { return "mock-orch" }
+func (o *mockOrchestratorOptions) ProviderKind() core.Kind   { return core.KindOrchestrator }
 
 // mockOrchestrator is a minimal implementation of core.Orchestrator for testing.
 type mockOrchestrator struct{}
@@ -65,8 +65,9 @@ func (h *mockOrchestratorHandler) BuildComponent(
 // mockEmbedderOptions provides a dummy options struct for the mock embedder.
 type mockEmbedderOptions struct{}
 
-func (o mockEmbedderOptions) ProviderName() string { return "mock-embedder" }
-func (o mockEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *mockEmbedderOptions) ProviderName() string { return "mock-embedder" }
+func (o *mockEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *mockEmbedderOptions) GetProviderOptions() any { return o }
 
 // mockEmbedder is a mock implementation of ai.Embedder for testing.
 type mockEmbedder struct{}
@@ -80,9 +81,11 @@ func (m *mockEmbedder) Register(r api.Registry)          {}
 // mockVectorStoreOptions provides a dummy options struct for the mock vector store.
 type mockVectorStoreOptions struct{}
 
-func (o mockVectorStoreOptions) ProviderName() string { return "mock-vs" }
-func (o mockVectorStoreOptions) ProviderKind() core.Kind   { return core.KindVectorStore }
-func (o mockVectorStoreOptions) GetEmbedderName() string   { return "mock-embedder" }
+func (o *mockVectorStoreOptions) ProviderName() string { return "mock-vs" }
+func (o *mockVectorStoreOptions) ProviderKind() core.Kind   { return core.KindVectorStore }
+func (o *mockVectorStoreOptions) GetEmbedderName() string   { return "mock-embedder" }
+func (o *mockVectorStoreOptions) GetProviderOptions() any { return o }
+
 
 // mockVectorStore is a mock implementation of core.VectorStore for testing.
 type mockVectorStore struct{}
@@ -98,23 +101,23 @@ func newTestBuilder(t *testing.T) *manglekit.Builder {
 
 	// Register mock orchestrator so the main Build() call can succeed.
 	reg.RegisterHandler(&mockOrchestratorHandler{})
-	if err := manglekit.Register(reg, mockOrchestratorOptions{}, func(ctx context.Context, resolved core.Resolved, cfg mockOrchestratorOptions) (core.Orchestrator, error) {
+	if err := manglekit.Register(reg, &mockOrchestratorOptions{}, func(ctx context.Context, resolved core.Resolved, cfg *mockOrchestratorOptions) (core.Orchestrator, error) {
 		return &mockOrchestrator{}, nil
 	}); err != nil {
 		t.Fatalf("failed to register mock orchestrator: %v", err)
 	}
-	b.With("mock-orchestrator", mockOrchestratorOptions{})
+	b.With("mock-orchestrator", &mockOrchestratorOptions{})
 	b.WithOrchestrator("mock-orchestrator")
 
 	// Register mock dependencies for the dense retriever
 	reg.RegisterHandler(&embedders.Handler{})
-	if err := manglekit.Register(reg, mockEmbedderOptions{}, func(ctx context.Context, deps any, cfg mockEmbedderOptions) (ai.Embedder, error) {
+	if err := manglekit.Register(reg, &mockEmbedderOptions{}, func(ctx context.Context, deps any, cfg *mockEmbedderOptions) (ai.Embedder, error) {
 		return &mockEmbedder{}, nil
 	}); err != nil {
 		t.Fatalf("failed to register mock embedder: %v", err)
 	}
 	reg.RegisterHandler(&vectorstores.Handler{})
-	if err := manglekit.Register(reg, mockVectorStoreOptions{}, func(ctx context.Context, deps any, cfg mockVectorStoreOptions) (core.VectorStore, error) {
+	if err := manglekit.Register(reg, &mockVectorStoreOptions{}, func(ctx context.Context, deps any, cfg *mockVectorStoreOptions) (core.VectorStore, error) {
 		return &mockVectorStore{}, nil
 	}); err != nil {
 		t.Fatalf("failed to register mock vector store: %v", err)
@@ -130,9 +133,9 @@ func newTestBuilder(t *testing.T) *manglekit.Builder {
 func TestDense_Handler_HappyPath(t *testing.T) {
 	b := newTestBuilder(t)
 
-	b.With("mock-embedder", mockEmbedderOptions{})
-	b.With("mock-vs", mockVectorStoreOptions{})
-	b.With("my-dense", dense.DenseOptions{
+	b.With("mock-embedder", &mockEmbedderOptions{})
+	b.With("mock-vs", &mockVectorStoreOptions{})
+	b.With("my-dense", &dense.DenseOptions{
 		Embedder:    "mock-embedder",
 		VectorStore: "mock-vs",
 	})
@@ -144,9 +147,9 @@ func TestDense_Handler_HappyPath(t *testing.T) {
 func TestDense_Handler_MissingDependency(t *testing.T) {
 	b := newTestBuilder(t)
 
-	b.With("mock-embedder", mockEmbedderOptions{})
+	b.With("mock-embedder", &mockEmbedderOptions{})
 	// VectorStore is not registered
-	b.With("my-dense", dense.DenseOptions{
+	b.With("my-dense", &dense.DenseOptions{
 		Embedder:    "mock-embedder",
 		VectorStore: "mock-vs", // This one is missing
 	})

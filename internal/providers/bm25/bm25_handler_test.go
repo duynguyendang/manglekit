@@ -18,8 +18,8 @@ import (
 // mockOrchestratorOptions provides a dummy options struct for the mock orchestrator.
 type mockOrchestratorOptions struct{}
 
-func (o mockOrchestratorOptions) ProviderName() string { return "mock-orch" }
-func (o mockOrchestratorOptions) ProviderKind() core.Kind   { return core.KindOrchestrator }
+func (o *mockOrchestratorOptions) ProviderName() string { return "mock-orch" }
+func (o *mockOrchestratorOptions) ProviderKind() core.Kind   { return core.KindOrchestrator }
 
 // mockOrchestrator is a minimal implementation of core.Orchestrator for testing.
 type mockOrchestrator struct{}
@@ -69,12 +69,12 @@ func newTestBuilder(t *testing.T) *manglekit.Builder {
 
 	// Register the mock orchestrator and its CORRECT handler.
 	reg.RegisterHandler(&mockOrchestratorHandler{})
-	if err := manglekit.Register(reg, mockOrchestratorOptions{}, func(ctx context.Context, resolved core.Resolved, cfg mockOrchestratorOptions) (core.Orchestrator, error) {
+	if err := manglekit.Register(reg, &mockOrchestratorOptions{}, func(ctx context.Context, resolved core.Resolved, cfg *mockOrchestratorOptions) (core.Orchestrator, error) {
 		return &mockOrchestrator{}, nil
 	}); err != nil {
 		t.Fatalf("failed to register mock orchestrator: %v", err)
 	}
-	b.With("mock-orchestrator", mockOrchestratorOptions{})
+	b.With("mock-orchestrator", &mockOrchestratorOptions{})
 	b.WithOrchestrator("mock-orchestrator")
 
 	// Register the actual handlers and factories needed for the test.
@@ -94,7 +94,7 @@ func TestBM25_Handler_HappyPath(t *testing.T) {
 	err = os.WriteFile(filepath.Join(tempDir, "doc1.md"), []byte("test content"), 0644)
 	require.NoError(t, err)
 
-	b.With("my-bm25", bm25.BM25Options{
+	b.With("my-bm25", &bm25.BM25Options{
 		Path: tempDir,
 	})
 
@@ -105,7 +105,7 @@ func TestBM25_Handler_HappyPath(t *testing.T) {
 func TestBM25_Handler_ConfigFailure(t *testing.T) {
 	b := newTestBuilder(t)
 
-	b.With("my-bm25", bm25.BM25Options{
+	b.With("my-bm25", &bm25.BM25Options{
 		// Path is missing, which should cause an error
 	})
 

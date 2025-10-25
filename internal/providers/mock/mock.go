@@ -15,23 +15,23 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	manglekit.Register(r, RetrieverOptions{},
-		func(ctx context.Context, deps diapi.RetrieverDeps, cfg RetrieverOptions) (core.Retriever, error) {
+	manglekit.Register(r, &RetrieverOptions{},
+		func(ctx context.Context, deps diapi.NoopDeps, cfg *RetrieverOptions) (core.Retriever, error) {
 			return NewRetriever(cfg.Pairs), nil
 		},
 	)
-	manglekit.Register(r, RerankerOptions{},
-		func(ctx context.Context, deps diapi.RerankerDeps, cfg RerankerOptions) (core.Reranker, error) {
+	manglekit.Register(r, &RerankerOptions{},
+		func(ctx context.Context, deps diapi.RerankerDeps, cfg *RerankerOptions) (core.Reranker, error) {
 			return NewReranker(cfg.Passthrough), nil
 		},
 	)
-	manglekit.Register(r, LLMOptions{},
-		func(ctx context.Context, deps diapi.LLMDeps, cfg LLMOptions) (core.LLMClient, error) {
-			return NewLLM(cfg.Model), nil
+	manglekit.Register(r, &LLMOptions{},
+		func(ctx context.Context, deps diapi.LLMDeps, cfg *LLMOptions) (core.LLMClient, error) {
+			return NewLLM(cfg.Model, cfg.Response), nil
 		},
 	)
-	manglekit.Register(r, EmbedderOptions{},
-		func(ctx context.Context, deps diapi.EmbedderDeps, cfg EmbedderOptions) (ai.Embedder, error) {
+	manglekit.Register(r, &EmbedderOptions{},
+		func(ctx context.Context, deps diapi.EmbedderDeps, cfg *EmbedderOptions) (ai.Embedder, error) {
 			return &Embedder{}, nil
 		},
 	)
@@ -97,8 +97,9 @@ type RetrieverOptions struct {
 	Pairs map[string]string `json:"pairs"`
 }
 
-func (o RetrieverOptions) ProviderName() string { return "mock-retriever" }
-func (o RetrieverOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o *RetrieverOptions) ProviderName() string { return "mock-retriever" }
+func (o *RetrieverOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o *RetrieverOptions) GetProviderOptions() any { return o }
 
 // Reranker is a mock reranker.
 type Reranker struct {
@@ -127,24 +128,30 @@ type RerankerOptions struct {
 	Passthrough map[string]bool `json:"passthrough"`
 }
 
-func (o RerankerOptions) ProviderName() string { return "mock-reranker" }
-func (o RerankerOptions) ProviderKind() core.Kind   { return core.KindReranker }
+func (o *RerankerOptions) ProviderName() string { return "mock-reranker" }
+func (o *RerankerOptions) ProviderKind() core.Kind   { return core.KindReranker }
+func (o *RerankerOptions) GetProviderOptions() any { return o }
+
 
 // LLM is a mock LLM.
 type LLM struct {
 	model        string
+	response     string
 	CompleteFunc func(ctx context.Context, req core.LLMRequest) (core.LLMResponse, error)
 }
 
 // NewLLM creates a new mock LLM.
-func NewLLM(model string) *LLM {
-	return &LLM{model: model}
+func NewLLM(model, response string) *LLM {
+	return &LLM{model: model, response: response}
 }
 
 // Complete generates a response.
 func (l *LLM) Complete(ctx context.Context, req core.LLMRequest) (core.LLMResponse, error) {
 	if l.CompleteFunc != nil {
 		return l.CompleteFunc(ctx, req)
+	}
+	if l.response != "" {
+		return core.LLMResponse{Text: l.response, Usage: make(map[string]int)}, nil
 	}
 	var fullPrompt strings.Builder
 	fullPrompt.WriteString(req.Prompt)
@@ -169,17 +176,20 @@ func (l *LLM) GetName() string {
 
 // LLMOptions is the options for the mock LLM.
 type LLMOptions struct {
-	Model string `json:"model"`
+	Model    string `json:"model"`
+	Response string `json:"response,omitempty"`
 }
 
-func (o LLMOptions) ProviderName() string { return "mock-llm" }
-func (o LLMOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o *LLMOptions) ProviderName() string { return "mock-llm" }
+func (o *LLMOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o *LLMOptions) GetProviderOptions() any { return o }
 
 // EmbedderOptions is the options for the mock embedder.
 type EmbedderOptions struct{}
 
-func (o EmbedderOptions) ProviderName() string { return "mock-embedder" }
-func (o EmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *EmbedderOptions) ProviderName() string { return "mock-embedder" }
+func (o *EmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *EmbedderOptions) GetProviderOptions() any { return o }
 
 // Tool is a mock tool that can be used in tests.
 type Tool struct {
@@ -264,4 +274,24 @@ func NewRuleSet() *RuleSet {
 // Evaluate evaluates the rules.
 func (r *RuleSet) Evaluate(stage core.Stage, q core.Query, a *core.Answer) (core.RuleResult, error) {
 	return core.RuleResult{Allowed: true}, nil
+}
+
+// ToolOptions is the options for the mock tool.
+type ToolOptions struct{}
+
+func (o *ToolOptions) ProviderName() string { return "noop-tool" }
+func (o *ToolOptions) ProviderKind() core.Kind   { return core.Kind("tool") } // Not a real kind.
+func (o *ToolOptions) GetProviderOptions() any { return o }
+
+// NoopTool is a tool that does nothing.
+type NoopTool struct{}
+
+// Execute does nothing and returns nil.
+func (t *NoopTool) Execute(ctx context.Context, execCtx *core.ExecutionContext) error {
+	return nil
+}
+
+// NewTool creates a new mock tool.
+func NewTool() core.Tool {
+	return &NoopTool{}
 }

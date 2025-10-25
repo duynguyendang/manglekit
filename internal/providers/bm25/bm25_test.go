@@ -124,7 +124,7 @@ func TestBM25_Factory(t *testing.T) {
 	err = os.WriteFile(filepath.Join(tempDir, "doc1.md"), []byte("test content"), 0644)
 	require.NoError(t, err)
 
-	opts := BM25Options{
+	opts := &BM25Options{
 		Path: tempDir,
 	}
 

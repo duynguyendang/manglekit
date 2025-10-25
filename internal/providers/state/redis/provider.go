@@ -12,9 +12,9 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
-	manglekit.Register(r, state.RedisOptions{},
-		func(ctx context.Context, deps diapi.StateProviderDeps, cfg state.RedisOptions) (core.StateProvider, error) {
-			return New(ctx, cfg)
+	manglekit.Register(r, &state.RedisOptions{},
+		func(ctx context.Context, deps diapi.NoopDeps, cfg *state.RedisOptions) (core.StateProvider, error) {
+			return New(ctx, *cfg)
 		},
 	)
 }
