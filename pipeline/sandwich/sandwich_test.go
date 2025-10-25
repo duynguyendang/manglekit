@@ -1,4 +1,4 @@
-package pipeline
+package sandwich_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/providers/mock"
+	"github.com/duynguyendang/manglekit/pipeline/sandwich"
 )
 
 func TestNewSandwich(t *testing.T) {
@@ -20,12 +21,12 @@ func TestNewSandwich(t *testing.T) {
 
 	t.Run("should create a new sandwich orchestrator", func(t *testing.T) {
 		t.Parallel()
-		opts := SandwichOptions{
+		opts := sandwich.SandwichOptions{
 			Retriever: "mock",
 			Reranker:  "mock",
 			LLM:       "mock",
 		}
-		orch, err := NewSandwich(context.Background(), deps, opts)
+		orch, err := sandwich.NewSandwich(context.Background(), deps, opts)
 		if err != nil {
 			t.Fatalf("NewSandwich() error = %v", err)
 		}
@@ -36,12 +37,12 @@ func TestNewSandwich(t *testing.T) {
 
 	t.Run("should return an error if retriever is not found", func(t *testing.T) {
 		t.Parallel()
-		opts := SandwichOptions{
+		opts := sandwich.SandwichOptions{
 			Retriever: "not-found",
 			Reranker:  "mock",
 			LLM:       "mock",
 		}
-		_, err := NewSandwich(context.Background(), deps, opts)
+		_, err := sandwich.NewSandwich(context.Background(), deps, opts)
 		if err == nil {
 			t.Fatal("NewSandwich() expected an error, but got nil")
 		}
@@ -58,7 +59,7 @@ func TestSandwich_Execute(t *testing.T) {
 		LLMs:       map[string]core.LLMClient{"mock": mock.NewLLM("test-model")},
 	}
 
-	opts := SandwichOptions{
+	opts := sandwich.SandwichOptions{
 		Retriever: "mock",
 		Reranker:  "mock",
 		LLM:       "mock",
@@ -66,7 +67,7 @@ func TestSandwich_Execute(t *testing.T) {
 
 	t.Run("should execute successfully", func(t *testing.T) {
 		t.Parallel()
-		orch, err := NewSandwich(context.Background(), deps, opts)
+		orch, err := sandwich.NewSandwich(context.Background(), deps, opts)
 		if err != nil {
 			t.Fatalf("NewSandwich() error = %v", err)
 		}
@@ -91,7 +92,7 @@ func TestSandwich_Execute(t *testing.T) {
 			LLMs:      map[string]core.LLMClient{"mock": mock.NewLLM("test-model")},
 		}
 
-		orch, err := NewSandwich(context.Background(), deps, opts)
+		orch, err := sandwich.NewSandwich(context.Background(), deps, opts)
 		if err != nil {
 			t.Fatalf("NewSandwich() error = %v", err)
 		}
@@ -131,12 +132,12 @@ func TestSandwich_Close(t *testing.T) {
 			Closers:    []core.ResourceCloser{closer1, closer2},
 		}
 
-		opts := SandwichOptions{
+		opts := sandwich.SandwichOptions{
 			Retriever: "mock",
 			Reranker:  "mock",
 			LLM:       "mock",
 		}
-		orch, err := NewSandwich(context.Background(), deps, opts)
+		orch, err := sandwich.NewSandwich(context.Background(), deps, opts)
 		if err != nil {
 			t.Fatalf("NewSandwich() error = %v", err)
 		}
@@ -171,12 +172,12 @@ func TestSandwich_Close(t *testing.T) {
 			Closers:    []core.ResourceCloser{closer1, closer2},
 		}
 
-		opts := SandwichOptions{
+		opts := sandwich.SandwichOptions{
 			Retriever: "mock",
 			Reranker:  "mock",
 			LLM:       "mock",
 		}
-		orch, err := NewSandwich(context.Background(), deps, opts)
+		orch, err := sandwich.NewSandwich(context.Background(), deps, opts)
 		if err != nil {
 			t.Fatalf("NewSandwich() error = %v", err)
 		}

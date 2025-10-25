@@ -22,6 +22,7 @@ type DenseOptions struct {
 
 func (o DenseOptions) ProviderName() string { return "dense" }
 func (o DenseOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o DenseOptions) GetEmbedderName() string { return o.Embedder }
 func (o DenseOptions) GetEmbedder() string    { return o.Embedder }
 func (o DenseOptions) GetVectorStore() string { return o.VectorStore }
 func (o DenseOptions) GetProviderOptions() any { return o }

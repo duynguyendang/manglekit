@@ -1,10 +1,11 @@
-package pipeline
+package sandwich
 
 import (
 	"fmt"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/pipeline"
 )
 
 // RetrieveStage is responsible for fetching relevant documents from a retriever
@@ -24,7 +25,7 @@ func (s *RetrieveStage) Name() string {
 // Execute calls the configured retriever with the query from the PipelineContext.
 // It populates the context with the retrieved documents and records the retrieval
 // latency. If no documents are found, it returns `core.ErrNoEvidence`.
-func (s *RetrieveStage) Execute(p *PipelineContext) error {
+func (s *RetrieveStage) Execute(p *pipeline.PipelineContext) error {
 	if s.Retriever == nil {
 		s.Logger.Warnf("retriever is nil, skipping retrieve stage")
 		return core.ErrNoEvidence

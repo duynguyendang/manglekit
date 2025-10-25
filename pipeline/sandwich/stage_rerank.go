@@ -1,10 +1,11 @@
-package pipeline
+package sandwich
 
 import (
 	"fmt"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/pipeline"
 )
 
 // RerankStage is responsible for re-scoring and re-ordering the documents
@@ -26,7 +27,7 @@ func (s *RerankStage) Name() string {
 // It populates the context with the reranked documents and the best score.
 // If the best score is below the fallback threshold, it returns `core.ErrNoEvidence`.
 // If no reranker is configured, this stage is a no-op.
-func (s *RerankStage) Execute(p *PipelineContext) error {
+func (s *RerankStage) Execute(p *pipeline.PipelineContext) error {
 	// If no reranker is configured, pass original documents to the next stage.
 	if s.Reranker == nil {
 		p.FinalDocs = p.OriginalDocs

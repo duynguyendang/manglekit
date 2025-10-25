@@ -8,10 +8,11 @@ import (
 	"os"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/providers/all"
-	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/joho/godotenv"
+	"gopkg.in/yaml.v3"
 )
 
 func main() {
@@ -24,14 +25,20 @@ func main() {
 		log.Fatalf("Failed to read config file: %v", err)
 	}
 
-	// Create a new registry and register all the standard providers.
+	// Create a new registry.
 	registry := manglekit.NewRegistry()
-	all.Register(registry)
 
-	// Load the orchestrator from the configuration data.
-	orch, err := sdk.FromConfig(ctx, registry, configData)
+	// Parse the config to get the orchestrator name.
+	var cfg config.Config
+	if err := yaml.Unmarshal(configData, &cfg); err != nil {
+		log.Fatalf("Error unmarshalling config: %v", err)
+	}
+
+	// Create a new builder and load from config.
+	builder := manglekit.NewBuilder(registry).WithHandlers(all.ComponentHandlers()...)
+	orch, _, err := builder.FromConfig(ctx, configData)
 	if err != nil {
-		log.Fatalf("Failed to build orchestrator: %v", err)
+		log.Fatalf("Error building orchestrator: %v", err)
 	}
 	defer orch.Close(ctx)
 

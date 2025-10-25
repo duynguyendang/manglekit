@@ -8,9 +8,12 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/logger"
+	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/mitchellh/mapstructure"
+	"reflect"
 )
 
 // BuilderAPI defines the fluent interface for the MangleKit orchestrator builder.
@@ -23,6 +26,8 @@ type BuilderAPI interface {
 	WithGenkit(g *genkit.Genkit) BuilderAPI
 	WithOrchestrator(name string) BuilderAPI
 	WithUpdatable(name string) BuilderAPI
+	WithHandlers(handlers ...core.ComponentHandler) BuilderAPI
+	FromConfig(ctx context.Context, data []byte) (core.Orchestrator, retrieve.Updatable, error)
 	Build(ctx context.Context) (core.Orchestrator, retrieve.Updatable, error)
 }
 
@@ -48,6 +53,7 @@ type Builder struct {
 	llms           map[string]core.LLMClient
 	stateProviders map[string]core.StateProvider
 	orchestrators  map[string]core.Orchestrator
+	schemaParsers  map[string]core.SchemaParser
 
 	orchestratorName string
 	updatableName    string
@@ -65,6 +71,7 @@ func NewBuilder(r *Registry) *Builder {
 		llms:           make(map[string]core.LLMClient),
 		stateProviders: make(map[string]core.StateProvider),
 		orchestrators:  make(map[string]core.Orchestrator),
+		schemaParsers:  make(map[string]core.SchemaParser),
 	}
 	b.opts.Obs.Logger = logger.NewStdLogger()
 	return b
@@ -83,6 +90,9 @@ func (b *Builder) GetStateProvider(n string) (core.StateProvider, error) {
 	return getComponent(b.stateProviders, n)
 }
 func (b *Builder) GetRuleSet(n string) (core.RuleSet, error) { return getComponent(b.rules, n) }
+func (b *Builder) GetSchemaParser(n string) (core.SchemaParser, error) {
+	return getComponent(b.schemaParsers, n)
+}
 
 func (b *Builder) With(name string, opts any) BuilderAPI {
 	if opts == nil {
@@ -129,6 +139,7 @@ func (b *Builder) buildAll(ctx context.Context) error {
 		Embedders:      b.embedders,
 		StateProviders: b.stateProviders,
 		Orchestrators:  b.orchestrators,
+		SchemaParsers:  b.schemaParsers,
 	}
 
 	for _, k := range order {
@@ -215,6 +226,64 @@ func (b *Builder) WithFallbackThreshold(f float64) BuilderAPI { b.opts.FallbackT
 func (b *Builder) WithGenkit(g *genkit.Genkit) BuilderAPI    { b.genkit = g; return b }
 func (b *Builder) WithOrchestrator(name string) BuilderAPI  { b.orchestratorName = name; return b }
 func (b *Builder) WithUpdatable(name string) BuilderAPI    { b.updatableName = name; return b }
+
+func (b *Builder) WithHandlers(handlers ...core.ComponentHandler) BuilderAPI {
+	for _, h := range handlers {
+		b.registry.RegisterHandler(h)
+	}
+	return b
+}
+
+func (b *Builder) FromConfig(ctx context.Context, data []byte) (core.Orchestrator, retrieve.Updatable, error) {
+	cfg, err := config.ParseConfig(data)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	b.WithTopK(cfg.TopK).
+		WithMaxTokens(cfg.MaxTokens).
+		WithOrchestrator(cfg.Orchestrator).
+		WithUpdatable(cfg.Updatable).
+		WithFallbackThreshold(cfg.FallbackThreshold)
+
+	for _, comp := range cfg.Components {
+		if comp.Type == "" {
+			return nil, nil, fmt.Errorf("component %q is missing required field 'type'", comp.Name)
+		}
+		var foundType reflect.Type
+		for t, name := range b.registry.OptionsTypeToName {
+			if name == comp.Type && b.registry.OptionsTypeToKind[t] == comp.Kind {
+				foundType = t
+				break
+			}
+		}
+
+		if foundType == nil {
+			return nil, nil, fmt.Errorf("could not find options type for kind=%s, type=%s", comp.Kind, comp.Type)
+		}
+
+		// Create a new instance of the options struct.
+		optsPtr := reflect.New(foundType)
+		opts := optsPtr.Interface()
+
+		// Unmarshal the YAML params into the new options struct.
+		decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+			Result:           opts,
+			WeaklyTypedInput: true,
+			TagName:          "yaml",
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create mapstructure decoder: %w", err)
+		}
+		if err := decoder.Decode(comp.Params); err != nil {
+			return nil, nil, fmt.Errorf("failed to decode params for %s '%s': %w", comp.Kind, comp.Name, err)
+		}
+
+		b.With(comp.Name, opts)
+	}
+
+	return b.Build(ctx)
+}
 
 func getComponent[T any](m map[string]T, name string) (T, error) {
 	c, ok := m[name]

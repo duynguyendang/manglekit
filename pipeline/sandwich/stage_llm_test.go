@@ -1,4 +1,4 @@
-package pipeline
+package sandwich_test
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/providers/mock"
+	"github.com/duynguyendang/manglekit/pipeline"
+	"github.com/duynguyendang/manglekit/pipeline/sandwich"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,12 +34,12 @@ func TestLLMStage_Execute(t *testing.T) {
 		t.Parallel()
 
 		llmClient := mock.NewLLM("test-model")
-		stage := &LLMStage{
+		stage := &sandwich.LLMStage{
 			LLM:    llmClient,
 			Logger: &mockLogger{},
 			Meter:  &mockMeter{},
 		}
-		pctx := &PipelineContext{
+		pctx := &pipeline.PipelineContext{
 			Ctx:   context.Background(),
 			Query: core.Query{Text: "test query"},
 		}
@@ -62,12 +64,12 @@ func TestLLMStage_Execute(t *testing.T) {
 				return core.LLMResponse{}, errors.New("llm failed")
 			},
 		}
-		stage := &LLMStage{
+		stage := &sandwich.LLMStage{
 			LLM:    llmClient,
 			Logger: &mockLogger{},
 			Meter:  &mockMeter{},
 		}
-		pctx := &PipelineContext{
+		pctx := &pipeline.PipelineContext{
 			Ctx:   context.Background(),
 			Query: core.Query{Text: "test query"},
 		}

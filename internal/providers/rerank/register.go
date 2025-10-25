@@ -1,12 +1,10 @@
 package rerank
 
 import (
-	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
+	"github.com/duynguyendang/manglekit/core"
 )
 
-// Register registers all reranker providers and the reranker kind handler.
-func Register(r *manglekit.Registry) {
-	cosine.Register(r)
-	r.RegisterHandler(&Handler{})
+// NewHandler returns a new ComponentHandler for the rerank kind.
+func NewHandler() core.ComponentHandler {
+	return &Handler{}
 }

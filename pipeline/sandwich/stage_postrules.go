@@ -1,10 +1,11 @@
-package pipeline
+package sandwich
 
 import (
 	"fmt"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/pipeline"
 )
 
 // PostRulesStage evaluates the set of rules configured to run at the "post" stage.
@@ -25,7 +26,7 @@ func (s *PostRulesStage) Name() string {
 // It reads the query and the generated answer from the context, evaluates the rules,
 // and then applies any mutations back to the context's answer object. If the rules
 // deny the request, it returns a `core.ErrDenied` error to halt the pipeline.
-func (s *PostRulesStage) Execute(p *PipelineContext) error {
+func (s *PostRulesStage) Execute(p *pipeline.PipelineContext) error {
 	if s.RuleSet == nil {
 		return nil
 	}

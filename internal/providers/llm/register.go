@@ -1,12 +1,10 @@
 package llm
 
 import (
-	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core"
 )
 
-// Register registers all LLM providers and the LLM kind handler.
-func Register(r *manglekit.Registry) {
-	RegisterGoogle(r)
-	RegisterOpenAI(r)
-	r.RegisterHandler(&Handler{})
+// NewHandler returns a new ComponentHandler for the llm kind.
+func NewHandler() core.ComponentHandler {
+	return &Handler{}
 }

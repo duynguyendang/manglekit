@@ -135,6 +135,7 @@ type Resolved struct {
 	Embedders      map[string]ai.Embedder
 	StateProviders map[string]StateProvider
 	Orchestrators  map[string]Orchestrator
+	SchemaParsers  map[string]SchemaParser
 
 	Obs               Observability
 	TopK              int

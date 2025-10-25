@@ -8,9 +8,10 @@ import (
 	"strings"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/providers/all"
-	"github.com/duynguyendang/manglekit/sdk"
+	"gopkg.in/yaml.v3"
 )
 
 func main() {
@@ -20,9 +21,8 @@ func main() {
 	prompt := strings.Join(os.Args[1:], " ")
 	ctx := context.Background()
 
-	// 1. Create a new registry and register all providers.
+	// 1. Create a new registry.
 	registry := manglekit.NewRegistry()
-	all.Register(registry)
 
 	// 2. Read the configuration file.
 	configData, err := os.ReadFile("examples/01-rag-sandwich/config.yaml")
@@ -30,14 +30,21 @@ func main() {
 		log.Fatalf("Error reading config file: %v", err)
 	}
 
-	// 3. Load pipeline from config
-	orch, err := sdk.FromConfig(ctx, registry, configData)
-	if err != nil {
-		log.Fatalf("Error loading config: %v", err)
+	// 3. Parse the config to get the orchestrator name.
+	var cfg config.Config
+	if err := yaml.Unmarshal(configData, &cfg); err != nil {
+		log.Fatalf("Error unmarshalling config: %v", err)
 	}
-	defer orch.Close(ctx) // 4. Ensure graceful shutdown
 
-	// 5. Execute the orchestrator
+	// 4. Create a new builder and load from config.
+	builder := manglekit.NewBuilder(registry).WithHandlers(all.ComponentHandlers()...)
+	orch, _, err := builder.FromConfig(ctx, configData)
+	if err != nil {
+		log.Fatalf("Error building orchestrator: %v", err)
+	}
+	defer orch.Close(ctx) // 5. Ensure graceful shutdown
+
+	// 6. Execute the orchestrator
 	fmt.Println("--- Manglekit Example 01: RAG Sandwich ---")
 	fmt.Printf("Query: %s\n", prompt)
 

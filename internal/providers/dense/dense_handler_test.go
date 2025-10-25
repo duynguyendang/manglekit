@@ -82,6 +82,7 @@ type mockVectorStoreOptions struct{}
 
 func (o mockVectorStoreOptions) ProviderName() string { return "mock-vs" }
 func (o mockVectorStoreOptions) ProviderKind() core.Kind   { return core.KindVectorStore }
+func (o mockVectorStoreOptions) GetEmbedderName() string   { return "mock-embedder" }
 
 // mockVectorStore is a mock implementation of core.VectorStore for testing.
 type mockVectorStore struct{}
