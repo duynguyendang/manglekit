@@ -18,16 +18,9 @@ import (
 // BuilderAPI defines the fluent interface for the MangleKit orchestrator builder.
 type BuilderAPI interface {
 	With(name string, opts any) BuilderAPI
-	WithTopK(k int) BuilderAPI
-	WithMaxTokens(n int) BuilderAPI
-	WithObservability(obs core.Observability) BuilderAPI
-	WithFallbackThreshold(f float64) BuilderAPI
-	WithGenkit(g *genkit.Genkit) BuilderAPI
-	WithOrchestrator(name string) BuilderAPI
-	WithUpdatable(name string) BuilderAPI
 	WithHandlers(handlers ...core.ComponentHandler) BuilderAPI
 	FromConfig(ctx context.Context, data []byte) (core.Orchestrator, retrieve.Updatable, error)
-	Build(ctx context.Context) (core.Orchestrator, retrieve.Updatable, error)
+	Build(ctx context.Context, orchestratorName, updatableName string) (core.Orchestrator, retrieve.Updatable, error)
 }
 
 type configItem struct {
@@ -53,9 +46,6 @@ type Builder struct {
 	stateProviders map[string]core.StateProvider
 	orchestrators  map[string]core.Orchestrator
 	schemaParsers  map[string]core.SchemaParser
-
-	orchestratorName string
-	updatableName    string
 }
 
 // NewBuilder returns a new, empty instance of the fluent builder.
@@ -175,11 +165,11 @@ func (b *Builder) buildAll(ctx context.Context) error {
 	return nil
 }
 
-func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updatable, error) {
-	if b.orchestratorName == "" {
+func (b *Builder) Build(ctx context.Context, orchestratorName, updatableName string) (core.Orchestrator, retrieve.Updatable, error) {
+	if orchestratorName == "" {
 		return nil, nil, errors.New("no orchestrator specified in configuration")
 	}
-	b.opts.Obs.Logger.Infof("starting build for orchestrator type %q", b.orchestratorName)
+	b.opts.Obs.Logger.Infof("starting build for orchestrator type %q", orchestratorName)
 
 	if len(b.errs) > 0 {
 		return nil, nil, errors.Join(b.errs...)
@@ -190,26 +180,26 @@ func (b *Builder) Build(ctx context.Context) (core.Orchestrator, retrieve.Updata
 		return nil, nil, errors.Join(err, closeErr)
 	}
 
-	orchestrator, ok := b.orchestrators[b.orchestratorName]
+	orchestrator, ok := b.orchestrators[orchestratorName]
 	if !ok {
-		return nil, nil, fmt.Errorf("orchestrator %q not found", b.orchestratorName)
+		return nil, nil, fmt.Errorf("orchestrator %q not found", orchestratorName)
 	}
 
 	var updatable retrieve.Updatable
-	if b.updatableName != "" {
-		r, ok := b.retrievers[b.updatableName]
+	if updatableName != "" {
+		r, ok := b.retrievers[updatableName]
 		if !ok {
-			return nil, nil, fmt.Errorf("updatable component %q not found", b.updatableName)
+			return nil, nil, fmt.Errorf("updatable component %q not found", updatableName)
 		}
 
 		u, ok := r.(retrieve.Updatable)
 		if !ok {
-			return nil, nil, fmt.Errorf("component %q was found, but it does not implement retrieve.Updatable", b.updatableName)
+			return nil, nil, fmt.Errorf("component %q was found, but it does not implement retrieve.Updatable", updatableName)
 		}
 		updatable = u
 	}
 
-	b.opts.Obs.Logger.Infof("successfully built %s orchestrator", b.orchestratorName)
+	b.opts.Obs.Logger.Infof("successfully built %s orchestrator", orchestratorName)
 	return orchestrator, updatable, nil
 }
 
@@ -225,14 +215,6 @@ func (b *Builder) closeResources(ctx context.Context) error {
 	return combined
 }
 
-func (b *Builder) WithTopK(k int) BuilderAPI              { b.opts.TopK = k; return b }
-func (b *Builder) WithMaxTokens(n int) BuilderAPI         { b.opts.MaxTokens = n; return b }
-func (b *Builder) WithObservability(obs core.Observability) BuilderAPI { b.opts.Obs = obs; return b }
-func (b *Builder) WithFallbackThreshold(f float64) BuilderAPI { b.opts.FallbackThreshold = f; return b }
-func (b *Builder) WithGenkit(g *genkit.Genkit) BuilderAPI    { b.genkit = g; return b }
-func (b *Builder) WithOrchestrator(name string) BuilderAPI  { b.orchestratorName = name; return b }
-func (b *Builder) WithUpdatable(name string) BuilderAPI    { b.updatableName = name; return b }
-
 func (b *Builder) WithHandlers(handlers ...core.ComponentHandler) BuilderAPI {
 	for _, h := range handlers {
 		b.registry.RegisterHandler(h)
@@ -245,12 +227,6 @@ func (b *Builder) FromConfig(ctx context.Context, data []byte) (core.Orchestrato
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse config: %w", err)
 	}
-
-	b.WithTopK(cfg.TopK).
-		WithMaxTokens(cfg.MaxTokens).
-		WithOrchestrator(cfg.Orchestrator).
-		WithUpdatable(cfg.Updatable).
-		WithFallbackThreshold(cfg.FallbackThreshold)
 
 	for _, comp := range cfg.Components {
 		if comp.Type == "" {
@@ -293,7 +269,7 @@ func (b *Builder) FromConfig(ctx context.Context, data []byte) (core.Orchestrato
 		b.With(comp.Name, opts)
 	}
 
-	return b.Build(ctx)
+	return b.Build(ctx, cfg.Orchestrator, cfg.Updatable)
 }
 
 func getComponent[T any](m map[string]T, name string) (T, error) {

@@ -99,7 +99,6 @@ func newTestBuilder(t *testing.T) *manglekit.Builder {
 		t.Fatalf("failed to register mock orchestrator: %v", err)
 	}
 	b.With("mock-orchestrator", &mockOrchestratorOptions{})
-	b.WithOrchestrator("mock-orchestrator")
 
 	// Register mock sub-retrievers
 	reg.RegisterHandler(&retrievers.Handler{})
@@ -129,7 +128,7 @@ func TestHybrid_Handler_HappyPath(t *testing.T) {
 		Retrievers: []string{"mock-r1", "mock-r2"},
 	})
 
-	_, _, err := b.Build(context.Background())
+	_, _, err := b.Build(context.Background(), "mock-orchestrator", "")
 	require.NoError(t, err)
 }
 
@@ -141,7 +140,7 @@ func TestHybrid_Handler_MissingDependency(t *testing.T) {
 	b.With("my-hybrid", &hybrid.HybridOptions{
 		Retrievers: []string{"mock-r1", "mock-r2"},
 	})
-	_, _, err := b.Build(context.Background())
+	_, _, err := b.Build(context.Background(), "mock-orchestrator", "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get sub-retriever 'mock-r2'")
 }
