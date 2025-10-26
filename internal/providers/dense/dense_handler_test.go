@@ -120,7 +120,6 @@ func newTestBuilder(t *testing.T) *manglekit.Builder {
 		t.Fatalf("failed to register mock orchestrator: %v", err)
 	}
 	b.With("mock-orchestrator", &mockOrchestratorOptions{})
-	b.WithOrchestrator("mock-orchestrator")
 
 	// Register mock dependencies for the dense retriever
 	reg.RegisterHandler(&embedders.Handler{})
@@ -153,7 +152,7 @@ func TestDense_Handler_HappyPath(t *testing.T) {
 		VectorStore: "mock-vs",
 	})
 
-	_, _, err := b.Build(context.Background())
+	_, _, err := b.Build(context.Background(), "mock-orchestrator", "")
 	require.NoError(t, err)
 }
 
@@ -167,7 +166,7 @@ func TestDense_Handler_MissingDependency(t *testing.T) {
 		VectorStore: "mock-vs", // This one is missing
 	})
 
-	_, _, err := b.Build(context.Background())
+	_, _, err := b.Build(context.Background(), "mock-orchestrator", "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "dependency not found: mock-vs")
 }
