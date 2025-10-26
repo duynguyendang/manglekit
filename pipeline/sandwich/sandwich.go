@@ -15,11 +15,14 @@ import (
 
 // SandwichOptions defines the configuration for the Sandwich orchestrator.
 type SandwichOptions struct {
-	Retriever     string `yaml:"retriever"`
-	Reranker      string `yaml:"reranker,omitempty"` // Optional
-	LLM           string `yaml:"llm"`
-	RuleSet       string `yaml:"ruleSet,omitempty"`
-	StateProvider string `yaml:"stateProvider,omitempty"`
+	Retriever         string  `yaml:"retriever"`
+	Reranker          string  `yaml:"reranker,omitempty"` // Optional
+	LLM               string  `yaml:"llm"`
+	RuleSet           string  `yaml:"ruleSet,omitempty"`
+	StateProvider     string  `yaml:"stateProvider,omitempty"`
+	TopK              int     `yaml:"top_k,omitempty"`
+	MaxTokens         int     `yaml:"max_tokens,omitempty"`
+	FallbackThreshold float64 `yaml:"fallback_threshold,omitempty"`
 }
 
 func (o *SandwichOptions) ProviderName() string { return "sandwich" }
@@ -36,7 +39,6 @@ func (o *SandwichOptions) ProviderKind() core.Kind { return core.KindOrchestrato
 // 3.  **LLM Call**: Synthesize an answer based on the evidence.
 // 4.  **Post-retrieval rules**: Filter the final answer and citations for compliance.
 type Sandwich struct {
-	opts                core.OptionsLike
 	retriever           core.Retriever
 	reranker            core.Reranker
 	ruleset             core.RuleSet
@@ -44,6 +46,10 @@ type Sandwich struct {
 	stateProvider       core.StateProvider
 	closers             []core.ResourceCloser
 	conversationManager *statehelper.ConversationManager
+	obs                 core.Observability
+	topK                int
+	maxTokens           int
+	fallbackThreshold   float64
 }
 
 // NewSandwich is the factory for the Sandwich orchestrator. It now receives a
@@ -54,12 +60,10 @@ func NewSandwich(ctx context.Context, deps core.Resolved, cfg *SandwichOptions) 
 	s := &Sandwich{
 		conversationManager: statehelper.NewConversationManager(),
 		closers:             deps.Closers,
-		opts: core.OptionsLike{
-			TopK:              deps.TopK,
-			MaxTokens:         deps.MaxTokens,
-			FallbackThreshold: deps.FallbackThreshold,
-			Obs:               deps.Obs,
-		},
+		obs:                 deps.Obs,
+		topK:                cfg.TopK,
+		maxTokens:           cfg.MaxTokens,
+		fallbackThreshold:   cfg.FallbackThreshold,
 	}
 
 	// Explicitly look up components based on configuration.
@@ -87,8 +91,8 @@ func NewSandwich(ctx context.Context, deps core.Resolved, cfg *SandwichOptions) 
 		}
 	}
 
-	if s.opts.Obs.Logger == nil {
-		s.opts.Obs.Logger = obslogger.NewStdLogger()
+	if s.obs.Logger == nil {
+		s.obs.Logger = obslogger.NewStdLogger()
 	}
 	return s, nil
 }
@@ -98,11 +102,11 @@ func NewSandwich(ctx context.Context, deps core.Resolved, cfg *SandwichOptions) 
 // executes them in sequence.
 func (s *Sandwich) Execute(ctx context.Context, sessionID string, q core.Query) (core.Answer, error) {
 	requestID := uuid.NewString()
-	logger := s.opts.Obs.Logger.With("request_id", requestID, "pipeline", "sandwich", "session_id", sessionID)
+	logger := s.obs.Logger.With("request_id", requestID, "pipeline", "sandwich", "session_id", sessionID)
 	logger.Infof("pipeline run started", "query", q.Text)
 
-	if s.opts.Obs.Tracer != nil {
-		endTrace := s.opts.Obs.Tracer.StartSpan("manglekit.Execute")
+	if s.obs.Tracer != nil {
+		endTrace := s.obs.Tracer.StartSpan("manglekit.Execute")
 		defer endTrace()
 	}
 
@@ -122,11 +126,11 @@ func (s *Sandwich) Execute(ctx context.Context, sessionID string, q core.Query) 
 
 	// 3. Assemble the pipeline runner with stages.
 	runner := &pipeline.Runner{}
-	runner.Add(&PreRulesStage{RuleSet: s.ruleset, Logger: logger, Meter: s.opts.Obs.Meter})
-	runner.Add(&RetrieveStage{Retriever: s.retriever, TopK: s.opts.TopK, Logger: logger, Meter: s.opts.Obs.Meter})
-	runner.Add(&RerankStage{Reranker: s.reranker, TopK: s.opts.TopK, FallbackThreshold: s.opts.FallbackThreshold, Logger: logger, Meter: s.opts.Obs.Meter})
-	runner.Add(&LLMStage{LLM: s.llm, MaxTokens: s.opts.MaxTokens, Logger: logger, Meter: s.opts.Obs.Meter})
-	runner.Add(&PostRulesStage{RuleSet: s.ruleset, Logger: logger, Meter: s.opts.Obs.Meter})
+	runner.Add(&PreRulesStage{RuleSet: s.ruleset, Logger: logger, Meter: s.obs.Meter})
+	runner.Add(&RetrieveStage{Retriever: s.retriever, TopK: s.topK, Logger: logger, Meter: s.obs.Meter})
+	runner.Add(&RerankStage{Reranker: s.reranker, TopK: s.topK, FallbackThreshold: s.fallbackThreshold, Logger: logger, Meter: s.obs.Meter})
+	runner.Add(&LLMStage{LLM: s.llm, MaxTokens: s.maxTokens, Logger: logger, Meter: s.obs.Meter})
+	runner.Add(&PostRulesStage{RuleSet: s.ruleset, Logger: logger, Meter: s.obs.Meter})
 
 	// 4. Run the pipeline.
 	if err := runner.Run(p); err != nil {
@@ -147,7 +151,7 @@ func (s *Sandwich) Close(ctx context.Context) error {
 	var errs []error
 	for _, closer := range s.closers {
 		if err := closer(ctx); err != nil {
-			s.opts.Obs.Logger.Warnf("error during resource cleanup: %v", err)
+			s.obs.Logger.Warnf("error during resource cleanup: %v", err)
 			errs = append(errs, err)
 		}
 	}
