@@ -12,11 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/providers/all"
-	"gopkg.in/yaml.v3"
+	"github.com/duynguyendang/manglekit/sdk"
 )
 
 func main() {
@@ -32,18 +29,8 @@ func main() {
 		log.Fatalf("Failed to read config file: %v", err)
 	}
 
-	// c. Create a new registry.
-	registry := manglekit.NewRegistry()
-
-	// d. Parse the config to get the orchestrator name.
-	var cfg config.Config
-	if err := yaml.Unmarshal(configData, &cfg); err != nil {
-		log.Fatalf("Error unmarshalling config: %v", err)
-	}
-
-	// e. Create a new builder and load from config.
-	builder := manglekit.NewBuilder(registry).WithHandlers(all.ComponentHandlers()...)
-	orchestrator, _, err := builder.FromConfig(context.Background(), configData)
+	// c. Load the orchestrator from the configuration.
+	orchestrator, err := sdk.Load(context.Background(), configData)
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}
