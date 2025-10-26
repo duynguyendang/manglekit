@@ -3,6 +3,8 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"github.com/duynguyendang/manglekit/internal/logger"
+	"github.com/firebase/genkit/go/genkit"
 	"reflect"
 
 	"github.com/duynguyendang/manglekit"
@@ -19,8 +21,16 @@ func Load(ctx context.Context, data []byte) (core.Orchestrator, error) {
 	// 1. Create a new registry.
 	registry := manglekit.NewRegistry()
 
+	l := logger.NewStdLogger()
+	obs := core.Observability{Logger: l}
+	g := genkit.Init(ctx)
+
 	// 2. Create a new builder and register all component handlers.
-	builder := manglekit.NewBuilder(registry).WithHandlers(all.ComponentHandlers()...)
+	builder, err := manglekit.NewBuilder(ctx, registry, obs, g)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new builder: %w", err)
+	}
+	builder.WithHandlers(all.ComponentHandlers()...)
 
 	// 3. Build the orchestrator from the configuration.
 	orch, _, err := builder.FromConfig(ctx, data)
@@ -42,8 +52,15 @@ func FromConfig(ctx context.Context, registry *manglekit.Registry, data []byte) 
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	builder := manglekit.NewBuilder(registry).
-		WithTopK(cfg.TopK).
+	l := logger.NewStdLogger()
+	obs := core.Observability{Logger: l}
+	g := genkit.Init(ctx)
+
+	builder, err := manglekit.NewBuilder(ctx, registry, obs, g)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new builder: %w", err)
+	}
+	builder.WithTopK(cfg.TopK).
 		WithMaxTokens(cfg.MaxTokens).
 		WithOrchestrator(cfg.Orchestrator).
 		WithUpdatable(cfg.Updatable).

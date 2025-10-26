@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
@@ -60,9 +59,16 @@ type Builder struct {
 }
 
 // NewBuilder returns a new, empty instance of the fluent builder.
-func NewBuilder(r *Registry) *Builder {
+func NewBuilder(ctx context.Context, r *Registry, obs core.Observability, g *genkit.Genkit) (*Builder, error) {
+	if obs.Logger == nil {
+		return nil, errors.New("observability logger cannot be nil")
+	}
+	if g == nil {
+		return nil, errors.New("genkit cannot be nil")
+	}
 	b := &Builder{
 		registry:       r,
+		genkit:         g,
 		embedders:      make(map[string]ai.Embedder),
 		vectorStores:   make(map[string]core.VectorStore),
 		retrievers:     make(map[string]core.Retriever),
@@ -73,8 +79,8 @@ func NewBuilder(r *Registry) *Builder {
 		orchestrators:  make(map[string]core.Orchestrator),
 		schemaParsers:  make(map[string]core.SchemaParser),
 	}
-	b.opts.Obs.Logger = logger.NewStdLogger()
-	return b
+	b.opts.Obs = obs
+	return b, nil
 }
 
 // DI implementation

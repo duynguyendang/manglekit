@@ -9,9 +9,19 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
+	"github.com/firebase/genkit/go/genkit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// mockLogger is a no-op logger for testing.
+type mockLogger struct{}
+
+func (m *mockLogger) Debugf(msg string, kv ...any) {}
+func (m *mockLogger) Infof(msg string, kv ...any)  {}
+func (m *mockLogger) Warnf(msg string, kv ...any)  {}
+func (m *mockLogger) Errorf(msg string, kv ...any) {}
+func (m *mockLogger) With(kv ...any) core.Logger   { return m }
 
 // mockOrchestratorOptions provides a dummy options struct for the mock orchestrator.
 type mockOrchestratorOptions struct{}
@@ -76,7 +86,10 @@ func (m *mockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) 
 
 func newTestBuilder(t *testing.T) *manglekit.Builder {
 	reg := manglekit.NewRegistry()
-	b := manglekit.NewBuilder(reg)
+	b, err := manglekit.NewBuilder(context.Background(), reg, core.Observability{Logger: &mockLogger{}}, &genkit.Genkit{})
+	if err != nil {
+		t.Fatalf("failed to create new builder: %v", err)
+	}
 
 	// Register mock orchestrator so the main Build() call can succeed.
 	reg.RegisterHandler(&mockOrchestratorHandler{})
