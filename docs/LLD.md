@@ -3,8 +3,8 @@ context_type: low_level_design
 project: manglekit
 language: go
 version: 0.5.0
-last_updated: 2025-10-25
-stability: stable
+last_updated: 2025-11-03
+stability: unstable
 audience: developers
 ---
 
@@ -206,11 +206,11 @@ Tracing the `hybrid` retriever:
 
 # 12. Deviations & Blockers
 
-All known architectural GAPs (GAP-005, GAP-006, GAP-007, GAP-008) have been resolved. The codebase is now in full compliance with the architecture described in this document and in `docs/CONTEXT.md`.
+The codebase is undergoing the final phase of a Type-Safe DI refactoring. The primary pending task is updating all provider factory signatures to accept their respective `diapi.*Deps` struct, ensuring full compliance with ADR R14. This work is tracked in `docs/CONTEXT.md` under GAP-009.
 
 # 13. Changelog
 
-*   **2025-10-25:** Synchronized LLD with final, audited architecture. Updated diagram, construction path, and deviations section to reflect that all architectural GAPs are resolved.
+*   **2025-11-03:** Reconciled LLD with the actual (in-progress) state of the DI refactor. The previous audit claim that all GAPs were resolved has been reverted, and the document is marked as unstable pending completion of the factory signature migration.
 *   **2025-10-23:** Updated deviations to reflect current gaps (orchestrator handler coverage, hybrid factory signature, declarative state selection). Clarified hybrid construction path note.
 *   **2025-10-20:** Regenerated LLD to reflect the decentralized, handler-based builder architecture. Updated diagrams and construction path to show the new flow. Synchronized deviations with the latest code review.
 *   **2025-10-19:** Initial draft of the LLD.

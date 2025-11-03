@@ -296,20 +296,17 @@ Fix flagged findings as part of ongoing refactors; adjust severities as needed w
 
 ---
 
-## 9) Remediation Plan for Current Gaps (2025‑10‑23)
+## 9) Remediation Plan for Current Gaps (2025‑11‑03)
 
 ### Context
+The architecture documents have been reconciled with the codebase's current state. The primary open architectural issue is the final phase of the Type-Safe DI refactoring, tracked as GAP-009.
 
-Recent review identified the following open gaps (see `docs/CONTEXT.md` Known Gaps and `docs/code-review.md`).
-
-### Items
-
-1. Orchestrator handler coverage — add Sandwich handler so the builder can construct Sandwich.
-2. Hybrid factory signature — change to `diapi.RetrieverDeps` and use `diapi.SubRetrieversDep` on options; avoid passing the builder.
-3. Declarative state provider — add explicit selection to options and stop using the first map entry.
+### High-Priority Items
+1.  **Complete the migration of all provider factory signatures (e.g., LLM, Reranker, State) to accept their respective `diapi.*Deps` struct, ensuring full compliance with ADR R14.**
 
 ### Acceptance
-
-All static rules pass; tests cover deterministic selection; CONTEXT/LLD/HLD updated; changelog entries added.
-
+- All provider factories are updated to remove `diapi.Builder` dependencies.
+- The `Factory Signature Mismatch` smell in `code-review.md` is marked `Resolved`.
+- `CONTEXT.md` (GAP-009) is updated to `Resolved`.
+- The `stability` frontmatter in `CONTEXT.md` and `LLD.md` is changed from `unstable` to `stable`.
 ---
