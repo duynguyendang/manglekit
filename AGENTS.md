@@ -1,6 +1,6 @@
 # AGENTS.md — Manglekit Coding Agent Configuration (2025.10)
 
-*Last updated: 2025-10-23*
+*Last updated: 2025-10-25*
 
 ---
 
@@ -58,6 +58,7 @@ When proposing or committing changes:
 
 * Never remove sections or metadata blocks from `CONTEXT.md`.
 * Maintain the YAML front-matter.
+* Keep the Machine Appendix JSON snapshot and Known Gaps statuses in sync, and bump `last_updated` stamps when documentation changes.
 * Use stability icons (✅ / ⚠️ / ❌) consistently.
 * Preserve Markdown headings, tables, and code references.
 * Prefer minimal, targeted updates with accurate summaries.
@@ -170,8 +171,10 @@ If `make context-refresh` is unavailable, prefer the agent tool call.
 Agents must preserve the following principles:
 
 * Never print directly to stdout in production paths.
+* Use the shared `core.Observability` struct from the builder/orchestrator; do not instantiate standalone loggers, tracers, or meters.
 * Use `core.Logger`, `core.Tracer`, and `core.Meter` interfaces.
 * Ensure proper `Close()` and cleanup of registered resources.
+* Ensure each pipeline stage emits metrics through `core.Observability.Meter`, and surface non-critical execution issues as warnings while keeping the request running.
 * Always record latencies and token usage in metrics when calling LLMs or retrievers.
 
 ---
