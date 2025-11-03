@@ -105,20 +105,35 @@ The following issues were identified in a previous review and have been resolved
 **Refactoring Suggestion:** Use the strongly-typed `diapi` structs for all dependency injection.
 **Status:** Resolved
 
-## Smell: Missing Core DI Component
-**Location:** `core/diapi/di.go`
-**Impact Analysis:** The `diapi` package, which defines the dependency injection contract, is missing a `CoreDeps` struct. This struct is a key component of the modern, typed registration pattern (`manglekit.Register[T, D, O]`) as it provides a standard way to inject core framework services (like `Observability`) into component factories. Without it, factories that need these services have no clean way to receive them, leading to inconsistent dependency injection.
-**Refactoring Suggestion:** Define and export a `diapi.CoreDeps` struct in `core/diapi/di.go` containing fields for core services like `Obs core.Observability`. Update the generic `manglekit.Register` function to inject this struct into all component factories.
+---
+## Open Architectural Smells
+
+## Smell: Polluted BuilderAPI
+**Location:** `builder.go:L23`
+**Impact Analysis:** The public `With(...)` and `WithHandlers(...)` methods on the `BuilderAPI` interface violate the "Config-First" principle (ADR-1). They create a secondary, programmatic entry point for building that bypasses the official `sdk.FromConfig` method. This leads to a confusing public API, makes configurations non-reproducible from a single YAML file, and encourages legacy patterns that are harder to maintain and debug.
+**Refactoring Suggestion:** Remove the `With(...)` and `WithHandlers(...)` methods from the public `BuilderAPI` interface. The `builder.Builder` struct should be an internal implementation detail of the `sdk/` package, and `sdk.FromConfig` should be the sole public entry point for creating an orchestrator.
 **Status:** Open
 
 ## Smell: Legacy Registration Pattern
-**Location:** `providers/all/all.go`
-**Impact Analysis:** The `providers/all/all.go` file uses a `ComponentHandlers()` function to manually collect and register a list of `core.ComponentHandler` implementations. This pattern is a holdover from the programmatic, builder-first architecture. It is incompatible with the modern "Config-First" approach, which relies on a pre-populated registry of provider factories (`manglekit.Register`) that the `sdk.FromConfig` function uses for dynamic component building. This legacy function creates architectural ambiguity and is redundant.
-**Refactoring Suggestion:** Delete the `ComponentHandlers()` function. Create a new `all.Register(r *manglekit.Registry)` function that calls the individual `Register` function for each production-ready provider, populating the registry with all necessary types, factories, and handlers for the `sdk.FromConfig` workflow.
+**Location:** `providers/all/all.go:L17`
+**Impact Analysis:** The `ComponentHandlers()` function is a remnant of the legacy programmatic building pattern. It is designed to be used with the now-prohibited `builder.WithHandlers(...)` method. Its existence is confusing for new developers, as it suggests an alternative, non-standard way of initializing the framework that contradicts the "Config-First" architecture.
+**Refactoring Suggestion:** Delete the `ComponentHandlers()` function and the `providers/all/all.go` file entirely. The `sdk.Load` function should be responsible for registering the necessary production handlers directly.
 **Status:** Open
 
-## Smell: Polluted BuilderAPI
-**Location:** `builder.go`
-**Impact Analysis:** The `BuilderAPI` interface includes methods like `With(...)` and `WithHandlers(...)`. These methods support a programmatic, fluent-style of building that is at odds with the "Config-First" architectural principle mandated by ADR.md. The one true entry point for the modern architecture should be `FromConfig`. The presence of these legacy methods pollutes the builder's public interface, creates confusion about the intended usage pattern, and increases the maintenance surface.
-**Refactoring Suggestion:** Remove the `With(...)` and `WithHandlers(...)` methods from the `BuilderAPI` interface. Refactor the `Builder` struct to be an internal implementation detail of the `sdk.FromConfig` function, removing its export and hiding the programmatic building capabilities from the public API.
+## Smell: Non-Deterministic Type Resolution
+**Location:** `builder.go:L302`
+**Impact Analysis:** The `FromConfig` function iterates over the `b.registry.OptionsTypeToName` map to find the `reflect.Type` for a given component type string. Go map iteration order is not guaranteed. In the unlikely but possible scenario where two different registered types share the same name and kind string, the builder could select a different one on subsequent runs, leading to non-deterministic behavior.
+**Refactoring Suggestion:** The registry should be redesigned to provide a deterministic lookup, for example by using a struct that can be sorted or a more robust mapping that prevents ambiguous entries at registration time. The lookup should not rely on a `for...range` loop over a map.
+**Status:** Open
+
+## Smell: Non-Deterministic Reranking Tie-Breaking
+**Location:** `internal/providers/hybrid/hybrid.go:L161`
+**Impact Analysis:** The hybrid retriever's `Retrieve` method iterates over a map of document scores (`scores`) to build the final list of documents. While this list is subsequently sorted by score, the relative order of documents with identical Reciprocal Rank Fusion (RRF) scores is not guaranteed because the initial iteration order is random. This violates the determinism principle (ADR-15) and can lead to inconsistent results for the same query.
+**Refactoring Suggestion:** After sorting by score, add a secondary, stable sort criterion, such as the document ID, to ensure a deterministic final order. For example: `sort.SliceStable(finalDocs, ...)` followed by another sort on the ID for tie-breaking.
+**Status:** Open
+
+## Smell: Builder Leaking into Handler
+**Location:** `pipeline/sandwich/handler.go:L33`
+**Impact Analysis:** The `sandwichHandler`'s `BuildComponent` method accepts a generic `any` type for its dependency injector and immediately type-asserts it to the concrete `diapi.Builder`. This violates the Type-Safe DI rule (ADR-7 / R14), which mandates that handlers and factories must not depend on the generic builder but on specific, typed dependency structs. This tight coupling makes the handler less modular and harder to test in isolation.
+**Refactoring Suggestion:** Create a new `diapi.SandwichDeps` struct that explicitly lists all the dependencies the sandwich orchestrator needs (e.g., `Retriever`, `LLMClient`, `Reranker`). The handler should resolve these dependencies from the builder and populate the `SandwichDeps` struct, which is then passed to a dedicated factory function for the orchestrator.
 **Status:** Open
