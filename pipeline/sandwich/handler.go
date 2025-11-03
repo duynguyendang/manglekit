@@ -6,23 +6,25 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
+	"github.com/duynguyendang/manglekit/internal/statehelper"
+	"github.com/duynguyendang/manglekit/internal/logger"
 )
 
-// handler implements the ComponentHandler for the "sandwich" orchestrator.
-type handler struct{}
+// sandwichHandler implements the ComponentHandler for the sandwich orchestrator.
+type sandwichHandler struct{}
 
 // NewHandler returns a new ComponentHandler for the sandwich orchestrator.
 func NewHandler() core.ComponentHandler {
-	return &handler{}
+	return &sandwichHandler{}
 }
 
 // Kind returns the kind of component this handler builds.
-func (h *handler) Kind() core.Kind {
+func (h *sandwichHandler) Kind() core.Kind {
 	return core.KindOrchestrator
 }
 
-// BuildComponent constructs a Sandwich orchestrator.
-func (h *handler) BuildComponent(
+// BuildComponent constructs a sandwich orchestrator.
+func (h *sandwichHandler) BuildComponent(
 	ctx context.Context,
 	builderDI any,
 	factory any,
@@ -30,32 +32,71 @@ func (h *handler) BuildComponent(
 	cfg core.ProviderOptions,
 	name string,
 ) (core.ResourceCloser, error) {
-	// 1. Type-assert the builderDI to the diapi.Builder interface.
-	if _, ok := builderDI.(diapi.Builder); !ok {
+	builder, ok := builderDI.(diapi.Builder)
+	if !ok {
 		return nil, fmt.Errorf("invalid builderDI type: %T", builderDI)
 	}
 
-	// 2. Type-assert the factory to the GenericFactory interface.
-	genericFactory, ok := factory.(core.GenericFactory)
+	opts, ok := cfg.(*Options)
 	if !ok {
-		return nil, fmt.Errorf("invalid factory type: %T; expected core.GenericFactory", factory)
+		return nil, fmt.Errorf("invalid options type for sandwich orchestrator, got %T", cfg)
 	}
 
-	// 3. Call the factory's Build method, passing the fully resolved struct
-	// as the dependency, which is the special contract for orchestrators.
-	instance, err := genericFactory.Build(ctx, *resolved, cfg)
+	// The handler is responsible for resolving all dependencies.
+
+	retriever, err := builder.GetRetriever(opts.Retriever)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("sandwich orchestrator: failed to get retriever %q: %w", opts.Retriever, err)
 	}
 
-	// 4. Type-assert the resulting instance to a core.Orchestrator.
-	orch, ok := instance.(core.Orchestrator)
-	if !ok {
-		return nil, fmt.Errorf("factory for %q returned type %T, but expected core.Orchestrator", name, instance)
+	llm, err := builder.GetLLMClient(opts.LLM)
+	if err != nil {
+		return nil, fmt.Errorf("sandwich orchestrator: failed to get llm %q: %w", opts.LLM, err)
 	}
 
-	// 5. Store the new orchestrator in the resolved map.
-	resolved.Orchestrators[name] = orch
+	var reranker core.Reranker
+	if opts.Reranker != "" {
+		reranker, err = builder.GetReranker(opts.Reranker)
+		if err != nil {
+			return nil, fmt.Errorf("sandwich orchestrator: failed to get reranker %q: %w", opts.Reranker, err)
+		}
+	}
 
-	return orch.Close, nil
+	var stateProvider core.StateProvider
+	if opts.StateProvider != "" {
+		stateProvider, err = builder.GetStateProvider(opts.StateProvider)
+		if err != nil {
+			return nil, fmt.Errorf("sandwich orchestrator: failed to get state provider %q: %w", opts.StateProvider, err)
+		}
+	}
+
+	var ruleSet core.RuleSet
+	if opts.RuleSet != "" {
+		ruleSet, err = builder.GetRuleSet(opts.RuleSet)
+		if err != nil {
+			return nil, fmt.Errorf("sandwich orchestrator: failed to get rule set %q: %w", opts.RuleSet, err)
+		}
+	}
+
+	// Now, build the orchestrator.
+	s := &Orchestrator{
+		retriever:           retriever,
+		reranker:            reranker,
+		ruleset:             ruleSet,
+		llm:                 llm,
+		stateProvider:       stateProvider,
+		conversationManager: statehelper.NewConversationManager(),
+		closers:             resolved.Closers,
+		obs:                 resolved.Obs,
+		topK:                opts.TopK,
+		maxTokens:           opts.MaxTokens,
+		fallbackThreshold:   opts.FallbackThreshold,
+	}
+
+	if s.obs.Logger == nil {
+		s.obs.Logger = logger.NewStdLogger()
+	}
+
+	resolved.Orchestrators[name] = s
+	return s.Close, nil
 }
