@@ -19,6 +19,7 @@ type Builder interface {
 	GetRuleSet(name string) (core.RuleSet, error)
 	GetSchemaParser(name string) (core.SchemaParser, error)
 	Genkit() *genkit.Genkit
+	GetCoreDeps() CoreDeps
 }
 
 // APIKeyProvider is an interface for provider options that expose an API key.
@@ -95,3 +96,8 @@ type RuleSetDeps struct{}
 
 // NoopDeps is a placeholder for factories that have no dependencies.
 type NoopDeps struct{}
+
+// CoreDeps provides access to core framework services.
+type CoreDeps struct {
+	Obs core.Observability
+}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
@@ -88,6 +89,12 @@ func (b *Builder) GetStateProvider(n string) (core.StateProvider, error) {
 func (b *Builder) GetRuleSet(n string) (core.RuleSet, error) { return getComponent(b.rules, n) }
 func (b *Builder) GetSchemaParser(n string) (core.SchemaParser, error) {
 	return getComponent(b.schemaParsers, n)
+}
+
+func (b *Builder) GetCoreDeps() diapi.CoreDeps {
+	return diapi.CoreDeps{
+		Obs: b.opts.Obs,
+	}
 }
 
 func (b *Builder) With(name string, opts any) BuilderAPI {
