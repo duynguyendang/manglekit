@@ -128,7 +128,7 @@ func TestHybrid_Handler_HappyPath(t *testing.T) {
 		Retrievers: []string{"mock-r1", "mock-r2"},
 	})
 
-	_, _, err := b.Build(context.Background(), "mock-orchestrator", "")
+	_, _, err := b.Build(context.Background(), "mock-orchestrator", "", "")
 	require.NoError(t, err)
 }
 
@@ -140,7 +140,7 @@ func TestHybrid_Handler_MissingDependency(t *testing.T) {
 	b.With("my-hybrid", &hybrid.HybridOptions{
 		Retrievers: []string{"mock-r1", "mock-r2"},
 	})
-	_, _, err := b.Build(context.Background(), "mock-orchestrator", "")
+	_, _, err := b.Build(context.Background(), "mock-orchestrator", "", "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get sub-retriever 'mock-r2'")
 }

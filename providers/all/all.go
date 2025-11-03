@@ -2,36 +2,25 @@
 package all
 
 import (
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/embedders"
+	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/internal/providers/bm25"
+	"github.com/duynguyendang/manglekit/internal/providers/dense"
+	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
-	"github.com/duynguyendang/manglekit/internal/providers/orchestrators"
-	"github.com/duynguyendang/manglekit/internal/providers/rerank"
-	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
-	"github.com/duynguyendang/manglekit/internal/providers/rules"
-	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers"
-	"github.com/duynguyendang/manglekit/internal/providers/state"
-	"github.com/duynguyendang/manglekit/internal/vectorstores"
+	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
+	"github.com/duynguyendang/manglekit/internal/providers/state/inmemory"
+	"github.com/duynguyendang/manglekit/pipeline/declarative"
+	"github.com/duynguyendang/manglekit/pipeline/sandwich"
 )
 
-// ComponentHandlers collects ALL handlers for the Builder.
-// Note: This function intentionally omits mock provider handlers,
-// as they are intended for manual registration within specific tests.
-func ComponentHandlers() []core.ComponentHandler {
-	// Start with standard component handlers
-	handlers := []core.ComponentHandler{
-		retrievers.NewHandler(),
-		llm.NewHandler(),
-		rerank.NewHandler(),
-		rules.NewHandler(),
-		schemaparsers.NewHandler(),
-		state.NewHandler(),
-		embedders.NewHandler(),
-		vectorstores.NewHandler(),
-	}
-
-	// Add the orchestrator handlers to the list
-	handlers = append(handlers, orchestrators.Handlers()...)
-
-	return handlers
+// Register registers all standard providers with the MangleKit registry.
+func Register(r *manglekit.Registry) {
+	bm25.Register(r)
+	dense.Register(r)
+	hybrid.Register(r)
+	llm.Register(r)
+	cosine.Register(r)
+	inmemory.Register(r)
+	declarative.Register(r)
+	sandwich.Register(r)
 }

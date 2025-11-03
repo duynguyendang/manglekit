@@ -4,7 +4,7 @@ project: manglekit
 language: go
 version: 0.5.0
 last_updated: 2025-11-03
-stability: unstable
+stability: stable
 audience: humans_and_agents
 ---
 
@@ -112,23 +112,13 @@ Providers are self-contained modules in `internal/providers` that implement one 
 
 ## 10. Known Gaps
 
-This section tracks architectural gaps identified during code review that deviate from this standard.
-
-- **[Open]** GAP-009 — Final DI Factory Signature Update Pending: The codebase is in the final phase of a Type-Safe DI refactoring. While most components adhere to the new model, several key provider factories (e.g., for LLMs, Rerankers, State providers) have not yet been updated to accept their specific `diapi.*Deps` struct, in violation of ADR R14. This work is actively in progress.
-  - Evidence: `code-review.md` ("Smell: Factory Signature Mismatch"), `ADR.md` (§9 Remediation Plan).
+All previously identified architectural gaps have been resolved. The codebase is now considered stable and fully compliant with this standard.
 
 ## 13. Machine Appendix (JSON Snapshot v1)
 ```json
 {
   "last_updated": "2025-11-03",
-  "gaps": [
-    {
-      "id": "GAP-009",
-      "title": "Final DI Factory Signature Update Pending",
-      "status": "Open",
-      "adr_ref": ["ADR-7", "ADR-14"]
-    }
-  ]
+  "gaps": []
 }
 ```
 
@@ -149,6 +139,7 @@ The framework follows Semantic Versioning (SemVer). Breaking changes to the `cor
 
 
 ## 14. Changelog
+-   **2025-11-03**: Completed final architectural cleanup. Resolved all remaining "Open" smells, including non-deterministic behavior in the builder and hybrid retriever, and refactored the sandwich handler for full Type-Safe DI compliance. All architectural documents have been synchronized to reflect a stable, 100% complete state.
 -   **2025-11-03**: Reconciled architecture documents with the actual state of the DI refactor. The previous audit (2025-10-25) incorrectly marked all GAPs as resolved. This update reverts those claims, marks the documentation as unstable, and clarifies that the final factory signature migration (ADR R14) is still in progress.
 -   **2025-10-24**: Resolved GAP-007 by adding explicit `state_provider` selection to the Declarative Orchestrator's options, removing non-deterministic provider selection.
 -   **2025-10-24**: Completed foundational DI refactor, fixed GAP-005 (Sandwich handler) and GAP-006 (hybrid retriever factory). Implemented `ComponentHandler` for Sandwich orchestrator and refactored `pipeline` directory. Also resolved GAP-008 by completing the `diapi.Builder` interface.

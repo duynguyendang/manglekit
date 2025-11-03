@@ -109,6 +109,16 @@ type NoopDeps struct {
 	CoreDeps
 }
 
+// SandwichDeps provides all dependencies required by the sandwich orchestrator.
+type SandwichDeps struct {
+	CoreDeps
+	Retriever     core.Retriever
+	Reranker      core.Reranker
+	LLM           core.LLMClient
+	StateProvider core.StateProvider
+	RuleSet       core.RuleSet
+}
+
 // CoreDeps provides access to core framework services.
 type CoreDeps struct {
 	Obs core.Observability

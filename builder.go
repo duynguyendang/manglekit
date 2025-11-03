@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -21,7 +22,7 @@ type BuilderAPI interface {
 	With(name string, opts any) BuilderAPI
 	WithHandlers(handlers ...core.ComponentHandler) BuilderAPI
 	FromConfig(ctx context.Context, data []byte) (core.Orchestrator, retrieve.Updatable, error)
-	Build(ctx context.Context, orchestratorName, updatableName string) (core.Orchestrator, retrieve.Updatable, error)
+	Build(ctx context.Context, orchestratorName, updatableName, stateProviderName string) (core.Orchestrator, retrieve.Updatable, error)
 }
 
 type configItem struct {
@@ -172,7 +173,7 @@ func (b *Builder) buildAll(ctx context.Context) error {
 	return nil
 }
 
-func (b *Builder) Build(ctx context.Context, orchestratorName, updatableName string) (core.Orchestrator, retrieve.Updatable, error) {
+func (b *Builder) Build(ctx context.Context, orchestratorName, updatableName, stateProviderName string) (core.Orchestrator, retrieve.Updatable, error) {
 	if orchestratorName == "" {
 		return nil, nil, errors.New("no orchestrator specified in configuration")
 	}
@@ -204,6 +205,18 @@ func (b *Builder) Build(ctx context.Context, orchestratorName, updatableName str
 			return nil, nil, fmt.Errorf("component %q was found, but it does not implement retrieve.Updatable", updatableName)
 		}
 		updatable = u
+	}
+
+	if stateProviderName != "" {
+		sp, ok := b.stateProviders[stateProviderName]
+		if !ok {
+			return nil, nil, fmt.Errorf("state provider %q not found", stateProviderName)
+		}
+		// This is a bit of a hack, but it's the only way to get the state provider to the orchestrator for now.
+		// A better solution would be to have the orchestrator handler resolve its own dependencies.
+		if orchWithState, ok := orchestrator.(interface{ SetStateProvider(core.StateProvider) }); ok {
+			orchWithState.SetStateProvider(sp)
+		}
 	}
 
 	b.opts.Obs.Logger.Infof("successfully built %s orchestrator", orchestratorName)
@@ -240,7 +253,18 @@ func (b *Builder) FromConfig(ctx context.Context, data []byte) (core.Orchestrato
 			return nil, nil, fmt.Errorf("component %q is missing required field 'type'", comp.Name)
 		}
 		var foundType reflect.Type
-		for t, name := range b.registry.OptionsTypeToName {
+
+		// Get all types and sort them for deterministic iteration.
+		var types []reflect.Type
+		for t := range b.registry.OptionsTypeToName {
+			types = append(types, t)
+		}
+		sort.Slice(types, func(i, j int) bool {
+			return types[i].String() < types[j].String()
+		})
+
+		for _, t := range types {
+			name := b.registry.OptionsTypeToName[t]
 			if name == comp.Type && b.registry.OptionsTypeToKind[t] == comp.Kind {
 				foundType = t
 				break
@@ -276,7 +300,7 @@ func (b *Builder) FromConfig(ctx context.Context, data []byte) (core.Orchestrato
 		b.With(comp.Name, opts)
 	}
 
-	return b.Build(ctx, cfg.Orchestrator, cfg.Updatable)
+	return b.Build(ctx, cfg.Orchestrator, cfg.Updatable, cfg.StateProvider)
 }
 
 func getComponent[T any](m map[string]T, name string) (T, error) {

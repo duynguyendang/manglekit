@@ -110,7 +110,7 @@ func TestBM25_Handler_HappyPath(t *testing.T) {
 		Path: tempDir,
 	})
 
-	_, _, err = b.Build(context.Background(), "mock-orchestrator", "")
+	_, _, err = b.Build(context.Background(), "mock-orchestrator", "", "")
 	require.NoError(t, err)
 }
 
@@ -121,7 +121,7 @@ func TestBM25_Handler_ConfigFailure(t *testing.T) {
 		// Path is missing, which should cause an error
 	})
 
-	_, _, err := b.Build(context.Background(), "mock-orchestrator", "")
+	_, _, err := b.Build(context.Background(), "mock-orchestrator", "", "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "path option is required for bm25 retriever")
 }

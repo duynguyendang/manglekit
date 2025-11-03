@@ -152,7 +152,7 @@ func TestDense_Handler_HappyPath(t *testing.T) {
 		VectorStore: "mock-vs",
 	})
 
-	_, _, err := b.Build(context.Background(), "mock-orchestrator", "")
+	_, _, err := b.Build(context.Background(), "mock-orchestrator", "", "")
 	require.NoError(t, err)
 }
 
@@ -166,7 +166,7 @@ func TestDense_Handler_MissingDependency(t *testing.T) {
 		VectorStore: "mock-vs", // This one is missing
 	})
 
-	_, _, err := b.Build(context.Background(), "mock-orchestrator", "")
+	_, _, err := b.Build(context.Background(), "mock-orchestrator", "", "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "dependency not found: mock-vs")
 }

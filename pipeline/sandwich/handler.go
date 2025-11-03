@@ -6,8 +6,6 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/internal/statehelper"
-	"github.com/duynguyendang/manglekit/internal/logger"
 )
 
 // sandwichHandler implements the ComponentHandler for the sandwich orchestrator.
@@ -36,67 +34,66 @@ func (h *sandwichHandler) BuildComponent(
 	if !ok {
 		return nil, fmt.Errorf("invalid builderDI type: %T", builderDI)
 	}
-
 	opts, ok := cfg.(*Options)
 	if !ok {
 		return nil, fmt.Errorf("invalid options type for sandwich orchestrator, got %T", cfg)
 	}
 
 	// The handler is responsible for resolving all dependencies.
-
-	retriever, err := builder.GetRetriever(opts.Retriever)
+	deps, err := h.buildDeps(builder, opts)
 	if err != nil {
-		return nil, fmt.Errorf("sandwich orchestrator: failed to get retriever %q: %w", opts.Retriever, err)
-	}
-
-	llm, err := builder.GetLLMClient(opts.LLM)
-	if err != nil {
-		return nil, fmt.Errorf("sandwich orchestrator: failed to get llm %q: %w", opts.LLM, err)
-	}
-
-	var reranker core.Reranker
-	if opts.Reranker != "" {
-		reranker, err = builder.GetReranker(opts.Reranker)
-		if err != nil {
-			return nil, fmt.Errorf("sandwich orchestrator: failed to get reranker %q: %w", opts.Reranker, err)
-		}
-	}
-
-	var stateProvider core.StateProvider
-	if opts.StateProvider != "" {
-		stateProvider, err = builder.GetStateProvider(opts.StateProvider)
-		if err != nil {
-			return nil, fmt.Errorf("sandwich orchestrator: failed to get state provider %q: %w", opts.StateProvider, err)
-		}
-	}
-
-	var ruleSet core.RuleSet
-	if opts.RuleSet != "" {
-		ruleSet, err = builder.GetRuleSet(opts.RuleSet)
-		if err != nil {
-			return nil, fmt.Errorf("sandwich orchestrator: failed to get rule set %q: %w", opts.RuleSet, err)
-		}
+		return nil, err
 	}
 
 	// Now, build the orchestrator.
-	s := &Orchestrator{
-		retriever:           retriever,
-		reranker:            reranker,
-		ruleset:             ruleSet,
-		llm:                 llm,
-		stateProvider:       stateProvider,
-		conversationManager: statehelper.NewConversationManager(),
-		closers:             resolved.Closers,
-		obs:                 resolved.Obs,
-		topK:                opts.TopK,
-		maxTokens:           opts.MaxTokens,
-		fallbackThreshold:   opts.FallbackThreshold,
+	f, ok := factory.(*Factory)
+	if !ok {
+		return nil, fmt.Errorf("invalid factory type for sandwich orchestrator, got %T", factory)
+	}
+	orch, err := f.Build(ctx, deps)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build sandwich orchestrator: %w", err)
 	}
 
-	if s.obs.Logger == nil {
-		s.obs.Logger = logger.NewStdLogger()
+	resolved.Orchestrators[name] = orch
+	return orch.Close, nil
+}
+
+func (h *sandwichHandler) buildDeps(builder diapi.Builder, opts *Options) (diapi.SandwichDeps, error) {
+	deps := diapi.SandwichDeps{
+		CoreDeps: builder.GetCoreDeps(),
+	}
+	var err error
+
+	deps.Retriever, err = builder.GetRetriever(opts.Retriever)
+	if err != nil {
+		return diapi.SandwichDeps{}, fmt.Errorf("sandwich orchestrator: failed to get retriever %q: %w", opts.Retriever, err)
 	}
 
-	resolved.Orchestrators[name] = s
-	return s.Close, nil
+	deps.LLM, err = builder.GetLLMClient(opts.LLM)
+	if err != nil {
+		return diapi.SandwichDeps{}, fmt.Errorf("sandwich orchestrator: failed to get llm %q: %w", opts.LLM, err)
+	}
+
+	if opts.Reranker != "" {
+		deps.Reranker, err = builder.GetReranker(opts.Reranker)
+		if err != nil {
+			return diapi.SandwichDeps{}, fmt.Errorf("sandwich orchestrator: failed to get reranker %q: %w", opts.Reranker, err)
+		}
+	}
+
+	if opts.StateProvider != "" {
+		deps.StateProvider, err = builder.GetStateProvider(opts.StateProvider)
+		if err != nil {
+			return diapi.SandwichDeps{}, fmt.Errorf("sandwich orchestrator: failed to get state provider %q: %w", opts.StateProvider, err)
+		}
+	}
+
+	if opts.RuleSet != "" {
+		deps.RuleSet, err = builder.GetRuleSet(opts.RuleSet)
+		if err != nil {
+			return diapi.SandwichDeps{}, fmt.Errorf("sandwich orchestrator: failed to get rule set %q: %w", opts.RuleSet, err)
+		}
+	}
+	return deps, nil
 }

@@ -124,7 +124,7 @@ func TestCosine_Handler_HappyPath(t *testing.T) {
 	b.With("mock-embedder", &mockEmbedderOptions{})
 	b.With("my-cosine", &cosine.CosineOptions{Embedder: "mock-embedder"})
 
-	_, _, err := b.Build(context.Background(), "mock-orchestrator", "")
+	_, _, err := b.Build(context.Background(), "mock-orchestrator", "", "")
 	require.NoError(t, err)
 }
 
@@ -134,7 +134,7 @@ func TestCosine_Handler_MissingDependency(t *testing.T) {
 	// "missing-embedder" is not registered with the builder
 	b.With("my-cosine", &cosine.CosineOptions{Embedder: "missing-embedder"})
 
-	_, _, err := b.Build(context.Background(), "mock-orchestrator", "")
+	_, _, err := b.Build(context.Background(), "mock-orchestrator", "", "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "dependency not found: missing-embedder")
 }
