@@ -4,7 +4,7 @@ project: manglekit
 language: go
 version: 0.5.0
 last_updated: 2025-11-03
-stability: stable
+stability: unstable
 audience: humans_and_agents
 ---
 
@@ -114,39 +114,19 @@ Providers are self-contained modules in `internal/providers` that implement one 
 
 This section tracks architectural gaps identified during code review that deviate from this standard.
 
-- **[Resolved]** GAP-005 — Orchestrator handler coverage: only the Declarative handler is registered for kind `orchestrator`, so Sandwich cannot be built via the Builder. Registered factories exist for both, but the handler is specific to declarative options.
-  - Evidence: internal/providers/orchestrators/orchestrators.go:28; pipeline/declarative/handler.go:1
-- **[Resolved]** GAP-006 — Hybrid retriever factory signature mismatch: factory is registered to receive `diapi.Builder`, but the Retriever handler provides `diapi.RetrieverDeps`. This causes a type assertion failure in the generic factory at runtime.
-  - Evidence: internal/providers/hybrid/hybrid.go:35; internal/providers/retrievers/handler.go:63
-- **[Resolved]** GAP-007 — Declarative state provider selection is arbitrary (first map entry) and not configurable.
-  - Evidence: pipeline/declarative/orchestrator.go:72-78
-- **[Resolved]** GAP-008: Core DI interface 'diapi.Builder' was incomplete.
-- **[Resolved]** GAP-009: ADR-7 Violation - Provider factories were accepting `diapi.Builder` instead of typed `Deps` structs.
+- **[Open]** GAP-009 — Final DI Factory Signature Update Pending: The codebase is in the final phase of a Type-Safe DI refactoring. While most components adhere to the new model, several key provider factories (e.g., for LLMs, Rerankers, State providers) have not yet been updated to accept their specific `diapi.*Deps` struct, in violation of ADR R14. This work is actively in progress.
+  - Evidence: `code-review.md` ("Smell: Factory Signature Mismatch"), `ADR.md` (§9 Remediation Plan).
 
 ## 13. Machine Appendix (JSON Snapshot v1)
 ```json
 {
-  "last_updated": "2025-10-25",
+  "last_updated": "2025-11-03",
   "gaps": [
     {
-      "id": "GAP-005",
-      "status": "Resolved"
-    },
-    {
-      "id": "GAP-006",
-      "status": "Resolved"
-    },
-    {
-      "id": "GAP-007",
-      "status": "Resolved"
-    },
-    {
-      "id": "GAP-008",
-      "status": "Resolved"
-    },
-    {
       "id": "GAP-009",
-      "status": "Resolved"
+      "title": "Final DI Factory Signature Update Pending",
+      "status": "Open",
+      "adr_ref": ["ADR-7", "ADR-14"]
     }
   ]
 }
@@ -169,8 +149,7 @@ The framework follows Semantic Versioning (SemVer). Breaking changes to the `cor
 
 
 ## 14. Changelog
--   **2025-11-03**: Resolved GAP-009 by refactoring all `ComponentHandler` implementations to use a typed DI pattern, ensuring provider factories receive specific `diapi.*Deps` structs instead of the generic builder, fully complying with ADR-7.
--   **2025-10-25**: Final architectural audit complete. All GAPs (005, 006, 007, 008) are confirmed resolved and documentation is synchronized with the stable, handler-based architecture.
+-   **2025-11-03**: Reconciled architecture documents with the actual state of the DI refactor. The previous audit (2025-10-25) incorrectly marked all GAPs as resolved. This update reverts those claims, marks the documentation as unstable, and clarifies that the final factory signature migration (ADR R14) is still in progress.
 -   **2025-10-24**: Resolved GAP-007 by adding explicit `state_provider` selection to the Declarative Orchestrator's options, removing non-deterministic provider selection.
 -   **2025-10-24**: Completed foundational DI refactor, fixed GAP-005 (Sandwich handler) and GAP-006 (hybrid retriever factory). Implemented `ComponentHandler` for Sandwich orchestrator and refactored `pipeline` directory. Also resolved GAP-008 by completing the `diapi.Builder` interface.
 -   **2025-10-23**: Added GAP-005/006/007 after validating current code: orchestrator handler coverage is declarative-only; hybrid retriever factory signature mismatches handler deps; declarative state provider selection is arbitrary.

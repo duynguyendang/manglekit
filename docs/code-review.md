@@ -9,10 +9,17 @@
 
 ## Smell: Factory Signature Mismatch (Hybrid Retriever)
 **Location:** `internal/providers/hybrid/hybrid.go:35`, `internal/providers/retrievers/handler.go:63`
-**Impact Analysis:** The hybrid retriever factory is registered with `D=diapi.Builder`, but the retriever handler passes `diapi.RetrieverDeps` into `Factory.Build`. This will hit a type assertion failure in the generic factory.
-**Refactoring Suggestion:** Change the hybrid factory to accept `diapi.RetrieverDeps` and implement `diapi.SubRetrieversDep` on `HybridOptions`; alternatively change the retriever handler to pass the builder (not recommended as it breaks the uniform DI contract).
+**Impact Analysis:** The hybrid retriever factory is registered with `D=diapi.Builder`, but the retriever handler passes `diapi.RetrieverDeps` into `Factory.Build`. This will hit a type assertion failure in the generic factory. This is one example of a broader issue where many provider factories have not been updated to accept their specific `diapi.*Deps` struct.
+**Refactoring Suggestion:** Change all provider factories to accept their specific `diapi.*Deps` struct, ensuring full compliance with ADR R14.
+**Status:** Open
+**Note:** This issue is the subject of the final DI refactoring phase. (GAP-009)
+
+## Smell: Registry Integrity
+**Location:** `providers/all/all.go`, `internal/providers/**/register.go`
+**Impact Analysis:** The accidental deletion and subsequent restoration of provider `register.go` files highlighted a process gap. Without these files, providers are not registered with the central registry, making them unavailable to the builder and causing the application to fail at startup with a "component not found" error.
+**Refactoring Suggestion:** Ensure all provider directories contain a `register.go` file that correctly calls `manglekit.Register` and is included in the build. Add a CI check to verify that provider packages contain this file.
 **Status:** Resolved
-**Note:** Resolved by refactoring the hybrid retriever's factory to correctly accept the `diapi.RetrieverDeps` struct provided by the handler, per ADR #7. (GAP-006)
+**Note:** The missing `register.go` files were restored, resolving the immediate build failure.
 
 ## Smell: Arbitrary StateProvider Selection (Declarative)
 **Location:** `pipeline/declarative/orchestrator.go:72-78`
