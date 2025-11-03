@@ -36,7 +36,7 @@ func Register(r *manglekit.Registry) {
 			if deps.VectorStore == nil {
 				return nil, fmt.Errorf("dense retriever factory requires a 'vectorStore' dependency, but it was not provided")
 			}
-			return New(deps.Embedder, deps.VectorStore)
+			return New(deps)
 		},
 	)
 }
@@ -58,17 +58,17 @@ type Dense struct {
 // embedder is the component used to convert the query text into a vector embedding.
 // vectorStore is the vector database used to store and search for document vectors.
 // It returns an initialized `core.Retriever` or an error if dependencies are missing.
-func New(embedder ai.Embedder, vectorStore core.VectorStore) (core.Retriever, error) {
-	if embedder == nil {
+func New(deps diapi.DenseRetrieverDeps) (core.Retriever, error) {
+	if deps.Embedder == nil {
 		return nil, fmt.Errorf("dense: an embedder is required")
 	}
-	if vectorStore == nil {
+	if deps.VectorStore == nil {
 		return nil, fmt.Errorf("dense: a vectorStore is required")
 	}
 
 	return &Dense{
-		embedder:    embedder,
-		vectorStore: vectorStore,
+		embedder:    deps.Embedder,
+		vectorStore: deps.VectorStore,
 	}, nil
 }
 

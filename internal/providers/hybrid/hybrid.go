@@ -49,7 +49,7 @@ func Register(r *manglekit.Registry) {
 				rrf_k = 60.0 // Default value
 			}
 
-			return New(subRetrievers, rrf_k)
+			return New(subRetrievers, rrf_k, deps)
 		},
 	)
 }
@@ -72,7 +72,7 @@ type Retriever struct {
 // hybrid retriever will fall back to using only the BM25 retriever.
 // It returns an initialized `core.Retriever` or an error if the BM25
 // retriever dependency is missing.
-func New(retrievers []core.Retriever, rrf_k float64) (core.Retriever, error) {
+func New(retrievers []core.Retriever, rrf_k float64, deps diapi.RetrieverDeps) (core.Retriever, error) {
 	if len(retrievers) == 0 {
 		return nil, fmt.Errorf("hybrid: at least one retriever is required")
 	}

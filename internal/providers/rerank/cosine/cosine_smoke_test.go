@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
@@ -49,7 +50,7 @@ func TestCosineReranker_BasicRanking(t *testing.T) {
 			"keyword only":     {1, 0, 0},
 		},
 	}
-	reranker, err := cosine.New(cosine.CosineOptions{}, embedder)
+	reranker, err := cosine.New(cosine.CosineOptions{}, diapi.RerankerDeps{Embedder: embedder})
 	require.NoError(t, err)
 
 	docs := []core.Doc{
@@ -88,7 +89,7 @@ func TestCosineReranker_EmptyAndTopK(t *testing.T) {
 			"doc3":           {1, 0, 0},
 		},
 	}
-	reranker, err := cosine.New(cosine.CosineOptions{}, embedder)
+	reranker, err := cosine.New(cosine.CosineOptions{}, diapi.RerankerDeps{Embedder: embedder})
 	require.NoError(t, err)
 	ctx := context.Background()
 
@@ -129,7 +130,7 @@ func TestCosineReranker_TieBreak_StableOrder(t *testing.T) {
 			"docC":  {1, 1, 0}, // perfect match
 		},
 	}
-	reranker, err := cosine.New(cosine.CosineOptions{}, embedder)
+	reranker, err := cosine.New(cosine.CosineOptions{}, diapi.RerankerDeps{Embedder: embedder})
 	require.NoError(t, err)
 
 	// docA and docB have the same score, so they should be ordered by ID.

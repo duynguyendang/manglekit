@@ -41,7 +41,7 @@ type InMemoryRetriever struct {
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, &InMemoryOptions{},
 		func(ctx context.Context, deps diapi.RetrieverDeps, cfg *InMemoryOptions) (core.Retriever, error) {
-			return New(*cfg)
+			return New(*cfg, deps)
 		},
 	)
 }
@@ -52,7 +52,7 @@ func Register(r *manglekit.Registry) {
 // opts can contain an initial set of documents to populate the retriever with.
 // It returns an initialized `core.Retriever` or an error if any provided
 // document is missing a required ID.
-func New(opts InMemoryOptions) (core.Retriever, error) {
+func New(opts InMemoryOptions, deps diapi.RetrieverDeps) (core.Retriever, error) {
 	docMap := make(map[string]core.Doc)
 	// opts.Documents can be nil if the retriever is initialized empty.
 	if opts.Documents != nil {
@@ -64,7 +64,7 @@ func New(opts InMemoryOptions) (core.Retriever, error) {
 		}
 	}
 
-	log := opts.Logger
+	log := deps.Obs.Logger
 	if log == nil {
 		log = obslogger.NewStdLogger().With("component", "retriever", "provider", "in-memory")
 	}

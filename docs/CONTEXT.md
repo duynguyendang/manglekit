@@ -3,7 +3,7 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 0.5.0
-last_updated: 2025-10-25
+last_updated: 2025-11-03
 stability: stable
 audience: humans_and_agents
 ---
@@ -121,6 +121,7 @@ This section tracks architectural gaps identified during code review that deviat
 - **[Resolved]** GAP-007 — Declarative state provider selection is arbitrary (first map entry) and not configurable.
   - Evidence: pipeline/declarative/orchestrator.go:72-78
 - **[Resolved]** GAP-008: Core DI interface 'diapi.Builder' was incomplete.
+- **[Resolved]** GAP-009: ADR-7 Violation - Provider factories were accepting `diapi.Builder` instead of typed `Deps` structs.
 
 ## 13. Machine Appendix (JSON Snapshot v1)
 ```json
@@ -141,6 +142,10 @@ This section tracks architectural gaps identified during code review that deviat
     },
     {
       "id": "GAP-008",
+      "status": "Resolved"
+    },
+    {
+      "id": "GAP-009",
       "status": "Resolved"
     }
   ]
@@ -164,6 +169,7 @@ The framework follows Semantic Versioning (SemVer). Breaking changes to the `cor
 
 
 ## 14. Changelog
+-   **2025-11-03**: Resolved GAP-009 by refactoring all `ComponentHandler` implementations to use a typed DI pattern, ensuring provider factories receive specific `diapi.*Deps` structs instead of the generic builder, fully complying with ADR-7.
 -   **2025-10-25**: Final architectural audit complete. All GAPs (005, 006, 007, 008) are confirmed resolved and documentation is synchronized with the stable, handler-based architecture.
 -   **2025-10-24**: Resolved GAP-007 by adding explicit `state_provider` selection to the Declarative Orchestrator's options, removing non-deterministic provider selection.
 -   **2025-10-24**: Completed foundational DI refactor, fixed GAP-005 (Sandwich handler) and GAP-006 (hybrid retriever factory). Implemented `ComponentHandler` for Sandwich orchestrator and refactored `pipeline` directory. Also resolved GAP-008 by completing the `diapi.Builder` interface.

@@ -12,6 +12,11 @@ import (
 // Handler is the component handler for Embedders.
 type Handler struct{}
 
+// NewHandler returns a new ComponentHandler for Embedders.
+func NewHandler() core.ComponentHandler {
+	return &Handler{}
+}
+
 // Kind returns the component kind.
 func (h *Handler) Kind() core.Kind {
 	return core.KindEmbedder
@@ -32,7 +37,8 @@ func (h *Handler) BuildComponent(
 	}
 
 	deps := diapi.EmbedderDeps{
-		Genkit: b.Genkit(),
+		CoreDeps: b.GetCoreDeps(),
+		Genkit:   b.Genkit(),
 	}
 
 	f, ok := factory.(core.Factory)

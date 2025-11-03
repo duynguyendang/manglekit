@@ -11,6 +11,11 @@ import (
 // Handler is the component handler for Rerankers.
 type Handler struct{}
 
+// NewHandler returns a new ComponentHandler for Rerankers.
+func NewHandler() core.ComponentHandler {
+	return &Handler{}
+}
+
 // Kind returns the component kind.
 func (h *Handler) Kind() core.Kind {
 	return core.KindReranker
@@ -44,7 +49,10 @@ func (h *Handler) BuildComponent(
 		return nil, err
 	}
 
-	deps := diapi.RerankerDeps{Embedder: embedder}
+	deps := diapi.RerankerDeps{
+		CoreDeps: b.GetCoreDeps(),
+		Embedder: embedder,
+	}
 	f, ok := factory.(core.Factory)
 	if !ok {
 		return nil, fmt.Errorf("invalid factory type for Reranker handler")

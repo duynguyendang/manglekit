@@ -5,7 +5,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
 	"github.com/duynguyendang/manglekit/pipeline/sandwich"
 	"github.com/firebase/genkit/go/genkit"
@@ -34,17 +36,27 @@ func TestSandwich_Integration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create the orchestrator with the NewSandwich factory.
-	deps := core.Resolved{
-		LLMs:       map[string]core.LLMClient{"openai": llmClient},
-		Retrievers: map[string]core.Retriever{"mock": &MockRetriever{}},
-		MaxTokens:  16,
+	resolved := &core.Resolved{
+		LLMs:          map[string]core.LLMClient{"openai": llmClient},
+		Retrievers:    map[string]core.Retriever{"mock": &MockRetriever{}},
+		Orchestrators: make(map[string]core.Orchestrator),
+		Obs:           core.Observability{Logger: logger.NewStdLogger()},
 	}
-	opts := &sandwich.SandwichOptions{
+	opts := &sandwich.Options{
 		Retriever: "mock",
 		LLM:       "openai",
 	}
-	orchestrator, err := sandwich.NewSandwich(ctx, deps, opts)
+
+	builder, err := manglekit.NewBuilder(ctx, manglekit.NewRegistry(), resolved.Obs, g)
 	require.NoError(t, err)
+
+	handler := sandwich.NewHandler()
+	closer, err := handler.BuildComponent(ctx, builder, nil, resolved, opts, "test_sandwich")
+	require.NoError(t, err)
+	require.NotNil(t, closer)
+
+	orchestrator, ok := resolved.Orchestrators["test_sandwich"]
+	require.True(t, ok)
 
 	// Execute the pipeline.
 	query := core.Query{

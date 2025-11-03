@@ -11,6 +11,11 @@ import (
 // Handler is the component handler for LLMs.
 type Handler struct{}
 
+// NewHandler returns a new ComponentHandler for LLMs.
+func NewHandler() core.ComponentHandler {
+	return &Handler{}
+}
+
 // Kind returns the component kind.
 func (h *Handler) Kind() core.Kind {
 	return core.KindLLM
@@ -33,10 +38,15 @@ func (h *Handler) BuildComponent(
 	var deps any
 	var err error
 
+	coreDeps := b.GetCoreDeps()
+
 	switch c := cfg.(type) {
 	default:
 		// Default case for LLMs that only need the Genkit instance.
-		deps = diapi.LLMDeps{Genkit: b.Genkit()}
+		deps = diapi.LLMDeps{
+			CoreDeps: coreDeps,
+			Genkit:   b.Genkit(),
+		}
 	case diapi.ProviderWithOptions:
 		// This case allows for more complex dependency resolution if needed in the future,
 		// by inspecting the underlying options. For now, it defaults to basic LLMDeps.
@@ -45,7 +55,10 @@ func (h *Handler) BuildComponent(
 		// Add cases here for specific option types that require different dependencies.
 		// e.g., case *MyAdvancedLLMOptions:
 		default:
-			deps = diapi.LLMDeps{Genkit: b.Genkit()}
+			deps = diapi.LLMDeps{
+				CoreDeps: coreDeps,
+				Genkit:   b.Genkit(),
+			}
 		}
 	}
 

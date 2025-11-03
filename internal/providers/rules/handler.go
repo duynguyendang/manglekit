@@ -11,6 +11,11 @@ import (
 // Handler is the component handler for RuleSets.
 type Handler struct{}
 
+// NewHandler returns a new ComponentHandler for RuleSets.
+func NewHandler() core.ComponentHandler {
+	return &Handler{}
+}
+
 // Kind returns the component kind.
 func (h *Handler) Kind() core.Kind {
 	return core.KindRules
@@ -25,7 +30,14 @@ func (h *Handler) BuildComponent(
 	cfg core.ProviderOptions,
 	name string,
 ) (core.ResourceCloser, error) {
-	deps := diapi.RuleSetDeps{}
+	b, ok := builderDI.(diapi.Builder)
+	if !ok {
+		return nil, fmt.Errorf("invalid builder DI type for RuleSet handler")
+	}
+
+	deps := diapi.RuleSetDeps{
+		CoreDeps: b.GetCoreDeps(),
+	}
 	f, ok := factory.(core.Factory)
 	if !ok {
 		return nil, fmt.Errorf("invalid factory type for RuleSet handler")
