@@ -104,3 +104,21 @@ The following issues were identified in a previous review and have been resolved
 **Impact Analysis:** Using `any` and runtime type assertions for dependency injection in factories was brittle.
 **Refactoring Suggestion:** Use the strongly-typed `diapi` structs for all dependency injection.
 **Status:** Resolved
+
+## Smell: Missing Core DI Component
+**Location:** `core/diapi/di.go`
+**Impact Analysis:** The `diapi` package, which defines the dependency injection contract, is missing a `CoreDeps` struct. This struct is a key component of the modern, typed registration pattern (`manglekit.Register[T, D, O]`) as it provides a standard way to inject core framework services (like `Observability`) into component factories. Without it, factories that need these services have no clean way to receive them, leading to inconsistent dependency injection.
+**Refactoring Suggestion:** Define and export a `diapi.CoreDeps` struct in `core/diapi/di.go` containing fields for core services like `Obs core.Observability`. Update the generic `manglekit.Register` function to inject this struct into all component factories.
+**Status:** Open
+
+## Smell: Legacy Registration Pattern
+**Location:** `providers/all/all.go`
+**Impact Analysis:** The `providers/all/all.go` file uses a `ComponentHandlers()` function to manually collect and register a list of `core.ComponentHandler` implementations. This pattern is a holdover from the programmatic, builder-first architecture. It is incompatible with the modern "Config-First" approach, which relies on a pre-populated registry of provider factories (`manglekit.Register`) that the `sdk.FromConfig` function uses for dynamic component building. This legacy function creates architectural ambiguity and is redundant.
+**Refactoring Suggestion:** Delete the `ComponentHandlers()` function. Create a new `all.Register(r *manglekit.Registry)` function that calls the individual `Register` function for each production-ready provider, populating the registry with all necessary types, factories, and handlers for the `sdk.FromConfig` workflow.
+**Status:** Open
+
+## Smell: Polluted BuilderAPI
+**Location:** `builder.go`
+**Impact Analysis:** The `BuilderAPI` interface includes methods like `With(...)` and `WithHandlers(...)`. These methods support a programmatic, fluent-style of building that is at odds with the "Config-First" architectural principle mandated by ADR.md. The one true entry point for the modern architecture should be `FromConfig`. The presence of these legacy methods pollutes the builder's public interface, creates confusion about the intended usage pattern, and increases the maintenance surface.
+**Refactoring Suggestion:** Remove the `With(...)` and `WithHandlers(...)` methods from the `BuilderAPI` interface. Refactor the `Builder` struct to be an internal implementation detail of the `sdk.FromConfig` function, removing its export and hiding the programmatic building capabilities from the public API.
+**Status:** Open
