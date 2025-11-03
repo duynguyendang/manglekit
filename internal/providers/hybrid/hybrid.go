@@ -143,8 +143,13 @@ func (h *Retriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (cor
 	}
 
 	sort.Slice(finalDocs, func(i, j int) bool {
-		// Sort in descending order of score.
-		return scores[finalDocs[i].ID] > scores[finalDocs[j].ID]
+		scoreI := scores[finalDocs[i].ID]
+		scoreJ := scores[finalDocs[j].ID]
+		if scoreI != scoreJ {
+			return scoreI > scoreJ // Sort in descending order of score.
+		}
+		// If scores are equal, sort by ID for deterministic ordering.
+		return finalDocs[i].ID < finalDocs[j].ID
 	})
 
 	// Ensure the number of returned documents does not exceed TopK.
