@@ -29,14 +29,14 @@ func TestNewBM25(t *testing.T) {
 			Path: tempDir,
 			TopK: 5,
 		}
-		retriever, err := New(opts)
+		retriever, err := New(opts, diapi.NoopDeps{})
 		require.NoError(t, err)
 		assert.NotNil(t, retriever)
 	})
 
 	t.Run("error_no_path", func(t *testing.T) {
 		opts := BM25Options{}
-		_, err := New(opts)
+		_, err := New(opts, diapi.NoopDeps{})
 		assert.Error(t, err)
 	})
 
@@ -44,7 +44,7 @@ func TestNewBM25(t *testing.T) {
 		opts := BM25Options{
 			Path: "/invalid/path",
 		}
-		_, err := New(opts)
+		_, err := New(opts, diapi.NoopDeps{})
 		assert.Error(t, err)
 	})
 }
@@ -64,7 +64,7 @@ func TestBM25Retrieve(t *testing.T) {
 		Path: tempDir,
 		TopK: 2,
 	}
-	retriever, err := New(opts)
+	retriever, err := New(opts, diapi.NoopDeps{})
 	require.NoError(t, err)
 
 	t.Run("success", func(t *testing.T) {

@@ -11,6 +11,11 @@ import (
 // Handler is the component handler for Retrievers.
 type Handler struct{}
 
+// NewHandler returns a new ComponentHandler for Retrievers.
+func NewHandler() core.ComponentHandler {
+	return &Handler{}
+}
+
 // Kind returns the component kind.
 func (h *Handler) Kind() core.Kind {
 	return core.KindRetriever
@@ -36,10 +41,14 @@ func (h *Handler) BuildComponent(
 	}
 	opts := providerWithOptions.GetProviderOptions()
 
+	coreDeps := b.GetCoreDeps()
 	var deps any
 	switch typedOpts := opts.(type) {
 	case diapi.SubRetrieversDep:
-		hybridDeps := diapi.RetrieverDeps{SubRetrievers: make(map[string]core.Retriever)}
+		hybridDeps := diapi.RetrieverDeps{
+			CoreDeps:      coreDeps,
+			SubRetrievers: make(map[string]core.Retriever),
+		}
 		for _, subName := range typedOpts.GetSubRetrievers() {
 			r, err := b.GetRetriever(subName)
 			if err != nil {
@@ -61,6 +70,7 @@ func (h *Handler) BuildComponent(
 				return nil, fmt.Errorf("failed to get vector store '%s' for dense retriever '%s': %w", vsDep.GetVectorStore(), name, err)
 			}
 			deps = diapi.DenseRetrieverDeps{
+				CoreDeps:    coreDeps,
 				Embedder:    embedder,
 				VectorStore: vs,
 			}
@@ -69,7 +79,7 @@ func (h *Handler) BuildComponent(
 		}
 
 	default:
-		deps = diapi.NoopDeps{}
+		deps = diapi.NoopDeps{CoreDeps: coreDeps}
 	}
 
 	f, ok := factory.(core.Factory)

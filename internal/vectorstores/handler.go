@@ -18,6 +18,11 @@ type VectorStoreOptions interface {
 // Handler is the component handler for VectorStores.
 type Handler struct{}
 
+// NewHandler returns a new ComponentHandler for VectorStores.
+func NewHandler() core.ComponentHandler {
+	return &Handler{}
+}
+
 // Kind returns the component kind.
 func (h *Handler) Kind() core.Kind {
 	return core.KindVectorStore
@@ -51,12 +56,15 @@ func (h *Handler) BuildComponent(
 			}
 		}
 		deps = diapi.VectorStoreDeps{
+			CoreDeps: b.GetCoreDeps(),
 			Embedder: emb,
 		}
 	default:
 		// This case handles vector stores that might not have or need an embedder.
 		// For example, a purely lexical vector store.
-		deps = diapi.NoopDeps{}
+		deps = diapi.NoopDeps{
+			CoreDeps: b.GetCoreDeps(),
+		}
 	}
 
 	if err != nil {

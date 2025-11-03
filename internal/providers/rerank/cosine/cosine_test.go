@@ -30,13 +30,14 @@ func (m *mockEmbedder) Register(r api.Registry) {}
 
 func TestNew(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		reranker, err := New(CosineOptions{}, &mockEmbedder{})
+		deps := diapi.RerankerDeps{Embedder: &mockEmbedder{}}
+		reranker, err := New(CosineOptions{}, deps)
 		require.NoError(t, err)
 		assert.NotNil(t, reranker)
 	})
 
 	t.Run("nil_embedder", func(t *testing.T) {
-		_, err := New(CosineOptions{}, nil)
+		_, err := New(CosineOptions{}, diapi.RerankerDeps{})
 		assert.Error(t, err)
 	})
 }
@@ -62,8 +63,8 @@ func TestRerank(t *testing.T) {
 			}, nil
 		},
 	}
-
-	reranker, err := New(CosineOptions{TopK: 2}, embedder)
+	deps := diapi.RerankerDeps{Embedder: embedder}
+	reranker, err := New(CosineOptions{TopK: 2}, deps)
 	require.NoError(t, err)
 
 	req := core.RerankRequest{

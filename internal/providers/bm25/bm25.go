@@ -45,7 +45,7 @@ func (o *BM25Options) GetProviderOptions() any { return o }
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, &BM25Options{},
 		func(ctx context.Context, deps diapi.NoopDeps, cfg *BM25Options) (core.Retriever, error) {
-			return New(*cfg)
+			return New(*cfg, deps)
 		},
 	)
 }
@@ -89,7 +89,7 @@ type BM25 struct {
 // directory of documents to be indexed.
 // It returns an initialized `core.Retriever` or an error if the document
 // path is invalid or document loading/parsing fails.
-func New(opts BM25Options) (core.Retriever, error) {
+func New(opts BM25Options, deps diapi.NoopDeps) (core.Retriever, error) {
 	if opts.Path == "" {
 		return nil, fmt.Errorf("path option is required for bm25 retriever")
 	}
@@ -97,7 +97,7 @@ func New(opts BM25Options) (core.Retriever, error) {
 	if topK == 0 {
 		topK = 10 // default value
 	}
-	logger := opts.Logger
+	logger := deps.Obs.Logger
 	if logger == nil {
 		logger = obslogger.NewStdLogger()
 	}

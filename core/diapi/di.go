@@ -55,47 +55,59 @@ type ProviderWithOptions interface {
 
 // RetrieverDeps provides dependencies for a retriever that depends on other sub-retrievers.
 type RetrieverDeps struct {
+	CoreDeps
 	SubRetrievers map[string]core.Retriever
 }
 
 // DenseRetrieverDeps provides dependencies for a dense retriever.
 type DenseRetrieverDeps struct {
+	CoreDeps
 	Embedder    ai.Embedder
 	VectorStore core.VectorStore
 }
 
 // LLMDeps provides all possible dependencies that an LLM factory might need.
 type LLMDeps struct {
+	CoreDeps
 	Genkit *genkit.Genkit
 	Client any // Provider-specific client, e.g., *openai.Client
 }
 
 // EmbedderDeps provides all possible dependencies that an embedder factory might need.
 type EmbedderDeps struct {
+	CoreDeps
 	Genkit *genkit.Genkit
 	Client any // Provider-specific client, e.g., *genai.EmbedderClient
 }
 
 // VectorStoreDeps provides all possible dependencies that a vector store factory might need.
 type VectorStoreDeps struct {
+	CoreDeps
 	Embedder ai.Embedder
 }
 
 // RerankerDeps provides all possible dependencies that a reranker factory might need.
 type RerankerDeps struct {
+	CoreDeps
 	Embedder ai.Embedder
 }
 
 // StateProviderDeps provides dependencies for a state provider factory.
 // Currently, it has no dependencies.
-type StateProviderDeps struct{}
+type StateProviderDeps struct {
+	CoreDeps
+}
 
 // RuleSetDeps provides dependencies for a ruleset factory.
 // Currently, it has no dependencies.
-type RuleSetDeps struct{}
+type RuleSetDeps struct {
+	CoreDeps
+}
 
 // NoopDeps is a placeholder for factories that have no dependencies.
-type NoopDeps struct{}
+type NoopDeps struct {
+	CoreDeps
+}
 
 // CoreDeps provides access to core framework services.
 type CoreDeps struct {

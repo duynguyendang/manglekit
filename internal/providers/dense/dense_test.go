@@ -52,18 +52,28 @@ func (m *mockVectorStore) Search(ctx context.Context, queryText string, queryVec
 
 func TestNew(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		retriever, err := New(&mockEmbedder{}, &mockVectorStore{})
+		deps := diapi.DenseRetrieverDeps{
+			Embedder:    &mockEmbedder{},
+			VectorStore: &mockVectorStore{},
+		}
+		retriever, err := New(deps)
 		require.NoError(t, err)
 		assert.NotNil(t, retriever)
 	})
 
 	t.Run("nil_embedder", func(t *testing.T) {
-		_, err := New(nil, &mockVectorStore{})
+		deps := diapi.DenseRetrieverDeps{
+			VectorStore: &mockVectorStore{},
+		}
+		_, err := New(deps)
 		assert.Error(t, err)
 	})
 
 	t.Run("nil_vectorstore", func(t *testing.T) {
-		_, err := New(&mockEmbedder{}, nil)
+		deps := diapi.DenseRetrieverDeps{
+			Embedder: &mockEmbedder{},
+		}
+		_, err := New(deps)
 		assert.Error(t, err)
 	})
 }
@@ -88,7 +98,11 @@ func TestDense_Retrieve(t *testing.T) {
 		},
 	}
 
-	retriever, err := New(embedder, vectorStore)
+	deps := diapi.DenseRetrieverDeps{
+		Embedder:    embedder,
+		VectorStore: vectorStore,
+	}
+	retriever, err := New(deps)
 	require.NoError(t, err)
 
 	t.Run("success", func(t *testing.T) {

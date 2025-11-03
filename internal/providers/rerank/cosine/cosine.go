@@ -40,7 +40,7 @@ func Register(r *manglekit.Registry) {
 			if deps.Embedder == nil {
 				return nil, fmt.Errorf("cosine reranker factory requires an 'embedder' dependency, but it was not provided")
 			}
-			return New(*cfg, deps.Embedder)
+			return New(*cfg, deps)
 		},
 	)
 }
@@ -61,12 +61,12 @@ type Reranker struct {
 // embedder is the embedding model component used to generate vector embeddings
 // for both the query and the documents. This dependency is injected by the builder.
 // It returns a configured `core.Reranker` or an error if the embedder is missing.
-func New(opts CosineOptions, embedder ai.Embedder) (core.Reranker, error) {
-	if embedder == nil {
+func New(opts CosineOptions, deps diapi.RerankerDeps) (core.Reranker, error) {
+	if deps.Embedder == nil {
 		return nil, fmt.Errorf("cosine reranker requires an embedder")
 	}
 	return &Reranker{
-		embedder: embedder,
+		embedder: deps.Embedder,
 		topK:     opts.TopK,
 	}, nil
 }

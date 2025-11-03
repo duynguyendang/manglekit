@@ -14,7 +14,7 @@ import (
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, &state.RedisOptions{},
 		func(ctx context.Context, deps diapi.NoopDeps, cfg *state.RedisOptions) (core.StateProvider, error) {
-			return New(ctx, *cfg)
+			return New(ctx, *cfg, deps)
 		},
 	)
 }
@@ -28,7 +28,7 @@ type Provider struct {
 // New creates a new Redis state provider. It initializes a connection to the
 // Redis server using the provided options and pings the server to ensure
 // connectivity before returning the provider instance.
-func New(ctx context.Context, opts state.RedisOptions) (core.StateProvider, error) {
+func New(ctx context.Context, opts state.RedisOptions, deps diapi.NoopDeps) (core.StateProvider, error) {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     opts.Addr,
 		Password: opts.Password,

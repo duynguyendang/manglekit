@@ -27,13 +27,13 @@ func (m *mockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) 
 func TestNew(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		retrievers := []core.Retriever{&mockRetriever{}}
-		retriever, err := New(retrievers, 60.0)
+		retriever, err := New(retrievers, 60.0, diapi.RetrieverDeps{})
 		require.NoError(t, err)
 		assert.NotNil(t, retriever)
 	})
 
 	t.Run("no_retrievers", func(t *testing.T) {
-		_, err := New([]core.Retriever{}, 60.0)
+		_, err := New([]core.Retriever{}, 60.0, diapi.RetrieverDeps{})
 		assert.Error(t, err)
 	})
 }
@@ -55,7 +55,7 @@ func TestHybrid_Retrieve_RRF(t *testing.T) {
 		},
 	}
 
-	hybrid, err := New([]core.Retriever{retriever1, retriever2}, 60.0)
+	hybrid, err := New([]core.Retriever{retriever1, retriever2}, 60.0, diapi.RetrieverDeps{})
 	require.NoError(t, err)
 
 	result, err := hybrid.Retrieve(ctx, core.RetrieveRequest{TopK: 2})
@@ -76,7 +76,7 @@ func TestHybrid_Retrieve_SingleRetriever(t *testing.T) {
 		},
 	}
 
-	hybrid, err := New([]core.Retriever{retriever}, 60.0)
+	hybrid, err := New([]core.Retriever{retriever}, 60.0, diapi.RetrieverDeps{})
 	require.NoError(t, err)
 
 	result, err := hybrid.Retrieve(ctx, core.RetrieveRequest{TopK: 1})

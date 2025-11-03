@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/providers/bm25"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,7 +23,7 @@ func newTestRetriever(t *testing.T, docs map[string]string) core.Retriever {
 		require.NoError(t, err)
 	}
 	opts := bm25.BM25Options{Path: tempDir}
-	r, err := bm25.New(opts)
+	r, err := bm25.New(opts, diapi.NoopDeps{})
 	require.NoError(t, err)
 	return r
 }
