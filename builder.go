@@ -17,11 +17,6 @@ import (
 	"reflect"
 )
 
-// builderAPI defines the fluent interface for the MangleKit orchestrator builder.
-type builderAPI interface {
-	fromConfig(ctx context.Context, data []byte) (core.Orchestrator, retrieve.Updatable, error)
-	build(ctx context.Context, orchestratorName, updatableName, stateProviderName string) (core.Orchestrator, retrieve.Updatable, error)
-}
 
 type configItem struct {
 	kind core.Kind
@@ -94,24 +89,6 @@ func (b *builder) GetCoreDeps() diapi.CoreDeps {
 	return diapi.CoreDeps{
 		Obs: b.opts.Obs,
 	}
-}
-
-func (b *builder) with(name string, opts any) *builder {
-	if opts == nil {
-		return b
-	}
-	providerOpts, ok := opts.(core.ProviderOptions)
-	if !ok {
-		b.errs = append(b.errs, fmt.Errorf("type %T does not implement core.ProviderOptions", opts))
-		return b
-	}
-
-	b.cfgs = append(b.cfgs, configItem{
-		kind: providerOpts.ProviderKind(),
-		name: name,
-		cfg:  providerOpts,
-	})
-	return b
 }
 
 func (b *builder) buildAll(ctx context.Context) error {
@@ -233,12 +210,6 @@ func (b *builder) closeResources(ctx context.Context) error {
 	return combined
 }
 
-func (b *builder) withHandlers(handlers ...core.ComponentHandler) *builder {
-	for _, h := range handlers {
-		b.registry.RegisterHandler(h)
-	}
-	return b
-}
 
 func (b *builder) fromConfig(ctx context.Context, data []byte) (core.Orchestrator, retrieve.Updatable, error) {
 	cfg, err := config.ParseConfig(data)
@@ -295,7 +266,16 @@ func (b *builder) fromConfig(ctx context.Context, data []byte) (core.Orchestrato
 			return nil, nil, fmt.Errorf("failed to decode params for %s '%s': %w", comp.Kind, comp.Name, err)
 		}
 
-		b.with(comp.Name, opts)
+		providerOpts, ok := opts.(core.ProviderOptions)
+		if !ok {
+			b.errs = append(b.errs, fmt.Errorf("type %T does not implement core.ProviderOptions", opts))
+		} else {
+			b.cfgs = append(b.cfgs, configItem{
+				kind: providerOpts.ProviderKind(),
+				name: comp.Name,
+				cfg:  providerOpts,
+			})
+		}
 	}
 
 	return b.build(ctx, cfg.Orchestrator, cfg.Updatable, cfg.StateProvider)
