@@ -3,7 +3,7 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 0.5.0
-last_updated: 2025-11-03
+last_updated: 2025-11-04
 stability: stable
 audience: humans_and_agents
 ---

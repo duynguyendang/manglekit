@@ -3,7 +3,7 @@ context_type: low_level_design
 project: manglekit
 language: go
 version: 0.5.0
-last_updated: 2025-11-03
+last_updated: 2025-11-04
 stability: stable
 audience: developers
 ---

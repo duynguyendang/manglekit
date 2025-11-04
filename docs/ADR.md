@@ -296,7 +296,7 @@ Fix flagged findings as part of ongoing refactors; adjust severities as needed w
 
 ---
 
-## 9) Remediation Plan for Current Gaps (2025‑11‑03)
+## 9) Remediation Plan for Current Gaps (2025‑11‑03) - RESOLVED
 
 ### Context
 The architecture documents have been reconciled with the codebase's current state. The primary open architectural issue is the final phase of the Type-Safe DI refactoring, tracked as GAP-009.
