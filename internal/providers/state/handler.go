@@ -32,10 +32,10 @@ func (h *Handler) BuildComponent(
 ) (core.ResourceCloser, error) {
 	b, ok := builderDI.(diapi.Builder)
 	if !ok {
-		return nil, fmt.Errorf("invalid builder DI type for StateProvider handler")
+		return nil, fmt.Errorf("invalid builder DI type for StateProvider handler: got %T", builderDI)
 	}
 
-	deps := diapi.NoopDeps{
+	deps := diapi.StateProviderDeps{
 		CoreDeps: b.GetCoreDeps(),
 	}
 
@@ -49,10 +49,10 @@ func (h *Handler) BuildComponent(
 		return nil, fmt.Errorf("factory for %s '%s' failed: %w", core.KindStateProvider, name, err)
 	}
 
-	provider, ok := built.(core.StateProvider)
+	stateProvider, ok := built.(core.StateProvider)
 	if !ok {
 		return nil, fmt.Errorf("component %s is not a valid StateProvider", name)
 	}
-	resolved.StateProviders[name] = provider
-	return provider.Close, nil
+	resolved.StateProviders[name] = stateProvider
+	return stateProvider.Close, nil
 }

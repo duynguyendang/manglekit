@@ -57,11 +57,29 @@ func (h *Handler) BuildComponent(
 		}
 	}
 
+	var ruleSet core.RuleSet
+	if opts.RuleSet != "" {
+		ruleSet, err = b.GetRuleSet(opts.RuleSet)
+		if err != nil {
+			return nil, fmt.Errorf("sandwich orchestrator: failed to get ruleset %q: %w", opts.RuleSet, err)
+		}
+	}
+
+	var stateProvider core.StateProvider
+	if opts.StateProvider != "" {
+		stateProvider, err = b.GetStateProvider(opts.StateProvider)
+		if err != nil {
+			return nil, fmt.Errorf("sandwich orchestrator: failed to get state provider %q: %w", opts.StateProvider, err)
+		}
+	}
+
 	deps := diapi.SandwichDeps{
-		CoreDeps:  b.GetCoreDeps(),
-		Retriever: retriever,
-		LLM:       llm,
-		Reranker:  reranker,
+		CoreDeps:      b.GetCoreDeps(),
+		Retriever:     retriever,
+		LLM:           llm,
+		Reranker:      reranker,
+		RuleSet:       ruleSet,
+		StateProvider: stateProvider,
 	}
 
 	f, ok := factory.(core.Factory)

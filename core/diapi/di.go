@@ -119,6 +119,13 @@ type SandwichDeps struct {
 	RuleSet       core.RuleSet
 }
 
+// DeclarativeOrchestratorDeps provides dependencies for the declarative orchestrator.
+type DeclarativeOrchestratorDeps struct {
+	CoreDeps
+	StateProvider core.StateProvider
+	Tools         map[string]core.Tool
+}
+
 // CoreDeps provides access to core framework services.
 type CoreDeps struct {
 	Obs core.Observability
