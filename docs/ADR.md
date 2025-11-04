@@ -4,6 +4,7 @@
 **Scope:** Core SDK (registry, builder, orchestrators, providers, config bridge)
 **Period:** Oct 2025
 **Audience:** Core maintainers, provider/orchestrator authors, contributors
+**Last Updated:** 2025-11-04
 
 ---
 
@@ -302,7 +303,7 @@ Fix flagged findings as part of ongoing refactors; adjust severities as needed w
 The architecture documents have been reconciled with the codebase's current state. The primary open architectural issue is the final phase of the Type-Safe DI refactoring, tracked as GAP-009.
 
 ### High-Priority Items
-1.  **Complete the migration of all provider factory signatures (e.g., LLM, Reranker, State) to accept their respective `diapi.*Deps` struct, ensuring full compliance with ADR R14.**
+1.  **Complete the migration of all provider factory signatures (e.g., LLM, Reranker, State) to accept their respective `diapi.*Deps` struct, ensuring full compliance with ADR R14.** This has been completed, with a focus on the `declarative` and `sandwich` orchestrators, which were the last remaining violators.
 
 ### Acceptance
 - All provider factories are updated to remove `diapi.Builder` dependencies.

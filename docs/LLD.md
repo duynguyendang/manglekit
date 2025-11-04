@@ -209,9 +209,9 @@ Tracing the `hybrid` retriever:
 All previously identified architectural gaps and deviations have been resolved. The codebase is now in a stable state and fully compliant with the design described in this document.
 
 # 13. Changelog
-
-*   **2025-11-03:** Completed final architectural cleanup and document synchronization. Aligned this LLD with the stable, 100% complete state of the codebase.
-*   **2025-11-03:** Reconciled LLD with the actual (in-progress) state of the DI refactor. The previous audit claim that all GAPs were resolved has been reverted, and the document is marked as unstable pending completion of the factory signature migration.
-*   **2025-10-23:** Updated deviations to reflect current gaps (orchestrator handler coverage, hybrid factory signature, declarative state selection). Clarified hybrid construction path note.
-*   **2025-10-20:** Regenerated LLD to reflect the decentralized, handler-based builder architecture. Updated diagrams and construction path to show the new flow. Synchronized deviations with the latest code review.
-*   **2025-10-19:** Initial draft of the LLD.
+*   **2025-11-04**: Enforced ADR-7 (R14) compliance by refactoring the `declarative` and `sandwich` orchestrator providers to use typed `diapi.*Deps` structs, removing the final `diapi.Builder` violations. Rewrote orchestrator tests to use the modern YAML-based `sdk.LoadWithRegistry` pattern.
+*   **2025-11-03**: Completed final architectural cleanup and document synchronization. Aligned this LLD with the stable, 100% complete state of the codebase.
+*   **2025-11-03**: Reconciled LLD with the actual (in-progress) state of the DI refactor. The previous audit claim that all GAPs were resolved has been reverted, and the document is marked as unstable pending completion of the factory signature migration.
+*   **2025-10-23**: Updated deviations to reflect current gaps (orchestrator handler coverage, hybrid factory signature, declarative state selection). Clarified hybrid construction path note.
+*   **2025-10-20**: Regenerated LLD to reflect the decentralized, handler-based builder architecture. Updated diagrams and construction path to show the new flow. Synchronized deviations with the latest code review.
+*   **2025-10-19**: Initial draft of the LLD.

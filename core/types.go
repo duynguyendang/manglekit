@@ -136,6 +136,7 @@ type Resolved struct {
 	StateProviders map[string]StateProvider
 	Orchestrators  map[string]Orchestrator
 	SchemaParsers  map[string]SchemaParser
+	Tools          map[string]Tool
 
 	Obs               Observability
 	TopK              int
@@ -148,6 +149,9 @@ type Resolved struct {
 // in a `core.Tool` adapter. This allows the declarative orchestrator to look up
 // its steps in a generic, type-safe way.
 func (r *Resolved) GetToolByName(name string) (Tool, error) {
+	if t, ok := r.Tools[name]; ok {
+		return t, nil
+	}
 	if t, ok := r.Retrievers[name]; ok {
 		return &RetrieverTool{R: t}, nil
 	}

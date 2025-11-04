@@ -10,11 +10,8 @@ import (
 // Register registers the declarative orchestrator with the MangleKit registry.
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, &Options{},
-		func(ctx context.Context, deps diapi.NoopDeps, cfg *Options) (core.Orchestrator, error) {
-			// The declarative orchestrator is a bit different, it needs the full resolved deps.
-			// This is a temporary workaround until the DI system is more flexible.
-			return nil, nil
+		func(ctx context.Context, deps diapi.DeclarativeOrchestratorDeps, cfg *Options) (core.Orchestrator, error) {
+			return NewDeclarative(ctx, deps, cfg)
 		},
 	)
-	r.RegisterHandler(NewHandler())
 }
