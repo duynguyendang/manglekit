@@ -269,3 +269,44 @@ Each kind must have a dedicated `core.ComponentHandler`.
 * Keep generated commits atomic and syntactically valid.  
 
 ---
+
+## 15. Config-First Test Architecture (Enforced)
+
+This section defines the **mandatory** pattern for writing integration tests against the "Config-First" architecture. All provider-level tests (e.g., `dense_handler_test.go`) must follow this pattern.
+
+### The Problem: The "Config-First" Test Seam
+
+The "Config-First" architecture removes programmatic builder methods (like `With()`). Tests can no longer manually inject dependencies.
+
+The *only* entry point is `sdk.Load` (or the test-specific `sdk.LoadWithRegistry`). This function parses a YAML config string *before* the build begins.
+
+### The Error: "could not find options type"
+
+This common test failure is a **config parsing error**, not a build error. It occurs because the `sdk.Load` function cannot map a provider name from the YAML (e.g., `provider: "my-mock"`) to a corresponding Go struct type (e.g., `my_mock.Options{}`).
+
+### The Solution: The 3-Part Registration Rule
+
+To fix this, your test setup function (e.g., `registerTestDeps`) **must** register **all three** components for *every provider* defined in your test YAML:
+
+1.  **The `ComponentHandler`:** (e.g., `retrievers.NewHandler()`). This tells the **Builder** *how* to build components of this `Kind`.
+2.  **The `Factory`:** (e.g., `dense.NewFactory()`). This tells the **Handler** *what* to build when it sees the provider name.
+3.  **The `Options` Sample:** (e.g., `dense.Options{}`). This tells the **Config Loader** *what Go type* to use when parsing the YAML for that provider name.
+
+**Example Test Setup:**
+
+```go
+// In test setup (e.g., registerTestDeps)
+// This test needs a 'dense' retriever and a 'mock-embed' embedder.
+
+// 1. Register HANDLERS for all KINDS
+reg.Register(retrievers.NewHandler())
+reg.Register(embedders.NewHandler())
+
+// 2. Register FACTORIES for all PROVIDERS
+reg.Register(dense.NewFactory())
+reg.Register(mock_embed.NewFactory())
+
+// 3. Register OPTIONS SAMPLES for all PROVIDERS
+// This is the step that fixes the "could not find options type" error.
+reg.Register(dense.Options{})
+reg.Register(mock_embed.Options{})
