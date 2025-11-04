@@ -1,9 +1,0 @@
-{
-  "$id": "user",
-  "type": "object",
-  "properties": {
-    "email": { "type": "string", "format": "email" },
-    "status": { "type": "string" }
-  },
-  "required": ["email", "status"]
-}

@@ -1,9 +1,0 @@
-# This rule file validates incoming requests against a schema.
-# The `request_field/2` facts are generated from the live query.
-# e.g., request_field("status", "active").
-
-# Deny if the user's status is "blocked".
-# This is a simple rule to demonstrate that the custom fact converter
-# and the schema parser system are working together.
-deny("user", "user status is blocked") :-
-  request_field("status", "blocked").
