@@ -1,4 +1,4 @@
-//go:build !testhooks
+//go:build testhooks
 
 package all
 
