@@ -7,19 +7,38 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/logger"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
 	"github.com/duynguyendang/manglekit/pipeline/sandwich"
-	"github.com/firebase/genkit/go/genkit"
+	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// MockRetriever is a simple mock for the retriever.
-type MockRetriever struct{}
+// mockRetrieverOptions provides a dummy options struct for the mock retriever.
+type mockRetrieverOptions struct{}
 
-func (r *MockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
+func (o *mockRetrieverOptions) ProviderName() string { return "mock-retriever" }
+func (o *mockRetrieverOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o *mockRetrieverOptions) GetProviderOptions() any   { return o }
+
+// mockRetriever is a mock implementation of core.Retriever for testing.
+type mockRetriever struct{}
+
+func (m *mockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
 	return core.RetrieveResult{Docs: []core.Doc{{Text: "mock document"}}}, nil
+}
+
+func registerTestComponents(r *manglekit.Registry) {
+	sandwich.Register(r)
+	llm.RegisterOpenAI(r)
+	manglekit.Register(r, &mockRetrieverOptions{}, func(ctx context.Context, deps diapi.NoopDeps, cfg *mockRetrieverOptions) (core.Retriever, error) {
+		return &mockRetriever{}, nil
+	})
+	r.RegisterHandler(&retrievers.Handler{})
+	r.RegisterHandler(sandwich.NewHandler())
+	r.RegisterHandler(&llm.Handler{})
 }
 
 func TestSandwich_Integration(t *testing.T) {
@@ -28,41 +47,36 @@ func TestSandwich_Integration(t *testing.T) {
 		t.Skip("skipping sandwich integration test: OPENAI_API_KEY not set")
 	}
 
-	ctx := context.Background()
-	g := genkit.Init(ctx, nil)
+	reg := manglekit.NewRegistry()
+	registerTestComponents(reg)
 
-	// Create a real OpenAI client.
-	llmClient, err := llm.NewOpenAI(llm.OpenAIOptions{APIKey: openaiAPIKey, Model: "gpt-3.5-turbo"}, g)
+	configYAML := `
+orchestrator: test-sandwich
+components:
+  - name: openai
+    kind: llm
+    type: openai
+    params:
+      apiKey: ` + openaiAPIKey + `
+      model: gpt-3.5-turbo
+  - name: mock-retriever
+    kind: retriever
+    type: mock-retriever
+  - name: test-sandwich
+    kind: orchestrator
+    type: sandwich
+    params:
+      retriever: mock-retriever
+      llm: openai
+`
+	orchestrator, err := sdk.LoadWithRegistry(context.Background(), []byte(configYAML), reg)
 	require.NoError(t, err)
-
-	// Create the orchestrator with the NewSandwich factory.
-	resolved := &core.Resolved{
-		LLMs:          map[string]core.LLMClient{"openai": llmClient},
-		Retrievers:    map[string]core.Retriever{"mock": &MockRetriever{}},
-		Orchestrators: make(map[string]core.Orchestrator),
-		Obs:           core.Observability{Logger: logger.NewStdLogger()},
-	}
-	opts := &sandwich.Options{
-		Retriever: "mock",
-		LLM:       "openai",
-	}
-
-	builder, err := manglekit.NewBuilder(ctx, manglekit.NewRegistry(), resolved.Obs, g)
-	require.NoError(t, err)
-
-	handler := sandwich.NewHandler()
-	closer, err := handler.BuildComponent(ctx, builder, nil, resolved, opts, "test_sandwich")
-	require.NoError(t, err)
-	require.NotNil(t, closer)
-
-	orchestrator, ok := resolved.Orchestrators["test_sandwich"]
-	require.True(t, ok)
 
 	// Execute the pipeline.
 	query := core.Query{
 		Text: "hello",
 	}
-	answer, err := orchestrator.Execute(ctx, "test-session", query)
+	answer, err := orchestrator.Execute(context.Background(), "test-session", query)
 	require.NoError(t, err)
 
 	// Verify the results.

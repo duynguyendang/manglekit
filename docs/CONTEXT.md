@@ -18,12 +18,10 @@ This document is the canonical, single source of truth for the Manglekit SDK's a
 graph TD
     subgraph "User Entrypoints"
         A[config.yaml] --> C{sdk.FromConfig}
-        B[Programmatic API] --> D{builder.NewBuilder}
     end
 
     subgraph "Core Engine"
         C --> E[Builder]
-        D --> E
         E -- Uses --> F[Registry]
         F -- Contains --> G[Component Handlers]
         F -- Contains --> H[Provider Factories]

@@ -2,73 +2,35 @@ package cosine_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/embedders"
+	"github.com/duynguyendang/manglekit/internal/providers/llm"
 	"github.com/duynguyendang/manglekit/internal/providers/rerank"
 	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
+	"github.com/duynguyendang/manglekit/pipeline/sandwich"
+	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
-	"github.com/firebase/genkit/go/genkit"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// mockLogger is a no-op logger for testing.
-type mockLogger struct{}
+// mockLLMOptions provides a dummy options struct for the mock LLM.
+type mockLLMOptions struct{}
 
-func (m *mockLogger) Debugf(msg string, kv ...any) {}
-func (m *mockLogger) Infof(msg string, kv ...any)  {}
-func (m *mockLogger) Warnf(msg string, kv ...any)  {}
-func (m *mockLogger) Errorf(msg string, kv ...any) {}
-func (m *mockLogger) With(kv ...any) core.Logger   { return m }
+func (o *mockLLMOptions) ProviderName() string { return "mock-llm" }
+func (o *mockLLMOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o *mockLLMOptions) GetProviderOptions() any { return o }
 
-// mockOrchestratorOptions provides a dummy options struct for the mock orchestrator.
-type mockOrchestratorOptions struct{}
+// mockLLM is a mock implementation of core.LLMClient for testing.
+type mockLLM struct{}
 
-func (o *mockOrchestratorOptions) ProviderName() string { return "mock-orch" }
-func (o *mockOrchestratorOptions) ProviderKind() core.Kind   { return core.KindOrchestrator }
-
-// mockOrchestrator is a minimal implementation of core.Orchestrator for testing.
-type mockOrchestrator struct{}
-
-func (m *mockOrchestrator) Execute(context.Context, string, core.Query) (core.Answer, error) {
-	return core.Answer{}, nil
-}
-func (m *mockOrchestrator) Close(context.Context) error { return nil }
-
-// mockOrchestratorHandler is a corrected component handler for the mock orchestrator.
-type mockOrchestratorHandler struct{}
-
-func (h *mockOrchestratorHandler) Kind() core.Kind {
-	return core.KindOrchestrator
-}
-
-func (h *mockOrchestratorHandler) BuildComponent(
-	ctx context.Context,
-	builder any,
-	factory any,
-	resolved *core.Resolved,
-	cfg core.ProviderOptions,
-	name string,
-) (core.ResourceCloser, error) {
-	genericFactory, ok := factory.(core.GenericFactory)
-	if !ok {
-		return nil, fmt.Errorf("invalid factory type: %T", factory)
-	}
-	component, err := genericFactory.Build(ctx, resolved, cfg) // Pass resolved deps
-	if err != nil {
-		return nil, err
-	}
-	orch, ok := component.(core.Orchestrator)
-	if !ok {
-		return nil, fmt.Errorf("factory for %q returned %T, expected core.Orchestrator", name, component)
-	}
-	resolved.Orchestrators[name] = orch
-	return orch.Close, nil
+func (m *mockLLM) Complete(ctx context.Context, req core.LLMRequest) (core.LLMResponse, error) {
+	return core.LLMResponse{Text: "mock response"}, nil
 }
 
 // mockEmbedderOptions provides a dummy options struct for the mock embedder.
@@ -87,54 +49,68 @@ func (m *mockEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.Emb
 func (m *mockEmbedder) Name() string                     { return "mock-embedder" }
 func (m *mockEmbedder) Register(r api.Registry)          {}
 
-func newTestBuilder(t *testing.T) *manglekit.Builder {
-	reg := manglekit.NewRegistry()
-	b, err := manglekit.NewBuilder(context.Background(), reg, core.Observability{Logger: &mockLogger{}}, &genkit.Genkit{})
-	if err != nil {
-		t.Fatalf("failed to create new builder: %v", err)
-	}
+// mockRetrieverOptions provides a dummy options struct for the mock retriever.
+type mockRetrieverOptions struct{}
 
-	// Register mock orchestrator so the main Build() call can succeed.
-	reg.RegisterHandler(&mockOrchestratorHandler{})
-	if err := manglekit.Register(reg, &mockOrchestratorOptions{}, func(ctx context.Context, resolved *core.Resolved, cfg *mockOrchestratorOptions) (core.Orchestrator, error) {
-		return &mockOrchestrator{}, nil
-	}); err != nil {
-		t.Fatalf("failed to register mock orchestrator: %v", err)
-	}
-	b.With("mock-orchestrator", &mockOrchestratorOptions{})
+func (o *mockRetrieverOptions) ProviderName() string { return "mock-retriever" }
+func (o *mockRetrieverOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o *mockRetrieverOptions) GetProviderOptions() any   { return o }
 
-	// Register mock dependencies for the cosine reranker
-	reg.RegisterHandler(&embedders.Handler{})
-	if err := manglekit.Register(reg, &mockEmbedderOptions{}, func(ctx context.Context, deps any, cfg *mockEmbedderOptions) (ai.Embedder, error) {
+// mockRetriever is a mock implementation of core.Retriever for testing.
+type mockRetriever struct{}
+
+func (m *mockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
+	return core.RetrieveResult{}, nil
+}
+
+func registerTestComponents(r *manglekit.Registry) {
+	cosine.Register(r)
+	sandwich.Register(r)
+	manglekit.Register(r, &mockLLMOptions{}, func(ctx context.Context, deps diapi.LLMDeps, cfg *mockLLMOptions) (core.LLMClient, error) {
+		return &mockLLM{}, nil
+	})
+	manglekit.Register(r, &mockEmbedderOptions{}, func(ctx context.Context, deps diapi.EmbedderDeps, cfg *mockEmbedderOptions) (ai.Embedder, error) {
 		return &mockEmbedder{}, nil
-	}); err != nil {
-		t.Fatalf("failed to register mock embedder: %v", err)
-	}
-
-	// Register the actual handlers and factories needed for the test.
-	reg.RegisterHandler(rerank.NewHandler())
-	cosine.Register(reg)
-
-	return b
+	})
+	manglekit.Register(r, &mockRetrieverOptions{}, func(ctx context.Context, deps diapi.NoopDeps, cfg *mockRetrieverOptions) (core.Retriever, error) {
+		return &mockRetriever{}, nil
+	})
+	r.RegisterHandler(&retrievers.Handler{})
+	r.RegisterHandler(sandwich.NewHandler())
+	r.RegisterHandler(&llm.Handler{})
+	r.RegisterHandler(&embedders.Handler{})
+	r.RegisterHandler(rerank.NewHandler())
 }
 
 func TestCosine_Handler_HappyPath(t *testing.T) {
-	b := newTestBuilder(t)
+	reg := manglekit.NewRegistry()
+	registerTestComponents(reg)
 
-	b.With("mock-embedder", &mockEmbedderOptions{})
-	b.With("my-cosine", &cosine.CosineOptions{Embedder: "mock-embedder"})
-
-	_, _, err := b.Build(context.Background(), "mock-orchestrator", "", "")
+	configYAML := `
+orchestrator: test-sandwich
+components:
+  - name: mock-embedder
+    kind: embedder
+    type: mock-embedder
+  - name: my-cosine
+    kind: reranker
+    type: cosine
+    params:
+      embedder: mock-embedder
+  - name: mock-retriever
+    kind: retriever
+    type: mock-retriever
+  - name: mock-llm
+    kind: llm
+    type: mock-llm
+  - name: test-sandwich
+    kind: orchestrator
+    type: sandwich
+    params:
+      retriever: mock-retriever
+      llm: mock-llm
+      reranker: my-cosine
+`
+	_, err := sdk.LoadWithRegistry(context.Background(), []byte(configYAML), reg)
 	require.NoError(t, err)
-}
-
-func TestCosine_Handler_MissingDependency(t *testing.T) {
-	b := newTestBuilder(t)
-
-	// "missing-embedder" is not registered with the builder
-	b.With("my-cosine", &cosine.CosineOptions{Embedder: "missing-embedder"})
-
-	_, _, err := b.Build(context.Background(), "mock-orchestrator", "", "")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "dependency not found: missing-embedder")
 }

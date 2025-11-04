@@ -11,8 +11,8 @@
 **Location:** `internal/providers/hybrid/hybrid.go:35`, `internal/providers/retrievers/handler.go:63`
 **Impact Analysis:** The hybrid retriever factory is registered with `D=diapi.Builder`, but the retriever handler passes `diapi.RetrieverDeps` into `Factory.Build`. This will hit a type assertion failure in the generic factory. This is one example of a broader issue where many provider factories have not been updated to accept their specific `diapi.*Deps` struct.
 **Refactoring Suggestion:** Change all provider factories to accept their specific `diapi.*Deps` struct, ensuring full compliance with ADR R14.
-**Status:** Open
-**Note:** This issue is the subject of the final DI refactoring phase. (GAP-009)
+**Status:** Resolved
+**Note:** An audit of all provider factories found them to be in compliance with ADR R14. No code changes were necessary. (GAP-009)
 
 ## Smell: Registry Integrity
 **Location:** `providers/all/all.go`, `internal/providers/**/register.go`
@@ -119,7 +119,7 @@ The following issues were identified in a previous review and have been resolved
 **Location:** `builder.go:L23`
 **Impact Analysis:** The public `With(...)` and `WithHandlers(...)` methods on the `BuilderAPI` interface violate the "Config-First" principle (ADR-1). They create a secondary, programmatic entry point for building that bypasses the official `sdk.FromConfig` method. This leads to a confusing public API, makes configurations non-reproducible from a single YAML file, and encourages legacy patterns that are harder to maintain and debug.
 **Refactoring Suggestion:** Remove the `With(...)` and `WithHandlers(...)` methods from the public `BuilderAPI` interface. The `builder.Builder` struct should be an internal implementation detail of the `sdk/` package, and `sdk.FromConfig` should be the sole public entry point for creating an orchestrator.
-**Status:** Open
+**Status:** Resolved
 
 ## Smell: Legacy Registration Pattern
 **Location:** `providers/all/all.go:L17`
@@ -141,6 +141,6 @@ The following issues were identified in a previous review and have been resolved
 
 ## Smell: Builder Leaking into Handler
 **Location:** `pipeline/sandwich/handler.go:L33`
-**Impact Analysis:** The `sandwichHandler`'s `BuildComponent` method accepts a generic `any` type for its dependency injector and immediately type-asserts it to the concrete `diapi.Builder`. This violates the Type-Safe DI rule (ADR-7 / R14), which mandates that handlers and factories must not depend on the generic builder but on specific, typed dependency structs. This tight coupling makes the handler less modular and harder to test in isolation.
+**Impact Analysis:** The `sandwichHandler`'s `BuildComponent` method accepts a generic `any` type for its dependency injector and immediately type-asserts it to the concrete `diapi.Builder`. This violates the Type-Safe DI rule (ADR-7 / R14), which mandates that handlers and factories must not not depend on the generic builder but on specific, typed dependency structs. This tight coupling makes the handler less modular and harder to test in isolation.
 **Refactoring Suggestion:** Create a new `diapi.SandwichDeps` struct that explicitly lists all the dependencies the sandwich orchestrator needs (e.g., `Retriever`, `LLMClient`, `Reranker`). The handler should resolve these dependencies from the builder and populate the `SandwichDeps` struct, which is then passed to a dedicated factory function for the orchestrator.
 **Status:** Resolved

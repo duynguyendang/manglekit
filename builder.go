@@ -17,12 +17,10 @@ import (
 	"reflect"
 )
 
-// BuilderAPI defines the fluent interface for the MangleKit orchestrator builder.
-type BuilderAPI interface {
-	With(name string, opts any) BuilderAPI
-	WithHandlers(handlers ...core.ComponentHandler) BuilderAPI
-	FromConfig(ctx context.Context, data []byte) (core.Orchestrator, retrieve.Updatable, error)
-	Build(ctx context.Context, orchestratorName, updatableName, stateProviderName string) (core.Orchestrator, retrieve.Updatable, error)
+// builderAPI defines the fluent interface for the MangleKit orchestrator builder.
+type builderAPI interface {
+	fromConfig(ctx context.Context, data []byte) (core.Orchestrator, retrieve.Updatable, error)
+	build(ctx context.Context, orchestratorName, updatableName, stateProviderName string) (core.Orchestrator, retrieve.Updatable, error)
 }
 
 type configItem struct {
@@ -31,8 +29,8 @@ type configItem struct {
 	cfg  core.ProviderOptions
 }
 
-// Builder provides a fluent, chainable interface for constructing a MangleKit Orchestrator.
-type Builder struct {
+// builder provides a fluent, chainable interface for constructing a MangleKit Orchestrator.
+type builder struct {
 	registry *Registry
 	genkit   *genkit.Genkit
 	opts     core.OptionsLike
@@ -50,15 +48,15 @@ type Builder struct {
 	schemaParsers  map[string]core.SchemaParser
 }
 
-// NewBuilder returns a new, empty instance of the fluent builder.
-func NewBuilder(ctx context.Context, r *Registry, obs core.Observability, g *genkit.Genkit) (*Builder, error) {
+// newBuilder returns a new, empty instance of the fluent builder.
+func newBuilder(ctx context.Context, r *Registry, obs core.Observability, g *genkit.Genkit) (*builder, error) {
 	if obs.Logger == nil {
 		return nil, errors.New("observability logger cannot be nil")
 	}
 	if g == nil {
 		return nil, errors.New("genkit cannot be nil")
 	}
-	b := &Builder{
+	b := &builder{
 		registry:       r,
 		genkit:         g,
 		embedders:      make(map[string]ai.Embedder),
@@ -76,29 +74,29 @@ func NewBuilder(ctx context.Context, r *Registry, obs core.Observability, g *gen
 }
 
 // DI implementation
-func (b *Builder) Genkit() *genkit.Genkit                        { return b.genkit }
-func (b *Builder) GetEmbedder(n string) (ai.Embedder, error) { return getComponent(b.embedders, n) }
-func (b *Builder) GetLLMClient(n string) (core.LLMClient, error) { return getComponent(b.llms, n) }
-func (b *Builder) GetVectorStore(n string) (core.VectorStore, error) {
+func (b *builder) Genkit() *genkit.Genkit                        { return b.genkit }
+func (b *builder) GetEmbedder(n string) (ai.Embedder, error) { return getComponent(b.embedders, n) }
+func (b *builder) GetLLMClient(n string) (core.LLMClient, error) { return getComponent(b.llms, n) }
+func (b *builder) GetVectorStore(n string) (core.VectorStore, error) {
 	return getComponent(b.vectorStores, n)
 }
-func (b *Builder) GetRetriever(n string) (core.Retriever, error) { return getComponent(b.retrievers, n) }
-func (b *Builder) GetReranker(n string) (core.Reranker, error)   { return getComponent(b.rerankers, n) }
-func (b *Builder) GetStateProvider(n string) (core.StateProvider, error) {
+func (b *builder) GetRetriever(n string) (core.Retriever, error) { return getComponent(b.retrievers, n) }
+func (b *builder) GetReranker(n string) (core.Reranker, error)   { return getComponent(b.rerankers, n) }
+func (b *builder) GetStateProvider(n string) (core.StateProvider, error) {
 	return getComponent(b.stateProviders, n)
 }
-func (b *Builder) GetRuleSet(n string) (core.RuleSet, error) { return getComponent(b.rules, n) }
-func (b *Builder) GetSchemaParser(n string) (core.SchemaParser, error) {
+func (b *builder) GetRuleSet(n string) (core.RuleSet, error) { return getComponent(b.rules, n) }
+func (b *builder) GetSchemaParser(n string) (core.SchemaParser, error) {
 	return getComponent(b.schemaParsers, n)
 }
 
-func (b *Builder) GetCoreDeps() diapi.CoreDeps {
+func (b *builder) GetCoreDeps() diapi.CoreDeps {
 	return diapi.CoreDeps{
 		Obs: b.opts.Obs,
 	}
 }
 
-func (b *Builder) With(name string, opts any) BuilderAPI {
+func (b *builder) with(name string, opts any) *builder {
 	if opts == nil {
 		return b
 	}
@@ -116,7 +114,7 @@ func (b *Builder) With(name string, opts any) BuilderAPI {
 	return b
 }
 
-func (b *Builder) buildAll(ctx context.Context) error {
+func (b *builder) buildAll(ctx context.Context) error {
 	order := []core.Kind{
 		core.KindEmbedder,
 		core.KindVectorStore,
@@ -173,7 +171,7 @@ func (b *Builder) buildAll(ctx context.Context) error {
 	return nil
 }
 
-func (b *Builder) Build(ctx context.Context, orchestratorName, updatableName, stateProviderName string) (core.Orchestrator, retrieve.Updatable, error) {
+func (b *builder) build(ctx context.Context, orchestratorName, updatableName, stateProviderName string) (core.Orchestrator, retrieve.Updatable, error) {
 	if orchestratorName == "" {
 		return nil, nil, errors.New("no orchestrator specified in configuration")
 	}
@@ -223,7 +221,7 @@ func (b *Builder) Build(ctx context.Context, orchestratorName, updatableName, st
 	return orchestrator, updatable, nil
 }
 
-func (b *Builder) closeResources(ctx context.Context) error {
+func (b *builder) closeResources(ctx context.Context) error {
 	closeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var combined error
@@ -235,14 +233,14 @@ func (b *Builder) closeResources(ctx context.Context) error {
 	return combined
 }
 
-func (b *Builder) WithHandlers(handlers ...core.ComponentHandler) BuilderAPI {
+func (b *builder) withHandlers(handlers ...core.ComponentHandler) *builder {
 	for _, h := range handlers {
 		b.registry.RegisterHandler(h)
 	}
 	return b
 }
 
-func (b *Builder) FromConfig(ctx context.Context, data []byte) (core.Orchestrator, retrieve.Updatable, error) {
+func (b *builder) fromConfig(ctx context.Context, data []byte) (core.Orchestrator, retrieve.Updatable, error) {
 	cfg, err := config.ParseConfig(data)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse config: %w", err)
@@ -297,10 +295,10 @@ func (b *Builder) FromConfig(ctx context.Context, data []byte) (core.Orchestrato
 			return nil, nil, fmt.Errorf("failed to decode params for %s '%s': %w", comp.Kind, comp.Name, err)
 		}
 
-		b.With(comp.Name, opts)
+		b.with(comp.Name, opts)
 	}
 
-	return b.Build(ctx, cfg.Orchestrator, cfg.Updatable, cfg.StateProvider)
+	return b.build(ctx, cfg.Orchestrator, cfg.Updatable, cfg.StateProvider)
 }
 
 func getComponent[T any](m map[string]T, name string) (T, error) {
