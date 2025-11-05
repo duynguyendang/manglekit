@@ -22,7 +22,7 @@ func (o *Options) GetProviderOptions() any { return o }
 
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, &Options{},
-		func(ctx context.Context, deps diapi.NoopDeps, cfg *Options) (core.StateProvider, error) {
+		func(ctx context.Context, deps diapi.StateProviderDeps, cfg *Options) (core.StateProvider, error) {
 			return New(*cfg, deps)
 		},
 	)
@@ -39,7 +39,7 @@ type Provider struct {
 
 // New creates and returns a new in-memory state provider.
 // It accepts an Options struct which is currently unused.
-func New(opts Options, deps diapi.NoopDeps) (core.StateProvider, error) {
+func New(opts Options, deps diapi.StateProviderDeps) (core.StateProvider, error) {
 	return &Provider{
 		data: make(map[string]interface{}),
 	}, nil

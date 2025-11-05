@@ -96,6 +96,8 @@ func (h *Handler) BuildComponent(
 	if !ok {
 		return nil, fmt.Errorf("component %s is not a valid Retriever", name)
 	}
-	resolved.Retrievers[name] = retriever
+	if err := b.SetRetriever(name, retriever); err != nil {
+		return nil, fmt.Errorf("failed to set retriever '%s': %w", name, err)
+	}
 	return core.NopCloser, nil
 }

@@ -1,13 +1,15 @@
-package hybrid_test
+package openai_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
+	"github.com/duynguyendang/manglekit/internal/embedders"
+	"github.com/duynguyendang/manglekit/internal/embedders/openai"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
 	"github.com/duynguyendang/manglekit/pipeline/sandwich"
@@ -20,6 +22,7 @@ type mockLLMOptions struct{}
 
 func (o *mockLLMOptions) ProviderName() string { return "mock-llm" }
 func (o *mockLLMOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o *mockLLMOptions) GetProviderOptions() any   { return o }
 
 // mockLLM is a mock implementation of core.LLMClient for testing.
 type mockLLM struct{}
@@ -35,109 +38,86 @@ func (m *mockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) 
 	return core.RetrieveResult{}, nil
 }
 
-type mockR1Options struct{}
+type mockRetrieverOptions struct{}
 
-func (o *mockR1Options) ProviderName() string { return "mock-r1" }
-func (o *mockR1Options) ProviderKind() core.Kind   { return core.KindRetriever }
-func (o *mockR1Options) GetProviderOptions() any   { return o }
-
-type mockR2Options struct{}
-
-func (o *mockR2Options) ProviderName() string { return "mock-r2" }
-func (o *mockR2Options) ProviderKind() core.Kind   { return core.KindRetriever }
-func (o *mockR2Options) GetProviderOptions() any   { return o }
+func (o *mockRetrieverOptions) ProviderName() string { return "mock-retriever" }
+func (o *mockRetrieverOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o *mockRetrieverOptions) GetProviderOptions() any   { return o }
 
 func registerTestComponents(r *manglekit.Registry) {
-	// 1. Register main provider
-	hybrid.Register(r)
-	sandwich.Register(r) // Orchestrator
-
-	// 2. Register mock dependencies (Options + Factory)
+	openai.Register(r)
+	sandwich.Register(r)
+	llm.Register(r)
 	manglekit.Register(r, &mockLLMOptions{}, func(ctx context.Context, deps diapi.LLMDeps, cfg *mockLLMOptions) (core.LLMClient, error) {
 		return &mockLLM{}, nil
 	})
-	manglekit.Register(r, &mockR1Options{}, func(ctx context.Context, deps diapi.NoopDeps, cfg *mockR1Options) (core.Retriever, error) {
+	manglekit.Register(r, &mockRetrieverOptions{}, func(ctx context.Context, deps diapi.NoopDeps, cfg *mockRetrieverOptions) (core.Retriever, error) {
 		return &mockRetriever{}, nil
 	})
-	manglekit.Register(r, &mockR2Options{}, func(ctx context.Context, deps diapi.NoopDeps, cfg *mockR2Options) (core.Retriever, error) {
-		return &mockRetriever{}, nil
-	})
-
-	// 3. Register all necessary handlers
-	r.RegisterHandler(&retrievers.Handler{})
+	r.RegisterHandler(&embedders.Handler{})
 	r.RegisterHandler(sandwich.NewHandler())
 	r.RegisterHandler(&llm.Handler{})
+	r.RegisterHandler(&retrievers.Handler{})
 }
 
-func TestHybrid_Handler_HappyPath(t *testing.T) {
+func TestOpenAIEmbedder_DI(t *testing.T) {
 	reg := manglekit.NewRegistry()
 	registerTestComponents(reg)
 
-	const testConfig = `
-orchestrator: test-sandwich
+	testConfig := fmt.Sprintf(`
+orchestrator: "test-sandwich"
 components:
-- name: "mock-r1"
-  kind: "retriever"
-  type: "mock-r1"
-
-- name: "mock-r2"
-  kind: "retriever"
-  type: "mock-r2"
-
-- name: "my-hybrid"
-  kind: "retriever"
-  type: "hybrid"
+- name: "my-openai-embedder"
+  kind: "embedder"
+  type: "openai"
   params:
-    retrievers:
-    - "mock-r1"
-    - "mock-r2"
-
+    apiKey: "fake-key"
+    model: "text-embedding-ada-002"
+    skip_model_check: true
+- name: "mock-retriever"
+  kind: "retriever"
+  type: "mock-retriever"
 - name: "mock-llm"
   kind: "llm"
   type: "mock-llm"
-
 - name: "test-sandwich"
   kind: "orchestrator"
   type: "sandwich"
   params:
-    retriever: "my-hybrid"
+    retriever: "mock-retriever"
     llm: "mock-llm"
-`
+`)
+
 	_, err := sdk.LoadWithRegistry(context.Background(), []byte(testConfig), reg)
 	require.NoError(t, err)
 }
 
-func TestHybrid_Handler_MissingDependency(t *testing.T) {
+func TestOpenAIEmbedder_DI_MissingAPIKey(t *testing.T) {
 	reg := manglekit.NewRegistry()
-	registerTestComponents(reg) // Registers r1 and r2
+	registerTestComponents(reg)
 
 	const testConfig = `
-orchestrator: test-sandwich
+orchestrator: "test-sandwich"
 components:
-- name: "mock-r1"
-  kind: "retriever"
-  type: "mock-r1"
-
-- name: "my-hybrid"
-  kind: "retriever"
-  type: "hybrid"
+- name: "my-openai-embedder"
+  kind: "embedder"
+  type: "openai"
   params:
-    retrievers:
-    - "mock-r1"
-    - "mock-r3" # This one is not registered
-
+    model: "text-embedding-ada-002"
+- name: "mock-retriever"
+  kind: "retriever"
+  type: "mock-retriever"
 - name: "mock-llm"
   kind: "llm"
   type: "mock-llm"
-
 - name: "test-sandwich"
   kind: "orchestrator"
   type: "sandwich"
   params:
-    retriever: "my-hybrid"
+    retriever: "mock-retriever"
     llm: "mock-llm"
 `
 	_, err := sdk.LoadWithRegistry(context.Background(), []byte(testConfig), reg)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), `failed to get sub-retriever 'mock-r3' for hybrid retriever 'my-hybrid': dependency not found: mock-r3`)
+	require.Contains(t, err.Error(), `apiKey is required for openai embedder`)
 }

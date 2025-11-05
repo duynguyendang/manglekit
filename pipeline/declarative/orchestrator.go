@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	obslogger "github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/statehelper"
 	"github.com/google/uuid"
@@ -44,7 +45,7 @@ type DeclarativeOrchestrator struct {
 // NewDeclarative is the factory function for creating a DeclarativeOrchestrator.
 // It resolves the tool names from the configuration against the built components
 // provided in the `deps` argument.
-func NewDeclarative(ctx context.Context, deps core.Resolved, cfg *Options) (core.Orchestrator, error) {
+func NewDeclarative(ctx context.Context, deps diapi.DeclarativeOrchestratorDeps, cfg *Options) (core.Orchestrator, error) {
 	logger := deps.Obs.Logger
 	if logger == nil {
 		logger = obslogger.NewStdLogger()
@@ -57,9 +58,10 @@ func NewDeclarative(ctx context.Context, deps core.Resolved, cfg *Options) (core
 
 	steps := make([]executionStep, 0, len(cfg.Steps))
 	for _, stepCfg := range cfg.Steps {
-		tool, err := deps.GetToolByName(stepCfg.Name)
-		if err != nil {
-			logger.Errorf("failed to resolve tool", "name", stepCfg.Name, "error", err)
+		tool, ok := deps.Tools[stepCfg.Name]
+		if !ok {
+			err := fmt.Errorf("failed to resolve tool %q", stepCfg.Name)
+			logger.Errorf("tool resolution failed", "name", stepCfg.Name, "error", err)
 			return nil, err
 		}
 		logger.Debugf("resolved tool", "name", stepCfg.Name)
@@ -72,7 +74,7 @@ func NewDeclarative(ctx context.Context, deps core.Resolved, cfg *Options) (core
 	return &DeclarativeOrchestrator{
 		steps:               steps,
 		obs:                 deps.Obs,
-		closers:             deps.Closers,
+		StateProvider:       deps.StateProvider,
 		conversationManager: statehelper.NewConversationManager(),
 	}, nil
 }

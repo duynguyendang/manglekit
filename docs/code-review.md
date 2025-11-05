@@ -1,4 +1,5 @@
 # Manglekit SDK - Code Review
+**Last Updated:** 2025-11-04
 
 ## Smell: Orchestrator Handler Coverage (Builder cannot build Sandwich)
 **Location:** `internal/providers/orchestrators/orchestrators.go:28`, `pipeline/declarative/handler.go:1`
@@ -12,7 +13,7 @@
 **Impact Analysis:** The hybrid retriever factory is registered with `D=diapi.Builder`, but the retriever handler passes `diapi.RetrieverDeps` into `Factory.Build`. This will hit a type assertion failure in the generic factory. This is one example of a broader issue where many provider factories have not been updated to accept their specific `diapi.*Deps` struct.
 **Refactoring Suggestion:** Change all provider factories to accept their specific `diapi.*Deps` struct, ensuring full compliance with ADR R14.
 **Status:** Resolved
-**Note:** An audit of all provider factories found them to be in compliance with ADR R14. No code changes were necessary. (GAP-009)
+**Note:** Refactored the `declarative` and `sandwich` orchestrator handlers and factories to accept typed `diapi.*Deps` structs instead of the generic `diapi.Builder`, bringing them into full compliance with ADR R14. (GAP-009)
 
 ## Smell: Registry Integrity
 **Location:** `providers/all/all.go`, `internal/providers/**/register.go`
@@ -144,3 +145,4 @@ The following issues were identified in a previous review and have been resolved
 **Impact Analysis:** The `sandwichHandler`'s `BuildComponent` method accepts a generic `any` type for its dependency injector and immediately type-asserts it to the concrete `diapi.Builder`. This violates the Type-Safe DI rule (ADR-7 / R14), which mandates that handlers and factories must not not depend on the generic builder but on specific, typed dependency structs. This tight coupling makes the handler less modular and harder to test in isolation.
 **Refactoring Suggestion:** Create a new `diapi.SandwichDeps` struct that explicitly lists all the dependencies the sandwich orchestrator needs (e.g., `Retriever`, `LLMClient`, `Reranker`). The handler should resolve these dependencies from the builder and populate the `SandwichDeps` struct, which is then passed to a dedicated factory function for the orchestrator.
 **Status:** Resolved
+**Note:** This was resolved as part of the broader effort to enforce ADR-7 (R14) compliance.

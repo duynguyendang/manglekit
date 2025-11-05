@@ -20,6 +20,8 @@ type Builder interface {
 	GetSchemaParser(name string) (core.SchemaParser, error)
 	Genkit() *genkit.Genkit
 	GetCoreDeps() CoreDeps
+
+	SetRetriever(name string, retriever core.Retriever) error
 }
 
 // APIKeyProvider is an interface for provider options that expose an API key.
@@ -51,6 +53,11 @@ type SubRetrieversDep interface {
 // ProviderWithOptions is an interface for provider options that expose the underlying options.
 type ProviderWithOptions interface {
 	GetProviderOptions() any
+}
+
+// SkipModelCheckProvider is an interface for provider options that can skip model validation.
+type SkipModelCheckProvider interface {
+	ShouldSkipModelCheck() bool
 }
 
 // RetrieverDeps provides dependencies for a retriever that depends on other sub-retrievers.
@@ -117,6 +124,13 @@ type SandwichDeps struct {
 	LLM           core.LLMClient
 	StateProvider core.StateProvider
 	RuleSet       core.RuleSet
+}
+
+// DeclarativeOrchestratorDeps provides dependencies for the declarative orchestrator.
+type DeclarativeOrchestratorDeps struct {
+	CoreDeps
+	StateProvider core.StateProvider
+	Tools         map[string]core.Tool
 }
 
 // CoreDeps provides access to core framework services.

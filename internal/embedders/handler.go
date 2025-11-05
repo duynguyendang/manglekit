@@ -31,6 +31,11 @@ func (h *Handler) BuildComponent(
 	cfg core.ProviderOptions,
 	name string,
 ) (core.ResourceCloser, error) {
+	if p, ok := cfg.(diapi.SkipModelCheckProvider); ok {
+		if p.ShouldSkipModelCheck() {
+			return core.NopCloser, nil
+		}
+	}
 	b, ok := builderDI.(diapi.Builder)
 	if !ok {
 		return nil, fmt.Errorf("invalid builder DI type for Embedder handler: got %T", builderDI)

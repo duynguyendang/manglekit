@@ -7,21 +7,15 @@ import (
 	"sort"
 	"time"
 
+	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/mitchellh/mapstructure"
 	"reflect"
 )
-
-// builderAPI defines the fluent interface for the MangleKit orchestrator builder.
-type builderAPI interface {
-	fromConfig(ctx context.Context, data []byte) (core.Orchestrator, retrieve.Updatable, error)
-	build(ctx context.Context, orchestratorName, updatableName, stateProviderName string) (core.Orchestrator, retrieve.Updatable, error)
-}
 
 type configItem struct {
 	kind core.Kind
@@ -80,8 +74,10 @@ func (b *builder) GetLLMClient(n string) (core.LLMClient, error) { return getCom
 func (b *builder) GetVectorStore(n string) (core.VectorStore, error) {
 	return getComponent(b.vectorStores, n)
 }
-func (b *builder) GetRetriever(n string) (core.Retriever, error) { return getComponent(b.retrievers, n) }
-func (b *builder) GetReranker(n string) (core.Reranker, error)   { return getComponent(b.rerankers, n) }
+func (b *builder) GetRetriever(n string) (core.Retriever, error) {
+	return getComponent(b.retrievers, n)
+}
+func (b *builder) GetReranker(n string) (core.Reranker, error) { return getComponent(b.rerankers, n) }
 func (b *builder) GetStateProvider(n string) (core.StateProvider, error) {
 	return getComponent(b.stateProviders, n)
 }
@@ -90,28 +86,15 @@ func (b *builder) GetSchemaParser(n string) (core.SchemaParser, error) {
 	return getComponent(b.schemaParsers, n)
 }
 
+func (b *builder) SetRetriever(name string, retriever core.Retriever) error {
+	b.retrievers[name] = retriever
+	return nil
+}
+
 func (b *builder) GetCoreDeps() diapi.CoreDeps {
 	return diapi.CoreDeps{
 		Obs: b.opts.Obs,
 	}
-}
-
-func (b *builder) with(name string, opts any) *builder {
-	if opts == nil {
-		return b
-	}
-	providerOpts, ok := opts.(core.ProviderOptions)
-	if !ok {
-		b.errs = append(b.errs, fmt.Errorf("type %T does not implement core.ProviderOptions", opts))
-		return b
-	}
-
-	b.cfgs = append(b.cfgs, configItem{
-		kind: providerOpts.ProviderKind(),
-		name: name,
-		cfg:  providerOpts,
-	})
-	return b
 }
 
 func (b *builder) buildAll(ctx context.Context) error {
@@ -142,6 +125,7 @@ func (b *builder) buildAll(ctx context.Context) error {
 		StateProviders: b.stateProviders,
 		Orchestrators:  b.orchestrators,
 		SchemaParsers:  b.schemaParsers,
+		Obs:            b.opts.Obs,
 	}
 
 	for _, k := range order {
@@ -233,13 +217,6 @@ func (b *builder) closeResources(ctx context.Context) error {
 	return combined
 }
 
-func (b *builder) withHandlers(handlers ...core.ComponentHandler) *builder {
-	for _, h := range handlers {
-		b.registry.RegisterHandler(h)
-	}
-	return b
-}
-
 func (b *builder) fromConfig(ctx context.Context, data []byte) (core.Orchestrator, retrieve.Updatable, error) {
 	cfg, err := config.ParseConfig(data)
 	if err != nil {
@@ -295,7 +272,16 @@ func (b *builder) fromConfig(ctx context.Context, data []byte) (core.Orchestrato
 			return nil, nil, fmt.Errorf("failed to decode params for %s '%s': %w", comp.Kind, comp.Name, err)
 		}
 
-		b.with(comp.Name, opts)
+		providerOpts, ok := opts.(core.ProviderOptions)
+		if !ok {
+			b.errs = append(b.errs, fmt.Errorf("type %T does not implement core.ProviderOptions", opts))
+		} else {
+			b.cfgs = append(b.cfgs, configItem{
+				kind: providerOpts.ProviderKind(),
+				name: comp.Name,
+				cfg:  providerOpts,
+			})
+		}
 	}
 
 	return b.build(ctx, cfg.Orchestrator, cfg.Updatable, cfg.StateProvider)

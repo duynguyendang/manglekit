@@ -40,7 +40,8 @@ func (h *declarativeHandler) BuildComponent(
 		return nil, fmt.Errorf("invalid options type for declarative orchestrator, got %T", cfg)
 	}
 
-	// The handler is responsible for resolving the state provider dependency.
+	// The handler is responsible for resolving all dependencies and passing them
+	// to the factory in a type-safe `Deps` struct.
 	var stateProvider core.StateProvider
 	if opts.StateProvider != "" {
 		sp, err := builder.GetStateProvider(opts.StateProvider)
@@ -50,23 +51,34 @@ func (h *declarativeHandler) BuildComponent(
 		stateProvider = sp
 	}
 
-	// Now, build the orchestrator using the standard factory mechanism.
-	genericFactory, ok := factory.(core.GenericFactory)
-	if !ok {
-		return nil, fmt.Errorf("invalid factory type: %T; expected core.GenericFactory", factory)
+	tools := make(map[string]core.Tool)
+	for _, step := range opts.Steps {
+		tool, err := resolved.GetToolByName(step.Name)
+		if err != nil {
+			return nil, fmt.Errorf("declarative orchestrator: failed to get tool %q: %w", step.Name, err)
+		}
+		tools[step.Name] = tool
 	}
-	instance, err := genericFactory.Build(ctx, *resolved, cfg)
+
+	deps := diapi.DeclarativeOrchestratorDeps{
+		CoreDeps:      builder.GetCoreDeps(),
+		StateProvider: stateProvider,
+		Tools:         tools,
+	}
+
+	f, ok := factory.(core.Factory)
+	if !ok {
+		return nil, fmt.Errorf("invalid factory type for declarative orchestrator, got %T", factory)
+	}
+	built, err := f.Build(ctx, deps, cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("factory for %s '%s' failed: %w", core.KindOrchestrator, name, err)
 	}
-	orch, ok := instance.(*DeclarativeOrchestrator)
+
+	orchestrator, ok := built.(core.Orchestrator)
 	if !ok {
-		return nil, fmt.Errorf("factory for %q returned type %T, but expected *DeclarativeOrchestrator", name, instance)
+		return nil, fmt.Errorf("component %s is not a valid orchestrator", name)
 	}
-
-	// Inject the state provider.
-	orch.StateProvider = stateProvider
-
-	resolved.Orchestrators[name] = orch
-	return orch.Close, nil
+	resolved.Orchestrators[name] = orchestrator
+	return orchestrator.Close, nil
 }
