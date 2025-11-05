@@ -87,3 +87,26 @@ func TestSandwichOrchestrator_Handler(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, orch)
 }
+
+const configMissingDep = `
+orchestrator: my-sandwich
+components:
+  - name: my-sandwich
+    kind: orchestrator
+    type: sandwich
+    params:
+      retriever: missing-retriever
+      llm: mock-llm
+  - name: mock-llm
+    kind: llm
+    type: mock-llm
+`
+
+func TestSandwichOrchestrator_MissingDependency(t *testing.T) {
+	reg := manglekit.NewRegistry()
+	registerTestDeps(reg)
+
+	_, err := sdk.LoadWithRegistry(context.Background(), []byte(configMissingDep), reg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `dependency not found: missing-retriever`)
+}

@@ -33,6 +33,9 @@ type OpenAIOptions struct {
 	// BaseURL is an optional override for the OpenAI API base URL. This is useful
 	// for pointing the client to a different compatible endpoint, such as Groq's.
 	BaseURL string `yaml:"base_url,omitempty"`
+	// SkipModelCheck is a test-only option to bypass the live model validation
+	// call that genkit performs on initialization.
+	SkipModelCheck bool `yaml:"skip_model_check,omitempty"`
 }
 
 func (o *OpenAIOptions) ProviderName() string { return "openai" }
@@ -45,6 +48,9 @@ func RegisterOpenAI(r *manglekit.Registry) {
 	openAIFactory := func(ctx context.Context, deps diapi.LLMDeps, cfg *OpenAIOptions) (core.LLMClient, error) {
 		if deps.Genkit == nil {
 			return nil, fmt.Errorf("missing required dependency 'genkit'")
+		}
+		if cfg.APIKey == "" {
+			return nil, fmt.Errorf("authentication is required: apiKey must be provided for openai provider")
 		}
 		client, err := NewOpenAI(*cfg, deps.Genkit)
 		if err != nil {
@@ -71,10 +77,14 @@ func NewOpenAI(cfg OpenAIOptions, g *genkit.Genkit) (core.LLMClient, error) {
 	}
 	client := &openai.OpenAI{APIKey: cfg.GetAPIKey(), Opts: opts}
 
-	model := client.Model(g, cfg.Model)
-	if model == nil {
-		return nil, fmt.Errorf("failed to get openai model %q from genkit", cfg.Model)
+	var model ai.Model
+	if !cfg.SkipModelCheck {
+		model = client.Model(g, cfg.Model)
+		if model == nil {
+			return nil, fmt.Errorf("failed to get openai model %q from genkit", cfg.Model)
+		}
 	}
+
 	return &OpenAI{
 		opts:   cfg,
 		model:  model,

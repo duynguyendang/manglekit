@@ -11,6 +11,7 @@ import (
 	"github.com/duynguyendang/manglekit/embed"
 	"github.com/firebase/genkit/go/ai"
 	oai "github.com/firebase/genkit/go/plugins/compat_oai/openai"
+	"github.com/openai/openai-go/option"
 )
 
 func Register(r *manglekit.Registry) {
@@ -26,10 +27,20 @@ func Register(r *manglekit.Registry) {
 			if deps.Genkit == nil {
 				return nil, fmt.Errorf("missing required dependency 'genkit'")
 			}
-			plugin := &oai.OpenAI{APIKey: cfg.APIKey}
-			embedder := plugin.Embedder(deps.Genkit, cfg.Model)
-			if embedder == nil {
-				return nil, fmt.Errorf("failed to get openai embedder %q from genkit", cfg.Model)
+			if cfg.APIKey == "" {
+				return nil, fmt.Errorf("apiKey is required for openai embedder")
+			}
+			var opts []option.RequestOption
+			if cfg.BaseURL != "" {
+				opts = append(opts, option.WithBaseURL(cfg.BaseURL))
+			}
+			plugin := &oai.OpenAI{APIKey: cfg.APIKey, Opts: opts}
+			var embedder ai.Embedder
+			if !cfg.SkipModelCheck {
+				embedder = plugin.Embedder(deps.Genkit, cfg.Model)
+				if embedder == nil {
+					return nil, fmt.Errorf("failed to get openai embedder %q from genkit", cfg.Model)
+				}
 			}
 			return embedder, nil
 		},

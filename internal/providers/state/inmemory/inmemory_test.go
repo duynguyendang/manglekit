@@ -16,7 +16,7 @@ func TestInMemory_State_PutGet_Close(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	p, err := inmemory.New(inmemory.Options{ContextWindow: 3}, diapi.NoopDeps{})
+	p, err := inmemory.New(inmemory.Options{ContextWindow: 3}, diapi.StateProviderDeps{})
 	require.NoError(t, err)
 
 	// Put and Get "turn-1"

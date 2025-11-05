@@ -123,3 +123,56 @@ components:
 	_, err := sdk.LoadWithRegistry(context.Background(), []byte(testConfig), reg)
 	require.NoError(t, err)
 }
+
+func TestDense_Handler_MissingDependency(t *testing.T) {
+	reg := manglekit.NewRegistry()
+
+	// Register the provider-under-test and its orchestrator dependency
+	dense.Register(reg)
+	sandwich.Register(reg)
+
+	// Register mock dependencies for the orchestrator and dense retriever
+	manglekit.Register(reg, &mockEmbedderOptions{}, func(ctx context.Context, deps diapi.EmbedderDeps, cfg *mockEmbedderOptions) (ai.Embedder, error) {
+		return &mockEmbedder{}, nil
+	})
+	manglekit.Register(reg, &mockLLMOptions{}, func(ctx context.Context, deps diapi.LLMDeps, cfg *mockLLMOptions) (core.LLMClient, error) {
+		return &mockLLM{}, nil
+	})
+	// NOTE: mockVectorStore is intentionally NOT registered.
+
+	// Register all necessary handlers
+	reg.RegisterHandler(&retrievers.Handler{})
+	reg.RegisterHandler(&embedders.Handler{})
+	reg.RegisterHandler(&vectorstores.Handler{})
+	reg.RegisterHandler(&llm.Handler{})
+	reg.RegisterHandler(sandwich.NewHandler())
+
+	const testConfig = `
+orchestrator: "test-sandwich"
+components:
+- name: "mock-embedder"
+  kind: "embedder"
+  type: "mock-embed"
+
+- name: "mock-llm"
+  kind: "llm"
+  type: "mock-llm"
+
+- name: "my-dense-retriever"
+  kind: "retriever"
+  type: "dense"
+  params:
+    embedder: "mock-embedder"
+    vectorStore: "mock-vs" # This one doesn't exist
+
+- name: "test-sandwich"
+  kind: "orchestrator"
+  type: "sandwich"
+  params:
+    retriever: "my-dense-retriever"
+    llm: "mock-llm"
+`
+	_, err := sdk.LoadWithRegistry(context.Background(), []byte(testConfig), reg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `failed to get vector store 'mock-vs' for dense retriever 'my-dense-retriever': dependency not found: mock-vs`)
+}
