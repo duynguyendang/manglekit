@@ -5,7 +5,6 @@ package all
 import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/internal/embedders"
-	"github.com/duynguyendang/manglekit/internal/embedders/openai"
 	"github.com/duynguyendang/manglekit/internal/providers/bm25"
 	"github.com/duynguyendang/manglekit/internal/providers/dense"
 	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
@@ -15,8 +14,6 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
 	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers"
-	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
-	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
 	"github.com/duynguyendang/manglekit/internal/providers/state"
 	"github.com/duynguyendang/manglekit/internal/providers/state/inmemory"
 	"github.com/duynguyendang/manglekit/internal/vectorstores"
@@ -32,12 +29,12 @@ func Register(r *manglekit.Registry) {
 	dense.Register(r)
 	hybrid.Register(r)
 	inmemory.Register(r)
-	jsonschema.Register(r)
-	llm.RegisterGoogle(r)
-	llm.RegisterOpenAI(r)
-	rdf.Register(r)
 	sandwich.Register(r)
-	openai.Register(r)
+
+	// NEW: Aggregate Registrations
+	llm.Register(r)
+	embedders.Register(r)
+	schemaparsers.Register(r)
 
 	// Component Handlers
 	r.RegisterHandler(retrievers.NewHandler())
