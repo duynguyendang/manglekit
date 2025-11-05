@@ -53,6 +53,11 @@ type ProviderWithOptions interface {
 	GetProviderOptions() any
 }
 
+// SkipModelCheckProvider is an interface for provider options that can skip model validation.
+type SkipModelCheckProvider interface {
+	ShouldSkipModelCheck() bool
+}
+
 // RetrieverDeps provides dependencies for a retriever that depends on other sub-retrievers.
 type RetrieverDeps struct {
 	CoreDeps

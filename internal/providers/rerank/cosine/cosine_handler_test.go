@@ -114,3 +114,34 @@ components:
 	_, err := sdk.LoadWithRegistry(context.Background(), []byte(configYAML), reg)
 	require.NoError(t, err)
 }
+
+func TestCosine_Handler_MissingDependency(t *testing.T) {
+	reg := manglekit.NewRegistry()
+	registerTestComponents(reg)
+
+	configYAML := `
+orchestrator: test-sandwich
+components:
+  - name: my-cosine
+    kind: reranker
+    type: cosine
+    params:
+      embedder: mock-embedder # This embedder is registered, but not in the components list
+  - name: mock-retriever
+    kind: retriever
+    type: mock-retriever
+  - name: mock-llm
+    kind: llm
+    type: mock-llm
+  - name: test-sandwich
+    kind: orchestrator
+    type: sandwich
+    params:
+      retriever: mock-retriever
+      llm: mock-llm
+      reranker: my-cosine
+`
+	_, err := sdk.LoadWithRegistry(context.Background(), []byte(configYAML), reg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `dependency not found: mock-embedder`)
+}

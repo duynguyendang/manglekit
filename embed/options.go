@@ -8,10 +8,14 @@ type GoogleEmbedderOptions struct {
 	// Model is the identifier for the specific Google embedding model to be used,
 	// for example, "embedding-001".
 	Model string `json:"model,omitempty"`
+	// SkipModelCheck is a test-only option to bypass the live model validation
+	// call that genkit performs on initialization.
+	SkipModelCheck bool `yaml:"skip_model_check,omitempty"`
 }
 
 func (o *GoogleEmbedderOptions) ProviderName() string { return "google" }
 func (o *GoogleEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *GoogleEmbedderOptions) ShouldSkipModelCheck() bool      { return o.SkipModelCheck }
 
 // OpenAIEmbedderOptions provides typed configuration for OpenAI and compatible
 // embedding models.
@@ -26,10 +30,19 @@ type OpenAIEmbedderOptions struct {
 	// trading off performance and accuracy. If omitted, the provider's default
 	// dimensionality is used.
 	Dimensions int `json:"dimensions,omitempty"`
+	// SkipModelCheck is a test-only option to bypass the live model validation
+	// call that genkit performs on initialization.
+	SkipModelCheck bool `yaml:"skip_model_check,omitempty"`
+	// BaseURL is an optional override for the OpenAI API base URL. This is useful
+	// for pointing the client to a different compatible endpoint.
+	BaseURL string `yaml:"base_url,omitempty"`
 }
 
 func (o *OpenAIEmbedderOptions) ProviderName() string { return "openai" }
 func (o *OpenAIEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *OpenAIEmbedderOptions) GetAPIKey() string       { return o.APIKey }
+func (o *OpenAIEmbedderOptions) GetBaseURL() string      { return o.BaseURL }
+func (o *OpenAIEmbedderOptions) ShouldSkipModelCheck() bool      { return o.SkipModelCheck }
 
 // GroqEmbedderOptions is an alias for OpenAIEmbedderOptions, but for the Groq provider.
 type GroqEmbedderOptions struct {

@@ -117,3 +117,23 @@ func TestDeclarativeOrchestrator_WithStateProvider(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, declOrch.StateProvider)
 }
+
+const configMissingTool = `
+orchestrator: my-declarative-orchestrator
+components:
+  - name: my-declarative-orchestrator
+    kind: orchestrator
+    type: declarative
+    params:
+      steps:
+        - name: missing-tool
+`
+
+func TestDeclarativeOrchestrator_MissingTool(t *testing.T) {
+	reg := manglekit.NewRegistry()
+	registerTestDeps(reg)
+
+	_, err := sdk.LoadWithRegistry(context.Background(), []byte(configMissingTool), reg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `tool with name 'missing-tool' not found`)
+}
