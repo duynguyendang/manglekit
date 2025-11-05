@@ -102,5 +102,5 @@ components:
 `
 	_, err := sdk.LoadWithRegistry(context.Background(), []byte(configYAML), reg)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "path option is required for bm25 retriever")
+	assert.Contains(t, err.Error(), "either path or documents option is required for bm25 retriever")
 }

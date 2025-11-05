@@ -59,6 +59,7 @@ func RegisterOpenAI(r *manglekit.Registry) {
 		return client, nil
 	}
 	manglekit.Register(r, &OpenAIOptions{}, openAIFactory)
+	r.RegisterHandler(NewHandler())
 }
 
 // OpenAI is a wrapper around a genkit AI model from the OpenAI plugin.

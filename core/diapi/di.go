@@ -20,6 +20,8 @@ type Builder interface {
 	GetSchemaParser(name string) (core.SchemaParser, error)
 	Genkit() *genkit.Genkit
 	GetCoreDeps() CoreDeps
+
+	SetRetriever(name string, retriever core.Retriever) error
 }
 
 // APIKeyProvider is an interface for provider options that expose an API key.

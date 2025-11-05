@@ -1,0 +1,60 @@
+# config.yaml
+#
+# Implements "01-basic-rag"
+# A simple "Config-First" Sandwich pipeline.
+
+# 1. Define the main orchestrator for the pipeline
+orchestrator: "my-sandwich-orchestrator"
+
+# 2. Define the component list
+components:
+  # --- Orchestrator ---
+  - name: "my-sandwich-orchestrator"
+    kind: "orchestrator"
+    type: "sandwich"
+    params:
+      # Connect the named components below to the pipeline stages
+      llm: "my-openai-llm"
+      retriever: "my-bm25-retriever"
+      reranker: "my-cosine-reranker"
+      state_provider: "my-memory-state"
+
+  # --- LLM ---
+  - name: "my-openai-llm"
+    kind: "llm"
+    type: "openai"
+    params:
+      # We skip model validation for this local example
+      skipModelCheck: true
+      # OPENAI_API_KEY will be read from the environment
+
+  # --- Retriever ---
+  # We use bm25 because it's simple, local, and requires no embedder.
+  - name: "my-bm25-retriever"
+    kind: "retriever"
+    type: "bm25"
+    params:
+      documents:
+        - "doc1: Manglekit is a neuro-symbolic framework."
+        - "doc2: The quick brown fox jumps over the lazy dog."
+        - "doc3: Go is a statically typed, compiled programming language."
+
+  # --- Embedder (Required by Reranker) ---
+  - name: "my-openai-embedder"
+    kind: "embedder"
+    type: "openai"
+    params:
+      skipModelCheck: true
+
+  # --- Reranker ---
+  - name: "my-cosine-reranker"
+    kind: "reranker"
+    type: "cosine"
+    params:
+      # This reranker depends on the embedder
+      embedder: "my-openai-embedder"
+
+  # --- State ---
+  - name: "my-memory-state"
+    kind: "state_provider"
+    type: "in-memory" # Simple in-memory session storage
