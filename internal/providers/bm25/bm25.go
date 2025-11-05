@@ -30,6 +30,8 @@ type BM25Options struct {
 	// Path is the file system path to a directory of documents that will be
 	// indexed by the retriever for keyword search.
 	Path string `yaml:"path" path:"resolve"`
+	// Documents is a slice of strings that will be indexed by the retriever.
+	Documents []string `yaml:"documents"`
 	// TopK specifies the default number of documents to return if a different
 	// limit is not specified in the retrieval request.
 	TopK int `yaml:"topK"`
@@ -90,8 +92,8 @@ type BM25 struct {
 // It returns an initialized `core.Retriever` or an error if the document
 // path is invalid or document loading/parsing fails.
 func New(opts BM25Options, deps diapi.NoopDeps) (core.Retriever, error) {
-	if opts.Path == "" {
-		return nil, fmt.Errorf("path option is required for bm25 retriever")
+	if opts.Path == "" && len(opts.Documents) == 0 {
+		return nil, fmt.Errorf("either path or documents option is required for bm25 retriever")
 	}
 	topK := opts.TopK
 	if topK == 0 {
@@ -102,12 +104,24 @@ func New(opts BM25Options, deps diapi.NoopDeps) (core.Retriever, error) {
 		logger = obslogger.NewStdLogger()
 	}
 
-	docs, err := loadDocuments(opts.Path, logger)
-	if err != nil {
-		logger.Errorf("failed to load documents for BM25: %v", err)
-		return nil, fmt.Errorf("failed to load documents for BM25: %w", err)
+	var docs []*ai.Document
+	if len(opts.Documents) > 0 {
+		for i, docStr := range opts.Documents {
+			doc := ai.DocumentFromText(docStr, map[string]any{
+				"doc_id": fmt.Sprintf("doc-%d", i),
+				"source": "inline",
+			})
+			docs = append(docs, doc)
+		}
+	} else {
+		var err error
+		docs, err = loadDocuments(opts.Path, logger)
+		if err != nil {
+			logger.Errorf("failed to load documents for BM25: %v", err)
+			return nil, fmt.Errorf("failed to load documents for BM25: %w", err)
+		}
+		logger.Debugf("loaded %d documents from %s", len(docs), opts.Path)
 	}
-	logger.Debugf("loaded %d documents from %s", len(docs), opts.Path)
 
 	vocab := make(map[string]int)
 	var tfDocs []tfidf.Document

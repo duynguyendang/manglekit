@@ -2,6 +2,7 @@ package sandwich
 
 import (
 	"context"
+	"fmt"
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
@@ -11,7 +12,16 @@ import (
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, &Options{},
 		func(ctx context.Context, deps diapi.SandwichDeps, cfg *Options) (core.Orchestrator, error) {
-			return NewFactory(cfg).Build(ctx, deps)
+			factory := NewFactory()
+			built, err := factory.Build(ctx, deps, cfg)
+			if err != nil {
+				return nil, err
+			}
+			orchestrator, ok := built.(core.Orchestrator)
+			if !ok {
+				return nil, fmt.Errorf("built component is not a core.Orchestrator, but %T", built)
+			}
+			return orchestrator, nil
 		},
 	)
 	r.RegisterHandler(NewHandler())

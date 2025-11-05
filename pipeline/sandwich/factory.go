@@ -2,36 +2,45 @@ package sandwich
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/internal/statehelper"
 	"github.com/duynguyendang/manglekit/internal/logger"
+	"github.com/duynguyendang/manglekit/internal/statehelper"
 )
 
 // Factory implements the core.Factory interface for the sandwich orchestrator.
-type Factory struct {
-	cfg *Options
-}
+type Factory struct{}
 
 // NewFactory creates a new factory for the sandwich orchestrator.
-func NewFactory(cfg *Options) *Factory {
-	return &Factory{cfg: cfg}
+func NewFactory() core.Factory {
+	return &Factory{}
 }
 
 // Build creates a new sandwich orchestrator from the given dependencies.
-func (f *Factory) Build(ctx context.Context, deps diapi.SandwichDeps) (core.Orchestrator, error) {
+func (f *Factory) Build(ctx context.Context, deps any, cfg any) (any, error) {
+	sandwichDeps, ok := deps.(diapi.SandwichDeps)
+	if !ok {
+		return nil, fmt.Errorf("invalid deps type for sandwich orchestrator: got %T", deps)
+	}
+
+	opts, ok := cfg.(*Options)
+	if !ok {
+		return nil, fmt.Errorf("invalid options type for sandwich orchestrator: got %T", cfg)
+	}
+
 	s := &Orchestrator{
-		retriever:           deps.Retriever,
-		reranker:            deps.Reranker,
-		ruleset:             deps.RuleSet,
-		llm:                 deps.LLM,
-		stateProvider:       deps.StateProvider,
+		retriever:           sandwichDeps.Retriever,
+		reranker:            sandwichDeps.Reranker,
+		ruleset:             sandwichDeps.RuleSet,
+		llm:                 sandwichDeps.LLM,
+		stateProvider:       sandwichDeps.StateProvider,
 		conversationManager: statehelper.NewConversationManager(),
-		obs:                 deps.Obs,
-		topK:                f.cfg.TopK,
-		maxTokens:           f.cfg.MaxTokens,
-		fallbackThreshold:   f.cfg.FallbackThreshold,
+		obs:                 sandwichDeps.Obs,
+		topK:                opts.TopK,
+		maxTokens:           opts.MaxTokens,
+		fallbackThreshold:   opts.FallbackThreshold,
 	}
 
 	if s.obs.Logger == nil {
