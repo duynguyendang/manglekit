@@ -3,8 +3,8 @@ context_type: low_level_design
 project: manglekit
 language: go
 version: 0.5.0
-last_updated: 2025-11-05
-stability: unstable
+last_updated: 2025-11-06
+stability: stable
 audience: developers
 ---
 
@@ -206,14 +206,10 @@ Tracing the `hybrid` retriever:
 
 # 12. Deviations & Blockers
 
-The codebase is currently **unstable** due to a critical architectural violation.
-
-- **Violation: Builder Leaking into Handler (ADR 7 / R14)**
-  - **Description**: The design described in this document, particularly in sections 4 and 5, mandates that handlers use the `diapi.Builder` interface to construct typed dependency structs. However, the current implementation in all component handlers bypasses this by directly type-asserting the `builderDI` parameter to the concrete `*builder.Builder`.
-  - **Impact**: This is a major deviation from the intended design. It breaks the encapsulation of the builder, couples handlers to the builder's implementation, and undermines the type-safe dependency injection contract. This makes the system harder to maintain and test.
-  - **Status**: Open. This must be remediated to bring the codebase back into compliance.
+The codebase is **stable** and has no open deviations from the LLD.
 
 # 13. Changelog
+*   **2025-11-06**: Verified code compliance with ADR-7 (R14). Reverted 'unstable' status. The system is stable and compliant with the LLD.
 *   **2025-11-05**: Reverted stability status to **unstable**. Updated "Deviations & Blockers" to reflect that the "Builder Leaking into Handler" violation (ADR 7 / R14) is present in the codebase, which is a direct contradiction of the design specified in this document.
 *   **2025-11-05**: Final baseline of all architectural documents to stable.
 *   **2025-11-04**: Enforced ADR-7 (R14) compliance by refactoring the `declarative` and `sandwich` orchestrator providers to use typed `diapi.*Deps` structs, removing the final `diapi.Builder` violations. Rewrote orchestrator tests to use the modern YAML-based `sdk.LoadWithRegistry` pattern.

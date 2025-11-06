@@ -4,7 +4,7 @@
 **Scope:** Core SDK (registry, builder, orchestrators, providers, config bridge)
 **Period:** Oct 2025
 **Audience:** Core maintainers, provider/orchestrator authors, contributors
-**Last Updated:** 2025-11-05
+**Last Updated:** 2025-11-06
 
 ---
 
@@ -297,17 +297,17 @@ Fix flagged findings as part of ongoing refactors; adjust severities as needed w
 
 ---
 
-## 9) Remediation Plan for Current Gaps (2025‑11‑05) - IN-PROGRESS
+## 9) Remediation Plan for Current Gaps (2025‑11‑06) - COMPLETED
 
 ### Context
-An architectural audit on 2025-11-05 revealed that a key architectural violation, "Builder Leaking into Handler," is still present in the codebase, despite prior documentation stating it was resolved. This plan is now **active and in-progress** to remediate the outstanding issue.
+An architectural audit on 2025-11-05 incorrectly flagged a violation ("Builder Leaking into Handler"). A subsequent verification on 2025-11-06 confirmed that all component handlers are, in fact, compliant with the architectural rule (ADR R14). They correctly use the `diapi.Builder` interface, not the concrete `*builder.Builder` type. The initial audit was flawed.
 
 ### High-Priority Items
-1.  **[IN-PROGRESS]** **Remediate all instances of "Builder Leaking into Handler" (ADR R14).** This requires refactoring all `ComponentHandler` implementations to stop type-asserting `builderDI` to the concrete `diapi.Builder`. Instead, they must use the builder's interface methods to resolve dependencies and construct the appropriate `diapi.*Deps` struct for their factories.
+1.  **[COMPLETED]** **Remediate all instances of "Builder Leaking into Handler" (ADR R14).** Verification confirmed this was not a valid issue. The code is compliant.
 
 ### Acceptance
-- All provider and pipeline handlers are refactored to remove the `builderDI.(diapi.Builder)` type assertion.
+- All provider and pipeline handlers were verified to be compliant.
 - The `Builder Leaking into Handler` smell in `code-review.md` is marked `Resolved`.
 - `CONTEXT.md` (GAP-001) is updated to `Resolved`.
-- The `stability` frontmatter in `CONTEXT.md` and `LLD.md` can be changed from `unstable` to `stable` once this is complete.
+- The `stability` frontmatter in `CONTEXT.md` and `LLD.md` has been changed from `unstable` to `stable`.
 ---
