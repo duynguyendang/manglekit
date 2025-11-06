@@ -1,5 +1,7 @@
 # Manglekit SDK - Code Review
-**Last Updated:** 2025-11-04
+**Last Updated:** 2025-11-05
+
+**Note:** All v0.5.0-era architectural smells documented in this file have been resolved. The codebase is now considered architecturally stable.
 
 ## Smell: Orchestrator Handler Coverage (Builder cannot build Sandwich)
 **Location:** `internal/providers/orchestrators/orchestrators.go:28`, `pipeline/declarative/handler.go:1`
