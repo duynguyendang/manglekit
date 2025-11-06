@@ -311,3 +311,40 @@ An architectural audit on 2025-11-05 incorrectly flagged a violation ("Builder L
 - `CONTEXT.md` (GAP-001) is updated to `Resolved`.
 - The `stability` frontmatter in `CONTEXT.md` and `LLD.md` has been changed from `unstable` to `stable`.
 ---
+
+## 10) Hybrid Build Architecture (Programmatic & Config-First)
+
+### Title
+
+ADR-010: Hybrid Build Architecture (Programmatic & Config-First)
+
+### Status
+
+Proposed
+
+### Context
+
+ADR 1 established a "Config-First" architecture to ensure reproducibility and stability, removing the old, confusing programmatic builder. This rigidity makes advanced testing, TDD, and dynamic embedding scenarios unnecessarily complex. We need to re-introduce the flexibility of programmatic building, but in a way that is explicit, controlled, and does not violate the spirit of ADR 1 (which is about safe production deployments).
+
+### Decision
+
+We will officially support two distinct (and separate) entry points for building a Manglekit orchestrator:
+
+*   **Default Path (Production & Standard Use):** `sdk.Load(ctx, configData)` remains the primary, recommended entry point. This path guarantees "Config-First" (ADR 1) compliance, ensuring reproducibility from a single YAML file.
+*   **Advanced Path (Testing & Advanced Embedding):** We will introduce a new, explicit function in the `sdk` package: `sdk.NewBuilder()`. This function returns a `manglekit.Builder` instance. This Builder instance will expose the programmatic methods (e.g., `builder.With(opts)`, `builder.Register(handler)`) that were previously internal or removed. The user is then responsible for calling `builder.Build(ctx)` manually.
+
+### Rationale
+
+This hybrid approach provides the best of both worlds:
+
+*   **Stability (ADR 1):** The default `sdk.Load` path is simple, safe, and guarantees reproducible builds from config.
+*   **Flexibility (This ADR):** The explicit `sdk.NewBuilder()` path provides a necessary "escape hatch" for advanced developers and TDD, without confusing the standard user.
+*   **Clear API:** By separating the two entry points (`Load` vs. `NewBuilder`), we avoid the "Polluted BuilderAPI" smell of the past. The user makes a conscious choice.
+
+### Consequences
+
+*   The `manglekit.Builder` struct and its methods (`With`, `Register`, `Build`) will need to be exposed via a public interface returned by `sdk.NewBuilder()`.
+*   The `sdk/` package will now export `NewBuilder()`.
+*   Documentation (`README.md`, `AGENTS.md`) must be updated to explain when to use `sdk.Load` (for production) vs. `sdk.NewBuilder` (for testing/advanced use).
+*   The (future) "DAG" (Dependency Graph) refactor will become easier to implement, as `sdk.NewBuilder` will be the natural entry point for programmatic dependency registration.
+*   This decision supersedes any previous interpretation of ADR 1 that forbade all programmatic building.
