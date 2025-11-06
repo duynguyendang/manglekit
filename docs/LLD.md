@@ -3,7 +3,7 @@ context_type: low_level_design
 project: manglekit
 language: go
 version: 0.5.0
-last_updated: 2025-11-04
+last_updated: 2025-11-05
 stability: stable
 audience: developers
 ---
@@ -209,6 +209,7 @@ Tracing the `hybrid` retriever:
 All previously identified architectural gaps and deviations have been resolved. The codebase is now in a stable state and fully compliant with the design described in this document.
 
 # 13. Changelog
+*   **2025-11-05**: Final baseline of all architectural documents to stable.
 *   **2025-11-04**: Enforced ADR-7 (R14) compliance by refactoring the `declarative` and `sandwich` orchestrator providers to use typed `diapi.*Deps` structs, removing the final `diapi.Builder` violations. Rewrote orchestrator tests to use the modern YAML-based `sdk.LoadWithRegistry` pattern.
 *   **2025-11-03**: Completed final architectural cleanup and document synchronization. Aligned this LLD with the stable, 100% complete state of the codebase.
 *   **2025-11-03**: Reconciled LLD with the actual (in-progress) state of the DI refactor. The previous audit claim that all GAPs were resolved has been reverted, and the document is marked as unstable pending completion of the factory signature migration.

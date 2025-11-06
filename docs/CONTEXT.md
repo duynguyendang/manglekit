@@ -3,7 +3,7 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 0.5.0
-last_updated: 2025-11-04
+last_updated: 2025-11-05
 stability: stable
 audience: humans_and_agents
 ---
@@ -115,7 +115,7 @@ All previously identified architectural gaps have been resolved. The codebase is
 ## 13. Machine Appendix (JSON Snapshot v1)
 ```json
 {
-  "last_updated": "2025-11-04",
+  "last_updated": "2025-11-05",
   "gaps": []
 }
 ```
@@ -137,6 +137,7 @@ The framework follows Semantic Versioning (SemVer). Breaking changes to the `cor
 
 
 ## 14. Changelog
+-   **2025-11-05**: Final baseline of all architectural documents to stable. All known gaps and smells are resolved, and the codebase is 100% compliant with the documented architecture.
 -   **2025-11-04**: Enforced ADR-7 (R14) compliance by refactoring the `declarative` and `sandwich` orchestrator providers to use typed `diapi.*Deps` structs, removing the final `diapi.Builder` violations. Rewrote orchestrator tests to use the modern YAML-based `sdk.LoadWithRegistry` pattern.
 -   **2025-11-03**: Completed final architectural cleanup. Resolved all remaining "Open" smells, including non-deterministic behavior in the builder and hybrid retriever, and refactored the sandwich handler for full Type-Safe DI compliance. All architectural documents have been synchronized to reflect a stable, 100% complete state.
 -   **2025-11-03**: Reconciled architecture documents with the actual state of the DI refactor. The previous audit (2025-10-25) incorrectly marked all GAPs as resolved. This update reverts those claims, marks the documentation as unstable, and clarifies that the final factory signature migration (ADR R14) is still in progress.
