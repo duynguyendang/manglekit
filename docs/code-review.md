@@ -1,7 +1,7 @@
 # Manglekit SDK - Code Review
 **Last Updated:** 2025-11-05
 
-**Note:** All v0.5.0-era architectural smells documented in this file have been resolved. The codebase is now considered architecturally stable.
+**Note:** An architectural audit on 2025-11-05 revealed that the codebase is **unstable**. A critical smell, "Builder Leaking into Handler," previously thought to be resolved, is still present in all component handlers.
 
 ## Smell: Orchestrator Handler Coverage (Builder cannot build Sandwich)
 **Location:** `internal/providers/orchestrators/orchestrators.go:28`, `pipeline/declarative/handler.go:1`
@@ -118,6 +118,13 @@ The following issues were identified in a previous review and have been resolved
 ---
 ## Open Architectural Smells
 
+## Smell: Builder Leaking into Handler
+**Location:** `pipeline/declarative/handler.go`, `pipeline/sandwich/handler.go`, and all handlers in `internal/providers`.
+**Impact Analysis:** The `ComponentHandler`'s `BuildComponent` method accepts a generic `any` type for its dependency injector and immediately type-asserts it to the concrete `diapi.Builder`. This violates the Type-Safe DI rule (ADR-7 / R14), which mandates that handlers and factories must not not depend on the generic builder but on specific, typed dependency structs. This tight coupling makes the handler less modular and harder to test in isolation.
+**Refactoring Suggestion:** Create specific `diapi.*Deps` structs for each provider that needs dependencies. The handler should resolve these dependencies from the builder and populate the appropriate `Deps` struct, which is then passed to a dedicated factory function for the provider.
+**Status:** Open
+**Note:** A 2025-11-05 audit revealed that this smell, previously marked "Resolved," is still present across all component handlers. This is a critical architectural violation.
+
 ## Smell: Polluted BuilderAPI
 **Location:** `builder.go:L23`
 **Impact Analysis:** The public `With(...)` and `WithHandlers(...)` methods on the `BuilderAPI` interface violate the "Config-First" principle (ADR-1). They create a secondary, programmatic entry point for building that bypasses the official `sdk.FromConfig` method. This leads to a confusing public API, makes configurations non-reproducible from a single YAML file, and encourages legacy patterns that are harder to maintain and debug.
@@ -136,15 +143,8 @@ The following issues were identified in a previous review and have been resolved
 **Refactoring Suggestion:** The registry should be redesigned to provide a deterministic lookup, for example by using a struct that can be sorted or a more robust mapping that prevents ambiguous entries at registration time. The lookup should not rely on a `for...range` loop over a map.
 **Status:** Resolved
 
-## Smell: Non-Deterministic Reranking Tie-Breaking
+## Smell: Non-deterministic Reranking Tie-Breaking
 **Location:** `internal/providers/retrievers/hybrid/hybrid.go:L161`
 **Impact Analysis:** The hybrid retriever's `Retrieve` method iterates over a map of document scores (`scores`) to build the final list of documents. While this list is subsequently sorted by score, the relative order of documents with identical Reciprocal Rank Fusion (RRF) scores is not guaranteed because the initial iteration order is random. This violates the determinism principle (ADR-15) and can lead to inconsistent results for the same query.
 **Refactoring Suggestion:** After sorting by score, add a secondary, stable sort criterion, such as the document ID, to ensure a deterministic final order. For example: `sort.SliceStable(finalDocs, ...)` followed by another sort on the ID for tie-breaking.
 **Status:** Resolved
-
-## Smell: Builder Leaking into Handler
-**Location:** `pipeline/sandwich/handler.go:L33`
-**Impact Analysis:** The `sandwichHandler`'s `BuildComponent` method accepts a generic `any` type for its dependency injector and immediately type-asserts it to the concrete `diapi.Builder`. This violates the Type-Safe DI rule (ADR-7 / R14), which mandates that handlers and factories must not not depend on the generic builder but on specific, typed dependency structs. This tight coupling makes the handler less modular and harder to test in isolation.
-**Refactoring Suggestion:** Create a new `diapi.SandwichDeps` struct that explicitly lists all the dependencies the sandwich orchestrator needs (e.g., `Retriever`, `LLMClient`, `Reranker`). The handler should resolve these dependencies from the builder and populate the `SandwichDeps` struct, which is then passed to a dedicated factory function for the orchestrator.
-**Status:** Resolved
-**Note:** This was resolved as part of the broader effort to enforce ADR-7 (R14) compliance.

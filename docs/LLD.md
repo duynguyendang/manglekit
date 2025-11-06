@@ -4,7 +4,7 @@ project: manglekit
 language: go
 version: 0.5.0
 last_updated: 2025-11-05
-stability: stable
+stability: unstable
 audience: developers
 ---
 
@@ -206,9 +206,15 @@ Tracing the `hybrid` retriever:
 
 # 12. Deviations & Blockers
 
-All previously identified architectural gaps and deviations have been resolved. The codebase is now in a stable state and fully compliant with the design described in this document.
+The codebase is currently **unstable** due to a critical architectural violation.
+
+- **Violation: Builder Leaking into Handler (ADR 7 / R14)**
+  - **Description**: The design described in this document, particularly in sections 4 and 5, mandates that handlers use the `diapi.Builder` interface to construct typed dependency structs. However, the current implementation in all component handlers bypasses this by directly type-asserting the `builderDI` parameter to the concrete `*builder.Builder`.
+  - **Impact**: This is a major deviation from the intended design. It breaks the encapsulation of the builder, couples handlers to the builder's implementation, and undermines the type-safe dependency injection contract. This makes the system harder to maintain and test.
+  - **Status**: Open. This must be remediated to bring the codebase back into compliance.
 
 # 13. Changelog
+*   **2025-11-05**: Reverted stability status to **unstable**. Updated "Deviations & Blockers" to reflect that the "Builder Leaking into Handler" violation (ADR 7 / R14) is present in the codebase, which is a direct contradiction of the design specified in this document.
 *   **2025-11-05**: Final baseline of all architectural documents to stable.
 *   **2025-11-04**: Enforced ADR-7 (R14) compliance by refactoring the `declarative` and `sandwich` orchestrator providers to use typed `diapi.*Deps` structs, removing the final `diapi.Builder` violations. Rewrote orchestrator tests to use the modern YAML-based `sdk.LoadWithRegistry` pattern.
 *   **2025-11-03**: Completed final architectural cleanup and document synchronization. Aligned this LLD with the stable, 100% complete state of the codebase.
