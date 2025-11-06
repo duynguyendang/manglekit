@@ -18,7 +18,7 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 	obslogger "github.com/duynguyendang/manglekit/internal/logger"
-	"github.com/duynguyendang/manglekit/internal/providers/mangle/converters"
+	"github.com/duynguyendang/manglekit/internal/providers/rules/mangle/converters"
 	"github.com/google/mangle/analysis"
 	"github.com/google/mangle/ast"
 	"github.com/google/mangle/engine"

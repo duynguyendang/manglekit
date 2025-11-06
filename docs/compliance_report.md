@@ -11,9 +11,9 @@
 | `Replace(context.Context, []core.Doc) error` | ✖ | ✖ | ✖ | ✔ | `core/interfaces.go:145-149` |
 
 **Registration:**
-- `bm25`: `internal/providers/bm25/bm25.go:41-46`
-- `dense`: `internal/providers/dense/dense.go:29-38`
-- `hybrid`: `internal/providers/hybrid/hybrid.go:34-49`
+- `bm25`: `internal/providers/retrievers/bm25/bm25.go:41-46`
+- `dense`: `internal/providers/retrievers/dense/dense.go:29-38`
+- `hybrid`: `internal/providers/retrievers/hybrid/hybrid.go:34-49`
 - `in-memory`: `internal/providers/retrievers/inmemory/inmemory.go:48-53`
 
 ### Reranker
@@ -78,7 +78,7 @@
 
 ### Retriever: bm25
 - **Summary Verdict:** Fail
-- **Evidence:** `internal/providers/bm25/bm25.go`
+- **Evidence:** `internal/providers/retrievers/bm25/bm25.go`
 - **Notes:**
   - Registration Key: `bm25`
   - Constructor: `New(BM25Options)`
@@ -87,7 +87,7 @@
 
 ### Retriever: dense
 - **Summary Verdict:** Fail
-- **Evidence:** `internal/providers/dense/dense.go`
+- **Evidence:** `internal/providers/retrievers/dense/dense.go`
 - **Notes:**
   - Registration Key: `dense`
   - Constructor: `New(ai.Embedder, core.VectorStore)`
@@ -96,7 +96,7 @@
 
 ### Retriever: hybrid
 - **Summary Verdict:** Fail
-- **Evidence:** `internal/providers/hybrid/hybrid.go`
+- **Evidence:** `internal/providers/retrievers/hybrid/hybrid.go`
 - **Notes:**
   - Registration Key: `hybrid`
   - Constructor: `New([]core.Retriever, float64)`
@@ -159,7 +159,7 @@
 
 ### Rules Engine: mangle
 - **Summary Verdict:** Pass with caveats
-- **Evidence:** `internal/providers/mangle/rules.go`
+- **Evidence:** `internal/providers/rules/mangle/rules.go`
 - **Notes:**
   - Registration Key: `mangle`
   - Constructor: `New(context.Context, core.MangleOptions, *manglekit.Registry)`
@@ -196,19 +196,19 @@
 ## 3. Gaps to Append to docs/code-review.md
 
 ## Smell: Missing/Incorrect Interface Implementation — bm25
-**Location:** `internal/providers/bm25/bm25.go`
+**Location:** `internal/providers/retrievers/bm25/bm25.go`
 **Impact Analysis:** The `bm25` retriever does not implement the `core.Updatable` interface, which means it cannot be updated at runtime. This limits its usefulness in dynamic environments where the knowledge base can change.
 **Refactoring Suggestion:** Implement the `Upsert` and `Replace` methods on the `BM25` struct to satisfy the `core.Updatable` interface.
 **Status:** Open
 
 ## Smell: Missing/Incorrect Interface Implementation — dense
-**Location:** `internal/providers/dense/dense.go`
+**Location:** `internal/providers/retrievers/dense/dense.go`
 **Impact Analysis:** The `dense` retriever does not implement the `core.Updatable` interface, which means it cannot be updated at runtime. This limits its usefulness in dynamic environments where the knowledge base can change.
 **Refactoring Suggestion:** Implement the `Upsert` and `Replace` methods on the `Dense` struct to satisfy the `core.Updatable` interface.
 **Status:** Open
 
 ## Smell: Missing/Incorrect Interface Implementation — hybrid
-**Location:** `internal/providers/hybrid/hybrid.go`
+**Location:** `internal/providers/retrievers/hybrid/hybrid.go`
 **Impact Analysis:** The `hybrid` retriever does not implement the `core.Updatable` interface, which means it cannot be updated at runtime. This limits its usefulness in dynamic environments where the knowledge base can change.
 **Refactoring Suggestion:** Implement the `Upsert` and `Replace` methods on the `Retriever` struct to satisfy the `core.Updatable` interface.
 **Status:** Open
