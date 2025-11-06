@@ -5,9 +5,9 @@ package all
 import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/internal/embedders"
-	"github.com/duynguyendang/manglekit/internal/providers/bm25"
-	"github.com/duynguyendang/manglekit/internal/providers/dense"
-	"github.com/duynguyendang/manglekit/internal/providers/hybrid"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers/bm25"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers/dense"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers/hybrid"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
 	"github.com/duynguyendang/manglekit/internal/providers/orchestrators"
 	"github.com/duynguyendang/manglekit/internal/providers/rerank"

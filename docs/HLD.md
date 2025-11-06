@@ -88,7 +88,7 @@ Manglekit recognizes the following **kinds**. Each kind is implemented by **prov
 **Mangle (Rules & Converters)**
 
 * **Role:** The built‑in **RuleSet** and **FactConverter** family for policy, gating, redaction, and symbolic normalization.
-* **How it plugs in:** Providers under `internal/providers/mangle/*` implement `RuleSet` and `FactConverter`; `SchemaParser` options allow structural validation before/after model calls.
+* **How it plugs in:** Providers under `internal/providers/rules/mangle/*` implement `RuleSet` and `FactConverter`; `SchemaParser` options allow structural validation before/after model calls.
 * **Contracts:** Pre/Post rule stages receive typed inputs, may **deny** or **mutate** the flow; denials carry `denial_reason` and redaction metadata into `Answer.Meta`.
 * **Declarative Flow:** Rules guard **Planner/Tool** execution; plans must be approved by Mangle rules before side‑effects occur.
 * **Why first‑class:** Guarantees explainability and compliance; keeps neural components bounded by explicit symbolic policy.

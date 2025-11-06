@@ -353,11 +353,12 @@ This is a high-level overview of the most important directories in the MangleKit
 ├── rerank/                 # Reranker interfaces and options
 ├── pipeline/               # Sandwich orchestrator + declarative engine
 │   └── declarative/
-├── internal/               # Concrete providers (bm25, hybrid, llm, vectorstores, etc.)
-│   ├── embedders/
-│   ├── logger/
-│   ├── providers/
-│   └── vectorstores/
+├── internal/               # Internal logic and concrete provider implementations
+│   ├── providers/          # Providers organized by Kind
+│   │   ├── retrievers/     # Contains bm25, dense, hybrid, etc.
+│   │   └── ...
+│   ├── testproviders/      # Mock providers for testing
+│   └── ...                 # Other internal packages
 ├── providers/              # Public registration helpers (e.g., providers/all)
 ├── examples/               # Runnable guides and sample data
 └── docs/                   # CONTEXT.md, HLD/LLD/CSD, reviews

@@ -11,7 +11,7 @@
 **Note:** Resolved by implementing and registering a dedicated `ComponentHandler` for the Sandwich orchestrator, ensuring full coverage. (GAP-005)
 
 ## Smell: Factory Signature Mismatch (Hybrid Retriever)
-**Location:** `internal/providers/hybrid/hybrid.go:35`, `internal/providers/retrievers/handler.go:63`
+**Location:** `internal/providers/retrievers/hybrid/hybrid.go:35`, `internal/providers/retrievers/handler.go:63`
 **Impact Analysis:** The hybrid retriever factory is registered with `D=diapi.Builder`, but the retriever handler passes `diapi.RetrieverDeps` into `Factory.Build`. This will hit a type assertion failure in the generic factory. This is one example of a broader issue where many provider factories have not been updated to accept their specific `diapi.*Deps` struct.
 **Refactoring Suggestion:** Change all provider factories to accept their specific `diapi.*Deps` struct, ensuring full compliance with ADR R14.
 **Status:** Resolved
@@ -45,13 +45,13 @@
 **Status:** Resolved
 
 ## Smell: Hard-coded Dependencies in Factory (Hybrid Retriever)
-**Location:** `internal/providers/hybrid/hybrid.go`
+**Location:** `internal/providers/retrievers/hybrid/hybrid.go`
 **Impact Analysis:** The hybrid retriever factory hard-codes the names of its sub-retrievers (e.g., "bm25", "dense"), preventing users from configuring different combinations. This has been partially mitigated by the new builder, but the core issue remains in the factory logic.
 **Refactoring Suggestion:** The list of sub-retrievers should be a configurable list of strings in the `HybridOptions` struct, allowing for dynamic composition.
 **Status:** Resolved
 
 ## Smell: Hard-coded Magic Number (Hybrid Retriever k=60)
-**Location:** `internal/providers/hybrid/hybrid.go`
+**Location:** `internal/providers/retrievers/hybrid/hybrid.go`
 **Impact Analysis:** The Reciprocal Rank Fusion constant `k` is hard-coded to 60.0, preventing users from tuning the retriever's fusion algorithm for their specific use case.
 **Refactoring Suggestion:** Expose `RRF_K` as a configurable `float64` field in the `HybridOptions` struct.
 **Status:** Resolved
@@ -137,7 +137,7 @@ The following issues were identified in a previous review and have been resolved
 **Status:** Resolved
 
 ## Smell: Non-Deterministic Reranking Tie-Breaking
-**Location:** `internal/providers/hybrid/hybrid.go:L161`
+**Location:** `internal/providers/retrievers/hybrid/hybrid.go:L161`
 **Impact Analysis:** The hybrid retriever's `Retrieve` method iterates over a map of document scores (`scores`) to build the final list of documents. While this list is subsequently sorted by score, the relative order of documents with identical Reciprocal Rank Fusion (RRF) scores is not guaranteed because the initial iteration order is random. This violates the determinism principle (ADR-15) and can lead to inconsistent results for the same query.
 **Refactoring Suggestion:** After sorting by score, add a secondary, stable sort criterion, such as the document ID, to ensure a deterministic final order. For example: `sort.SliceStable(finalDocs, ...)` followed by another sort on the ID for tie-breaking.
 **Status:** Resolved

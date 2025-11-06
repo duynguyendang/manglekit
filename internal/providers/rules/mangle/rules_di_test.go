@@ -10,7 +10,7 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
-	"github.com/duynguyendang/manglekit/internal/providers/mangle"
+	"github.com/duynguyendang/manglekit/internal/providers/rules/mangle"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
 	"github.com/duynguyendang/manglekit/internal/providers/rules"
 	"github.com/duynguyendang/manglekit/pipeline/sandwich"

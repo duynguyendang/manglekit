@@ -99,7 +99,7 @@ Providers are self-contained modules in `internal/providers` that implement one 
 ## 8. Testing & Replaceability
 
 -   Component interfaces in `core` are the primary contract for testing.
--   Mock implementations for all core interfaces are provided in `internal/providers/mock`.
+-   Mock implementations for all core interfaces are provided in `internal/testproviders/mock`.
 -   The handler-based architecture allows for fine-grained testing. A test can register a mock handler for a specific `core.Kind` to isolate the build logic of other components.
 
 ## 9. Anti-Patterns (Red Lines)
