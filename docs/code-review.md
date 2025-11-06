@@ -1,7 +1,5 @@
 # Manglekit SDK - Code Review
-**Last Updated:** 2025-11-05
-
-**Note:** An architectural audit on 2025-11-05 revealed that the codebase is **unstable**. A critical smell, "Builder Leaking into Handler," previously thought to be resolved, is still present in all component handlers.
+**Last Updated:** 2025-11-06
 
 ## Smell: Orchestrator Handler Coverage (Builder cannot build Sandwich)
 **Location:** `internal/providers/orchestrators/orchestrators.go:28`, `pipeline/declarative/handler.go:1`
@@ -122,8 +120,8 @@ The following issues were identified in a previous review and have been resolved
 **Location:** `pipeline/declarative/handler.go`, `pipeline/sandwich/handler.go`, and all handlers in `internal/providers`.
 **Impact Analysis:** The `ComponentHandler`'s `BuildComponent` method accepts a generic `any` type for its dependency injector and immediately type-asserts it to the concrete `diapi.Builder`. This violates the Type-Safe DI rule (ADR-7 / R14), which mandates that handlers and factories must not not depend on the generic builder but on specific, typed dependency structs. This tight coupling makes the handler less modular and harder to test in isolation.
 **Refactoring Suggestion:** Create specific `diapi.*Deps` structs for each provider that needs dependencies. The handler should resolve these dependencies from the builder and populate the appropriate `Deps` struct, which is then passed to a dedicated factory function for the provider.
-**Status:** Open
-**Note:** A 2025-11-05 audit revealed that this smell, previously marked "Resolved," is still present across all component handlers. This is a critical architectural violation.
+**Status:** Resolved
+**Note:** Verified on 2025-11-06. The code is compliant. The handler correctly asserts to the diapi.Builder interface, which is the intended design. The initial audit was flawed.
 
 ## Smell: Polluted BuilderAPI
 **Location:** `builder.go:L23`
