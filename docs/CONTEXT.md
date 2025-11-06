@@ -4,7 +4,7 @@ project: manglekit
 language: go
 version: 0.5.0
 last_updated: 2025-11-05
-stability: stable
+stability: unstable
 audience: humans_and_agents
 ---
 
@@ -110,13 +110,38 @@ Providers are self-contained modules in `internal/providers` that implement one 
 
 ## 10. Known Gaps
 
-All previously identified architectural gaps have been resolved. The codebase is now considered stable and fully compliant with this standard.
+The codebase is currently **unstable**. An architectural audit on 2025-11-05 revealed that a critical architectural rule is not being enforced.
+
+- **GAP-001: Builder Leaking into Handler (ADR 7 / R14)**
+  - **Description**: Multiple `ComponentHandler` implementations are violating the Type-Safe DI rule by type-asserting the dependency injection interface to the concrete `*builder.Builder`. This creates a tight coupling that the DI system was designed to prevent.
+  - **Impact**: High. This prevents true modularity and makes handlers difficult to test in isolation. It is a direct violation of a foundational architectural principle.
+  - **Location**: `pipeline/declarative/handler.go`, `pipeline/sandwich/handler.go`, and all handlers in `internal/providers`.
+  - **Status**: Open.
 
 ## 13. Machine Appendix (JSON Snapshot v1)
 ```json
 {
   "last_updated": "2025-11-05",
-  "gaps": []
+  "gaps": [
+    {
+      "id": "GAP-001",
+      "name": "Builder Leaking into Handler",
+      "adr": "ADR-7",
+      "rule": "R14",
+      "status": "Open",
+      "description": "ComponentHandlers are directly type-asserting the dependency injection interface to the concrete *builder.Builder, violating the Type-Safe DI rule.",
+      "locations": [
+        "pipeline/declarative/handler.go",
+        "pipeline/sandwich/handler.go",
+        "internal/providers/llm/handler.go",
+        "internal/providers/rerank/handler.go",
+        "internal/providers/retrievers/handler.go",
+        "internal/providers/state/handler.go",
+        "internal/providers/schemaparsers/handler.go",
+        "internal/providers/rules/handler.go"
+      ]
+    }
+  ]
 }
 ```
 
@@ -137,6 +162,7 @@ The framework follows Semantic Versioning (SemVer). Breaking changes to the `cor
 
 
 ## 14. Changelog
+- **2025-11-05**: Reverted stability status to **unstable**. An audit revealed that claims of resolving ADR-7 (R14) violations were incorrect. The "Builder Leaking into Handler" smell (GAP-001) is still present in all component handlers. Re-opened the Known Gaps section to reflect the true state of the codebase.
 -   **2025-11-05**: Final baseline of all architectural documents to stable. All known gaps and smells are resolved, and the codebase is 100% compliant with the documented architecture.
 -   **2025-11-04**: Enforced ADR-7 (R14) compliance by refactoring the `declarative` and `sandwich` orchestrator providers to use typed `diapi.*Deps` structs, removing the final `diapi.Builder` violations. Rewrote orchestrator tests to use the modern YAML-based `sdk.LoadWithRegistry` pattern.
 -   **2025-11-03**: Completed final architectural cleanup. Resolved all remaining "Open" smells, including non-deterministic behavior in the builder and hybrid retriever, and refactored the sandwich handler for full Type-Safe DI compliance. All architectural documents have been synchronized to reflect a stable, 100% complete state.

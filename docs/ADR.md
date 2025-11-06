@@ -227,7 +227,7 @@ Increase test coverage across config, builder, providers, and orchestrators; rem
 * Build-graph introspection & visualization.
 * Pluggable runtime (Go plugin/WASM) & sandboxing.
 * Options schema validation + JSON-Schema export.
-* Warm-up/caching policies for heavy clients.
+* Warm-up/caching policies for a heavy client.
 * Performance budgets & benchmarks for stage pipelines.
 
 ---
@@ -297,17 +297,17 @@ Fix flagged findings as part of ongoing refactors; adjust severities as needed w
 
 ---
 
-## 9) Remediation Plan for Current Gaps (2025‑11‑05) - RESOLVED
+## 9) Remediation Plan for Current Gaps (2025‑11‑05) - IN-PROGRESS
 
 ### Context
-All architectural gaps identified in the October-November 2025 review period have been remediated. The codebase is now considered stable and fully compliant with all accepted ADRs.
+An architectural audit on 2025-11-05 revealed that a key architectural violation, "Builder Leaking into Handler," is still present in the codebase, despite prior documentation stating it was resolved. This plan is now **active and in-progress** to remediate the outstanding issue.
 
 ### High-Priority Items
-1.  **[COMPLETED]** **Complete the migration of all provider factory signatures (e.g., LLM, Reranker, State) to accept their respective `diapi.*Deps` struct, ensuring full compliance with ADR R14.** This has been completed, with a focus on the `declarative` and `sandwich` orchestrators, which were the last remaining violators.
+1.  **[IN-PROGRESS]** **Remediate all instances of "Builder Leaking into Handler" (ADR R14).** This requires refactoring all `ComponentHandler` implementations to stop type-asserting `builderDI` to the concrete `diapi.Builder`. Instead, they must use the builder's interface methods to resolve dependencies and construct the appropriate `diapi.*Deps` struct for their factories.
 
 ### Acceptance
-- All provider factories are updated to remove `diapi.Builder` dependencies.
-- The `Factory Signature Mismatch` smell in `code-review.md` is marked `Resolved`.
-- `CONTEXT.md` (GAP-009) is updated to `Resolved`.
-- The `stability` frontmatter in `CONTEXT.md` and `LLD.md` is changed from `unstable` to `stable`.
+- All provider and pipeline handlers are refactored to remove the `builderDI.(diapi.Builder)` type assertion.
+- The `Builder Leaking into Handler` smell in `code-review.md` is marked `Resolved`.
+- `CONTEXT.md` (GAP-001) is updated to `Resolved`.
+- The `stability` frontmatter in `CONTEXT.md` and `LLD.md` can be changed from `unstable` to `stable` once this is complete.
 ---
