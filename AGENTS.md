@@ -71,8 +71,8 @@ Use the document’s internal structure as a guide:
 | **Machine Appendix (JSON)** | Track gap statuses and last synchronization date. |
 | **Changelog** | Understand recent context or architectural updates. |
 
-The agent should **avoid scanning the entire repository** unless the context is stale or incomplete.  
-Instead, reason from the structured data within `CONTEXT.md` and cross-references to other docs (HLD, LLD, ADR, code-review).
+The agent should **avoid scanning the entire repository** unless the context is stale or incomplete.
+Instead, reason from the structured data within `CONTEXT.md` and cross-references to other docs (HLD, LLD, ADR, `docs/code-review.md`).
 
 ### 3.3 Reflecting Code Changes
 
@@ -98,14 +98,12 @@ This guarantees that the documentation always mirrors the true, current state of
 Agents must follow semantic commit conventions:
 
 ```
-
 feat: introduce new feature or provider
 fix: resolve bug or panic
 refactor: improve structure without changing behavior
 docs: update documentation (includes CONTEXT.md)
 chore(context): auto-sync CONTEXT.md after code change
 test: add or fix unit tests
-
 ```
 
 ---
@@ -149,12 +147,10 @@ Trigger the **auto-sync process** whenever any of the following occur (including
 ### 6.3 Example Commit
 
 ```
-
 feat(retriever/hybrid): accept diapi.RetrieverDeps and expose rrf_k
 
 chore(context): auto-sync CONTEXT.md (Resolved GAP-006; update JSON snapshot; changelog)
 chore(lld): refresh sequence for retriever handler deps
-
 ```
 
 ---
@@ -167,9 +163,7 @@ chore(lld): refresh sequence for retriever handler deps
 - **Pre-commit (recommended):**  
   If a patch modifies files in §6.1 but does not include doc updates (`docs/CONTEXT.md`, `LLD.md`, `HLD.md`), the agent should **automatically append** a commit:
 ```
-
 chore(context): auto-sync CONTEXT.md (+LLD/HLD)
-
 ```
 
 - **CI lint (recommended):**
@@ -276,7 +270,7 @@ This section defines the mandatory patterns for testing providers. You must iden
 
 ---
 
-### 15.1 Strategy 1: Internal DI / Config-First Test (Category 3)
+### 15.1 Strategy 1: Internal DI / Config-First Test
 
 * **Use Case:** Testing a provider's integration with the Manglekit framework (e.g., `dense`, `hybrid`).
 * **Dependency Type:** Internal Manglekit providers (e.g., `VectorStore`, `Embedder`, `Retriever`).
@@ -292,7 +286,7 @@ To fix the "could not find options type" parsing error, your test setup (e.g., `
 
 ---
 
-### 15.2 Strategy 2: External Dependency / Unit Test (Category 1)
+### 15.2 Strategy 2: External Dependency / Unit Test
 
 * **Use Case:** Testing a provider's core business logic in isolation (e.g., `llm`, `google-embedder`).
 * **Dependency Type:** External Go modules or I/O (e.g., `genkit`, `http.Client`, `os.Getenv`).
@@ -301,6 +295,6 @@ To fix the "could not find options type" parsing error, your test setup (e.g., `
 **Rules for External Dependency Tests:**
 
 1. **Do not use `sdk.LoadWithRegistry`.** This is not a DI integration test.
-2. **Instantiate the provider directly:** Call the provider's Go constructor in your test (e.g., `provider, err := openai.NewProvider(opts)`).
+2. **Instantiate the provider directly:** Call the provider's Go constructor in your test (e.g., `provider, err := openai.NewProvider(opts)` — this is pseudocode; use the actual constructor name for your provider).
 3. **Mock the External I/O:** Do not mock the Manglekit `Registry`. Instead, mock the *external* dependency. For example, if the provider uses an `http.Client`, use `httptest.NewServer` and pass the mock server's URL into the provider's `Options`.
 4. Call the provider's methods (e.g., `provider.Execute(...)`) and assert the results.
