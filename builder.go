@@ -42,8 +42,8 @@ type builder struct {
 	schemaParsers  map[string]core.SchemaParser
 }
 
-// newBuilder returns a new, empty instance of the fluent builder.
-func newBuilder(ctx context.Context, r *Registry, obs core.Observability, g *genkit.Genkit) (*builder, error) {
+// NewBuilder returns a new, empty instance of the fluent builder.
+func NewBuilder(ctx context.Context, r *Registry, obs core.Observability, g *genkit.Genkit) (ProgrammaticBuilder, error) {
 	if obs.Logger == nil {
 		return nil, errors.New("observability logger cannot be nil")
 	}
@@ -155,7 +155,16 @@ func (b *builder) buildAll(ctx context.Context) error {
 	return nil
 }
 
-func (b *builder) build(ctx context.Context, orchestratorName, updatableName, stateProviderName string) (core.Orchestrator, retrieve.Updatable, error) {
+func (b *builder) WithOptions(name string, opts core.ProviderOptions) ProgrammaticBuilder {
+	b.cfgs = append(b.cfgs, configItem{
+		kind: opts.ProviderKind(),
+		name: name,
+		cfg:  opts,
+	})
+	return b
+}
+
+func (b *builder) Build(ctx context.Context, orchestratorName, updatableName, stateProviderName string) (core.Orchestrator, retrieve.Updatable, error) {
 	if orchestratorName == "" {
 		return nil, nil, errors.New("no orchestrator specified in configuration")
 	}
@@ -284,7 +293,7 @@ func (b *builder) fromConfig(ctx context.Context, data []byte) (core.Orchestrato
 		}
 	}
 
-	return b.build(ctx, cfg.Orchestrator, cfg.Updatable, cfg.StateProvider)
+	return b.Build(ctx, cfg.Orchestrator, cfg.Updatable, cfg.StateProvider)
 }
 
 func getComponent[T any](m map[string]T, name string) (T, error) {

@@ -18,13 +18,20 @@ func FromConfig(ctx context.Context, data []byte, registry *Registry) (core.Orch
 	g := genkit.Init(ctx)
 
 	// 2. Create a new builder and register all component handlers.
-	b, err := newBuilder(ctx, registry, obs, g)
+	b, err := NewBuilder(ctx, registry, obs, g)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create new builder: %w", err)
 	}
 
+	// The public NewBuilder returns an interface. We need to cast it back to the
+	// internal struct type to access the internal fromConfig method.
+	internalBuilder, ok := b.(*builder)
+	if !ok {
+		return nil, nil, fmt.Errorf("internal error: builder is not of the expected type *builder")
+	}
+
 	// 3. Build the orchestrator from the configuration.
-	orch, up, err := b.fromConfig(ctx, data)
+	orch, up, err := internalBuilder.fromConfig(ctx, data)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to build orchestrator from config: %w", err)
 	}
