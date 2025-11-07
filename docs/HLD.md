@@ -379,26 +379,87 @@ components:
 
 ```
 github.com/duynguyendang/manglekit
-├── builder.go
-├── registry.go
-├── sdk/
+├── api.go                      # Public API aliases/types (external-facing)
+├── builder.go                  # Fluent Builder + DI bridge
+├── registry.go                 # Global Registry (handlers + factories)
+├── sdk.go                      # Minimal SDK shim (programmatic entrypoints)
+├── cmd/
+│   └── agent/                  # Example CLI or agent runner
 ├── config/
+│   ├── loader.go               # YAML/ENV loading
+│   ├── types.go                # Typed config structs
+│   └── validate.go             # Normalization & validation
 ├── core/
-├── retrieve/
-├── rerank/
-├── embed/
-├── llm/
+│   ├── interfaces.go           # Contracts (Retriever, LLM, Reranker, RuleSet, ...)
+│   ├── types.go                # Query, Doc, Answer, Observability
+│   ├── handler.go              # ComponentHandler interface
+│   ├── factory.go              # Factory interfaces and helpers
+│   ├── provider.go             # Kind/Options plumbing
+│   ├── rules.go                # RuleSet contracts
+│   ├── schema.go               # SchemaParser contracts
+│   ├── state.go                # StateProvider contracts
+│   ├── tool.go                 # Tool contracts
+│   ├── tool_adapters.go        # Tool adapters for declarative orchestration
+│   └── diapi/
+│       └── di.go               # Type-safe DI structs (CoreDeps, LLMDeps, ...)
 ├── pipeline/
-│   ├── sandwich.go
+│   ├── stage.go                # Stage interface and shared utilities
+│   ├── runner.go               # Stage runner / execution harness
+│   ├── context.go              # Execution context
+│   ├── sandwich/
+│   │   ├── handler.go          # Sandwich ComponentHandler
+│   │   ├── factory.go          # Sandwich factory
+│   │   ├── sandwich.go         # Orchestrator implementation
+│   │   ├── options.go          # Options struct
+│   │   ├── stage_prerules.go   # Pre-rules stage
+│   │   ├── stage_retrieve.go   # Retrieve stage
+│   │   ├── stage_rerank.go     # Rerank stage
+│   │   ├── stage_llm.go        # LLM stage
+│   │   └── stage_postrules.go  # Post-rules stage
 │   └── declarative/
+│       ├── handler.go          # Declarative ComponentHandler
+│       ├── orchestrator.go     # Declarative orchestrator
+│       ├── options.go          # Options struct
+│       └── register.go         # Registry helpers
 ├── internal/
-│   ├── providers/... (bm25, dense, hybrid, llm, mangle, rerank/cosine, schemaparsers, state, tools)
-│   ├── vectorstores/localvec/
-│   └── logger/
-├── providers/all/
-├── examples/
-└── docs/
+│   ├── providers/
+│   │   ├── retrievers/         # bm25/, dense/, hybrid/, inmemory/
+│   │   ├── llm/                # openai.go, google.go, handler.go, register.go
+│   │   ├── rerank/             # cosine/
+│   │   ├── rules/              # mangle/ (rules engine + converters)
+│   │   ├── schemaparsers/      # jsonschema/, rdf/
+│   │   └── state/              # inmemory/, redis/
+│   ├── embedders/              # openai/, google/
+│   ├── vectorstores/           # localvec/
+│   ├── logger/                 # std logger + zap adapter
+│   ├── registry/               # internal registry impl & test hooks
+│   └── statehelper/            # helpers for state providers
+├── providers/
+│   └── all/                    # Convenience registrar
+├── retrieve/                   # Public options for retrievers
+│   ├── bm25.go
+│   ├── hybrid.go
+│   ├── inmemory.go
+│   └── retrieve.go
+├── embed/
+│   └── options.go              # Public embedder options
+├── llm/
+│   └── prompt.go               # Prompt helpers
+├── state/
+│   └── types.go                # Public state types
+├── examples/                   # Runnable examples and data
+├── docs/                       # CONTEXT.md, HLD.md, LLD.md, ADR.md, etc.
+└── testdata/                   # YAML configs and fixtures for tests
 ```
+
+Key entrypoints:
+- Builder: [`builder.go`](builder.go:1)
+- Registry: [`registry.go`](registry.go:1)
+- Core contracts: [`core/interfaces.go`](core/interfaces.go:1)
+- DI types: [`core/diapi/di.go`](core/diapi/di.go:1)
+- Sandwich orchestrator: [`pipeline/sandwich/sandwich.go`](pipeline/sandwich/sandwich.go:1)
+- Declarative orchestrator: [`pipeline/declarative/orchestrator.go`](pipeline/declarative/orchestrator.go:1)
+- Provider handlers: [`internal/providers/*/handler.go`](internal/providers/retrievers/handler.go:1)
 
 ---
 
@@ -407,3 +468,244 @@ github.com/duynguyendang/manglekit
 * **Neuro‑symbolic:** Systems that combine numerical/statistical methods (e.g., neural nets) with symbolic logic/constraints.
 * **Resolved:** The fully constructed, typed set of runtime dependencies provided to an orchestrator.
 * **Spec Table:** Data structure describing dependency order and required injections for builder construction.
+
+## 18. Error Handling & Recovery
+
+- Build-time errors (config validation, missing providers, options type resolution):
+  - Fail fast: the builder stops on invalid configuration and returns a structured error with component kind/name.
+  - Common conditions: unknown provider, options type mismatch, circular dependency in sub-retrievers.
+  - Recommended practice: validate config via a preflight step; emit actionable messages and remediation hints.
+
+- Runtime errors (stage timeouts, API failures, rule denials):
+  - Orchestrator behavior:
+    - Sandwich: if a stage fails, record error in Answer.Meta, degrade gracefully (e.g., skip rerank, fallback retriever) if policy allows.
+    - Declarative: flow controller may branch on error predicates, escalate to a safe path/tool, or deny with an explainable message.
+  - Error propagation surfaces:
+    - Logs: structured error logs with correlation IDs.
+    - Metrics: failure counters per stage (retrieve_errors, llm_errors, rules_denials).
+    - Answer.Meta: standardized error codes, denials reasons, and safe summary.
+
+- Fallback strategies:
+  - Retrieve: switch to simpler retriever (BM25) if dense provider unavailable.
+  - LLM: fallback to a cheaper or local model on rate-limit or outage.
+  - Rules: when rules deny, return an explainable denial with remediation steps.
+
+- Suggested error schema in Answer.Meta:
+  - error_code, stage, message, correlation_id, remediation, denied_by_rule (name), redactions_applied (list), retry_after_ms.
+
+---
+
+## 19. State Management & Sessions
+
+- Session lifecycle:
+  - Create: per sessionID at first Execute call.
+  - Update: append query/answer, context, denials, and citations.
+  - Close: orchestrator Close drains resource closers; state provider may implement TTL eviction.
+
+- Conversation history:
+  - Recommended format: bounded list of exchanges with timestamps and optional embeddings for recall.
+  - Retention policy: configurable TTL; anonymize sensitive fields; PII redaction at storage boundary.
+
+- Consistency & concurrency:
+  - StateProvider contract supports atomic upsert; concurrent requests must serialize by sessionID or use optimistic locking with ETag/version fields.
+
+- Distributed deployments:
+  - Use a shared state provider (Redis, SQL) for multi-instance orchestration.
+  - Ensure idempotent writes and conflict resolution (last-write-wins or CAS).
+
+---
+
+## 20. Caching & Performance
+
+- Multi-level caches:
+  - Query result cache: memoize (normalized_query, scope) → top docs; TTL sensitive to corpus churn.
+  - Embedding cache: avoid re-embedding identical text; key by content hash + model.
+  - Vector store cache: cache frequent neighborhood searches; invalidate on upsert/replace events.
+  - LLM response cache: cache deterministic prompts (policy notices, boilerplate); avoid caching user-sensitive outputs.
+
+- Cache invalidation:
+  - Document ingestion events trigger cache bust for affected partitions.
+  - Rule changes invalidate query scope results.
+  - Model version changes invalidate embedding caches.
+
+- Performance metrics:
+  - Cache hit ratios per layer, P95 latencies per stage, throughput (qps), memory usage per cache.
+
+---
+
+## 21. Multi-Tenancy & Isolation
+
+- Tenant context:
+  - Propagated through diapi.CoreDeps; handlers may scope providers/resources by tenant_id.
+  - Config overlays per tenant (options overrides, provider selection).
+
+- Isolation strategies:
+  - Separate indices/stores per tenant; rule sets loaded per tenant.
+  - Resource quotas (rate limits, storage caps) per tenant enforced by StateProvider or gateway.
+
+- Audit and cost allocation:
+  - Per-tenant metrics and audit logs; attribute LLM/token usage and storage to tenant.
+
+---
+
+## 22. Testing & Debugging
+
+- Provider testing strategies:
+  - Internal DI / Config-first: use sdk.LoadWithRegistry and test YAML; register handler, factory, and options sample types for all components under test.
+  - External dependency: unit test provider business logic with mocks (HTTP, clients), no DI bridge.
+
+- Orchestrator testing:
+  - Sandwich: stage-by-stage assertions; inject mock retriever/reranker/llm/rules.
+  - Declarative: flow predicates and tool bindings; test denials/branches with mock tools.
+
+- Rule engine tests:
+  - Deterministic evaluation of pre/post rules; validate denials, redactions, annotations.
+
+- Debugging surfaces:
+  - Structured logs with correlation IDs; stage-boundary tracing hooks; per-stage metrics.
+
+---
+
+## 23. Versioning & Compatibility Policy
+
+- Semantic Versioning:
+  - Major: breaking changes to core contracts, diapi interfaces, ComponentHandler signatures.
+  - Minor: new providers, options, non-breaking orchestrator enhancements.
+  - Patch: bug fixes, performance improvements, documentation.
+
+- Deprecation:
+  - Mark deprecated options/providers with sunset timelines; emit warnings at build time.
+  - Migration guides for breaking releases; provide shims where feasible.
+
+- Compatibility matrix:
+  - Document minimal versions for provider families (LLM, retriever) and orchestrators across SDK versions.
+
+---
+
+## 24. Security & Access Control (Deep Dive)
+
+- Authentication:
+  - API keys, OAuth2, mTLS depending on deployment; inject auth context via CoreDeps.
+
+- Authorization:
+  - RBAC/ABAC enforced by pre-rules; deny or mutate query scope before retrieval.
+
+- Secrets management:
+  - Prefer vault/secret stores; avoid plaintext env; rotate keys; restrict scope per tenant.
+
+- Input validation:
+  - Normalize and sanitize queries; block prompt injection vectors; enforce schema constraints with SchemaParser.
+
+- Output filtering:
+  - Post-rules redaction of PII/confidential fields; add watermark/notice for policy reasons.
+
+- Audit logging:
+  - Log rule firings, denials, redactions; record provenance and citations; per-tenant audit streams.
+
+- Rate limiting & DDoS protection:
+  - Per-tenant and global limits; back-pressure in orchestrators; exponential backoff on external APIs.
+
+---
+
+## 25. Deployment & Operations
+
+- Topologies:
+  - Single instance, HA (N replicas), distributed with shared state and vector stores.
+
+- Kubernetes patterns:
+  - Health/readiness probes per orchestrator; ConfigMaps/Secrets for options; HPA based on latency/qps.
+
+- Configuration management:
+  - Immutable images with external config; config rollout via canary; config validation CI.
+
+- Graceful shutdown:
+  - Orchestrator Close drains closers LIFO; ensure in-flight requests complete under timeout budget.
+
+- Rolling updates:
+  - Blue/green or canary; manage index migrations; maintain cache coherence across versions.
+
+- Monitoring & alerting:
+  - Stage latencies, error rates, denials; token usage; cache hit ratio; vector store IO; SLO dashboards.
+
+---
+
+## 26. Cost & Resource Management
+
+- Budgets & quotas:
+  - Token budgets per request/tenant; API call quotas; storage caps; compute limits.
+
+- Tracking:
+  - Record per-request token usage, provider costs, cache savings; attribute to tenant.
+
+- Optimization strategies:
+  - Prefer retrieval quality to reduce LLM token usage; cache aggressively; use cheaper models with rules-guaranteed safety.
+
+---
+
+## 27. Extensibility & Plugin Architecture
+
+- Adding new kinds:
+  - Define contracts, Options implementing ProviderOptions, register handler + factory via Registry.
+
+- Plugin discovery & loading:
+  - Convention-based package registration (providers/all) or dynamic via init hooks; future: explicit plugins manifest.
+
+- Sandboxing:
+  - Consider WASM/containerized plugins for untrusted providers; restrict capabilities via CoreDeps wrappers.
+
+- Lifecycle:
+  - init → build → execute → close; emit closers for managed resources.
+
+---
+
+## 28. Detailed Examples (YAML + Code)
+
+- Sandwich YAML (minimal sketch):
+  ```yaml
+  orchestrator:
+    type: sandwich
+  retriever:
+    name: bm25
+    params: { path: "./data" }
+  llm:
+    name: openai
+    params: { model: "gpt-4o-mini" }
+  rules:
+    name: mangle
+    params: { path: ["./rules/policy.dlog"] }
+  ```
+
+- Declarative YAML (flow sketch):
+  ```yaml
+  orchestrator:
+    type: declarative
+    flowName: main__flow
+  tools:
+    doc_retriever: { provider: "bm25", params: { path: "./data" } }
+    google_llm: { provider: "google", params: { model: "gemini-1.5-flash" } }
+  rules:
+    name: mangle
+    params: { path: ["./rules/flow.dlog", "./rules/policy.dlog"] }
+  ```
+
+---
+
+## 29. Comparison with Alternatives
+
+- Versus LangChain / LlamaIndex:
+  - Manglekit emphasizes type-safe DI, deterministic orchestrators, and rule-enforced safety; avoids map-of-any and runtime guessing.
+
+- Versus Semantic Kernel:
+  - Go-native, lightweight, embeddable; clearer contracts for providers and handler-driven build order.
+
+- Versus custom RAG:
+  - Provides standardized stages, observability, auditability, and composability without bespoke glue code.
+
+---
+
+## 30. Limitations & Known Issues
+
+- Current focus is text-based RAG; multi-modal support is roadmap.
+- External provider availability and rate limits can impact latency; use budgets/back-pressure.
+- Declarative flows require careful rule design to avoid unintended denials or dead-ends.
+- Vector store scalability depends on chosen backend; benchmark for >1M docs and shard appropriately.
