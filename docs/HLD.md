@@ -375,91 +375,29 @@ components:
 
 ---
 
-## 16. Appendix — Package Layout (Authoritative)
+## 16. Appendix — Package Layout (Abstract)
 
 ```
 github.com/duynguyendang/manglekit
-├── api.go                      # Public API aliases/types (external-facing)
-├── builder.go                  # Fluent Builder + DI bridge
-├── registry.go                 # Global Registry (handlers + factories)
-├── sdk.go                      # Minimal SDK shim (programmatic entrypoints)
-├── cmd/
-│   └── agent/                  # Example CLI or agent runner
-├── config/
-│   ├── loader.go               # YAML/ENV loading
-│   ├── types.go                # Typed config structs
-│   └── validate.go             # Normalization & validation
-├── core/
-│   ├── interfaces.go           # Contracts (Retriever, LLM, Reranker, RuleSet, ...)
-│   ├── types.go                # Query, Doc, Answer, Observability
-│   ├── handler.go              # ComponentHandler interface
-│   ├── factory.go              # Factory interfaces and helpers
-│   ├── provider.go             # Kind/Options plumbing
-│   ├── rules.go                # RuleSet contracts
-│   ├── schema.go               # SchemaParser contracts
-│   ├── state.go                # StateProvider contracts
-│   ├── tool.go                 # Tool contracts
-│   ├── tool_adapters.go        # Tool adapters for declarative orchestration
-│   └── diapi/
-│       └── di.go               # Type-safe DI structs (CoreDeps, LLMDeps, ...)
-├── pipeline/
-│   ├── stage.go                # Stage interface and shared utilities
-│   ├── runner.go               # Stage runner / execution harness
-│   ├── context.go              # Execution context
-│   ├── sandwich/
-│   │   ├── handler.go          # Sandwich ComponentHandler
-│   │   ├── factory.go          # Sandwich factory
-│   │   ├── sandwich.go         # Orchestrator implementation
-│   │   ├── options.go          # Options struct
-│   │   ├── stage_prerules.go   # Pre-rules stage
-│   │   ├── stage_retrieve.go   # Retrieve stage
-│   │   ├── stage_rerank.go     # Rerank stage
-│   │   ├── stage_llm.go        # LLM stage
-│   │   └── stage_postrules.go  # Post-rules stage
-│   └── declarative/
-│       ├── handler.go          # Declarative ComponentHandler
-│       ├── orchestrator.go     # Declarative orchestrator
-│       ├── options.go          # Options struct
-│       └── register.go         # Registry helpers
-├── internal/
-│   ├── providers/
-│   │   ├── retrievers/         # bm25/, dense/, hybrid/, inmemory/
-│   │   ├── llm/                # openai.go, google.go, handler.go, register.go
-│   │   ├── rerank/             # cosine/
-│   │   ├── rules/              # mangle/ (rules engine + converters)
-│   │   ├── schemaparsers/      # jsonschema/, rdf/
-│   │   └── state/              # inmemory/, redis/
-│   ├── embedders/              # openai/, google/
-│   ├── vectorstores/           # localvec/
-│   ├── logger/                 # std logger + zap adapter
-│   ├── registry/               # internal registry impl & test hooks
-│   └── statehelper/            # helpers for state providers
-├── providers/
-│   └── all/                    # Convenience registrar
-├── retrieve/                   # Public options for retrievers
-│   ├── bm25.go
-│   ├── hybrid.go
-│   ├── inmemory.go
-│   └── retrieve.go
-├── embed/
-│   └── options.go              # Public embedder options
-├── llm/
-│   └── prompt.go               # Prompt helpers
-├── state/
-│   └── types.go                # Public state types
-├── examples/                   # Runnable examples and data
-├── docs/                       # CONTEXT.md, HLD.md, LLD.md, ADR.md, etc.
-└── testdata/                   # YAML configs and fixtures for tests
+├── core/           # Contracts, types, and DI interfaces (foundational)
+├── pipeline/       # Orchestrators and stages (Sandwich, Declarative)
+├── internal/       # Concrete providers (retrievers, llm, rerank, rules, schema, state, embedders, vectorstores)
+├── config/         # Config loading, normalization, validation
+├── sdk/            # Programmatic entrypoints and config bridge
+├── providers/      # Convenience registrars for built-in providers
+├── examples/       # Runnable examples and sample data
+├── docs/           # Architecture and standards (CONTEXT, HLD, LLD, ADR)
+├── testdata/       # YAML configs and fixtures for tests
+└── cmd/            # Optional CLI/agent runners
 ```
 
-Key entrypoints:
-- Builder: [`builder.go`](builder.go:1)
-- Registry: [`registry.go`](registry.go:1)
-- Core contracts: [`core/interfaces.go`](core/interfaces.go:1)
-- DI types: [`core/diapi/di.go`](core/diapi/di.go:1)
-- Sandwich orchestrator: [`pipeline/sandwich/sandwich.go`](pipeline/sandwich/sandwich.go:1)
-- Declarative orchestrator: [`pipeline/declarative/orchestrator.go`](pipeline/declarative/orchestrator.go:1)
-- Provider handlers: [`internal/providers/*/handler.go`](internal/providers/retrievers/handler.go:1)
+Layering rules (abstract):
+- core/ must not depend on pipeline/ or internal/
+- pipeline/ must not import concrete providers in internal/
+- internal/ providers depend only on core/ contracts
+- config/ and sdk/ bridge configuration to builder without leaking provider internals
+
+This abstract layout communicates responsibilities and dependency boundaries without file-level detail, keeping HLD focused on architecture rather than implementation specifics.
 
 ---
 

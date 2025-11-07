@@ -293,3 +293,94 @@ The codebase is **stable** and has no open deviations from the LLD.
 *   **2025-10-23**: Updated deviations to reflect current gaps (orchestrator handler coverage, hybrid factory signature, declarative state selection). Clarified hybrid construction path note.
 *   **2025-10-20**: Regenerated LLD to reflect the decentralized, handler-based builder architecture. Updated diagrams and construction path to show the new flow. Synchronized deviations with the latest code review.
 *   **2025-10-19**: Initial draft of the LLD.
+
+# 16. Project Layout (Developer Reference)
+
+This section provides a concise, developer-focused view of the repository layout to support day-to-day navigation and extension work. It complements the abstract layout in HLD with concrete entrypoints and responsibilities.
+
+## 16.1 High-Level Structure
+
+```
+manglekit/
+├── core/         # Foundational contracts, types, DI interfaces
+├── pipeline/     # Orchestrators and stage implementations
+├── internal/     # Concrete providers (retrievers, llm, rerank, rules, schema, state, embedders, vectorstores)
+├── config/       # YAML/ENV loading, normalization, validation
+├── sdk/          # Programmatic entrypoints and config bridge
+├── providers/    # Convenience registrars for built-in providers
+├── examples/     # Runnable examples and sample data
+├── docs/         # Architecture and standards (CONTEXT, HLD, LLD, ADR)
+├── testdata/     # YAML configs and fixtures for tests
+└── cmd/          # Optional CLI/agent runners
+```
+
+Layering rules (enforced):
+- core/ must not depend on pipeline/ or internal/
+- pipeline/ must not import concrete providers under internal/
+- internal/ providers depend only on core/ contracts
+- sdk/ and config/ bridge configuration to the builder without leaking provider internals
+
+## 16.2 Key Developer Entry Points
+
+- Builder and Registry
+  - [`builder.go`](builder.go)
+  - [`registry.go`](registry.go)
+
+- SDK bridge and examples
+  - [`sdk/sdk.go`](sdk/sdk.go)
+  - [`examples/README.md`](examples/README.md)
+
+- Core contracts and DI interfaces
+  - [`core/interfaces.go`](core/interfaces.go)
+  - [`core/diapi/di.go`](core/diapi/di.go)
+
+- Orchestrators (runtime)
+  - Sandwich: [`pipeline/sandwich/sandwich.go`](pipeline/sandwich/sandwich.go)
+  - Declarative: [`pipeline/declarative/orchestrator.go`](pipeline/declarative/orchestrator.go)
+
+- Component handlers (build-time wiring)
+  - Retrievers: [`internal/providers/retrievers/handler.go`](internal/providers/retrievers/handler.go)
+  - LLM: [`internal/providers/llm/handler.go`](internal/providers/llm/handler.go)
+  - Rerank: [`internal/providers/rerank/handler.go`](internal/providers/rerank/handler.go)
+  - Rules: [`internal/providers/rules/handler.go`](internal/providers/rules/handler.go)
+  - Embedders: [`internal/embedders/handler.go`](internal/embedders/handler.go)
+  - VectorStores: [`internal/vectorstores/handler.go`](internal/vectorstores/handler.go)
+  - State: [`internal/providers/state/handler.go`](internal/providers/state/handler.go)
+  - Schema Parsers: [`internal/providers/schemaparsers/handler.go`](internal/providers/schemaparsers/handler.go)
+  - Orchestrators: [`pipeline/sandwich/handler.go`](pipeline/sandwich/handler.go), [`pipeline/declarative/handler.go`](pipeline/declarative/handler.go)
+
+- Provider implementations (examples)
+  - BM25: [`internal/providers/retrievers/bm25/bm25.go`](internal/providers/retrievers/bm25/bm25.go)
+  - Dense: [`internal/providers/retrievers/dense/dense.go`](internal/providers/retrievers/dense/dense.go)
+  - Hybrid: [`internal/providers/retrievers/hybrid/hybrid.go`](internal/providers/retrievers/hybrid/hybrid.go)
+  - OpenAI LLM: [`internal/providers/llm/openai.go`](internal/providers/llm/openai.go)
+  - Google LLM: [`internal/providers/llm/google.go`](internal/providers/llm/google.go)
+  - Cosine Rerank: [`internal/providers/rerank/cosine/cosine.go`](internal/providers/rerank/cosine/cosine.go)
+  - Mangle Ruleset: [`internal/providers/rules/mangle/rules.go`](internal/providers/rules/mangle/rules.go)
+  - JSONSchema Parser: [`internal/providers/schemaparsers/jsonschema/parser.go`](internal/providers/schemaparsers/jsonschema/parser.go)
+  - RDF Parser: [`internal/providers/schemaparsers/rdf/parser.go`](internal/providers/schemaparsers/rdf/parser.go)
+  - InMemory State Provider: [`internal/providers/state/inmemory/provider.go`](internal/providers/state/inmemory/provider.go)
+  - Redis State Provider: [`internal/providers/state/redis/provider.go`](internal/providers/state/redis/provider.go)
+  - Embedders: [`internal/embedders/openai/openai.go`](internal/embedders/openai/openai.go), [`internal/embedders/google/google.go`](internal/embedders/google/google.go)
+  - LocalVec Vector Store: [`internal/vectorstores/localvec/localvec.go`](internal/vectorstores/localvec/localvec.go)
+
+## 16.3 Quick Tasks Cheat Sheet
+
+- Add a new provider:
+  1. Define Options (implements ProviderOptions) under appropriate internal family
+  2. Implement factory adhering to core.Factory
+  3. Register handler + factory in Registry (or via [`providers/all/all.go`](providers/all/all.go))
+  4. Add tests in the provider folder
+
+- Wire pipeline from YAML:
+  - Use [`sdk/sdk.go`](sdk/sdk.go) to load and build orchestrator from `config.yaml`
+  - See sample configs in [`testdata/`](testdata/)
+
+- Programmatic build:
+  - Start from [`builder.go`](builder.go) and orchestrator options in [`pipeline/sandwich/options.go`](pipeline/sandwich/options.go) or [`pipeline/declarative/options.go`](pipeline/declarative/options.go)
+
+- Debug build wiring:
+  - Inspect handlers for the component kind (e.g., [`internal/providers/retrievers/handler.go`](internal/providers/retrievers/handler.go))
+  - Verify DI calls to `diapi.Builder` and typed `diapi.*Deps` construction
+
+This developer-oriented layout keeps LLD focused on practical navigation and extension, while HLD remains abstract and architecture-centric.
