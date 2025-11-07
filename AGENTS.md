@@ -295,6 +295,6 @@ To fix the "could not find options type" parsing error, your test setup (e.g., `
 **Rules for External Dependency Tests:**
 
 1. **Do not use `sdk.LoadWithRegistry`.** This is not a DI integration test.
-2. **Instantiate the provider directly:** Call the provider's Go constructor in your test (e.g., `provider, err := openai.NewProvider(opts)` — this is pseudocode; use the actual constructor name for your provider).
+2. **Instantiate the provider directly:** Call the provider's Go constructor in your test (e.g., `provider, err := google.NewProvider(opts)` — this is pseudocode; use the actual constructor name for your provider).
 3. **Mock the External I/O:** Do not mock the Manglekit `Registry`. Instead, mock the *external* dependency. For example, if the provider uses an `http.Client`, use `httptest.NewServer` and pass the mock server's URL into the provider's `Options`.
 4. Call the provider's methods (e.g., `provider.Execute(...)`) and assert the results.

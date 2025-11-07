@@ -56,13 +56,13 @@ YAML Config Template
 orchestrator: rag
 
 components:
-  # LLM — OpenAI (set env: OPENAI_API_KEY)
+  # LLM — Google Gemini (set env: GOOGLE_API_KEY)
   - name: llm
     kind: llm
-    type: openai
+    type: google
     params:
-      APIKey: ${OPENAI_API_KEY}
-      Model: gpt-4o-mini
+      APIKey: ${GOOGLE_API_KEY}
+      Model: gemini-2.5-flash
 
   # Retriever — In-memory docs for a zero-dependency demo
   - name: kb
@@ -93,17 +93,17 @@ Provider Name Notes
   - LLMs: `openai`, `google`
   - Embedders: `openai`, `groq`, `google`
   - Orchestrators: `sandwich`, `declarative`
-- Field casing in YAML params follows struct field names when no `yaml:"..."` tag exists. For OpenAI LLM and embedders, prefer `APIKey` and `Model` keys. For others with YAML tags (e.g., `base_url`, `vectorStore`, `top_k`), use the tagged name.
+- Field casing in YAML params follows struct field names when no `yaml:"..."` tag exists. For Google LLM and embedders, prefer `APIKey` and `Model` keys. For others with YAML tags (e.g., `base_url`, `vectorStore`, `top_k`), use the tagged name.
 
 Common Variations
 - Add reranking (cosine): requires an embedder.
 ```yaml
   - name: embedder
     kind: embedder
-    type: openai
+    type: google
     params:
-      APIKey: ${OPENAI_API_KEY}
-      Model: text-embedding-3-small
+      APIKey: ${GOOGLE_API_KEY}
+      Model: text-embedding-004
 
   - name: rerank
     kind: reranker
@@ -147,7 +147,7 @@ Common Variations
 Run & Verify
 - Run from the example folder:
   - `go run . "What is Manglekit architecture?"`
-- Ensure necessary env vars are set (e.g., `export OPENAI_API_KEY=...`).
+- Ensure necessary env vars are set (e.g., `export GOOGLE_API_KEY=...`).
 
 Do / Don’t
 - Do keep examples config‑first and self‑contained.
@@ -157,7 +157,7 @@ Do / Don’t
 
 Troubleshooting
 - “unknown type/kind”: check `kind` and `type` values match registered providers.
-- OpenAI auth failures: confirm `APIKey` field in YAML or `OPENAI_API_KEY` env var.
+- Google auth failures: confirm `APIKey` field in YAML or `GOOGLE_API_KEY` env var.
 - Param not applied: verify the field name vs. YAML tag (some structs use `APIKey`/`Model` without yaml tags).
 
 Reference

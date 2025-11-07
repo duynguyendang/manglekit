@@ -60,7 +60,7 @@ See the [Declarative Workflow](#example-3-declarative-workflow-with-yaml) sectio
 ### 1. Prerequisites
 
 -   Go 1.24 or later.
--   API keys for your chosen providers (e.g., OpenAI, Google).
+-   API keys for your chosen providers (e.g., Google, OpenAI).
 
 ### 2. Installation
 
@@ -84,17 +84,14 @@ MangleKit can be configured to read API keys from environment variables. The eas
 2.  Add your API keys to the file:
 
     ```env
-    # For OpenAI models (LLM or Embedder)
-    OPENAI_API_KEY="sk-..."
-
     # For Google models (LLM or Embedder)
     GOOGLE_API_KEY="AIza..."
 
-    # For Groq's fast inference API (now configured via the OpenAI provider)
+    # For Groq's fast inference API (compatible with OpenAI provider)
     GROQ_API_KEY="gsk_..."
     ```
 
-    **Note on Groq:** To use Groq, you will now configure an `openai` provider with a custom `base_url` pointing to the Groq API endpoint.
+    **Note on Groq:** To use Groq, configure an `openai` provider with a custom `base_url` pointing to the Groq API endpoint.
 
 3.  Use a library like `godotenv` to load this file when your application starts.
 
@@ -135,8 +132,6 @@ fallbackThreshold: 0.35
 providers:
   google:
     apiKey: "${GOOGLE_API_KEY}"
-  openai:
-    apiKey: "${OPENAI_API_KEY}"
 
 rules:
   name: "mangle"
@@ -243,8 +238,8 @@ func main() {
 		WithOptions("retriever", &retrieve.BM25Options{
 			Path: "./testdata/docs",
 		}).
-		WithOptions("llm", &llm.OpenAIOptions{
-			Model: "gpt-4o-mini",
+		WithOptions("llm", &llm.GoogleOptions{
+			Model: "gemini-2.0-flash",
 		}).
 		WithOptions("sandwich", &sandwich.Options{
 			LLM:       "llm",
