@@ -145,4 +145,66 @@ The following issues were identified in a previous review and have been resolved
 **Location:** `internal/providers/retrievers/hybrid/hybrid.go:L161`
 **Impact Analysis:** The hybrid retriever's `Retrieve` method iterates over a map of document scores (`scores`) to build the final list of documents. While this list is subsequently sorted by score, the relative order of documents with identical Reciprocal Rank Fusion (RRF) scores is not guaranteed because the initial iteration order is random. This violates the determinism principle (ADR-15) and can lead to inconsistent results for the same query.
 **Refactoring Suggestion:** After sorting by score, add a secondary, stable sort criterion, such as the document ID, to ensure a deterministic final order. For example: `sort.SliceStable(finalDocs, ...)` followed by another sort on the ID for tie-breaking.
+
+## Smell: LLD Documentation Inaccuracies (Retriever Handler Multiplexing)
+**Location:** `docs/LLD.md:10` (Example Construction Path), `internal/providers/retrievers/handler.go:43-88`
+**Impact Analysis:** The LLD claims the retriever handler performs a direct type-switch on the provider's `Options` struct (`cfg`), but the actual implementation uses an indirect pattern: it type-asserts `cfg` to `diapi.ProviderWithOptions`, calls `GetProviderOptions()` to extract the actual options, and then type-switches on the extracted value. This discrepancy makes the documentation misleading for developers trying to understand the handler's behavior.
+**Refactoring Suggestion:** Update `docs/LLD.md` Section 10 to accurately describe the indirect multiplexing pattern used by the retriever handler.
 **Status:** Resolved
+**Note:** Documentation updated on 2025-11-07. Section 4 now includes detailed explanation of the indirect multiplexing pattern with code example.
+
+## Smell: LLD Documentation Inaccuracy (Sub-Retriever Resolution)
+**Location:** `docs/LLD.md:10` (Example Construction Path), `internal/providers/retrievers/handler.go:57-62`
+**Impact Analysis:** The LLD claims that sub-retrievers are resolved "from the `resolved` map," but the actual implementation resolves them via `builder.GetRetriever(subName)` (a builder DI lookup), not from the `resolved` map. The `resolved` map is passed to the handler but is not used for sub-retriever lookup. This is a significant documentation error that could mislead developers about the dependency resolution mechanism.
+**Refactoring Suggestion:** Update `docs/LLD.md` Section 10 to clarify that sub-retrievers are resolved via the builder's DI interface, not from the `resolved` map.
+**Status:** Resolved
+**Note:** Documentation updated on 2025-11-07. Section 10 now clarifies that sub-retrievers are resolved via `builder.GetRetriever()` DI lookup.
+
+## Smell: LLD Documentation Inaccuracy (Retriever Placement in Resolved)
+**Location:** `docs/LLD.md:10` (Example Construction Path), `internal/providers/retrievers/handler.go:99-101`
+**Impact Analysis:** The LLD claims the handler "places it in the `resolved.Retrievers` map," but the actual implementation calls `builder.SetRetriever(name, retriever)` instead of directly assigning to the `resolved` map. The builder then updates its internal `retrievers` map, which is later copied to `resolved` during the build process. This is an indirect assignment pattern, not a direct map placement as the LLD describes.
+**Refactoring Suggestion:** Update `docs/LLD.md` Section 10 to clarify that the handler uses `builder.SetRetriever()` to register the component, not direct map assignment.
+**Status:** Resolved
+**Note:** Documentation updated on 2025-11-07. Section 10 now clarifies that the handler uses `builder.SetRetriever()` for instance registration.
+
+## Smell: LLD Documentation Inaccuracy (Lifecycle Management)
+**Location:** `docs/LLD.md:8` (Lifecycle & Resource Management), `builder.go:100-156`, `core/types.go:129-146`
+**Impact Analysis:** The LLD claims that "This list is passed to the final orchestrator inside the `core.Resolved` struct," but the actual implementation manages closers in the builder's `opts.ResourceClosers` list, not in the `Resolved` struct. The `Resolved` struct has a `Closers` field that remains empty during the build process. The builder manages resource cleanup directly via `closeResources()`, and orchestrator closers are returned as individual `ResourceCloser` functions from their handlers.
+**Refactoring Suggestion:** Update `docs/LLD.md` Section 8 to clarify that closers are managed by the builder, not passed through the `Resolved` struct. Document the actual lifecycle management pattern.
+**Status:** Resolved
+**Note:** Documentation updated on 2025-11-07. Section 8 now clarifies builder-managed lifecycle and component closer expectations.
+
+## Smell: LLD Documentation Incomplete (Resolved Struct Fields)
+**Location:** `docs/LLD.md` (no section), `core/types.go:129-146`
+**Impact Analysis:** The LLD does not document several important fields in the `Resolved` struct: `Tools`, `TopK`, `MaxTokens`, `FallbackThreshold`, and `Closers`. These fields are used by orchestrators and the declarative orchestrator's tool resolution mechanism, but their purpose and usage are not explained in the LLD.
+**Refactoring Suggestion:** Add a new section to `docs/LLD.md` documenting the `Resolved` struct and all its fields, including their purpose and usage patterns.
+**Status:** Resolved
+**Note:** Documentation updated on 2025-11-07. New Section 11 documents all `Resolved` struct fields and their usage.
+
+## Smell: LLD Documentation Incomplete (Embedder Handler Special Case)
+**Location:** `docs/LLD.md` (no section), `internal/embedders/handler.go:34-38`
+**Impact Analysis:** The LLD does not document the `SkipModelCheckProvider` pattern used by the embedder handler, which allows embedders to skip model validation. This is a special case that is not covered in the general handler description.
+**Refactoring Suggestion:** Add documentation to `docs/LLD.md` explaining the `SkipModelCheckProvider` pattern and when it is used.
+**Status:** Resolved
+**Note:** Documentation updated on 2025-11-07. New Section 12 documents the `SkipModelCheckProvider` pattern.
+
+## Smell: LLD Documentation Inaccuracy (Configuration Binding)
+**Location:** `docs/LLD.md:7` (Configuration Binding), `builder.go:239-256`
+**Impact Analysis:** The LLD describes the configuration binding process as "looks up the `reflect.Type` of a provider's `Options` struct in the registry," but the actual implementation iterates through types and matches them by name and kind. The description is backwards—it's a type-to-name lookup, not a name-to-type lookup. The code iterates through `OptionsTypeToName` map and checks if the name matches the config type string.
+**Refactoring Suggestion:** Update `docs/LLD.md` Section 7 to accurately describe the type-to-name lookup process used in configuration binding.
+**Status:** Resolved
+**Note:** Documentation updated on 2025-11-07. Section 7 now accurately describes the type-to-name lookup process.
+
+## Smell: LLD Documentation Misleading (Factory Entrypoint)
+**Location:** `docs/LLD.md:6` (Provider Family Details), `internal/providers/llm/handler.go`, `internal/providers/retrievers/hybrid/hybrid.go`
+**Impact Analysis:** The LLD lists provider factories as "**Factory Entrypoint:** `openai.New`" and "**Factory Entrypoint:** `hybrid.New`," but these are not the actual entry points. The actual entry points are closures registered via `manglekit.Register()`. The `New` functions are internal constructors called by the factory closures, not the factories themselves. This is misleading for developers trying to understand the registration pattern.
+**Refactoring Suggestion:** Update `docs/LLD.md` Section 6 to clarify that factories are registered as closures via `manglekit.Register()`, not as direct function references.
+**Status:** Resolved
+**Note:** Documentation updated on 2025-11-07. Section 6 now clarifies that factories are closures registered via `manglekit.Register()`.
+
+## Smell: LLD Documentation Incomplete (Handler Resource Closer Behavior)
+**Location:** `docs/LLD.md:8` (Lifecycle & Resource Management), `internal/providers/state/handler.go:57`, `internal/providers/rerank/handler.go:71`
+**Impact Analysis:** The LLD states that handlers check if a component has a `Close(ctx) error` method and return it as a `ResourceCloser`, but different handlers have different behaviors. The state provider handler returns `stateProvider.Close`, while the reranker handler returns `core.NopCloser`. The LLD does not clarify which components are expected to have closers and which are not.
+**Refactoring Suggestion:** Update `docs/LLD.md` Section 8 to document which component kinds are expected to have closers and which should return `NopCloser`.
+**Status:** Resolved
+**Note:** Documentation updated on 2025-11-07. Section 8 now documents component closer expectations for each kind.

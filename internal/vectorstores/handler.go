@@ -42,6 +42,11 @@ func (h *Handler) BuildComponent(
 		return nil, fmt.Errorf("invalid builder DI type for VectorStore handler: got %T", builderDI)
 	}
 
+	f, ok := factory.(core.Factory)
+	if !ok {
+		return nil, fmt.Errorf("invalid factory type for VectorStore handler: got %T", factory)
+	}
+
 	var deps any
 	var err error
 
@@ -69,11 +74,6 @@ func (h *Handler) BuildComponent(
 
 	if err != nil {
 		return nil, err
-	}
-
-	f, ok := factory.(core.Factory)
-	if !ok {
-		return nil, fmt.Errorf("invalid factory type for VectorStore handler")
 	}
 
 	built, err := f.Build(ctx, deps, cfg)

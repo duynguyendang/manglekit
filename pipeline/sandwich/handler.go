@@ -3,6 +3,7 @@ package sandwich
 import (
 	"context"
 	"fmt"
+
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 )
@@ -84,7 +85,7 @@ func (h *Handler) BuildComponent(
 
 	f, ok := factory.(core.Factory)
 	if !ok {
-		return nil, fmt.Errorf("invalid factory type for sandwich orchestrator, got %T", factory)
+		return nil, fmt.Errorf("invalid factory type for sandwich orchestrator: got %T", factory)
 	}
 
 	built, err := f.Build(ctx, deps, cfg)

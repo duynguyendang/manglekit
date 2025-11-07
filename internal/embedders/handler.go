@@ -41,14 +41,14 @@ func (h *Handler) BuildComponent(
 		return nil, fmt.Errorf("invalid builder DI type for Embedder handler: got %T", builderDI)
 	}
 
+	f, ok := factory.(core.Factory)
+	if !ok {
+		return nil, fmt.Errorf("invalid factory type for Embedder handler: got %T", factory)
+	}
+
 	deps := diapi.EmbedderDeps{
 		CoreDeps: b.GetCoreDeps(),
 		Genkit:   b.Genkit(),
-	}
-
-	f, ok := factory.(core.Factory)
-	if !ok {
-		return nil, fmt.Errorf("invalid factory type for Embedder handler")
 	}
 
 	built, err := f.Build(ctx, deps, cfg)

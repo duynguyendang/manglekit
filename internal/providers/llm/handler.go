@@ -35,14 +35,14 @@ func (h *Handler) BuildComponent(
 		return nil, fmt.Errorf("invalid builder DI type for LLM handler: got %T", builderDI)
 	}
 
+	f, ok := factory.(core.Factory)
+	if !ok {
+		return nil, fmt.Errorf("invalid factory type for LLM handler: got %T", factory)
+	}
+
 	deps := diapi.LLMDeps{
 		CoreDeps: b.GetCoreDeps(),
 		Genkit:   b.Genkit(),
-	}
-
-	f, ok := factory.(core.Factory)
-	if !ok {
-		return nil, fmt.Errorf("invalid factory type for LLM handler")
 	}
 
 	built, err := f.Build(ctx, deps, cfg)

@@ -32,16 +32,16 @@ func (h *Handler) BuildComponent(
 ) (core.ResourceCloser, error) {
 	b, ok := builderDI.(diapi.Builder)
 	if !ok {
-		return nil, fmt.Errorf("invalid builder DI type for SchemaParser handler")
-	}
-
-	deps := diapi.NoopDeps{
-		CoreDeps: b.GetCoreDeps(),
+		return nil, fmt.Errorf("invalid builder DI type for SchemaParser handler: got %T", builderDI)
 	}
 
 	f, ok := factory.(core.Factory)
 	if !ok {
-		return nil, fmt.Errorf("invalid factory type for SchemaParser handler")
+		return nil, fmt.Errorf("invalid factory type for SchemaParser handler: got %T", factory)
+	}
+
+	deps := diapi.NoopDeps{
+		CoreDeps: b.GetCoreDeps(),
 	}
 
 	built, err := f.Build(ctx, deps, cfg)

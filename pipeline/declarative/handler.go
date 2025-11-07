@@ -32,7 +32,7 @@ func (h *declarativeHandler) BuildComponent(
 ) (core.ResourceCloser, error) {
 	builder, ok := builderDI.(diapi.Builder)
 	if !ok {
-		return nil, fmt.Errorf("invalid builderDI type: %T", builderDI)
+		return nil, fmt.Errorf("invalid builder DI type for declarative orchestrator: got %T", builderDI)
 	}
 
 	opts, ok := cfg.(*Options)
@@ -68,7 +68,7 @@ func (h *declarativeHandler) BuildComponent(
 
 	f, ok := factory.(core.Factory)
 	if !ok {
-		return nil, fmt.Errorf("invalid factory type for declarative orchestrator, got %T", factory)
+		return nil, fmt.Errorf("invalid factory type for declarative orchestrator: got %T", factory)
 	}
 	built, err := f.Build(ctx, deps, cfg)
 	if err != nil {

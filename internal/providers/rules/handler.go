@@ -32,15 +32,16 @@ func (h *Handler) BuildComponent(
 ) (core.ResourceCloser, error) {
 	b, ok := builderDI.(diapi.Builder)
 	if !ok {
-		return nil, fmt.Errorf("invalid builder DI type for RuleSet handler")
+		return nil, fmt.Errorf("invalid builder DI type for RuleSet handler: got %T", builderDI)
+	}
+
+	f, ok := factory.(core.Factory)
+	if !ok {
+		return nil, fmt.Errorf("invalid factory type for RuleSet handler: got %T", factory)
 	}
 
 	deps := diapi.RuleSetDeps{
 		CoreDeps: b.GetCoreDeps(),
-	}
-	f, ok := factory.(core.Factory)
-	if !ok {
-		return nil, fmt.Errorf("invalid factory type for RuleSet handler")
 	}
 	built, err := f.Build(ctx, deps, cfg)
 	if err != nil {

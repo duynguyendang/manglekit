@@ -3,7 +3,7 @@ context_type: low_level_design
 project: manglekit
 language: go
 version: 0.5.0
-last_updated: 2025-11-06
+last_updated: 2025-11-07
 stability: stable
 audience: developers
 ---
@@ -104,6 +104,8 @@ type Factory interface {
 
 This generic interface is made type-safe by the `ComponentHandler`, which is responsible for creating the specific, typed dependency (`diapi.*`) and configuration structs required by the factory.
 
+The handler uses an indirect multiplexing pattern: it type-asserts the `cfg` parameter to `diapi.ProviderWithOptions`, calls `GetProviderOptions()` to extract the actual options, and then type-switches on the extracted value to determine which dependency struct to construct.
+
 ```go
 // internal/providers/retrievers/handler.go
 func (h *Handler) BuildComponent(...) (core.ResourceCloser, error) {
@@ -111,14 +113,39 @@ func (h *Handler) BuildComponent(...) (core.ResourceCloser, error) {
     b, _ := builderDI.(diapi.Builder)
     f, _ := factory.(core.Factory)
 
-    // It constructs the typed dependency struct.
-    deps := diapi.RetrieverDeps{
-        Embedder:     b.GetEmbedder(...),
-        VectorStore:  b.GetVectorStore(...),
+    // It extracts the actual options via the ProviderWithOptions interface.
+    providerWithOptions, _ := cfg.(diapi.ProviderWithOptions)
+    opts := providerWithOptions.GetProviderOptions()
+
+    // It type-switches on the extracted options to determine dependencies.
+    var deps any
+    switch typedOpts := opts.(type) {
+    case diapi.SubRetrieversDep:
+        // For hybrid retrievers: resolve sub-retrievers via builder DI
+        hybridDeps := diapi.RetrieverDeps{
+            CoreDeps:      b.GetCoreDeps(),
+            SubRetrievers: make(map[string]core.Retriever),
+        }
+        for _, subName := range typedOpts.GetSubRetrievers() {
+            r, _ := b.GetRetriever(subName)
+            hybridDeps.SubRetrievers[subName] = r
+        }
+        deps = hybridDeps
+    case diapi.EmbedderDep:
+        // For dense retrievers: resolve embedder and vector store
+        embedder, _ := b.GetEmbedder(typedOpts.GetEmbedder())
+        vs, _ := b.GetVectorStore(vsDep.GetVectorStore())
+        deps = diapi.DenseRetrieverDeps{
+            CoreDeps:    b.GetCoreDeps(),
+            Embedder:    embedder,
+            VectorStore: vs,
+        }
     }
 
     // It calls the factory with the typed structs.
     built, err := f.Build(ctx, deps, cfg)
+    // Register the component via builder DI, not direct map assignment
+    b.SetRetriever(name, built.(core.Retriever))
     // ...
 }
 ```
@@ -136,21 +163,21 @@ Circular dependencies are prevented by the hard-coded linear build order defined
 
 ### LLM: `openai`
 *   **Handler:** `internal/providers/llm/handler.go`
-*   **Factory Entrypoint:** `openai.New`
+*   **Factory Registration:** Closure registered via `manglekit.Register()` in `internal/providers/llm/register.go`. The closure calls `openai.New()` internally.
 *   **Registered Key:** `openai`
 *   **Config Struct:** `openai.Options`
 *   **Dependencies:** `diapi.LLMDeps` (constructed by the handler).
 
 ### Retriever: `hybrid`
 *   **Handler:** `internal/providers/retrievers/handler.go`
-*   **Factory Entrypoint:** `hybrid.New`
+*   **Factory Registration:** Closure registered via `manglekit.Register()` in `internal/providers/retrievers/hybrid/hybrid.go`. The closure calls `hybrid.New()` internally.
 *   **Registered Key:** `hybrid`
 *   **Config Struct:** `hybrid.HybridOptions`
 *   **Dependencies:** `diapi.RetrieverDeps` (constructed by the handler). The factory uses `deps.SubRetrievers` to access its dependencies.
 
 # 7. Configuration Binding
 
-Configuration from YAML is mapped to provider-specific `Options` structs using `mapstructure`. The `sdk.FromConfig` function looks up the `reflect.Type` of a provider's `Options` struct in the registry and uses it to decode the raw `map[string]any` from the YAML.
+Configuration from YAML is mapped to provider-specific `Options` structs using `mapstructure`. The `builder.fromConfig()` function performs a type-to-name lookup: it iterates through all registered types in the registry's `OptionsTypeToName` map, matches them by both name and kind, and uses the matched type to decode the raw `map[string]any` from the YAML.
 
 **YAML Example (`config.yaml`):**
 ```yaml
@@ -163,17 +190,24 @@ retrievers:
 ```
 
 **Go Mapping:**
-The loader finds the `hybrid.HybridOptions` type associated with the `hybrid` retriever, creates an instance of it, and `mapstructure` decodes the `options` map into the struct. This typed options object is then passed to `builder.With()`.
+The loader iterates through registered types and finds the `hybrid.HybridOptions` type by matching the provider name `hybrid` and kind `retriever` against the registry's type mappings. It creates an instance of the matched type and uses `mapstructure` to decode the `options` map into the struct. This typed options object is then passed to `builder.WithOptions()`.
 
 # 8. Lifecycle & Resource Management
 
 Resource cleanup is handled via the `core.ResourceCloser` function type.
 
-1.  A `ComponentHandler` is responsible for checking if a newly built component has a `Close(ctx) error` method.
-2.  If it does, the handler returns the method as a `core.ResourceCloser`.
-3.  The `Builder` collects all returned `ResourceCloser` functions.
-4.  This list is passed to the final orchestrator inside the `core.Resolved` struct.
-5.  The orchestrator's `Close` method iterates through these functions and executes them, ensuring graceful shutdown.
+1.  A `ComponentHandler` is responsible for determining if a newly built component requires cleanup.
+2.  If cleanup is needed, the handler returns the component's `Close` method (or a wrapper) as a `core.ResourceCloser`.
+3.  The `Builder` collects all returned `ResourceCloser` functions in its `opts.ResourceClosers` list.
+4.  The `Builder` manages resource cleanup directly via the `closeResources()` method, which is called during error handling or when the builder is destroyed.
+5.  Orchestrator closers are returned as individual `ResourceCloser` functions from their handlers and are managed separately by the builder.
+
+**Component Closer Expectations:**
+- **StateProvider:** Expected to have a `Close(ctx) error` method; handler returns `stateProvider.Close`.
+- **Reranker, Retriever, Embedder, VectorStore, RuleSet, SchemaParser:** Return `core.NopCloser` unless they implement custom cleanup logic.
+- **Orchestrator:** Returns its own `Close` method as a `ResourceCloser`.
+
+Note: The `core.Resolved` struct has a `Closers` field, but it is not populated during the build process. Resource management is handled by the builder, not through the `Resolved` struct.
 
 # 9. Logging & Observability Hooks
 
@@ -183,32 +217,73 @@ The `core.Observability` struct (logger, tracer, meter) is the central point for
 
 Tracing the `hybrid` retriever:
 1.  **Config:** YAML defines a retriever named `my_hybrid` with provider `hybrid`.
-2.  **SDK Loader:** `sdk.FromConfig` finds the `hybrid.HybridOptions` type, decodes the YAML into it, and calls `builder.With("my_hybrid", hybrid.HybridOptions{...})`.
+2.  **SDK Loader:** `builder.fromConfig()` finds the `hybrid.HybridOptions` type by iterating through registered types and matching by name and kind. It decodes the YAML into the matched type and calls `builder.WithOptions("my_hybrid", hybrid.HybridOptions{...})`.
 3.  **Build Process:**
     *   The `buildAll` method reaches `core.KindRetriever`.
     *   It gets the retriever `ComponentHandler` from the registry.
     *   It calls `handler.BuildComponent` for the `my_hybrid` component.
-4.  **Handler Execution (Multiplexer):**
-    *   The `retrievers.Handler` acts as a multiplexer. It performs a type switch on the provider's `Options` struct (`cfg`) to determine which dependency struct to build.
-    *   For `hybrid.HybridOptions`, it constructs `diapi.RetrieverDeps`, resolving the sub-retrievers named in the config (e.g., `bm25`, `dense`) from the `resolved` map.
-    *   For `dense.DenseOptions`, it would construct `diapi.DenseRetrieverDeps` instead.
+4.  **Handler Execution (Indirect Multiplexing):**
+    *   The `retrievers.Handler` acts as a multiplexer using an indirect pattern: it type-asserts `cfg` to `diapi.ProviderWithOptions`, calls `GetProviderOptions()` to extract the actual options, and then type-switches on the extracted value.
+    *   For `hybrid.HybridOptions`, it constructs `diapi.RetrieverDeps`, resolving the sub-retrievers named in the config (e.g., `bm25`, `dense`) via `builder.GetRetriever(subName)` (builder DI lookup), NOT from the `resolved` map.
+    *   For `dense.DenseOptions`, it would construct `diapi.DenseRetrieverDeps` instead, resolving the embedder and vector store via builder DI.
 5.  **Factory Execution:**
     *   The handler gets the `hybrid` factory from the registry.
     *   It calls `factory.Build(ctx, diapi.RetrieverDeps{...}, cfg)`.
     *   The factory correctly consumes the `diapi.RetrieverDeps` struct to access its sub-retrievers.
-6.  **Instance:** The fully constructed `hybrid` retriever is returned to the handler, which places it in the `resolved.Retrievers` map.
+6.  **Instance Registration:** The fully constructed `hybrid` retriever is returned to the handler, which calls `builder.SetRetriever(name, retriever)` to register it with the builder's internal `retrievers` map. This map is later copied to the `Resolved` struct during the build process.
 
-# 11. Design Constraints & Guardrails
+# 11. Resolved Struct
+
+The `core.Resolved` struct is the final, strongly-typed container of all built components and configuration settings. It is passed to the orchestrator factory, ensuring that orchestrators receive their dependencies in a type-safe manner.
+
+**Fields:**
+- `Retrievers map[string]Retriever` - All built retriever instances, indexed by name.
+- `VectorStores map[string]VectorStore` - All built vector store instances, indexed by name.
+- `Rerankers map[string]Reranker` - All built reranker instances, indexed by name.
+- `Rules map[string]RuleSet` - All built rule set instances, indexed by name.
+- `LLMs map[string]LLMClient` - All built LLM client instances, indexed by name.
+- `Embedders map[string]ai.Embedder` - All built embedder instances, indexed by name.
+- `StateProviders map[string]StateProvider` - All built state provider instances, indexed by name.
+- `Orchestrators map[string]Orchestrator` - All built orchestrator instances, indexed by name.
+- `SchemaParsers map[string]SchemaParser` - All built schema parser instances, indexed by name.
+- `Tools map[string]Tool` - Tool adapters for use by the declarative orchestrator.
+- `Obs core.Observability` - The observability struct (logger, tracer, meter) for the entire pipeline.
+- `TopK int` - Default top-K value for retrieval operations.
+- `MaxTokens int` - Default maximum tokens for LLM generation.
+- `FallbackThreshold float64` - Threshold for fallback behavior in the pipeline.
+- `Closers []ResourceCloser` - **Note:** This field is not populated during the build process; resource management is handled by the builder.
+
+**Usage:**
+The `Resolved` struct is passed to orchestrator factories, which use it to access their dependencies. The declarative orchestrator uses the `GetToolByName()` method to resolve tool names to `core.Tool` adapters.
+
+# 12. Special Cases & Patterns
+
+### SkipModelCheckProvider Pattern
+
+The embedder handler supports a special `diapi.SkipModelCheckProvider` interface that allows embedders to skip model validation during initialization. If an embedder's options implement this interface and `ShouldSkipModelCheck()` returns `true`, the handler returns early without building the embedder.
+
+```go
+if p, ok := cfg.(diapi.SkipModelCheckProvider); ok {
+    if p.ShouldSkipModelCheck() {
+        return core.NopCloser, nil
+    }
+}
+```
+
+This pattern is useful for testing or when model validation is not required.
+
+# 13. Design Constraints & Guardrails
 
 *   **No Global Singletons:** All component instances are managed by the builder and contained within the orchestrator.
 *   **Stateless Factories & Handlers:** Provider factories and handlers should be stateless.
 *   **Type-Safe DI:** The combination of `ComponentHandler` and `diapi` structs ensures that dependency injection is type-safe without runtime reflection.
 
-# 12. Deviations & Blockers
+# 14. Deviations & Blockers
 
 The codebase is **stable** and has no open deviations from the LLD.
 
-# 13. Changelog
+# 15. Changelog
+*   **2025-11-07**: Comprehensive documentation update to reflect actual implementation. Corrected descriptions of handler multiplexing pattern, sub-retriever resolution via builder DI, lifecycle management, configuration binding, and factory registration. Added documentation for `Resolved` struct fields and `SkipModelCheckProvider` pattern.
 *   **2025-11-06**: Verified code compliance with ADR-7 (R14). Reverted 'unstable' status. The system is stable and compliant with the LLD.
 *   **2025-11-05**: Reverted stability status to **unstable**. Updated "Deviations & Blockers" to reflect that the "Builder Leaking into Handler" violation (ADR 7 / R14) is present in the codebase, which is a direct contradiction of the design specified in this document.
 *   **2025-11-05**: Final baseline of all architectural documents to stable.

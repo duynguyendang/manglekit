@@ -35,13 +35,13 @@ func (h *Handler) BuildComponent(
 		return nil, fmt.Errorf("invalid builder DI type for StateProvider handler: got %T", builderDI)
 	}
 
-	deps := diapi.StateProviderDeps{
-		CoreDeps: b.GetCoreDeps(),
-	}
-
 	f, ok := factory.(core.Factory)
 	if !ok {
-		return nil, fmt.Errorf("invalid factory type for StateProvider handler")
+		return nil, fmt.Errorf("invalid factory type for StateProvider handler: got %T", factory)
+	}
+
+	deps := diapi.StateProviderDeps{
+		CoreDeps: b.GetCoreDeps(),
 	}
 
 	built, err := f.Build(ctx, deps, cfg)

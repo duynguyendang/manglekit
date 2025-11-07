@@ -35,6 +35,11 @@ func (h *Handler) BuildComponent(
 		return nil, fmt.Errorf("invalid builder DI type for Retriever handler: got %T", builderDI)
 	}
 
+	f, ok := factory.(core.Factory)
+	if !ok {
+		return nil, fmt.Errorf("invalid factory type for Retriever handler: got %T", factory)
+	}
+
 	providerWithOptions, ok := cfg.(diapi.ProviderWithOptions)
 	if !ok {
 		return nil, fmt.Errorf("provider options for %s do not implement diapi.ProviderWithOptions", name)
@@ -80,11 +85,6 @@ func (h *Handler) BuildComponent(
 
 	default:
 		deps = diapi.NoopDeps{CoreDeps: coreDeps}
-	}
-
-	f, ok := factory.(core.Factory)
-	if !ok {
-		return nil, fmt.Errorf("invalid factory type for Retriever handler")
 	}
 
 	built, err := f.Build(ctx, deps, cfg)

@@ -32,7 +32,12 @@ func (h *Handler) BuildComponent(
 ) (core.ResourceCloser, error) {
 	b, ok := builderDI.(diapi.Builder)
 	if !ok {
-		return nil, fmt.Errorf("invalid builder DI type for Reranker handler")
+		return nil, fmt.Errorf("invalid builder DI type for Reranker handler: got %T", builderDI)
+	}
+
+	f, ok := factory.(core.Factory)
+	if !ok {
+		return nil, fmt.Errorf("invalid factory type for Reranker handler: got %T", factory)
 	}
 
 	type embedderProvider interface {
@@ -52,10 +57,6 @@ func (h *Handler) BuildComponent(
 	deps := diapi.RerankerDeps{
 		CoreDeps: b.GetCoreDeps(),
 		Embedder: embedder,
-	}
-	f, ok := factory.(core.Factory)
-	if !ok {
-		return nil, fmt.Errorf("invalid factory type for Reranker handler")
 	}
 	built, err := f.Build(ctx, deps, cfg)
 	if err != nil {
