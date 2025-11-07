@@ -13,6 +13,8 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/rerank"
 	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
+	"github.com/duynguyendang/manglekit/internal/providers/rules"
+	"github.com/duynguyendang/manglekit/internal/providers/rules/mangle"
 	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers"
 	"github.com/duynguyendang/manglekit/internal/providers/state"
 	"github.com/duynguyendang/manglekit/internal/providers/state/inmemory"
@@ -29,6 +31,7 @@ func Register(r *manglekit.Registry) {
 	dense.Register(r)
 	hybrid.Register(r)
 	inmemory.Register(r)
+	mangle.Register(r)
 	sandwich.Register(r)
 
 	// NEW: Aggregate Registrations
@@ -41,6 +44,7 @@ func Register(r *manglekit.Registry) {
 	r.RegisterHandler(llm.NewHandler())
 	r.RegisterHandler(embedders.NewHandler())
 	r.RegisterHandler(rerank.NewHandler())
+	r.RegisterHandler(rules.NewHandler())
 	r.RegisterHandler(state.NewHandler())
 	r.RegisterHandler(schemaparsers.NewHandler())
 	for _, h := range orchestrators.Handlers() {
