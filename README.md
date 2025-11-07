@@ -116,62 +116,7 @@ You can configure MangleKit either programmatically using the fluent Builder API
 
 ---
 
-### Example 1: Programmatic Setup (Sandwich Pattern)
-
-This is the most common and type-safe way to build a MangleKit pipeline. The example below wires the Sandwich flow with Mangle pre/post rules, a BM25 retriever, and an OpenAI LLM.
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"log"
-
-	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/llm"
-	"github.com/duynguyendang/manglekit/retrieve"
-	"github.com/joho/godotenv"
-
-	// This single blank import registers all standard MangleKit providers.
-	_ "github.com/duynguyendang/manglekit/providers/all"
-)
-
-func main() {
-	_ = godotenv.Load()
-	ctx := context.Background()
-
-	// Use the fluent builder to construct the orchestrator.
-	// Components are configured with simple, type-safe options structs.
-	orch, err := manglekit.NewBuilder().
-		WithRules(&core.MangleOptions{
-			Path:              []string{"./rules/pre.dlog", "./rules/post.dlog"},
-			DefaultConverters: true,
-		}).
-		WithRetriever(&retrieve.BM25Options{Path: "./data"}).
-		WithLLM(&llm.OpenAIOptions{Model: "gpt-4o-mini"}).
-		WithTopK(6). // Global default; individual retrievers can override this.
-		Build(ctx)
-	if err != nil {
-		log.Fatalf("Failed to build orchestrator: %v", err)
-	}
-	defer orch.Close(ctx)
-
-	// Run a query through the pipeline.
-	query := core.Query{Text: "What is MangleKit?"}
-	answer, err := orch.Run(ctx, query)
-	if err != nil {
-		log.Fatalf("Orchestrator run failed: %v", err)
-	}
-
-	fmt.Println("Answer:", answer.Text)
-}
-```
-
----
-
-### Example 2: Declarative Setup with YAML (Sandwich Pattern)
+### Example 1: Declarative Setup with YAML (Sandwich Pattern)
 
 For easy configuration changes, you can define the entire sandwich pipeline in a `config.yaml` file.
 
@@ -223,40 +168,105 @@ import (
     "context"
     "fmt"
     "log"
+    "os"
 
-    "github.com/duynguyendang/manglekit"
     "github.com/duynguyendang/manglekit/core"
+    "github.com/duynguyendang/manglekit/sdk"
     "github.com/joho/godotenv"
-
-    // This single blank import registers all standard MangleKit providers.
-    _ "github.com/duynguyendang/manglekit/providers/all"
 )
 
 func main() {
     _ = godotenv.Load()
+    ctx := context.Background()
 
-    // Create a builder instance directly from the YAML file.
-    builder, err := manglekit.NewBuilderFromYAML("config.yaml")
+    // Read the YAML configuration file.
+    data, err := os.ReadFile("config.yaml")
     if err != nil {
-        log.Fatalf("Failed to create builder from YAML: %v", err)
+        log.Fatalf("Failed to read config file: %v", err)
     }
 
-    // Build the orchestrator from the configuration.
-    ctx := context.Background()
-    orch, err := builder.Build(ctx)
+    // Load the orchestrator directly from the YAML config.
+    orch, err := sdk.Load(ctx, data)
     if err != nil {
-        log.Fatalf("Failed to build orchestrator: %v", err)
+        log.Fatalf("Failed to load orchestrator: %v", err)
     }
     defer orch.Close(ctx)
 
     // Run a query.
     query := core.Query{Text: "What is MangleKit?"}
-    answer, err := orch.Run(ctx, query)
+    answer, err := orch.Execute(ctx, "session-1", query)
     if err != nil {
         log.Fatalf("Orchestrator run failed: %v", err)
     }
 
     fmt.Println("Answer:", answer.Text)
+}
+```
+
+---
+
+### Example 2: Programmatic Setup (Sandwich Pattern)
+
+As of ADR-010, the programmatic builder is available for advanced use cases like testing or dynamic pipeline construction. The recommended production approach is the declarative, YAML-based setup.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/llm"
+	"github.com/duynguyendang/manglekit/pipeline/sandwich"
+	"github.com/duynguyendang/manglekit/retrieve"
+	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/joho/godotenv"
+)
+
+func main() {
+	_ = godotenv.Load()
+	ctx := context.Background()
+
+	// 1. Get a new programmatic builder instance.
+	builder, err := sdk.NewBuilder(ctx)
+	if err != nil {
+		log.Fatalf("failed to create builder: %v", err)
+	}
+
+	// 2. Configure and add each component by name.
+	builder.
+		WithOptions("rules", &core.MangleOptions{
+			Path: []string{"./rules/policy.dlog"},
+		}).
+		WithOptions("retriever", &retrieve.BM25Options{
+			Path: "./testdata/docs",
+		}).
+		WithOptions("llm", &llm.OpenAIOptions{
+			Model: "gpt-4o-mini",
+		}).
+		WithOptions("sandwich", &sandwich.Options{
+			LLM:       "llm",
+			Retriever: "retriever",
+			Rules:     "rules",
+		})
+
+	// 3. Build the final orchestrator, specifying the top-level component.
+	orch, _, err := builder.Build(ctx, "sandwich", "", "")
+	if err != nil {
+		log.Fatalf("Failed to build orchestrator: %v", err)
+	}
+	defer orch.Close(ctx)
+
+	// 4. Run a query.
+	query := core.Query{Text: "What is Mangle?"}
+	answer, err := orch.Execute(ctx, "session-123", query)
+	if err != nil {
+		log.Fatalf("Orchestrator run failed: %v", err)
+	}
+
+	fmt.Println("Answer:", answer.Text)
 }
 ```
 
@@ -272,7 +282,7 @@ This example showcases the power of the declarative orchestrator. The workflow i
 orchestrator:
   type: "declarative"
   # The 'main_flow' is defined in our .dlog files.
-  flowName: "main_flow"
+  flowName: "main__flow"
 
 providers:
   google:
