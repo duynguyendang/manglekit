@@ -15,70 +15,58 @@ import (
 )
 
 func main() {
-	// Load environment variables from a .env file.
 	err := godotenv.Load()
 	if err != nil {
-		log.Printf("Warning: could not load .env file: %v", err)
+		log.Println("Note: .env file not found, will fall back to environment variables")
 	}
 
 	ctx := context.Background()
 
-	// Create a new programmatic builder.
+	// 1. Create a new programmatic builder
 	builder, err := sdk.NewBuilder(ctx)
 	if err != nil {
 		log.Fatalf("Failed to create builder: %v", err)
 	}
 
-	// 1. Configure a bm25 retriever.
+	// 2. Add components programmatically
+	// BM25 Retriever
 	bm25Opts := &bm25.BM25Options{
-		Path: "examples/01-programmatic-setup/docs",
-		TopK: 3,
+		Path: "testdata/acme-corp",
 	}
 
-	// 2. Configure a Google LLM.
-	googleOpts := &llm.GoogleOptions{
-		Model: "gemini-1.5-flash",
+	// OpenAI LLM
+	openAIOpts := &llm.OpenAIOptions{
+		Model:          "gpt-3.5-turbo",
+		APIKey:         os.Getenv("OPENAI_API_KEY"),
+		SkipModelCheck: true,
 	}
 
-	// 3. Configure a Mangle ruleset.
-	// Create a dummy rules file.
-	dummyRuleFile, err := os.Create("examples/01-programmatic-setup/rules.dlog")
-	if err != nil {
-		log.Fatalf("Failed to create dummy rule file: %v", err)
-	}
-	dummyRuleFile.Close()
-
+	// Mangle RuleSet
 	mangleOpts := &core.MangleOptions{
-		Path: []string{"examples/01-programmatic-setup/rules.dlog"},
+		Path: []string{"examples/rules/acme-rules.dlog"},
 	}
 
-	// 4. Configure the sandwich orchestrator.
+	// Sandwich Orchestrator
 	sandwichOpts := &sandwich.Options{
-		LLM:       "google",
+		LLM:       "openai",
 		Retriever: "bm25",
 		RuleSet:   "mangle",
 	}
 
-	// Register components with the builder.
-	err = builder.With(
-		bm25Opts,
-		googleOpts,
-		mangleOpts,
-		sandwichOpts,
-	)
-	if err != nil {
-		log.Fatalf("Failed to add components to builder: %v", err)
-	}
+	builder.WithOptions("bm25", bm25Opts).
+		WithOptions("openai", openAIOpts).
+		WithOptions("mangle", mangleOpts).
+		WithOptions("sandwich", sandwichOpts)
 
-	// Build the orchestrator.
+	// 3. Build the orchestrator
 	orch, _, err := builder.Build(ctx, "sandwich", "", "")
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}
 	defer orch.Close(ctx)
 
-	// Execute a sample query.
-	query := core.Query{Text: "What is MangleKit?"}
+	// 4. Execute a query
+	query := core.Query{Text: "manglekit"}
 	answer, err := orch.Execute(ctx, "session-123", query)
 	if err != nil {
 		log.Fatalf("Failed to execute query: %v", err)
