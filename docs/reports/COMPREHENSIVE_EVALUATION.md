@@ -110,7 +110,6 @@ The DI system is type-safe and well-structured:
 - [`builder.go`](builder.go) implements `diapi.Builder` interface
 
 **Weaknesses:**
-- Some providers still accept generic `diapi.Builder` instead of typed deps (partially resolved per ADR R14)
 - Limited documentation on extending DI for custom component kinds
 - No validation that all required dependencies are satisfied before factory invocation
 
