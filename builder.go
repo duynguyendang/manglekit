@@ -40,6 +40,7 @@ type builder struct {
 	stateProviders map[string]core.StateProvider
 	orchestrators  map[string]core.Orchestrator
 	schemaParsers  map[string]core.SchemaParser
+	tools          map[string]core.Tool
 }
 
 // NewBuilder returns a new, empty instance of the fluent builder.
@@ -62,6 +63,7 @@ func NewBuilder(ctx context.Context, r *Registry, obs core.Observability, g *gen
 		stateProviders: make(map[string]core.StateProvider),
 		orchestrators:  make(map[string]core.Orchestrator),
 		schemaParsers:  make(map[string]core.SchemaParser),
+		tools:          make(map[string]core.Tool),
 	}
 	b.opts.Obs = obs
 	return b, nil
@@ -107,6 +109,7 @@ func (b *builder) buildAll(ctx context.Context) error {
 		core.KindLLM,
 		core.KindStateProvider,
 		core.KindSchemaParser,
+		core.KindTool,
 		core.KindOrchestrator,
 	}
 
@@ -125,6 +128,7 @@ func (b *builder) buildAll(ctx context.Context) error {
 		StateProviders: b.stateProviders,
 		Orchestrators:  b.orchestrators,
 		SchemaParsers:  b.schemaParsers,
+		Tools:          b.tools,
 		Obs:            b.opts.Obs,
 	}
 

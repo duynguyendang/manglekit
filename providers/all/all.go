@@ -18,6 +18,8 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers"
 	"github.com/duynguyendang/manglekit/internal/providers/state"
 	"github.com/duynguyendang/manglekit/internal/providers/state/inmemory"
+	"github.com/duynguyendang/manglekit/internal/providers/tools"
+	httpTool "github.com/duynguyendang/manglekit/internal/providers/tools/http"
 	"github.com/duynguyendang/manglekit/internal/vectorstores"
 	"github.com/duynguyendang/manglekit/pipeline/declarative"
 	"github.com/duynguyendang/manglekit/pipeline/sandwich"
@@ -33,6 +35,7 @@ func Register(r *manglekit.Registry) {
 	inmemory.Register(r)
 	mangle.Register(r)
 	sandwich.Register(r)
+	httpTool.Register(r)
 
 	// NEW: Aggregate Registrations
 	llm.Register(r)
@@ -40,6 +43,7 @@ func Register(r *manglekit.Registry) {
 	schemaparsers.Register(r)
 
 	// Component Handlers
+	tools.Register(r)
 	r.RegisterHandler(retrievers.NewHandler())
 	r.RegisterHandler(llm.NewHandler())
 	r.RegisterHandler(embedders.NewHandler())
