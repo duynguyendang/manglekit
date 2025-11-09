@@ -78,6 +78,15 @@ func (s *LLMStage) Execute(p *pipeline.PipelineContext) error {
 	}
 	p.Answer.Meta["token_usage"] = llmRes.Usage
 
+	if s.Meter != nil {
+		if usage, ok := llmRes.Usage["prompt"]; ok {
+			s.Meter.Record("manglekit.llm_input_tokens", float64(usage))
+		}
+		if usage, ok := llmRes.Usage["completion"]; ok {
+			s.Meter.Record("manglekit.llm_output_tokens", float64(usage))
+		}
+	}
+
 	return nil
 }
 
