@@ -41,6 +41,7 @@ type builder struct {
 	orchestrators  map[string]core.Orchestrator
 	schemaParsers  map[string]core.SchemaParser
 	tools          map[string]core.Tool
+	reasoners      map[string]core.Reasoner
 }
 
 // NewBuilder returns a new, empty instance of the fluent builder.
@@ -64,12 +65,14 @@ func NewBuilder(ctx context.Context, r *Registry, obs core.Observability, g *gen
 		orchestrators:  make(map[string]core.Orchestrator),
 		schemaParsers:  make(map[string]core.SchemaParser),
 		tools:          make(map[string]core.Tool),
+		reasoners:      make(map[string]core.Reasoner),
 	}
 	b.opts.Obs = obs
 	return b, nil
 }
 
 // DI implementation
+func (b *builder) Registry() any                                 { return b.registry }
 func (b *builder) Genkit() *genkit.Genkit                        { return b.genkit }
 func (b *builder) GetEmbedder(n string) (ai.Embedder, error) { return getComponent(b.embedders, n) }
 func (b *builder) GetLLMClient(n string) (core.LLMClient, error) { return getComponent(b.llms, n) }
@@ -87,6 +90,7 @@ func (b *builder) GetRuleSet(n string) (core.RuleSet, error) { return getCompone
 func (b *builder) GetSchemaParser(n string) (core.SchemaParser, error) {
 	return getComponent(b.schemaParsers, n)
 }
+func (b *builder) GetReasoner(n string) (core.Reasoner, error) { return getComponent(b.reasoners, n) }
 
 func (b *builder) SetRetriever(name string, retriever core.Retriever) error {
 	b.retrievers[name] = retriever
@@ -106,6 +110,7 @@ func (b *builder) buildAll(ctx context.Context) error {
 		core.KindRetriever,
 		core.KindReranker,
 		core.KindRules,
+		core.KindReasoner,
 		core.KindLLM,
 		core.KindStateProvider,
 		core.KindSchemaParser,
@@ -129,6 +134,7 @@ func (b *builder) buildAll(ctx context.Context) error {
 		Orchestrators:  b.orchestrators,
 		SchemaParsers:  b.schemaParsers,
 		Tools:          b.tools,
+		Reasoners:      b.reasoners,
 		Obs:            b.opts.Obs,
 	}
 
