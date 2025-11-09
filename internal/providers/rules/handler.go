@@ -42,6 +42,7 @@ func (h *Handler) BuildComponent(
 
 	deps := diapi.RuleSetDeps{
 		CoreDeps: b.GetCoreDeps(),
+		Registry: b.Registry(),
 	}
 	built, err := f.Build(ctx, deps, cfg)
 	if err != nil {

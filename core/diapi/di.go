@@ -18,8 +18,10 @@ type Builder interface {
 	GetStateProvider(name string) (core.StateProvider, error)
 	GetRuleSet(name string) (core.RuleSet, error)
 	GetSchemaParser(name string) (core.SchemaParser, error)
+	GetReasoner(name string) (core.Reasoner, error)
 	Genkit() *genkit.Genkit
 	GetCoreDeps() CoreDeps
+	Registry() any // This is not ideal, but it's the only way to get the registry to the handler.
 
 	SetRetriever(name string, retriever core.Retriever) error
 }
@@ -106,9 +108,9 @@ type StateProviderDeps struct {
 }
 
 // RuleSetDeps provides dependencies for a ruleset factory.
-// Currently, it has no dependencies.
 type RuleSetDeps struct {
 	CoreDeps
+	Registry any
 }
 
 // NoopDeps is a placeholder for factories that have no dependencies.

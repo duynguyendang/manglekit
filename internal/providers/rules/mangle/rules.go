@@ -29,10 +29,7 @@ import (
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, &core.MangleOptions{},
 		func(ctx context.Context, deps diapi.RuleSetDeps, cfg *core.MangleOptions) (core.RuleSet, error) {
-			// The registry is no longer passed as a dependency.
-			// For now, we pass nil, as the default converters don't need it.
-			// A future refactoring could inject the specific converter/parser factories needed.
-			return New(ctx, *cfg, nil)
+			return New(ctx, *cfg, deps.Registry.(*manglekit.Registry))
 		},
 	)
 }
@@ -42,12 +39,12 @@ var builtinRedactions = map[string]*regexp.Regexp{
 	"email": regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`),
 }
 
-// ruleSet implements the `core.RuleSet` and `core.FlowController` interfaces
+// RuleSet implements the `core.RuleSet` and `core.FlowController` interfaces
 // using the Mangle Datalog engine. It manages the lifecycle of a Datalog
 // program, including loading rule files, parsing external schema definitions,
 // and using `FactConverter` components to bridge the gap between Go objects
 // (like the query and answer) and the Datalog facts needed for evaluation.
-type ruleSet struct {
+type RuleSet struct {
 	programInfo           *analysis.ProgramInfo
 	strata                []analysis.Nodeset
 	predToStratum         map[ast.PredicateSym]int
@@ -56,7 +53,7 @@ type ruleSet struct {
 	postProcessConverters []core.FactConverter
 }
 
-// New is the constructor for the Mangle `ruleSet`. It is registered with the
+// New is the constructor for the Mangle `RuleSet`. It is registered with the
 // MangleKit registry and is responsible for the complex process of initializing
 // the Mangle engine.
 //
@@ -73,7 +70,7 @@ type ruleSet struct {
 // opts provides the configuration, including paths to rule files, schemas, and converters.
 // It returns a fully initialized `core.RuleSet` (which also satisfies `core.FlowController`)
 // or an error if any part of the initialization fails.
-func New(ctx context.Context, opts core.MangleOptions, r *manglekit.Registry) (core.RuleSet, error) {
+func New(ctx context.Context, opts core.MangleOptions, r *manglekit.Registry) (*RuleSet, error) {
 	if len(opts.Path) == 0 {
 		return nil, fmt.Errorf("mangle: at least one path in 'path' must be provided")
 	}
@@ -164,7 +161,7 @@ func New(ctx context.Context, opts core.MangleOptions, r *manglekit.Registry) (c
 		return nil, fmt.Errorf("mangle: could not evaluate base program: %w", err)
 	}
 
-	return &ruleSet{
+	return &RuleSet{
 		programInfo:           programInfo,
 		strata:                strata,
 		predToStratum:         predToStratum,
@@ -243,7 +240,7 @@ func parseSchemas(sources []core.SchemaSource, r *manglekit.Registry) ([]ast.Ato
 // the Datalog engine, and then collects the results (like denials or mutations)
 // to return to the orchestrator.
 // This method satisfies the `core.RuleSet` interface.
-func (r *ruleSet) Evaluate(stage core.Stage, q core.Query, a *core.Answer) (core.RuleResult, error) {
+func (r *RuleSet) Evaluate(stage core.Stage, q core.Query, a *core.Answer) (core.RuleResult, error) {
 	switch stage {
 	case core.Pre:
 		return r.preProcess(q)
@@ -254,7 +251,7 @@ func (r *ruleSet) Evaluate(stage core.Stage, q core.Query, a *core.Answer) (core
 }
 
 // preProcess normalizes the user query and enriches it with expansions.
-func (r *ruleSet) preProcess(query core.Query) (core.RuleResult, error) {
+func (r *RuleSet) preProcess(query core.Query) (core.RuleResult, error) {
 	workingStore := factstore.NewSimpleInMemoryStore()
 	workingStore.Merge(r.baseFactStore)
 
@@ -327,8 +324,8 @@ func (r *ruleSet) preProcess(query core.Query) (core.RuleResult, error) {
 // querying for `flow_stage` and `stage_tool` facts. The query is a simple atom
 // string (e.g., `foo(X, "bar")`), and the results are streamed to the `onSolution`
 // callback.
-// This method satisfies the `core.Querier` interface, making `ruleSet` a `core.FlowController`.
-func (r *ruleSet) Query(ctx context.Context, query string, onSolution func(map[string]any) error) error {
+// This method satisfies the `core.Querier` interface, making `RuleSet` a `core.FlowController`.
+func (r *RuleSet) Query(ctx context.Context, query string, onSolution func(map[string]any) error) error {
 	queryAtom, err := parse.Atom(query)
 	if err != nil {
 		return fmt.Errorf("mangle: could not parse query atom '%s': %w", query, err)
@@ -378,7 +375,7 @@ func (r *ruleSet) Query(ctx context.Context, query string, onSolution func(map[s
 // Post evaluates post-retrieval rules before the LLM stage. It converts the current
 // query, user context, evidence, and execution metadata into Mangle facts and
 // returns a structured result describing any mutations requested by the rules.
-func (r *ruleSet) Post(ctx context.Context, q core.Query, evidence []core.Doc, meta map[string]any) (core.PostRuleResult, error) {
+func (r *RuleSet) Post(ctx context.Context, q core.Query, evidence []core.Doc, meta map[string]any) (core.PostRuleResult, error) {
 	workingStore := factstore.NewSimpleInMemoryStore()
 	workingStore.Merge(r.baseFactStore)
 
@@ -552,7 +549,7 @@ func (r *ruleSet) Post(ctx context.Context, q core.Query, evidence []core.Doc, m
 }
 
 // postProcess filters an answer based on Mangle rules.
-func (r *ruleSet) postProcess(query core.Query, answer *core.Answer) (core.RuleResult, error) {
+func (r *RuleSet) postProcess(query core.Query, answer *core.Answer) (core.RuleResult, error) {
 	workingStore := factstore.NewSimpleInMemoryStore()
 	workingStore.Merge(r.baseFactStore)
 
@@ -955,4 +952,31 @@ func constantToString(c ast.Constant) (string, error) {
 		return v, nil
 	}
 	return "", fmt.Errorf("unsupported constant type: %v", c.Type)
+}
+
+// Reason takes a set of input facts, runs the Datalog engine, and returns the
+// resulting facts. This method is the core of the Reasoner implementation.
+func (r *RuleSet) Reason(ctx context.Context, inputFacts []ast.Atom) ([]ast.Atom, error) {
+	workingStore := factstore.NewSimpleInMemoryStore()
+	workingStore.Merge(r.baseFactStore)
+
+	for _, fact := range inputFacts {
+		workingStore.Add(fact)
+	}
+
+	if err := evaluate(r.programInfo, r.strata, r.predToStratum, workingStore); err != nil {
+		return nil, fmt.Errorf("mangle: reasoner evaluation failed: %w", err)
+	}
+
+	var collectedFacts []ast.Atom
+	err := workingStore.GetFacts(ast.NewQuery(ast.PredicateSym{Symbol: "solution", Arity: 2}), func(fact ast.Atom) error {
+		collectedFacts = append(collectedFacts, fact)
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("mangle: failed to collect reasoner results: %w", err)
+	}
+
+	return collectedFacts, nil
 }

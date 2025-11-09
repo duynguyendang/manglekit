@@ -125,6 +125,32 @@ type Retriever interface {
 	Retrieve(ctx context.Context, req RetrieveRequest) (RetrieveResult, error)
 }
 
+// ReasonerRequest encapsulates the input for a reasoner.
+type ReasonerRequest struct {
+	// Input is a map of arbitrary key-value data that can be used by the reasoner.
+	Input map[string]any
+}
+
+// ReasonerResponse represents the output from a reasoner.
+type ReasonerResponse struct {
+	// Output is a map of arbitrary key-value data that is the result of the reasoning process.
+	Output map[string]any
+}
+
+// Reasoner defines the standard interface for a symbolic reasoner.
+// It is responsible for executing a set of rules or a logic program
+// against a given input to produce a structured output.
+type Reasoner interface {
+	// Execute takes a structured Request, sends it to the reasoner, and
+	// returns a structured Response.
+	//
+	// ctx is the context for the operation.
+	// req is the reasoner request, containing the input data.
+	// It returns a Response containing the output data,
+	// or an error if the execution fails.
+	Execute(ctx context.Context, req ReasonerRequest) (ReasonerResponse, error)
+}
+
 // Updatable defines the interface for retrievers that support runtime
 // modification of their document index. This is useful for systems where the
 // knowledge base can change without restarting the application. A component that

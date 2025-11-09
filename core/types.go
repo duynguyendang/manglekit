@@ -137,6 +137,7 @@ type Resolved struct {
 	Orchestrators  map[string]Orchestrator
 	SchemaParsers  map[string]SchemaParser
 	Tools          map[string]Tool
+	Reasoners      map[string]Reasoner
 
 	Obs               Observability
 	TopK              int
