@@ -13,6 +13,11 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const (
+	// defaultRRF_K is the default value for the RRF_K parameter.
+	defaultRRF_K = 60.0
+)
+
 // HybridOptions provides a type-safe way to configure the hybrid retriever.
 // This retriever combines results from multiple underlying retrievers (typically
 // a keyword-based one and a dense/vector-based one) to leverage the strengths
@@ -46,7 +51,7 @@ func Register(r *manglekit.Registry) {
 
 			rrf_k := cfg.RRF_K
 			if rrf_k == 0.0 {
-				rrf_k = 60.0 // Default value
+				rrf_k = defaultRRF_K
 			}
 
 			return New(subRetrievers, rrf_k, deps)
