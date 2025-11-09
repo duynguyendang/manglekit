@@ -17,6 +17,7 @@ const (
 	KindStateProvider Kind = "state_provider"
 	KindOrchestrator  Kind = "orchestrator"
 	KindSchemaParser  Kind = "schema_parser"
+	KindTool          Kind = "tool"
 )
 
 // ProviderOptions is the core interface for the new type-safe registration system.
