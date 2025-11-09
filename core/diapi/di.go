@@ -19,6 +19,7 @@ type Builder interface {
 	GetRuleSet(name string) (core.RuleSet, error)
 	GetSchemaParser(name string) (core.SchemaParser, error)
 	GetReasoner(name string) (core.Reasoner, error)
+	GetPlanner(name string) (core.Planner, error)
 	Genkit() *genkit.Genkit
 	GetCoreDeps() CoreDeps
 	Registry() any // This is not ideal, but it's the only way to get the registry to the handler.
@@ -133,6 +134,14 @@ type DeclarativeOrchestratorDeps struct {
 	CoreDeps
 	StateProvider core.StateProvider
 	Tools         map[string]core.Tool
+}
+
+// PlannerDeps provides the dependencies required by a planner component.
+// It includes access to reasoning and execution capabilities.
+type PlannerDeps struct {
+	CoreDeps
+	Tools     map[string]core.Tool
+	Reasoners map[string]core.Reasoner
 }
 
 // CoreDeps provides access to core framework services.

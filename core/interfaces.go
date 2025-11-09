@@ -151,6 +151,45 @@ type Reasoner interface {
 	Execute(ctx context.Context, req ReasonerRequest) (ReasonerResponse, error)
 }
 
+// Plan represents a structured sequence of steps to achieve a goal. It is the
+// output of a Planner component. The plan consists of a series of steps, where
+// each step defines a specific action (tool) to be executed with a given set of
+// parameters.
+type Plan struct {
+	// Steps is a list of sequential actions to be taken to fulfill the user's request.
+	Steps []Step `json:"steps"`
+}
+
+// Step is a single action within a Plan. It specifies the tool to be used, the
+// parameters to be passed to it, and a descriptive reason for why this step is
+// being taken.
+type Step struct {
+	// Tool is the name of the tool to be executed for this step. This name must
+	// correspond to a registered Tool in the Manglekit framework.
+	Tool string `json:"tool"`
+	// Params is a map of key-value pairs that will be passed as parameters to the
+	// specified tool. The structure of this map must match what the target tool expects.
+	Params map[string]any `json:"params,omitempty"`
+	// Reason is a natural language explanation of the purpose of this step within
+	// the overall plan. This is useful for debugging, logging, and transparency.
+	Reason string `json:"reason,omitempty"`
+}
+
+// Planner is the interface for components that can generate a multi-step plan
+// to achieve a user's goal. Planners are a key part of the neuro-symbolic
+// architecture, enabling the system to reason about how to combine different
+// tools to solve complex problems.
+type Planner interface {
+	// Plan takes a user's goal (expressed as a query) and generates a structured
+	// Plan.
+	//
+	// ctx is the context for the operation.
+	// q is the user's query or goal.
+	// It returns a Plan struct detailing the steps to be executed, or an error
+	// if a plan cannot be formulated.
+	Plan(ctx context.Context, q Query) (Plan, error)
+}
+
 // Updatable defines the interface for retrievers that support runtime
 // modification of their document index. This is useful for systems where the
 // knowledge base can change without restarting the application. A component that
