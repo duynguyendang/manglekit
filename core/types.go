@@ -138,6 +138,7 @@ type Resolved struct {
 	SchemaParsers  map[string]SchemaParser
 	Tools          map[string]Tool
 	Reasoners      map[string]Reasoner
+	Planners       map[string]Planner
 
 	Obs               Observability
 	TopK              int

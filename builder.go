@@ -42,6 +42,7 @@ type builder struct {
 	schemaParsers  map[string]core.SchemaParser
 	tools          map[string]core.Tool
 	reasoners      map[string]core.Reasoner
+	planners       map[string]core.Planner
 }
 
 // NewBuilder returns a new, empty instance of the fluent builder.
@@ -66,6 +67,7 @@ func NewBuilder(ctx context.Context, r *Registry, obs core.Observability, g *gen
 		schemaParsers:  make(map[string]core.SchemaParser),
 		tools:          make(map[string]core.Tool),
 		reasoners:      make(map[string]core.Reasoner),
+		planners:       make(map[string]core.Planner),
 	}
 	b.opts.Obs = obs
 	return b, nil
@@ -91,6 +93,7 @@ func (b *builder) GetSchemaParser(n string) (core.SchemaParser, error) {
 	return getComponent(b.schemaParsers, n)
 }
 func (b *builder) GetReasoner(n string) (core.Reasoner, error) { return getComponent(b.reasoners, n) }
+func (b *builder) GetPlanner(n string) (core.Planner, error)   { return getComponent(b.planners, n) }
 
 func (b *builder) SetRetriever(name string, retriever core.Retriever) error {
 	b.retrievers[name] = retriever
@@ -115,6 +118,7 @@ func (b *builder) buildAll(ctx context.Context) error {
 		core.KindStateProvider,
 		core.KindSchemaParser,
 		core.KindTool,
+		core.KindPlanner,
 		core.KindOrchestrator,
 	}
 
@@ -135,6 +139,7 @@ func (b *builder) buildAll(ctx context.Context) error {
 		SchemaParsers:  b.schemaParsers,
 		Tools:          b.tools,
 		Reasoners:      b.reasoners,
+		Planners:       b.planners,
 		Obs:            b.opts.Obs,
 	}
 
