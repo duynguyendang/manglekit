@@ -49,11 +49,10 @@ func (h *Handler) BuildComponent(
 		return nil, fmt.Errorf("factory for %s '%s' failed: %w", core.KindSchemaParser, name, err)
 	}
 
-	_, ok = built.(core.SchemaParser)
+	schemaParser, ok := built.(core.SchemaParser)
 	if !ok {
 		return nil, fmt.Errorf("component %s is not a valid SchemaParser", name)
 	}
-	// TODO: Add a map for schemaparsers to the resolved struct.
-	resolved.SchemaParsers[name] = built.(core.SchemaParser)
+	resolved.SchemaParsers[name] = schemaParser
 	return core.NopCloser, nil
 }
