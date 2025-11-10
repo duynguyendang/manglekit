@@ -1,5 +1,5 @@
 # Manglekit SDK - Code Review
-**Last Updated:** 2025-11-06
+**Last Updated:** 2025-11-09
 
 ## Smell: Orchestrator Handler Coverage (Builder cannot build Sandwich)
 **Location:** `internal/providers/orchestrators/orchestrators.go:28`, `pipeline/declarative/handler.go:1`
@@ -116,6 +116,12 @@ The following issues were identified in a previous review and have been resolved
 ---
 ## Open Architectural Smells
 
+## Smell: Non-deterministic Reranking Tie-Breaking
+**Location:** `internal/providers/retrievers/hybrid/hybrid.go:L161`
+**Impact Analysis:** The hybrid retriever's `Retrieve` method iterates over a map of document scores (`scores`) to build the final list of documents. While this list is subsequently sorted by score, the relative order of documents with identical Reciprocal Rank Fusion (RRF) scores is not guaranteed because the initial iteration order is random. This violates the determinism principle (ADR-15) and can lead to inconsistent results for the same query.
+**Refactoring Suggestion:** After sorting by score, add a secondary, stable sort criterion, such as the document ID, to ensure a deterministic final order. For example: `sort.SliceStable(finalDocs, ...)` followed by another sort on the ID for tie-breaking.
+**Status:** Open
+
 ## Smell: Builder Leaking into Handler
 **Location:** `pipeline/declarative/handler.go`, `pipeline/sandwich/handler.go`, and all handlers in `internal/providers`.
 **Impact Analysis:** The `ComponentHandler`'s `BuildComponent` method accepts a generic `any` type for its dependency injector and immediately type-asserts it to the concrete `diapi.Builder`. This violates the Type-Safe DI rule (ADR-7 / R14), which mandates that handlers and factories must not not depend on the generic builder but on specific, typed dependency structs. This tight coupling makes the handler less modular and harder to test in isolation.
@@ -140,11 +146,6 @@ The following issues were identified in a previous review and have been resolved
 **Impact Analysis:** The `FromConfig` function iterates over the `b.registry.OptionsTypeToName` map to find the `reflect.Type` for a given component type string. Go map iteration order is not guaranteed. In the unlikely but possible scenario where two different registered types share the same name and kind string, the builder could select a different one on subsequent runs, leading to non-deterministic behavior.
 **Refactoring Suggestion:** The registry should be redesigned to provide a deterministic lookup, for example by using a struct that can be sorted or a more robust mapping that prevents ambiguous entries at registration time. The lookup should not rely on a `for...range` loop over a map.
 **Status:** Resolved
-
-## Smell: Non-deterministic Reranking Tie-Breaking
-**Location:** `internal/providers/retrievers/hybrid/hybrid.go:L161`
-**Impact Analysis:** The hybrid retriever's `Retrieve` method iterates over a map of document scores (`scores`) to build the final list of documents. While this list is subsequently sorted by score, the relative order of documents with identical Reciprocal Rank Fusion (RRF) scores is not guaranteed because the initial iteration order is random. This violates the determinism principle (ADR-15) and can lead to inconsistent results for the same query.
-**Refactoring Suggestion:** After sorting by score, add a secondary, stable sort criterion, such as the document ID, to ensure a deterministic final order. For example: `sort.SliceStable(finalDocs, ...)` followed by another sort on the ID for tie-breaking.
 
 ## Smell: LLD Documentation Inaccuracies (Retriever Handler Multiplexing)
 **Location:** `docs/LLD.md:10` (Example Construction Path), `internal/providers/retrievers/handler.go:43-88`

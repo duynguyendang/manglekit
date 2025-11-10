@@ -1,6 +1,6 @@
 # Manglekit — High‑Level Design (HLD)
 
-**Revision:** Oct 2025
+**Revision:** Nov 2025
 **Scope:** Core SDK (registry, builder, orchestrators, providers, config bridge)
 **Audience:** Framework maintainers, provider authors, application teams
 **Mission:** A **neuro‑symbolic AI composition framework** for building explainable, policy‑aware systems that combine statistical models (LLMs, embedders) with symbolic reasoning (rules, planners, schema/graph tooling).
@@ -367,11 +367,9 @@ components:
 
 * **Centralize conversation/state handling** across orchestrators.
 * **Token limit conformance** in LLM clients (honor `MaxTokens`).
-* **Expose hybrid RRF params** as options.
 * **Schema export** (JSON Schema) for all options.
 * **Build‑graph introspection & DOT export**.
 * **WASM/plugin sandbox** for untrusted providers.
-* **Orchestrator handler generalization** so the Builder can construct both Sandwich and Declarative orchestrators.
 
 ---
 
