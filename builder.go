@@ -113,11 +113,11 @@ func (b *builder) buildAll(ctx context.Context) error {
 		core.KindRetriever,
 		core.KindReranker,
 		core.KindRules,
-		core.KindReasoner,
 		core.KindLLM,
 		core.KindStateProvider,
 		core.KindSchemaParser,
 		core.KindTool,
+		core.KindReasoner,
 		core.KindPlanner,
 		core.KindOrchestrator,
 	}
