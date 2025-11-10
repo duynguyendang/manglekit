@@ -2,8 +2,8 @@
 context_type: low_level_design
 project: manglekit
 language: go
-version: 0.5.0
-last_updated: 2025-11-07
+version: 0.6.0
+last_updated: 2025-11-09
 stability: stable
 audience: developers
 ---
@@ -247,6 +247,8 @@ The `core.Resolved` struct is the final, strongly-typed container of all built c
 - `Orchestrators map[string]Orchestrator` - All built orchestrator instances, indexed by name.
 - `SchemaParsers map[string]SchemaParser` - All built schema parser instances, indexed by name.
 - `Tools map[string]Tool` - Tool adapters for use by the declarative orchestrator.
+- `Reasoners map[string]Reasoner` - All built reasoner instances, indexed by name.
+- `Planners map[string]Planner` - All built planner instances, indexed by name.
 - `Obs core.Observability` - The observability struct (logger, tracer, meter) for the entire pipeline.
 - `TopK int` - Default top-K value for retrieval operations.
 - `MaxTokens int` - Default maximum tokens for LLM generation.
@@ -283,6 +285,7 @@ This pattern is useful for testing or when model validation is not required.
 The codebase is **stable** and has no open deviations from the LLD.
 
 # 15. Changelog
+*   **2025-11-09**: Updated document to include the Tool, Reasoner, and Planner frameworks. Added `Reasoners` and `Planners` to the `Resolved` struct, and included the new handlers and provider implementations in the developer reference.
 *   **2025-11-07**: Comprehensive documentation update to reflect actual implementation. Corrected descriptions of handler multiplexing pattern, sub-retriever resolution via builder DI, lifecycle management, configuration binding, and factory registration. Added documentation for `Resolved` struct fields and `SkipModelCheckProvider` pattern.
 *   **2025-11-06**: Verified code compliance with ADR-7 (R14). Reverted 'unstable' status. The system is stable and compliant with the LLD.
 *   **2025-11-05**: Reverted stability status to **unstable**. Updated "Deviations & Blockers" to reflect that the "Builder Leaking into Handler" violation (ADR 7 / R14) is present in the codebase, which is a direct contradiction of the design specified in this document.
@@ -347,6 +350,9 @@ Layering rules (enforced):
   - VectorStores: [`internal/vectorstores/handler.go`](internal/vectorstores/handler.go)
   - State: [`internal/providers/state/handler.go`](internal/providers/state/handler.go)
   - Schema Parsers: [`internal/providers/schemaparsers/handler.go`](internal/providers/schemaparsers/handler.go)
+  - Tools: [`internal/providers/tools/handler.go`](internal/providers/tools/handler.go)
+  - Reasoners: [`internal/providers/reasoners/handler.go`](internal/providers/reasoners/handler.go)
+  - Planners: [`internal/providers/planners/handler.go`](internal/providers/planners/handler.go)
   - Orchestrators: [`pipeline/sandwich/handler.go`](pipeline/sandwich/handler.go), [`pipeline/declarative/handler.go`](pipeline/declarative/handler.go)
 
 - Provider implementations (examples)
@@ -363,6 +369,9 @@ Layering rules (enforced):
   - Redis State Provider: [`internal/providers/state/redis/provider.go`](internal/providers/state/redis/provider.go)
   - Embedders: [`internal/embedders/openai/openai.go`](internal/embedders/openai/openai.go), [`internal/embedders/google/google.go`](internal/embedders/google/google.go)
   - LocalVec Vector Store: [`internal/vectorstores/localvec/localvec.go`](internal/vectorstores/localvec/localvec.go)
+  - Mangle Reasoner: [`internal/providers/reasoners/mangle/reasoner.go`](internal/providers/reasoners/mangle/reasoner.go)
+  - Default Planner: [`internal/providers/planners/default/planner.go`](internal/providers/planners/default/planner.go)
+  - Tool Adapters: [`internal/providers/tools/http/factory.go`](internal/providers/tools/http/factory.go), [`core/tool_adapters.go`](core/tool_adapters.go)
 
 ## 16.3 Quick Tasks Cheat Sheet
 
