@@ -226,6 +226,7 @@ Each kind must have a dedicated `core.ComponentHandler`.
 - Define `Options` implementing `core.ProviderOptions`.  
 - Declare dependencies via `diapi` dep marker interfaces.  
 - Register via `manglekit.Register[T, D, O]`.  
+- **(CRITICAL) Modify `providers/all/all.go`:** Add a blank import (e.g., `_ "path/to/your/provider/package"`) to this file. This ensures your provider's `init()` function is executed by the Go runtime, adding it to the central registry.
 - Ensure a handler exists for that kind.  
 - Add deterministic tests under the provider folder.  
 - **Docs:** Ensure `docs/CONTEXT.md` (and LLD/HLD) are auto-synced after implementation.
