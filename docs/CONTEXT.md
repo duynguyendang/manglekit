@@ -3,7 +3,7 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 0.6.0
-last_updated: 2025-11-09
+last_updated: 2025-11-10
 stability: stable
 audience: humans_and_agents
 ---
@@ -100,7 +100,7 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
 -   **`core.LLMClient`**: Defines `Complete(ctx, req)` for language model completion.
 -   **`core.VectorStore`**: Defines `AddDocuments(ctx, docs)` and `Search(ctx, queryText, queryVector, topK, filter)` for vector operations.
 -   **`ai.Embedder`**: (from genkit) Defines embedding generation for text.
--   **`core.StateProvider`**: Defines `GetConversationHistory(ctx, sessionID)` and `SaveConversationHistory(ctx, sessionID, history)` for session state management.
+-   **`core.StateProvider`**: Defines `Get(ctx, sessionID)`, `Set(ctx, sessionID, state)`, `Delete(ctx, sessionID)`, and `Close(ctx)`.
 -   **`core.RuleSet`**: Defines rule evaluation for pre/post-retrieval filtering.
 -   **`core.SchemaParser`**: Defines schema parsing for structured data extraction.
 -   **`core.Tool`**: Defines `Execute(ctx, execCtx)` for stateless, single-step operations.
@@ -249,11 +249,11 @@ The `Builder.buildAll()` method constructs components in a strict, deterministic
 3.  Retrievers      (KindRetriever)      — Depends on: Embedders, VectorStores, other Retrievers
 4.  Rerankers       (KindReranker)       — Depends on: Embedders
 5.  RuleSets        (KindRules)          — No dependencies
-6.  LLMs            (KindLLM)            — No dependencies
-7.  StateProviders  (KindStateProvider)  — No dependencies
-8.  SchemaParsers   (KindSchemaParser)   — No dependencies
-9.  Tools           (KindTool)           — Depends on: All previously built components (via adapters)
-10. Reasoners       (KindReasoner)       — Depends on: RuleSets
+6.  Reasoners       (KindReasoner)       — Depends on: RuleSets
+7.  LLMs            (KindLLM)            — No dependencies
+8.  StateProviders  (KindStateProvider)  — No dependencies
+9.  SchemaParsers   (KindSchemaParser)   — No dependencies
+10. Tools           (KindTool)           — Depends on: All previously built components (via adapters)
 11. Planners        (KindPlanner)        — Depends on: Tools, Reasoners
 12. Orchestrators   (KindOrchestrator)   — Depends on: All previously built components
 ```
@@ -357,6 +357,7 @@ This order is enforced in `builder.go` and ensures that:
 ```
 
 ## 14. Changelog
+- **2025-11-10**: Performed full code audit. Re-synced core interface signatures (StateProvider) and verified all handler/DI contracts. Corrected handler build order to match live source code.
 - **2025-11-09**: Verified and documented the full implementation of the Tool, Reasoner, and Planner frameworks. Updated all architectural documents (CONTEXT, HLD, LLD) to reflect the new component kinds, their interfaces, DI contracts, and handlers. Increased total handler count to 13. Marked P1 GAPs for these frameworks as resolved. Bumped version to 0.6.0.
 - **2025-11-07**: Comprehensive code audit confirms all 10 component handlers (LLM, Embedder, Retriever, Reranker, VectorStore, StateProvider, RuleSet, SchemaParser, Sandwich, Declarative) are fully compliant with ADR-7 (R14) Type-Safe DI pattern. All handlers correctly type-assert `builderDI` to `diapi.Builder` interface and construct typed `diapi.*Deps` structs before invoking factories. No violations detected. GAP-001 remains resolved.
 - **2025-11-06**: Confirmed all 8 handlers are compliant with ADR-7 (R14). The 2025-11-05 audit was flawed. GAP-001 is resolved (was not a valid issue). Reverting all documents to 'stable' status.
