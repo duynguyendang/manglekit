@@ -1,10 +1,15 @@
+//go:build testhooks
+// +build testhooks
+
 package pipeline_test
 
 import (
 	"context"
-
+	"fmt"
 	"github.com/duynguyendang/manglekit/core"
 )
+
+// --- Mock Retriever ---
 
 type mockRetriever struct{}
 
@@ -18,10 +23,50 @@ func (m *mockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) 
 
 type mockRetrieverOptions struct{}
 
-func (m *mockRetrieverOptions) ProviderName() string {
-	return "mock-retriever"
+func (m *mockRetrieverOptions) ProviderName() string    { return "mock-retriever" }
+func (m *mockRetrieverOptions) ProviderKind() core.Kind { return core.KindRetriever }
+func (m *mockRetrieverOptions) GetProviderOptions() any { return m }
+
+// --- Mock LLM ---
+
+type mockLLM struct{}
+
+func (l *mockLLM) Complete(ctx context.Context, req core.LLMRequest) (core.LLMResponse, error) {
+	return core.LLMResponse{Text: "mock llm response"}, nil
 }
 
-func (m *mockRetrieverOptions) ProviderKind() core.Kind {
-	return core.KindRetriever
+type mockLLMOptions struct{}
+
+func (o *mockLLMOptions) ProviderName() string    { return "mock-llm" }
+func (o *mockLLMOptions) ProviderKind() core.Kind { return core.KindLLM }
+func (o *mockLLMOptions) GetProviderOptions() any { return o }
+
+// --- Mock Tool ---
+
+type mockTool struct {
+	// ExecuteFunc allows overriding the Execute method for specific tests.
+	ExecuteFunc func(ctx context.Context, execCtx *core.ExecutionContext) error
 }
+
+func (t *mockTool) Execute(ctx context.Context, execCtx *core.ExecutionContext) error {
+	if t.ExecuteFunc != nil {
+		return t.ExecuteFunc(ctx, execCtx)
+	}
+	// Default behavior: store the input key as the output in the Answer's Meta map.
+	input, ok := execCtx.CurrentStepParams["input_key"].(string)
+	if !ok {
+		return fmt.Errorf("input_key not found or not a string")
+	}
+	if execCtx.Answer.Meta == nil {
+		execCtx.Answer.Meta = make(map[string]any)
+	}
+	outputKey := fmt.Sprintf("%s_output", input)
+	execCtx.Answer.Meta[outputKey] = "mock tool output"
+	return nil
+}
+
+type mockToolOptions struct{}
+
+func (o *mockToolOptions) ProviderName() string    { return "mock-tool" }
+func (o *mockToolOptions) ProviderKind() core.Kind { return core.KindTool }
+func (o *mockToolOptions) GetProviderOptions() any { return o }
