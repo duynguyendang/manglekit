@@ -16,6 +16,7 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/rules"
 	"github.com/duynguyendang/manglekit/internal/providers/rules/mangle"
 	"github.com/duynguyendang/manglekit/internal/providers/planners"
+	"github.com/duynguyendang/manglekit/internal/providers/reasoners"
 	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers"
 	"github.com/duynguyendang/manglekit/internal/providers/state"
 	"github.com/duynguyendang/manglekit/internal/providers/state/inmemory"
@@ -42,6 +43,7 @@ func Register(r *manglekit.Registry) {
 	llm.Register(r)
 	embedders.Register(r)
 	schemaparsers.Register(r)
+	reasoners.Register(r)
 
 	// Component Handlers
 	tools.Register(r)
