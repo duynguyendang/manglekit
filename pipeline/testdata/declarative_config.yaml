@@ -1,0 +1,23 @@
+orchestrator: "my-declarative-pipe"
+components:
+  - name: "my-declarative-pipe"
+    kind: "orchestrator"
+    type: "declarative"
+    params:
+      steps:
+        - name: "tool-one" # Use 'name' instead of 'tool'
+          params:
+            input_key: "input_value_1"
+        - name: "tool-two" # Use 'name' instead of 'tool'
+          params:
+            input_key: "input_value_2"
+
+  - name: "tool-one"
+    kind: "tool"
+    type: "mock-tool"
+    params: {}
+
+  - name: "tool-two"
+    kind: "tool"
+    type: "mock-tool"
+    params: {}
