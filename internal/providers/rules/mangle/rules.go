@@ -179,7 +179,7 @@ func loadConverter(name string, r *manglekit.Registry) (core.FactConverter, erro
 	}
 	factory, err := r.Get(core.Kind("fact_converter"), name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get factory for fact_converter '%s': %w", name, err)
 	}
 	instance, err := factory.Build(context.Background(), diapi.NoopDeps{}, nil)
 	if err != nil {
@@ -272,7 +272,7 @@ func (r *RuleSet) preProcess(query core.Query) (core.RuleResult, error) {
 	// Skipped stages
 	skipped, err := collectStrings(workingStore, "skip_stage", 1)
 	if err != nil {
-		return core.RuleResult{Allowed: false, Reason: "could not collect 'skip_stage' facts"}, err
+		return core.RuleResult{}, fmt.Errorf("failed to collect 'skip_stage' facts: %w", err)
 	}
 	skippedMap := make(map[string]bool)
 	for _, s := range skipped {
@@ -282,7 +282,7 @@ func (r *RuleSet) preProcess(query core.Query) (core.RuleResult, error) {
 	// Deny?
 	denied, err := collectKeyValue(workingStore, "deny")
 	if err != nil {
-		return core.RuleResult{Allowed: false, Reason: "could not collect 'deny' facts"}, err
+		return core.RuleResult{}, fmt.Errorf("failed to collect 'deny' facts: %w", err)
 	}
 	if len(denied) > 0 {
 		var reason string
@@ -301,11 +301,11 @@ func (r *RuleSet) preProcess(query core.Query) (core.RuleResult, error) {
 
 	expansions, err := collectStrings(workingStore, "expanded_query", 2)
 	if err != nil {
-		return core.RuleResult{Allowed: false, Reason: "could not collect expansions"}, err
+		return core.RuleResult{}, fmt.Errorf("failed to collect 'expanded_query' facts: %w", err)
 	}
 	filters, err := collectKeyValue(workingStore, "query_filter")
 	if err != nil {
-		return core.RuleResult{Allowed: false, Reason: "could not collect filters"}, err
+		return core.RuleResult{}, fmt.Errorf("failed to collect 'query_filter' facts: %w", err)
 	}
 
 	mutateFn := func(q *core.Query, a *core.Answer) {
@@ -409,7 +409,7 @@ func (r *RuleSet) Post(ctx context.Context, q core.Query, evidence []core.Doc, m
 	}
 
 	if err := addPostMetaFacts(workingStore, evidence, meta); err != nil {
-		return core.PostRuleResult{}, err
+		return core.PostRuleResult{}, fmt.Errorf("failed to add post-meta facts: %w", err)
 	}
 
 	if err := evaluate(r.programInfo, r.strata, r.predToStratum, workingStore); err != nil {
@@ -777,7 +777,7 @@ func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl, 
 
 	programInfo, err := analysis.Analyze(units, edbDeclarations)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, fmt.Errorf("mangle: static analysis failed: %w", err)
 	}
 
 	strata, predToStratum, err := analysis.Stratify(analysis.Program{
@@ -786,7 +786,7 @@ func loadProgram(paths []string, edbDeclarations map[ast.PredicateSym]ast.Decl, 
 		Rules:         programInfo.Rules,
 	})
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, fmt.Errorf("mangle: stratification failed: %w", err)
 	}
 
 	return programInfo, strata, predToStratum, initialFacts, nil
@@ -832,7 +832,7 @@ func resolveFiles(path string) ([]string, error) {
 		if hasMeta(path) {
 			matches, globErr := filepath.Glob(path)
 			if globErr != nil {
-				return nil, globErr
+				return nil, fmt.Errorf("path globbing failed for %q: %w", path, globErr)
 			}
 			if len(matches) == 0 {
 				return nil, fmt.Errorf("no rule files matched %q", path)
@@ -841,16 +841,16 @@ func resolveFiles(path string) ([]string, error) {
 			for _, match := range matches {
 				resolved, err := resolveFiles(match)
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to resolve glob match %q: %w", match, err)
 				}
 				files = append(files, resolved...)
 			}
 			sort.Strings(files)
 			return files, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to stat path %q: %w", path, err)
 	default:
-		return nil, err
+		return nil, fmt.Errorf("failed to stat path %q: %w", path, err)
 	}
 }
 
@@ -867,7 +867,7 @@ func collectFiles(root string) ([]string, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to walk directory %q: %w", root, err)
 	}
 	sort.Strings(files)
 	return files, nil
@@ -879,7 +879,10 @@ func hasMeta(path string) bool {
 
 func evaluate(programInfo *analysis.ProgramInfo, strata []analysis.Nodeset, predToStratum map[ast.PredicateSym]int, store factstore.FactStore) error {
 	_, err := engine.EvalStratifiedProgramWithStats(programInfo, strata, predToStratum, store)
-	return err
+	if err != nil {
+		return fmt.Errorf("mangle engine evaluation failed: %w", err)
+	}
+	return nil
 }
 
 func collectStrings(store factstore.ReadOnlyFactStore, predicate string, arity int) ([]string, error) {
@@ -902,7 +905,7 @@ func collectStrings(store factstore.ReadOnlyFactStore, predicate string, arity i
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get facts for predicate '%s': %w", predicate, err)
 	}
 	out := make([]string, 0, len(results))
 	for v := range results {
@@ -939,7 +942,7 @@ func collectKeyValue(store factstore.ReadOnlyFactStore, predicate string) (map[s
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get facts for predicate '%s': %w", predicate, err)
 	}
 	return filters, nil
 }

@@ -100,11 +100,11 @@ func (h *mockComponentHandler) BuildComponent(ctx context.Context, b any, f any,
 		var l core.LLMClient
 		r, err = builder.GetRetriever(c.Retriever)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get retriever dependency for mock sandwich: %w", err)
 		}
 		l, err = builder.GetLLMClient(c.LLM)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get llm dependency for mock sandwich: %w", err)
 		}
 		deps = &mockSandwichDeps{CoreDeps: builder.GetCoreDeps(), Retriever: r, LLM: l}
 	case *mockLLMOptions:
@@ -125,7 +125,7 @@ func (h *mockComponentHandler) BuildComponent(ctx context.Context, b any, f any,
 	}
 	comp, err := factory.Build(ctx, deps, cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("mock component factory failed: %w", err)
 	}
 
 	switch h.kind {

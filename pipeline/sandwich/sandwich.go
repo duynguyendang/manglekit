@@ -75,7 +75,7 @@ func (s *Orchestrator) Execute(ctx context.Context, sessionID string, q core.Que
 	if err := runner.Run(p); err != nil {
 		logger.Errorf("pipeline run failed", "error", err)
 		// Return the partially populated answer object for inspection.
-		return p.Answer, err
+		return p.Answer, fmt.Errorf("sandwich pipeline failed: %w", err)
 	}
 
 	// 5. Update and save conversation state on a successful run.

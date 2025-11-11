@@ -154,12 +154,12 @@ func (b *builder) buildAll(ctx context.Context) error {
 			// Use the provider name from the config to look up the factory.
 			factory, err := b.registry.Get(k, c.cfg.ProviderName())
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to get factory for %s %q: %w", k, c.cfg.ProviderName(), err)
 			}
 
 			closer, err := handler.BuildComponent(ctx, b, factory, resolved, c.cfg, c.name)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to build component %s %q: %w", k, c.name, err)
 			}
 			if closer != nil {
 				b.opts.ResourceClosers = append(b.opts.ResourceClosers, closer)

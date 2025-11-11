@@ -86,7 +86,7 @@ func (g *Google) Complete(ctx context.Context, req core.LLMRequest) (core.LLMRes
 	)
 
 	if err != nil {
-		return core.LLMResponse{}, err
+		return core.LLMResponse{}, fmt.Errorf("google: llm completion failed: %w", err)
 	}
 
 	// Extract token usage.

@@ -15,7 +15,7 @@ func Register(r *manglekit.Registry) {
 			factory := NewFactory()
 			built, err := factory.Build(ctx, deps, cfg)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to build sandwich orchestrator: %w", err)
 			}
 			orchestrator, ok := built.(core.Orchestrator)
 			if !ok {
