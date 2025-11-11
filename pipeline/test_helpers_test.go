@@ -6,6 +6,7 @@ package pipeline_test
 import (
 	"context"
 	"fmt"
+
 	"github.com/duynguyendang/manglekit/core"
 )
 
@@ -70,3 +71,36 @@ type mockToolOptions struct{}
 func (o *mockToolOptions) ProviderName() string    { return "mock-tool" }
 func (o *mockToolOptions) ProviderKind() core.Kind { return core.KindTool }
 func (o *mockToolOptions) GetProviderOptions() any { return o }
+
+// --- Mock State Provider ---
+
+type mockStateProvider struct {
+	store map[string]any
+}
+
+func (s *mockStateProvider) Get(ctx context.Context, sessionID string) (any, error) {
+	return s.store[sessionID], nil
+}
+
+func (s *mockStateProvider) Set(ctx context.Context, sessionID string, state any) error {
+	if s.store == nil {
+		s.store = make(map[string]any)
+	}
+	s.store[sessionID] = state
+	return nil
+}
+
+func (s *mockStateProvider) Delete(ctx context.Context, sessionID string) error {
+	delete(s.store, sessionID)
+	return nil
+}
+
+func (s *mockStateProvider) Close(ctx context.Context) error {
+	return nil
+}
+
+type mockStateProviderOptions struct{}
+
+func (o *mockStateProviderOptions) ProviderName() string    { return "mock-state-provider" }
+func (o *mockStateProviderOptions) ProviderKind() core.Kind { return core.KindStateProvider }
+func (o *mockStateProviderOptions) GetProviderOptions() any { return o }

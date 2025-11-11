@@ -137,7 +137,18 @@ func New(ctx context.Context, opts core.MangleOptions, r *manglekit.Registry) (*
 			edbDecls[decl] = ast.Decl{}
 		}
 		log.Infof("mangle rules boot", "mode", "code-first")
+		// Sort predicates for deterministic output
+		predicates := make([]ast.PredicateSym, 0, len(edbDecls))
 		for p := range edbDecls {
+			predicates = append(predicates, p)
+		}
+		sort.Slice(predicates, func(i, j int) bool {
+			if predicates[i].Symbol != predicates[j].Symbol {
+				return predicates[i].Symbol < predicates[j].Symbol
+			}
+			return predicates[i].Arity < predicates[j].Arity
+		})
+		for _, p := range predicates {
 			log.Debugf("mangle predicate registered", "predicate", p.Symbol, "arity", p.Arity)
 		}
 	} else {
@@ -285,11 +296,13 @@ func (r *RuleSet) preProcess(query core.Query) (core.RuleResult, error) {
 		return core.RuleResult{}, fmt.Errorf("failed to collect 'deny' facts: %w", err)
 	}
 	if len(denied) > 0 {
-		var reason string
+		// Sort denied keys for deterministic reason selection
+		deniedKeys := make([]string, 0, len(denied))
 		for r := range denied {
-			reason = r
-			break
+			deniedKeys = append(deniedKeys, r)
 		}
+		sort.Strings(deniedKeys)
+		reason := deniedKeys[0]
 		mutateFn := func(q *core.Query, a *core.Answer) {
 			if a.Meta == nil {
 				a.Meta = make(map[string]any)
@@ -441,7 +454,13 @@ func (r *RuleSet) Post(ctx context.Context, q core.Query, evidence []core.Doc, m
 			dropReasons[id] = ""
 		}
 	}
+	// Sort dropReasons keys for deterministic iteration
+	reasonKeys := make([]string, 0, len(dropReasons))
 	for id := range dropReasons {
+		reasonKeys = append(reasonKeys, id)
+	}
+	sort.Strings(reasonKeys)
+	for _, id := range reasonKeys {
 		dropSet[id] = struct{}{}
 	}
 

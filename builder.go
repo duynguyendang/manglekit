@@ -7,6 +7,8 @@ import (
 	"sort"
 	"time"
 
+	"reflect"
+
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
@@ -14,7 +16,6 @@ import (
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/mitchellh/mapstructure"
-	"reflect"
 )
 
 type configItem struct {
@@ -76,7 +77,7 @@ func NewBuilder(ctx context.Context, r *Registry, obs core.Observability, g *gen
 // DI implementation
 func (b *builder) Registry() any                                 { return b.registry }
 func (b *builder) Genkit() *genkit.Genkit                        { return b.genkit }
-func (b *builder) GetEmbedder(n string) (ai.Embedder, error) { return getComponent(b.embedders, n) }
+func (b *builder) GetEmbedder(n string) (ai.Embedder, error)     { return getComponent(b.embedders, n) }
 func (b *builder) GetLLMClient(n string) (core.LLMClient, error) { return getComponent(b.llms, n) }
 func (b *builder) GetVectorStore(n string) (core.VectorStore, error) {
 	return getComponent(b.vectorStores, n)
@@ -211,18 +212,6 @@ func (b *builder) Build(ctx context.Context, orchestratorName, updatableName, st
 			return nil, nil, fmt.Errorf("component %q was found, but it does not implement retrieve.Updatable", updatableName)
 		}
 		updatable = u
-	}
-
-	if stateProviderName != "" {
-		sp, ok := b.stateProviders[stateProviderName]
-		if !ok {
-			return nil, nil, fmt.Errorf("state provider %q not found", stateProviderName)
-		}
-		// This is a bit of a hack, but it's the only way to get the state provider to the orchestrator for now.
-		// A better solution would be to have the orchestrator handler resolve its own dependencies.
-		if orchWithState, ok := orchestrator.(interface{ SetStateProvider(core.StateProvider) }); ok {
-			orchWithState.SetStateProvider(sp)
-		}
 	}
 
 	b.opts.Obs.Logger.Infof("successfully built %s orchestrator", orchestratorName)

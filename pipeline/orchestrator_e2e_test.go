@@ -14,6 +14,7 @@ import (
 	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
+	"github.com/duynguyendang/manglekit/internal/providers/state"
 	"github.com/duynguyendang/manglekit/pipeline/declarative"
 	"github.com/duynguyendang/manglekit/pipeline/sandwich"
 	"github.com/duynguyendang/manglekit/sdk"
@@ -45,8 +46,12 @@ func TestE2ESandwich_Execute(t *testing.T) {
 	r.RegisterHandler(&llm.Handler{})
 	r.RegisterHandler(retrievers.NewHandler())
 	sandwich.Register(r)
-	manglekit.Register(r, &mockLLMOptions{}, func(ctx context.Context, deps diapi.LLMDeps, cfg *mockLLMOptions) (core.LLMClient, error) { return &mockLLM{}, nil })
-	manglekit.Register(r, &mockRetrieverOptions{}, func(ctx context.Context, deps diapi.NoopDeps, cfg *mockRetrieverOptions) (core.Retriever, error) { return &mockRetriever{}, nil })
+	manglekit.Register(r, &mockLLMOptions{}, func(ctx context.Context, deps diapi.LLMDeps, cfg *mockLLMOptions) (core.LLMClient, error) {
+		return &mockLLM{}, nil
+	})
+	manglekit.Register(r, &mockRetrieverOptions{}, func(ctx context.Context, deps diapi.NoopDeps, cfg *mockRetrieverOptions) (core.Retriever, error) {
+		return &mockRetriever{}, nil
+	})
 
 	yaml, err := os.ReadFile(filepath.Join("testdata", "config.yaml"))
 	require.NoError(t, err)
@@ -67,7 +72,9 @@ func TestE2EDeclarative_Execute(t *testing.T) {
 	r.RegisterHandler(declarative.NewHandler())
 	r.RegisterHandler(&mockToolHandler{})
 	declarative.Register(r)
-	manglekit.Register(r, &mockToolOptions{}, func(ctx context.Context, deps diapi.NoopDeps, cfg *mockToolOptions) (core.Tool, error) { return &mockTool{}, nil })
+	manglekit.Register(r, &mockToolOptions{}, func(ctx context.Context, deps diapi.NoopDeps, cfg *mockToolOptions) (core.Tool, error) {
+		return &mockTool{}, nil
+	})
 
 	yaml, err := os.ReadFile(filepath.Join("testdata", "declarative_config.yaml"))
 	require.NoError(t, err)
@@ -89,7 +96,9 @@ func TestE2E_ConfigValidationError(t *testing.T) {
 	r.RegisterHandler(sandwich.NewHandler())
 	r.RegisterHandler(retrievers.NewHandler())
 	sandwich.Register(r)
-	manglekit.Register(r, &mockRetrieverOptions{}, func(ctx context.Context, deps diapi.NoopDeps, cfg *mockRetrieverOptions) (core.Retriever, error) { return &mockRetriever{}, nil })
+	manglekit.Register(r, &mockRetrieverOptions{}, func(ctx context.Context, deps diapi.NoopDeps, cfg *mockRetrieverOptions) (core.Retriever, error) {
+		return &mockRetriever{}, nil
+	})
 
 	yaml, err := os.ReadFile(filepath.Join("testdata", "config.yaml"))
 	require.NoError(t, err)
@@ -97,4 +106,98 @@ func TestE2E_ConfigValidationError(t *testing.T) {
 	_, err = sdk.LoadWithRegistry(context.Background(), yaml, r)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), `could not find options type for kind=llm, type=mock-llm`)
+}
+
+func TestE2ESandwich_WithStateProvider(t *testing.T) {
+	r := manglekit.NewRegistry()
+	// Register Sandwich-specific components
+	r.RegisterHandler(sandwich.NewHandler())
+	r.RegisterHandler(&llm.Handler{})
+	r.RegisterHandler(retrievers.NewHandler())
+	r.RegisterHandler(state.NewHandler())
+	sandwich.Register(r)
+	manglekit.Register(r, &mockLLMOptions{}, func(ctx context.Context, deps diapi.LLMDeps, cfg *mockLLMOptions) (core.LLMClient, error) {
+		return &mockLLM{}, nil
+	})
+	manglekit.Register(r, &mockRetrieverOptions{}, func(ctx context.Context, deps diapi.NoopDeps, cfg *mockRetrieverOptions) (core.Retriever, error) {
+		return &mockRetriever{}, nil
+	})
+	manglekit.Register(r, &mockStateProviderOptions{}, func(ctx context.Context, deps diapi.StateProviderDeps, cfg *mockStateProviderOptions) (core.StateProvider, error) {
+		return &mockStateProvider{store: make(map[string]any)}, nil
+	})
+
+	configYAML := []byte(`
+orchestrator: my-sandwich
+components:
+  - name: my-sandwich
+    kind: orchestrator
+    type: sandwich
+    params:
+      retriever: mock-retriever
+      llm: mock-llm
+      state_provider: mock-state-provider
+  - name: mock-retriever
+    kind: retriever
+    type: mock-retriever
+  - name: mock-llm
+    kind: llm
+    type: mock-llm
+  - name: mock-state-provider
+    kind: state_provider
+    type: mock-state-provider
+`)
+
+	orch, err := sdk.LoadWithRegistry(context.Background(), configYAML, r)
+	require.NoError(t, err)
+	require.NotNil(t, orch)
+
+	// Verify state provider was properly injected during construction
+	// (This verifies the fix: no post-construction SetStateProvider call is needed)
+	answer, err := orch.Execute(context.Background(), "test-session", core.Query{Text: "test query"})
+	require.NoError(t, err)
+	require.NotNil(t, answer)
+}
+
+func TestE2EDeclarative_WithStateProvider(t *testing.T) {
+	r := manglekit.NewRegistry()
+	// Register Declarative-specific components
+	r.RegisterHandler(declarative.NewHandler())
+	r.RegisterHandler(&mockToolHandler{})
+	r.RegisterHandler(state.NewHandler())
+	declarative.Register(r)
+	manglekit.Register(r, &mockToolOptions{}, func(ctx context.Context, deps diapi.NoopDeps, cfg *mockToolOptions) (core.Tool, error) {
+		return &mockTool{}, nil
+	})
+	manglekit.Register(r, &mockStateProviderOptions{}, func(ctx context.Context, deps diapi.StateProviderDeps, cfg *mockStateProviderOptions) (core.StateProvider, error) {
+		return &mockStateProvider{store: make(map[string]any)}, nil
+	})
+
+	configYAML := []byte(`
+orchestrator: my-declarative
+components:
+  - name: my-declarative
+    kind: orchestrator
+    type: declarative
+    params:
+      state_provider: mock-state-provider
+      steps:
+        - name: mock-tool
+          params:
+            input_key: input_value_1
+  - name: mock-tool
+    kind: tool
+    type: mock-tool
+  - name: mock-state-provider
+    kind: state_provider
+    type: mock-state-provider
+`)
+
+	orch, err := sdk.LoadWithRegistry(context.Background(), configYAML, r)
+	require.NoError(t, err)
+	require.NotNil(t, orch)
+
+	// Verify state provider was properly injected during construction
+	answer, err := orch.Execute(context.Background(), "test-session", core.Query{Text: "test query"})
+	require.NoError(t, err)
+	require.NotNil(t, answer)
 }
