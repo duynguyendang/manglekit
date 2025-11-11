@@ -147,14 +147,19 @@ func (h *Retriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (cor
 		finalDocs = append(finalDocs, allDocsMap[id])
 	}
 
+	// To ensure deterministic reranking, first sort by document ID. This
+	// establishes a consistent baseline ordering.
 	sort.Slice(finalDocs, func(i, j int) bool {
+		return finalDocs[i].ID < finalDocs[j].ID
+	})
+
+	// Now, perform a stable sort by the RRF score. Because the slice is already
+	// sorted by ID, this will preserve a deterministic order for any documents
+	// that have identical scores.
+	sort.SliceStable(finalDocs, func(i, j int) bool {
 		scoreI := scores[finalDocs[i].ID]
 		scoreJ := scores[finalDocs[j].ID]
-		if scoreI != scoreJ {
-			return scoreI > scoreJ // Sort in descending order of score.
-		}
-		// If scores are equal, sort by ID for deterministic ordering.
-		return finalDocs[i].ID < finalDocs[j].ID
+		return scoreI > scoreJ // Sort in descending order of score.
 	})
 
 	// Ensure the number of returned documents does not exceed TopK.
