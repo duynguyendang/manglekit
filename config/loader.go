@@ -40,12 +40,3 @@ func LoadFromYAML(r io.Reader) (*Config, error) {
 	return ParseConfig(content)
 }
 
-// LoadFromEnv loads configuration from environment variables.
-// This is a placeholder for now and will be implemented based on the final
-// environment variable strategy.
-func LoadFromEnv() (*Config, error) {
-	// TODO: Implement environment variable loading logic.
-	// This will involve reading MANGLEKIT_* variables and mapping them
-	// to the Config struct, likely using a library or reflection.
-	return &Config{}, nil
-}
