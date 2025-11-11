@@ -119,7 +119,7 @@ func (r *Reranker) Rerank(ctx context.Context, req core.RerankRequest) ([]core.S
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cosine: one or more document embedding goroutines failed: %w", err)
 	}
 
 	// 3. Calculate cosine similarity and create ScoredDoc objects.

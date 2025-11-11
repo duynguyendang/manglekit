@@ -127,8 +127,9 @@ func (o *DeclarativeOrchestrator) Execute(ctx context.Context, sessionID string,
 		execCtx.CurrentStepParams = step.config.Params
 		if err := step.tool.Execute(ctx, execCtx); err != nil {
 			// Immediately stop execution on error.
-			logger.Errorf("tool execution failed", "error", err)
-			return core.Answer{}, err
+			wrappedErr := fmt.Errorf("pipeline step failed: %w", err)
+			logger.Errorf("tool execution failed", "error", wrappedErr)
+			return core.Answer{}, wrappedErr
 		}
 	}
 

@@ -240,12 +240,12 @@ func loadDocuments(path string, logger core.Logger) ([]*ai.Document, error) {
 	var documents []*ai.Document
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			return fmt.Errorf("error walking path %q: %w", filePath, err)
 		}
 		if !info.IsDir() && strings.HasSuffix(info.Name(), ".md") {
 			fileContent, err := os.ReadFile(filePath)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to read file %q: %w", filePath, err)
 			}
 			metadata, contentBytes := parseFrontMatter(fileContent, logger)
 			contentStr := string(contentBytes)
@@ -264,7 +264,7 @@ func loadDocuments(path string, logger core.Logger) ([]*ai.Document, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to walk document directory %q: %w", path, err)
 	}
 	return documents, nil
 }
