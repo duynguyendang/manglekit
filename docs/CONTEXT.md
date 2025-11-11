@@ -3,7 +3,7 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 0.6.0
-last_updated: 2025-11-10
+last_updated: 2025-11-11
 stability: stable
 audience: humans_and_agents
 ---
@@ -283,11 +283,12 @@ This order is enforced in `builder.go` and ensures that:
 ## 13. Machine Appendix (JSON Snapshot v1)
 ```json
 {
-  "last_updated": "2025-11-09",
-  "audit_date": "2025-11-09",
+  "last_updated": "2025-11-11",
+  "audit_date": "2025-11-11",
   "handlers_audited": 13,
   "handlers_compliant": 13,
   "compliance_rate": "100%",
+  "notes": "Revised audit: All critical components verified functional. Reasoners and SchemaParsers properly registered and integrated. Build order correct. Test coverage gaps remain priority for production readiness.",
   "gaps": [
     {
       "id": "GAP-001",
@@ -357,6 +358,7 @@ This order is enforced in `builder.go` and ensures that:
 ```
 
 ## 14. Changelog
+- **2025-11-11**: Revised audit report (COMPREHENSIVE_EVALUATION.md) to correct inaccuracies. Confirmed: reasoners.Register() IS called in providers/all/all.go; SchemaParser components ARE stored in resolved; build order IS correct; test infrastructure exists in builder_test.go; error handling is mostly good. Updated report verdict from "NO-GO" to "CONDITIONAL GO" pending expanded test coverage. Stability claim remains justified.
 - **2025-11-10**: Performed full code audit. Re-synced core interface signatures (StateProvider) and verified all handler/DI contracts. Corrected handler build order to match live source code.
 - **2025-11-09**: Verified and documented the full implementation of the Tool, Reasoner, and Planner frameworks. Updated all architectural documents (CONTEXT, HLD, LLD) to reflect the new component kinds, their interfaces, DI contracts, and handlers. Increased total handler count to 13. Marked P1 GAPs for these frameworks as resolved. Bumped version to 0.6.0.
 - **2025-11-07**: Comprehensive code audit confirms all 10 component handlers (LLM, Embedder, Retriever, Reranker, VectorStore, StateProvider, RuleSet, SchemaParser, Sandwich, Declarative) are fully compliant with ADR-7 (R14) Type-Safe DI pattern. All handlers correctly type-assert `builderDI` to `diapi.Builder` interface and construct typed `diapi.*Deps` structs before invoking factories. No violations detected. GAP-001 remains resolved.
