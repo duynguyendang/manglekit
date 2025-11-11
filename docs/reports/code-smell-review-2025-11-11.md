@@ -258,25 +258,50 @@ for _, p := range sortedPredicates {
 
 ---
 
-### ⚠️ SMELL #3: Implicit Orchestrator State Injection
+### ✅ SMELL #3: Implicit Orchestrator State Injection (RESOLVED)
 
-**Location:** `pipeline/declarative/orchestrator.go:75`, `pipeline/sandwich/sandwich.go`  
-**Severity:** ⚠️ Low  
-**Status:** Design Consistency Issue
+**Location:** `pipeline/declarative/orchestrator.go`, `pipeline/sandwich/sandwich.go`  
+**Severity:** ✅ Resolved  
+**Status:** **FIXED** — Proper DI Pattern Implemented
 
-**Analysis:**
-- Both orchestrators support explicit state provider fields in their Options
-- But both also use `SetStateProvider()` at construction time
-- This creates two paths to set the state provider (explicit + implicit)
-- Violates Single Responsibility — orchestrator construction is split
+**Resolution:**
 
-**Observation:**
-The options include `StateProvider` but it's set **after** construction via `SetStateProvider()`. This is the hack workaround mentioned in Smell #1.
+The implicit state provider injection has been completely eliminated. Both orchestrators now follow a **clean, explicit dependency injection pattern**:
+
+**Sandwich Orchestrator Flow:**
+1. **Handler** (`pipeline/sandwich/handler.go:36-60`): Resolves `StateProvider` via `builder.GetStateProvider(opts.StateProvider)`
+2. **Typed Deps** (`core/diapi/di.go:130-137`): `SandwichDeps` struct includes explicit `StateProvider` field
+3. **Factory** (`pipeline/sandwich/factory.go:33`): Receives `StateProvider` in `SandwichDeps` and assigns it during construction:
+   ```go
+   s := &Orchestrator{
+       stateProvider: sandwichDeps.StateProvider,  // ← Direct assignment, no post-construction mutation
+       // ...
+   }
+   ```
+4. **Orchestrator** (`pipeline/sandwich/sandwich.go:17`): Uses the field directly during execution
+
+**Declarative Orchestrator Flow:**
+1. **Handler** (`pipeline/declarative/handler.go:40-50`): Resolves `StateProvider` via `builder.GetStateProvider(opts.StateProvider)`
+2. **Typed Deps** (`core/diapi/di.go:140-143`): `DeclarativeOrchestratorDeps` struct includes explicit `StateProvider` field
+3. **Factory** (`pipeline/declarative/register.go:11-15`): Receives `StateProvider` in `DeclarativeOrchestratorDeps` and passes to constructor
+4. **Constructor** (`pipeline/declarative/orchestrator.go:40-70`): Receives `StateProvider` in deps struct and assigns directly
+
+**Key Evidence of Resolution:**
+- ✅ No `SetStateProvider()` method exists on either orchestrator
+- ✅ State provider is **not** set after construction
+- ✅ Both options classes include `StateProvider` string field (resolved by handler)
+- ✅ Handlers use typed `diapi.*OrchestratorDeps` structs
+- ✅ Factories receive state provider in constructor arguments (no post-mutation)
+
+**Design Quality:** ⭐⭐⭐⭐⭐ Excellent  
+The implementation now demonstrates textbook-perfect dependency injection with:
+- Explicit typed dependencies
+- No runtime type assertions
+- No post-construction mutations
+- Clear, deterministic construction path
 
 **Recommendation:**
-Resolve as part of refactoring for Smell #1.
-
-**Priority:** Low — Functionality is correct, but API is inconsistent.
+No further action needed. This smell is **fully resolved** and serves as a best-practice example for other components.
 
 ---
 

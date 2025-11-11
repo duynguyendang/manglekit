@@ -79,11 +79,6 @@ func NewDeclarative(ctx context.Context, deps diapi.DeclarativeOrchestratorDeps,
 	}, nil
 }
 
-// SetStateProvider sets the state provider for the orchestrator.
-func (o *DeclarativeOrchestrator) SetStateProvider(sp core.StateProvider) {
-	o.StateProvider = sp
-}
-
 // Close releases any external resources held by the orchestrator.
 func (o *DeclarativeOrchestrator) Close(ctx context.Context) error {
 	var combined error
