@@ -243,12 +243,6 @@ The codebase is **stable and production-ready**. Most architectural gaps have be
   - ✅ Orchestrators are fully immutable post-construction
   - ✅ All tests pass without modification (`builder_test.go`, `orchestrator_e2e_test.go`)
 
-- **Design Quality**: ⭐⭐⭐⭐⭐ **Excellent** — Demonstrates textbook-perfect Go DI patterns
-  - Zero runtime type assertions
-  - Zero post-construction mutations
-  - Consistent with all other component dependencies
-  - Single, deterministic dependency path
-
 ### GAP-002: Builder Leaking into Handler (ADR 7 / R14) — ✅ RESOLVED
 
 - **Description**: Concern that `ComponentHandler` implementations might be violating the Type-Safe DI rule by type-asserting the dependency injection interface to the concrete `*builder.Builder` instead of the `diapi.Builder` interface.
@@ -302,13 +296,6 @@ The codebase is **stable and production-ready**. Most architectural gaps have be
   - ✅ The planner handler IS registered in `providers/all/all.go` via `r.RegisterHandler(planners.NewHandler())`.
   - ⚠️ **MISSING**: No factory implementations provided (e.g., default planner). The `internal/providers/planners/` directory contains only the handler. Users must implement custom `core.Factory` instances to use planners.
 - **Future Work**: Provide a default planner implementation (reference implementation).
-
-### GAP-004: Missing Planner Framework (P1) — ✅ RESOLVED
-
-- **Description**: The framework lacked a `core.Planner` interface and a `ComponentHandler` for generating multi-step execution plans. This was the final missing piece of the core agentic loop.
-- **Impact**: High. The framework could not support autonomous, goal-oriented agents without a planning component.
-- **Status**: ✅ **RESOLVED** — Verified implemented on 2025-11-09.
-- **Verification**: The `core.Planner` interface now exists in `core/interfaces.go`. A `planners.Handler` is implemented in `internal/providers/planners/handler.go`, which depends on `Tools` and `Reasoners`, and is correctly placed at the end of the build order.
 
 ### GAP-006: Rigid Dependency Structure in Handlers (Extensibility Limitation) — ✅ RESOLVED
 
