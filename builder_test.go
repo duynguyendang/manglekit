@@ -20,11 +20,11 @@ import (
 // Mock Logger
 type mockLogger struct{}
 
-func (l *mockLogger) Infof(format string, args ...any)             {}
-func (l *mockLogger) Debugf(format string, args ...any)            {}
-func (l *mockLogger) Warnf(format string, args ...any)             {}
-func (l *mockLogger) Errorf(format string, args ...any)            {}
-func (l *mockLogger) With(args ...any) core.Logger { return l }
+func (l *mockLogger) Infof(format string, args ...any)  {}
+func (l *mockLogger) Debugf(format string, args ...any) {}
+func (l *mockLogger) Warnf(format string, args ...any)  {}
+func (l *mockLogger) Errorf(format string, args ...any) {}
+func (l *mockLogger) With(args ...any) core.Logger      { return l }
 
 // Mock LLM
 type mockLLMOptions struct{}
@@ -172,7 +172,7 @@ func TestSuccessfulBuild(t *testing.T) {
 		LLM:       "my-llm",
 	})
 
-	orch, _, err := builder.Build(ctx, "my-sandwich", "", "")
+	orch, _, err := builder.Build(ctx, "my-sandwich", "")
 	require.NoError(t, err)
 	require.NotNil(t, orch)
 }
@@ -196,7 +196,7 @@ func TestMissingDependencyError(t *testing.T) {
 		LLM:       "i-do-not-exist-either",
 	})
 
-	_, _, err = builder.Build(ctx, "my-sandwich-broken", "", "")
+	_, _, err = builder.Build(ctx, "my-sandwich-broken", "")
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "dependency not found: i-do-not-exist")

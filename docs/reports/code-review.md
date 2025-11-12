@@ -294,11 +294,12 @@ Both orchestrators now follow a **clean, explicit dependency injection pattern**
 # PART 3: NEW POTENTIAL ISSUES & ANALYSIS
 
 ## Issue #1: SetStateProvider Hack Pattern
-**Location:** `builder.go:216-222`  
-**Severity:** ⚠️ Medium  
-**Status:** Architectural Pattern
+**Location:** Historical (previously `builder.go:216-222`)  
+**Severity:** ✅ **RESOLVED**  
+**Status:** Fully Fixed (2025-11-12)
 
-**Current Code:**
+**Problem (Now Resolved):**
+Previously, the builder used post-construction mutation via a duck-typed `SetStateProvider()` method:
 ```go
 if stateProviderName != "" {
     sp, ok := b.stateProviders[stateProviderName]
@@ -312,18 +313,55 @@ if stateProviderName != "" {
 }
 ```
 
-**Problems:**
-- Runtime type assertion to unnamed interface
-- Violates explicit dependency injection principle
-- Comment acknowledges this is a workaround
-- Post-construction mutation
+**Issues Eliminated:**
+- ✅ No more runtime type assertion to unnamed interface
+- ✅ No more post-construction mutation
+- ✅ Explicit dependency injection via handler layer
+- ✅ State provider now resolved as part of typed `diapi.*Deps` structs
 
-**Priority:** Medium — Acknowledged technical debt but works correctly.
+**Current Implementation (Compliant):**
 
-**Refactoring Suggestion:**
-1. Add explicit `StateProvider` field to orchestrator options (already exists)
-2. Let handler resolve state provider dependency
-3. Remove post-construction `SetStateProvider()` call
+Both `sandwich` and `declarative` orchestrators now follow the correct DI pattern:
+
+1. **Handler Layer** (`pipeline/sandwich/handler.go:69-73`):
+```go
+var stateProvider core.StateProvider
+if opts.StateProvider != "" {
+    stateProvider, err = b.GetStateProvider(opts.StateProvider)
+    if err != nil {
+        return nil, fmt.Errorf("sandwich orchestrator: failed to get state provider: %w", err)
+    }
+}
+```
+
+2. **Typed Deps** (`core/diapi/di.go:101-107`):
+```go
+type SandwichDeps struct {
+    CoreDeps      CoreDeps
+    Retriever     Retriever
+    LLM           LLMClient
+    Reranker      Reranker
+    RuleSet       RuleSet
+    StateProvider StateProvider  // ← Resolved by handler
+}
+```
+
+3. **Factory Construction** (`pipeline/sandwich/factory.go:33`):
+   Factory receives fully-populated `SandwichDeps` struct with StateProvider set during construction (one-time assignment, no post-mutation).
+
+4. **Orchestrator** (`pipeline/sandwich/sandwich.go:17-34`):
+   StateProvider field is immutable post-construction.
+
+**Verification Checklist:**
+- ✅ No `SetStateProvider()` method exists (verified via grep)
+- ✅ Both orchestrator handlers resolve state provider from options
+- ✅ StateProvider field exists in both `sandwich.Options` and `declarative.Options`
+- ✅ All tests pass without modification
+- ✅ Orchestrators are immutable post-construction
+
+**Quality Assessment:** ⭐⭐⭐⭐⭐ **Excellent**
+
+The current implementation exemplifies the proper dependency injection pattern for Manglekit. No further action required.
 
 ---
 

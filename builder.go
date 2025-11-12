@@ -180,7 +180,7 @@ func (b *builder) WithOptions(name string, opts core.ProviderOptions) Programmat
 	return b
 }
 
-func (b *builder) Build(ctx context.Context, orchestratorName, updatableName, stateProviderName string) (core.Orchestrator, retrieve.Updatable, error) {
+func (b *builder) Build(ctx context.Context, orchestratorName, updatableName string) (core.Orchestrator, retrieve.Updatable, error) {
 	if orchestratorName == "" {
 		return nil, nil, errors.New("no orchestrator specified in configuration")
 	}
@@ -297,7 +297,7 @@ func (b *builder) fromConfig(ctx context.Context, data []byte) (core.Orchestrato
 		}
 	}
 
-	return b.Build(ctx, cfg.Orchestrator, cfg.Updatable, cfg.StateProvider)
+	return b.Build(ctx, cfg.Orchestrator, cfg.Updatable)
 }
 
 func getComponent[T any](m map[string]T, name string) (T, error) {

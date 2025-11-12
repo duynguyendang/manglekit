@@ -248,7 +248,7 @@ func main() {
 		})
 
 	// 3. Build the final orchestrator, specifying the top-level component.
-	orch, _, err := builder.Build(ctx, "sandwich", "", "")
+	orch, _, err := builder.Build(ctx, "sandwich", "")
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}

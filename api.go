@@ -15,5 +15,6 @@ type ProgrammaticBuilder interface {
 	WithOptions(name string, opts core.ProviderOptions) ProgrammaticBuilder
 
 	// Build constructs the final orchestrator based on the configured components.
-	Build(ctx context.Context, orchestratorName, updatableName, stateProviderName string) (core.Orchestrator, retrieve.Updatable, error)
+	// The state provider is resolved by the orchestrator handler from its Options.StateProvider field.
+	Build(ctx context.Context, orchestratorName, updatableName string) (core.Orchestrator, retrieve.Updatable, error)
 }

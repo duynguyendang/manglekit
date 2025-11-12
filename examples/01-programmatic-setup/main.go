@@ -59,7 +59,7 @@ func main() {
 		WithOptions("sandwich", sandwichOpts)
 
 	// 3. Build the orchestrator
-	orch, _, err := builder.Build(ctx, "sandwich", "", "")
+	orch, _, err := builder.Build(ctx, "sandwich", "")
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
 	}
