@@ -38,8 +38,8 @@ type OpenAIOptions struct {
 	SkipModelCheck bool `yaml:"skip_model_check,omitempty"`
 }
 
-func (o *OpenAIOptions) ProviderName() string { return "openai" }
-func (o *OpenAIOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o *OpenAIOptions) ProviderName() string    { return "openai" }
+func (o *OpenAIOptions) ProviderKind() core.Kind { return core.KindLLM }
 func (o *OpenAIOptions) GetAPIKey() string       { return o.APIKey }
 func (o *OpenAIOptions) GetBaseURL() string      { return o.BaseURL }
 
@@ -99,23 +99,24 @@ func (o *OpenAI) Complete(ctx context.Context, req core.LLMRequest) (core.LLMRes
 		return core.LLMResponse{}, fmt.Errorf("openai llm client not initialized with a model")
 	}
 
-	// Start with default provider options.
-	config := &ai.GenerationCommonConfig{
-		Temperature:     float64(o.opts.Temperature),
-		MaxOutputTokens: o.opts.MaxOutputTokens,
+	// Use the functional options pattern from the new genkit API.
+	// Don't pass temperature/config as the OpenAI plugin may not support GenerationCommonConfig
+	opts := []ai.GenerateOption{
+		ai.WithModel(o.model),
+		ai.WithPrompt(req.Prompt),
 	}
 
-	// Override with request-specific options if provided.
-	if req.MaxTokens > 0 {
-		config.MaxOutputTokens = req.MaxTokens
+	// Add temperature if set
+	if o.opts.Temperature > 0 {
+		// Use map-based config that the OpenAI plugin understands
+		opts = append(opts, ai.WithConfig(map[string]any{
+			"temperature":     float64(o.opts.Temperature),
+			"maxOutputTokens": o.opts.MaxOutputTokens,
+		}))
 	}
 
 	// Use the standard genkit.Generate function.
-	res, err := genkit.Generate(ctx, o.genkit,
-		ai.WithModel(o.model),
-		ai.WithPrompt(req.Prompt),
-		ai.WithConfig(config),
-	)
+	res, err := genkit.Generate(ctx, o.genkit, opts...)
 	if err != nil {
 		return core.LLMResponse{}, err
 	}

@@ -2,6 +2,7 @@ package llm_test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/duynguyendang/manglekit"
@@ -14,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// The os package is used in TestLLM_DI_HappyPath to check for GOOGLE_API_KEY
+
 // mockRetriever is a mock implementation of core.Retriever for testing.
 type mockRetriever struct{}
 
@@ -23,9 +26,9 @@ func (m *mockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) 
 
 type mockRetrieverOptions struct{}
 
-func (o *mockRetrieverOptions) ProviderName() string { return "mock-retriever" }
-func (o *mockRetrieverOptions) ProviderKind() core.Kind   { return core.KindRetriever }
-func (o *mockRetrieverOptions) GetProviderOptions() any   { return o }
+func (o *mockRetrieverOptions) ProviderName() string    { return "mock-retriever" }
+func (o *mockRetrieverOptions) ProviderKind() core.Kind { return core.KindRetriever }
+func (o *mockRetrieverOptions) GetProviderOptions() any { return o }
 
 func registerTestComponents(r *manglekit.Registry) {
 	llm.Register(r)
@@ -68,6 +71,10 @@ components:
 	})
 
 	t.Run("google", func(t *testing.T) {
+		if os.Getenv("GOOGLE_API_KEY") == "" {
+			t.Skip("skipping google LLM DI test: GOOGLE_API_KEY not set")
+		}
+
 		const testConfig = `
 orchestrator: "test-sandwich"
 components:

@@ -44,6 +44,9 @@ type builder struct {
 	tools          map[string]core.Tool
 	reasoners      map[string]core.Reasoner
 	planners       map[string]core.Planner
+
+	// dependencyRegistry maps provider names to their required configurations
+	dependencyRegistry *core.ProviderDependencyRegistry
 }
 
 // NewBuilder returns a new, empty instance of the fluent builder.
@@ -55,20 +58,21 @@ func NewBuilder(ctx context.Context, r *Registry, obs core.Observability, g *gen
 		return nil, errors.New("genkit cannot be nil")
 	}
 	b := &builder{
-		registry:       r,
-		genkit:         g,
-		embedders:      make(map[string]ai.Embedder),
-		vectorStores:   make(map[string]core.VectorStore),
-		retrievers:     make(map[string]core.Retriever),
-		rerankers:      make(map[string]core.Reranker),
-		rules:          make(map[string]core.RuleSet),
-		llms:           make(map[string]core.LLMClient),
-		stateProviders: make(map[string]core.StateProvider),
-		orchestrators:  make(map[string]core.Orchestrator),
-		schemaParsers:  make(map[string]core.SchemaParser),
-		tools:          make(map[string]core.Tool),
-		reasoners:      make(map[string]core.Reasoner),
-		planners:       make(map[string]core.Planner),
+		registry:           r,
+		genkit:             g,
+		embedders:          make(map[string]ai.Embedder),
+		vectorStores:       make(map[string]core.VectorStore),
+		retrievers:         make(map[string]core.Retriever),
+		rerankers:          make(map[string]core.Reranker),
+		rules:              make(map[string]core.RuleSet),
+		llms:               make(map[string]core.LLMClient),
+		stateProviders:     make(map[string]core.StateProvider),
+		orchestrators:      make(map[string]core.Orchestrator),
+		schemaParsers:      make(map[string]core.SchemaParser),
+		tools:              make(map[string]core.Tool),
+		reasoners:          make(map[string]core.Reasoner),
+		planners:           make(map[string]core.Planner),
+		dependencyRegistry: core.NewProviderDependencyRegistry(),
 	}
 	b.opts.Obs = obs
 	return b, nil
@@ -177,6 +181,13 @@ func (b *builder) WithOptions(name string, opts core.ProviderOptions) Programmat
 		name: name,
 		cfg:  opts,
 	})
+
+	// Validate that provider has required environment variables
+	// This provides early feedback during configuration rather than at build time
+	if err := b.dependencyRegistry.ValidateProvider(name); err != nil {
+		b.errs = append(b.errs, err)
+	}
+
 	return b
 }
 

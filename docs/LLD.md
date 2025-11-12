@@ -104,7 +104,7 @@ type Factory interface {
 
 This generic interface is made type-safe by the `ComponentHandler`, which is responsible for creating the specific, typed dependency (`diapi.*`) and configuration structs required by the factory.
 
-The handler uses an indirect multiplexing pattern: it type-asserts the `cfg` parameter to `diapi.ProviderWithOptions`, calls `GetProviderOptions()` to extract the actual options, and then type-switches on the extracted value to determine which dependency struct to construct.
+The handler uses a DependencyResolver pattern: it type-asserts the `cfg` parameter to `diapi.ProviderWithOptions`, calls `GetProviderOptions()` to extract the actual options, and then delegates to registered resolvers to determine which dependency struct to construct. This pattern allows new provider types to be supported by registering new resolvers without modifying the handler code.
 
 ```go
 // internal/providers/retrievers/handler.go
@@ -117,29 +117,11 @@ func (h *Handler) BuildComponent(...) (core.ResourceCloser, error) {
     providerWithOptions, _ := cfg.(diapi.ProviderWithOptions)
     opts := providerWithOptions.GetProviderOptions()
 
-    // It type-switches on the extracted options to determine dependencies.
-    var deps any
-    switch typedOpts := opts.(type) {
-    case diapi.SubRetrieversDep:
-        // For hybrid retrievers: resolve sub-retrievers via builder DI
-        hybridDeps := diapi.RetrieverDeps{
-            CoreDeps:      b.GetCoreDeps(),
-            SubRetrievers: make(map[string]core.Retriever),
-        }
-        for _, subName := range typedOpts.GetSubRetrievers() {
-            r, _ := b.GetRetriever(subName)
-            hybridDeps.SubRetrievers[subName] = r
-        }
-        deps = hybridDeps
-    case diapi.EmbedderDep:
-        // For dense retrievers: resolve embedder and vector store
-        embedder, _ := b.GetEmbedder(typedOpts.GetEmbedder())
-        vs, _ := b.GetVectorStore(vsDep.GetVectorStore())
-        deps = diapi.DenseRetrieverDeps{
-            CoreDeps:    b.GetCoreDeps(),
-            Embedder:    embedder,
-            VectorStore: vs,
-        }
+    // It delegates to registered resolvers to determine dependencies.
+    // This pattern eliminates the need for type-switch statements in handlers.
+    deps, err := h.resolver.Resolve(ctx, core.KindRetriever, builderDI, opts)
+    if err != nil {
+        return nil, fmt.Errorf("failed to resolve dependencies for retriever '%s': %w", name, err)
     }
 
     // It calls the factory with the typed structs.

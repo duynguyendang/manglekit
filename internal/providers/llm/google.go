@@ -28,8 +28,8 @@ type GoogleOptions struct {
 	MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
 }
 
-func (o *GoogleOptions) ProviderName() string { return "google" }
-func (o *GoogleOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o *GoogleOptions) ProviderName() string    { return "google" }
+func (o *GoogleOptions) ProviderKind() core.Kind { return core.KindLLM }
 
 func RegisterGoogle(r *manglekit.Registry) {
 	manglekit.Register(r, &GoogleOptions{},
@@ -38,10 +38,10 @@ func RegisterGoogle(r *manglekit.Registry) {
 				return nil, fmt.Errorf("missing required dependency 'genkit' of type *genkit.Genkit")
 			}
 
+			// Try to get or create the Google AI model
 			model := googlegenai.GoogleAIModel(deps.Genkit, cfg.Model)
 			if model == nil {
-				// Fallback for when the model isn't pre-registered in genkit init.
-				return NewGoogle(*cfg, nil, deps.Genkit)
+				return nil, fmt.Errorf("failed to initialize Google model '%s': ensure GOOGLE_API_KEY environment variable is set", cfg.Model)
 			}
 
 			return NewGoogle(*cfg, model, deps.Genkit)
@@ -67,23 +67,23 @@ func (g *Google) Complete(ctx context.Context, req core.LLMRequest) (core.LLMRes
 		return core.LLMResponse{}, fmt.Errorf("google llm client not initialized with a model")
 	}
 
-	// Start with default provider options.
-	config := &ai.GenerationCommonConfig{
-		Temperature:     float64(g.opts.Temperature),
-		MaxOutputTokens: g.opts.MaxOutputTokens,
-	}
-
-	// Override with request-specific options if provided.
-	if req.MaxTokens > 0 {
-		config.MaxOutputTokens = req.MaxTokens
-	}
-
 	// Use the functional options pattern from the new genkit API.
-	res, err := genkit.Generate(ctx, g.genkit,
+	// Don't pass temperature/config as the Google plugin may not support it
+	opts := []ai.GenerateOption{
 		ai.WithModel(g.model),
 		ai.WithPrompt(req.Prompt),
-		ai.WithConfig(config),
-	)
+	}
+
+	// Add temperature if set
+	if g.opts.Temperature > 0 {
+		// Try to use GenerateConfig directly
+		opts = append(opts, ai.WithConfig(map[string]any{
+			"temperature":     float64(g.opts.Temperature),
+			"maxOutputTokens": g.opts.MaxOutputTokens,
+		}))
+	}
+
+	res, err := genkit.Generate(ctx, g.genkit, opts...)
 
 	if err != nil {
 		return core.LLMResponse{}, fmt.Errorf("google: llm completion failed: %w", err)

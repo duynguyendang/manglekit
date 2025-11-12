@@ -40,8 +40,8 @@ type BM25Options struct {
 	Logger core.Logger `yaml:"-"`
 }
 
-func (o *BM25Options) ProviderName() string { return "bm25" }
-func (o *BM25Options) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o *BM25Options) ProviderName() string    { return "bm25" }
+func (o *BM25Options) ProviderKind() core.Kind { return core.KindRetriever }
 func (o *BM25Options) GetProviderOptions() any { return o }
 
 func Register(r *manglekit.Registry) {
@@ -169,7 +169,12 @@ func New(opts BM25Options, deps diapi.NoopDeps) (core.Retriever, error) {
 // It returns a `core.RetrieveResult` containing the ranked documents or an error if
 // the retrieval fails.
 func (b *BM25) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
-	queryTokens := strings.Fields(strings.ToLower(req.Query))
+	// Tokenize query using the same logic as the Mangle query converter
+	// This ensures consistent handling of punctuation across the pipeline
+	queryStr := strings.ToLower(req.Query)
+	queryTokens := strings.FieldsFunc(queryStr, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	})
 	var queryIDs []int
 	for _, token := range queryTokens {
 		if id, ok := b.vocab[token]; ok {
@@ -177,7 +182,10 @@ func (b *BM25) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.Ret
 		}
 	}
 
-	docScores := bm25.BM25(b.tf, tfidfDoc{tokenIDs: queryIDs}, b.tfDocs, k1, b_param)
+	// Create a temporary document for the query (needed for BM25 algorithm)
+	queryDoc := &ai.Document{}
+	queryTFDoc := tfidfDoc{Document: queryDoc, tokenIDs: queryIDs, index: -1}
+	docScores := bm25.BM25(b.tf, queryTFDoc, b.tfDocs, k1, b_param)
 	sort.Sort(sort.Reverse(docScores))
 
 	limit := req.TopK
