@@ -8,6 +8,8 @@ Through both declarative and programmable orchestration, Manglekit lets develope
 
 It is designed for high-performance AI applications where correctness, safety, and explainability are critical.
 
+> **📖 Architecture & Implementation:** For detailed information about the system design, architectural patterns, and contribution guidelines, see [AGENTS.md](AGENTS.md), [docs/HLD.md](docs/HLD.md), [docs/LLD.md](docs/LLD.md), and [docs/ADR.md](docs/ADR.md).
+
 ## 🚀 Key Features
 
 -   **Rules-Driven Control**: Use the Mangle Datalog engine to enforce policies, validate inputs, filter outputs, and modify behavior at runtime.
@@ -372,6 +374,15 @@ This is a high-level overview of the most important directories in the MangleKit
 ## 🤝 Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to submit pull requests, report issues, and suggest features.
+
+### For Developers & Contributors
+
+Before making changes to the Manglekit codebase, please review:
+
+- **[AGENTS.md](AGENTS.md)** — Comprehensive guide for agents and developers on architectural patterns, testing strategies, and code review checklists. Documents resolved patterns, anti-patterns to avoid, and known limitations.
+- **[docs/HLD.md](docs/HLD.md)** — High-level architecture, system design, and user-facing abstractions.
+- **[docs/LLD.md](docs/LLD.md)** — Low-level implementation details, handler dispatch, dependency injection, and lifecycle management.
+- **[docs/ADR.md](docs/ADR.md)** — Architectural decisions and rationale behind design choices.
 
 ## 📜 License
 

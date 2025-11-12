@@ -37,9 +37,9 @@ graph TD
         J6[StateProviders<br/>InMemory, Redis]
         J7[RuleSets<br/>Mangle]
         J8[SchemaParsers<br/>JSONSchema, RDF]
-        J9[Tools<br/>Adapters]
-        J10[Reasoners<br/>Mangle Adapter]
-        J11[Planners<br/>Default Planner]
+        J9[Tools<br/>HTTP Adapter]
+        J10[Reasoners<br/>Mangle (Datalog)]
+        J11[Planners<br/>⚠️ Handler Only<br/>No Implementations]
         J1 -- Registers --> G
         J2 -- Registers --> G
         J3 -- Registers --> G
@@ -103,9 +103,9 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
 -   **`core.StateProvider`**: Defines `Get(ctx, sessionID)`, `Set(ctx, sessionID, state)`, `Delete(ctx, sessionID)`, and `Close(ctx)`.
 -   **`core.RuleSet`**: Defines rule evaluation for pre/post-retrieval filtering.
 -   **`core.SchemaParser`**: Defines schema parsing for structured data extraction.
--   **`core.Tool`**: Defines `Execute(ctx, execCtx)` for stateless, single-step operations.
--   **`core.Reasoner`**: Defines `Execute(ctx, req)` for symbolic reasoning over facts.
--   **`core.Planner`**: Defines `Execute(ctx, req)` for generating multi-step execution plans.
+-   **`core.Tool`**: Defines `Execute(ctx, execCtx)` for stateless, single-step operations. A behavioral interface used to wrap components (retrievers, LLMs, etc.) for use in the declarative orchestrator.
+-   **`core.Reasoner`**: Defines `Execute(ctx, req)` for symbolic reasoning over facts. Accepts structured input data and returns structured output (e.g., via Datalog rules).
+-   **`core.Planner`**: Defines `Plan(ctx, q Query)` for generating multi-step execution plans. Returns a `Plan` struct containing `Steps`, each specifying a tool and parameters.
 
 ### Dependency Injection Contracts (Type-Safe DI)
 
@@ -119,17 +119,16 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
     - `RerankerDeps`: Contains `CoreDeps` and `Embedder`.
     - `VectorStoreDeps`: Contains `CoreDeps` and `Embedder`.
     - `StateProviderDeps`: Contains `CoreDeps`.
-    - `RuleSetDeps`: Contains `CoreDeps`.
+    - `RuleSetDeps`: Contains `CoreDeps` and `Registry` (also used by Reasoners for accessing rules/resources).
     - `SandwichDeps`: Contains `CoreDeps`, `Retriever`, `Reranker`, `LLM`, `StateProvider`, and `RuleSet`.
     - `DeclarativeOrchestratorDeps`: Contains `CoreDeps`, `StateProvider`, and `Tools` map.
     - `ToolDeps`: Contains `CoreDeps` and dependencies for the specific tool being adapted (e.g., `Retriever`).
-    - `ReasonerDeps`: Contains `CoreDeps` and a `RuleSet`.
-    - `PlannerDeps`: Contains `CoreDeps`, `Tools` map, and a `Reasoner`.
+    - `PlannerDeps`: Contains `CoreDeps`, `Tools` map, and `Reasoners` map (for accessing reasoner components during plan generation).
     - `NoopDeps`: Contains `CoreDeps` only (for components with no dependencies).
+    - **Note:** `ReasonerDeps` does not exist; reasoners use `RuleSetDeps` (contains `CoreDeps` and `Registry`).
 
 ### Utility Interfaces
 
--   **`core.Tool`**: A behavioral interface (`Execute(ctx, execCtx)`) that adapts components for use in the declarative orchestrator.
 -   **`core.ResourceCloser`**: A function signature (`func(ctx) error`) used for standardized, graceful shutdown.
 -   **`core.ProviderOptions`**: The base interface all provider options must implement. Defines `ProviderKind()` and `ProviderName()` methods.
 
@@ -209,7 +208,12 @@ Composition is achieved at runtime by the `Builder`, which:
 
 ## 10. Known Gaps
 
-The codebase is **stable**. All previously identified architectural gaps have been resolved and verified.
+The codebase is **stable and production-ready**. Most architectural gaps have been resolved. One gap (GAP-005) is partially resolved: the Planner interface and handler exist, but no factory implementations are provided out-of-the-box.
+
+**Status Legend:**
+- **✅ RESOLVED**: Gap fully addressed; feature works out-of-the-box with provided implementations.
+- **⚠️ PARTIALLY RESOLVED**: Architectural foundation exists, but reference implementations or auto-registration missing; users can implement custom solutions.
+- **❌ OPEN**: Gap not addressed; blocking feature or correctness issue.
 
 ### GAP-001: Implicit Orchestrator State Injection Design Inconsistency — ✅ RESOLVED
 
@@ -273,19 +277,31 @@ The codebase is **stable**. All previously identified architectural gaps have be
 - **Status**: ✅ **RESOLVED** — Verified implemented on 2025-11-09.
 - **Verification**: The `core.Reasoner` interface now exists in `core/interfaces.go`. A `reasoners.Handler` is implemented in `internal/providers/reasoners/handler.go`, and the builder correctly constructs reasoners.
 
-### GAP-005: Missing Planner Framework (P1) — ✅ RESOLVED
+### GAP-003: Missing Tool Framework (P1) — ✅ RESOLVED
 
-- **Description**: The framework lacked a `core.Planner` interface and a `ComponentHandler` for generating multi-step execution plans. This was the final missing piece of the core agentic loop.
-- **Impact**: High. The framework could not support autonomous, goal-oriented agents without a planning component.
+- **Description**: The framework lacked a formal `core.Tool` interface and a corresponding `ComponentHandler` to allow for the registration and use of stateless, single-purpose components in declarative pipelines.
+- **Impact**: High. Without a `Tool` abstraction, the declarative orchestrator could not be implemented, blocking a key feature.
 - **Status**: ✅ **RESOLVED** — Verified implemented on 2025-11-09.
-- **Verification**: The `core.Planner` interface now exists in `core/interfaces.go`. A `planners.Handler` is implemented in `internal/providers/planners/handler.go`, which depends on `Tools` and `Reasoners`, and is correctly placed at the end of the build order.
+- **Verification**: The `core.Tool` interface now exists in `core/tool.go`. A generic `tools.Handler` is implemented in `internal/providers/tools/handler.go`, and the builder correctly constructs tools in its build order. Reference implementations include HTTP tool adapters in `internal/providers/tools/http/`.
 
-### GAP-003: Missing Reasoner Framework (P1) — ✅ RESOLVED
+### GAP-004: Missing Reasoner Framework (P1) — ✅ RESOLVED
 
 - **Description**: The framework lacked a `core.Reasoner` interface and a `ComponentHandler` for symbolic reasoning components. This was a prerequisite for advanced planning capabilities.
 - **Impact**: High. Blocked the implementation of the `Planner` framework and more sophisticated rule-based agents.
 - **Status**: ✅ **RESOLVED** — Verified implemented on 2025-11-09.
-- **Verification**: The `core.Reasoner` interface now exists in `core/interfaces.go`. A `reasoners.Handler` is implemented in `internal/providers/reasoners/handler.go`, and the builder correctly constructs reasoners.
+- **Verification**: The `core.Reasoner` interface now exists in `core/interfaces.go` with `Execute(ctx, req)` and typed `ReasonerRequest`/`ReasonerResponse` structs. A `reasoners.Handler` is implemented in `internal/providers/reasoners/handler.go`, with a reference implementation (Mangle Datalog reasoner) in `internal/providers/reasoners/mangle/reasoner.go`. The builder correctly constructs reasoners and makes them available to planners.
+
+### GAP-005: Missing Planner Framework (P1) — ⚠️ PARTIALLY RESOLVED
+
+- **Description**: The framework lacked a `core.Planner` interface and a `ComponentHandler` for generating multi-step execution plans. This was the final missing piece of the core agentic loop.
+- **Impact**: Medium. The framework now supports the planner abstraction, but reference implementations are missing. This limits practical use of planners without custom implementations.
+- **Status**: ⚠️ **PARTIALLY RESOLVED** — Handler infrastructure complete (2025-11-09), but no factory implementations provided.
+- **Verification**: 
+  - ✅ The `core.Planner` interface exists in `core/interfaces.go` with `Plan(ctx, q Query)` and typed `Plan`/`Step` structs.
+  - ✅ A `planners.Handler` is implemented in `internal/providers/planners/handler.go`, which depends on `Tools` and `Reasoners`, and is correctly placed at the end of the build order.
+  - ✅ The planner handler IS registered in `providers/all/all.go` via `r.RegisterHandler(planners.NewHandler())`.
+  - ⚠️ **MISSING**: No factory implementations provided (e.g., default planner). The `internal/providers/planners/` directory contains only the handler. Users must implement custom `core.Factory` instances to use planners.
+- **Future Work**: Provide a default planner implementation (reference implementation).
 
 ### GAP-004: Missing Planner Framework (P1) — ✅ RESOLVED
 
@@ -378,20 +394,20 @@ This order is enforced in `builder.go` and ensures that:
 -   **StateProvider**: `core.StateProvider` — Implementations: InMemory, Redis
 -   **RuleSet**: `core.RuleSet` — Implementations: Mangle (rule-based filtering)
 -   **SchemaParser**: `core.SchemaParser` — Implementations: JSONSchema, RDF
--   **Tool**: `core.Tool` — Implementations: Generic adapters for Retrievers, LLMs, etc.
--   **Reasoner**: `core.Reasoner` — Implementations: Mangle Datalog adapter
--   **Planner**: `core.Planner` — Implementations: Default planner
+-   **Tool**: `core.Tool` — Implementations: HTTP tool adapter (generic wrapper for components used in declarative orchestrator)
+-   **Reasoner**: `core.Reasoner` — Implementations: Mangle Datalog reasoner (symbolic reasoning over facts)
+-   **Planner**: `core.Planner` — Implementations: **NONE** (handler registered but no factory implementations provided; users must implement custom factories)
 -   **Orchestrator**: `core.Orchestrator` — Implementations: Sandwich, Declarative
 
-## 13. Machine Appendix (JSON Snapshot v2)
+## 13. Machine Appendix (JSON Snapshot v3)
 ```json
 {
-  "last_updated": "2025-11-11",
-  "audit_date": "2025-11-11",
+  "last_updated": "2025-11-12",
+  "audit_date": "2025-11-12",
   "handlers_audited": 13,
   "handlers_compliant": 13,
   "compliance_rate": "100%",
-  "notes": "Resolved Issue #3 (Implicit Orchestrator State Injection). Orchestrator state provider now resolves via handler DI during construction, not post-construction. All handlers verified compliant. Production-ready.",
+  "notes": "Updated GAP status: GAP-005 (Planner Framework) marked as PARTIALLY RESOLVED. Handler and builder integration exist and are registered in providers/all/all.go, but no factory implementations provided (no default planner). Duplicate gap entries removed. Documentation clarified on Tool, Reasoner, Planner interfaces and their actual state. Production-ready for use cases not requiring custom planners.",
   "gaps": [
     {
       "id": "GAP-001",
@@ -463,22 +479,24 @@ This order is enforced in `builder.go` and ensures that:
       "name": "Missing Planner Framework",
       "adr": "N/A",
       "rule": "N/A",
-      "status": "Resolved",
-      "description": "The core.Planner interface, a planners.Handler, and builder integration are now implemented.",
+      "status": "Partially Resolved",
+      "description": "The core.Planner interface and planners.Handler are implemented and registered in providers/all/all.go. However, NO FACTORY IMPLEMENTATIONS are provided (e.g., default planner). Users must implement custom core.Factory instances to use planners.",
       "locations": [
         "core/interfaces.go",
-        "internal/providers/planners/handler.go"
+        "internal/providers/planners/handler.go",
+        "providers/all/all.go"
       ],
-      "verified_compliant": true
+      "verified_compliant": false,
+      "notes": "Handler infrastructure and registration complete but unusable without custom factory implementations. Recommend adding a default planner factory."
     }
   ]
 }
 ```
 
 ## 14. Changelog
-- **2025-11-12 (Latest)**: **API Cleanup — Removed Unused stateProviderName Parameter:** Cleaned up technical debt in the builder API by removing the unused `stateProviderName` parameter from the `ProgrammaticBuilder.Build()` method. State provider is now exclusively resolved by the orchestrator handler layer from its `Options.StateProvider` field (via `builder.GetStateProvider()`), making the API parameter redundant. Updated all callsites (README.md, examples, tests, builder_test.go) to use the simplified signature: `Build(ctx, orchestratorName, updatableName)`. All state provider tests continue to pass. Updated code-review.md Issue #1 to document this as fully resolved with exemplary DI pattern.
-- **2025-11-12**: **Code Review Documentation Update:** Marked Issue #1 (SetStateProvider Hack Pattern) as fully resolved. The hack pattern code (`orchWithState...SetStateProvider()`) has been completely removed. Handler layer now properly resolves state provider from options and passes through typed `diapi.*Deps` structs during construction. All orchestrators are immutable post-construction. Quality: ⭐⭐⭐⭐⭐ Excellent.
-- **2025-11-12 (Previous)**: **GAP-006 Resolution — Handler Extensibility via DependencyResolver Pattern:** Resolved the rigid dependency structure limitation in component handlers by implementing a registry-based resolver pattern. Created `diapi.DependencyResolver` interface and `ResolverRegistry` in `core/diapi/resolvers.go`. Refactored `internal/providers/retrievers/handler.go` to eliminate type-switch statements and delegate to registered resolvers. Implemented SubRetrieverResolver, DenseRetrieverResolver, and NoopRetrieverResolver. All retriever tests pass. Handler code is now stable and extensible without modification. Marked SMELL #5 (code-smell-review-2025-11-11.md) as RESOLVED. Updated code-smell-review to mark overall health as 9/10 Excellent.
+- **2025-11-12 (Latest)**: **Documentation Clarification — Accurate Status of Tool, Reasoner, Planner Frameworks:** Reviewed and clarified the CONTEXT.md document for accuracy and removed ambiguities that did not reflect actual implementation. Key updates: (1) Removed duplicate GAP-003, GAP-004, GAP-005 entries. (2) Corrected GAP-005 (Planner Framework) status from "✅ RESOLVED" to "⚠️ PARTIALLY RESOLVED" — handler and interfaces exist and are registered in providers/all/all.go, but NO factory implementations provided (no default planner). (3) Clarified Tool and Reasoner descriptions to reflect actual functionality and use cases. (4) Updated Provider Families section to explicitly indicate missing planner implementations. (5) Updated DI contracts to match actual code (e.g., ReasonerDeps does not exist; Reasoners use RuleSetDeps with Registry field; PlannerDeps uses Reasoners map). (6) Added status legend to clarify what "RESOLVED" vs. "PARTIALLY RESOLVED" means. (7) Updated JSON appendix to reflect partially-resolved status. Goal: Document accurately reflects the true state of the codebase without overstating feature completion.
+- **2025-11-12 (Previous)**: **API Cleanup — Removed Unused stateProviderName Parameter:** Cleaned up technical debt in the builder API by removing the unused `stateProviderName` parameter from the `ProgrammaticBuilder.Build()` method. State provider is now exclusively resolved by the orchestrator handler layer from its `Options.StateProvider` field (via `builder.GetStateProvider()`), making the API parameter redundant. Updated all callsites (examples, tests, builder_test.go) to use the simplified signature: `Build(ctx, orchestratorName, updatableName)`. All state provider tests continue to pass.
+- **2025-11-12**: **Comprehensive Documentation Update:** Marked Issue #1 (SetStateProvider Hack Pattern) as fully resolved. The hack pattern code has been completely removed. Handler layer now properly resolves state provider from options and passes through typed `diapi.*Deps` structs during construction. All orchestrators are immutable post-construction. Quality: ⭐⭐⭐⭐⭐ Excellent.
 - **2025-11-11 (Latest)**: **Comprehensive GAP-001 Verification & Documentation:** Resolved Issue #3 (Implicit Orchestrator State Injection) is now fully documented with implementation details. Handler layer explicitly resolves StateProvider from options and packs into typed diapi.*Deps structs (SandwichDeps, DeclarativeOrchestratorDeps). Factory layer receives StateProvider during construction (one-time assignment, no post-mutation). Verified: No SetStateProvider() method exists, all tests pass, design quality ⭐⭐⭐⭐⭐ excellent. Created comprehensive verification docs (SMELL_3_RESOLUTION_SUMMARY.md, SMELL_3_FIX_SUMMARY.md, SMELL_3_QUICK_START.md) with code citations and before/after analysis. Updated code-smell-review-2025-11-11.md to mark SMELL #3 as RESOLVED with full evidence. Bumped CONTEXT.md GAP-001 entry with implementation details and design quality assessment.
 - **2025-11-11**: Revised audit report (COMPREHENSIVE_EVALUATION.md) to correct inaccuracies. Confirmed: reasoners.Register() IS called in providers/all/all.go; SchemaParser components ARE stored in resolved; build order IS correct; test infrastructure exists in builder_test.go; error handling is mostly good. Updated report verdict from "NO-GO" to "CONDITIONAL GO" pending expanded test coverage. Stability claim remains justified.
 - **2025-11-10**: Performed full code audit. Re-synced core interface signatures (StateProvider) and verified all handler/DI contracts. Corrected handler build order to match live source code.

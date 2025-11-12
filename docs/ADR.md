@@ -23,6 +23,7 @@
 | 8 | Static Architecture Rules & Tooling | Accepted | Codify layering, registration, DI, and observability rules via static checks |
 | 9 | Remediation Plan for Current Gaps | Completed | Verified compliance with ADR R14; marked "Builder Leaking into Handler" as resolved |
 | 10 | Dual-Path Build Architecture (Programmatic & Config-First) | Accepted | Support both `sdk.Load()` (production) and `sdk.NewBuilder()` (testing/advanced) |
+| 11 | DependencyResolver Pattern for Extensible Handlers | Accepted | Handlers delegate dependency resolution to registered, type-matched resolvers; no switch statements |
 
 ---
 
@@ -31,7 +32,7 @@
 1. [Foundation Layer (ADRs 1–3)](#foundation-layer)
 2. [Core Architecture (ADRs 4–5)](#core-architecture)
 3. [Enforcement & Refinement (ADRs 6–8)](#enforcement--refinement)
-4. [Advanced Patterns (ADR 10)](#advanced-patterns)
+4. [Advanced Patterns (ADRs 10–11)](#advanced-patterns)
 5. [Appendix: Status & Remediation (ADR 9)](#appendix-status--remediation)
 6. [Known Trade-offs & Risks](#known-trade-offs--risks)
 7. [What's Next (Future ADRs)](#whats-next-future-adrs)
@@ -358,7 +359,7 @@ Short-term rule violations will surface (e.g., hybrid factory); they document th
 
 Fix flagged findings as part of ongoing refactors; adjust severities as needed when transitioning.
 
-**See Also:** [`docs/rules/manglekit-arch.yml`](docs/rules/manglekit-arch.yml), [`docs/code-review.md`](docs/code-review.md)
+**See Also:** [`docs/rules/manglekit-arch.yml`](docs/rules/manglekit-arch.yml)
 
 ---
 
@@ -409,6 +410,152 @@ This hybrid approach provides the best of both worlds:
 
 ---
 
+### ADR 11: DependencyResolver Pattern for Extensible Handlers
+
+#### Status
+
+Accepted
+
+#### Context
+
+Component handlers often must dispatch to different construction paths based on provider options. For example, the retriever handler handles three different kinds of retrievers:
+
+1. **Hybrid Retrievers** — Depend on sub-retrievers (e.g., `HybridOptions` implements `diapi.SubRetrieversDep`)
+2. **Dense Retrievers** — Depend on an embedder and vector store (e.g., `DenseOptions` implements `diapi.EmbedderDep` and `diapi.VectorStoreDep`)
+3. **Other Retrievers** — Have no special dependencies beyond `CoreDeps` (e.g., `BM25Options`)
+
+A naive implementation would use a large type-switch statement:
+
+```go
+switch opts := cfg.(type) {
+case diapi.SubRetrieversDep:
+    // Handle hybrid
+case diapi.EmbedderDep:
+    // Handle dense
+default:
+    // Handle noop
+}
+```
+
+This violates the **Open/Closed Principle**: adding a new retriever type requires modifying the handler. It also makes the handler rigid and tightly coupled to specific option types.
+
+#### Decision
+
+Introduce a **DependencyResolver** pattern:
+
+1. **Define the `DependencyResolver` interface** (in `core/diapi/di.go`):
+   ```go
+   type DependencyResolver interface {
+       Matches(opts any) bool
+       Resolve(ctx context.Context, builderDI any, cfg any) (any, error)
+   }
+   ```
+
+2. **Create a `ResolverRegistry`** (in `core/diapi/resolvers.go`) to manage a collection of resolvers:
+   ```go
+   type ResolverRegistry struct {
+       resolvers map[core.Kind][]DependencyResolver
+   }
+   
+   func (r *ResolverRegistry) Register(kind core.Kind, resolver DependencyResolver)
+   func (r *ResolverRegistry) Resolve(ctx context.Context, kind core.Kind, 
+       builderDI any, cfg any) (any, error)
+   ```
+
+3. **Implement built-in resolvers** for each supported pattern:
+   - `SubRetrieverResolver` — Matches `diapi.SubRetrieversDep`; resolves sub-retrievers and builds `RetrieverDeps`
+   - `DenseRetrieverResolver` — Matches `diapi.EmbedderDep` + `diapi.VectorStoreDep`; builds `DenseRetrieverDeps`
+   - `NoopRetrieverResolver` — Catch-all; builds `NoopDeps`
+
+4. **Refactor handlers to delegate** to the resolver:
+   ```go
+   func (h *Handler) BuildComponent(...) (core.ResourceCloser, error) {
+       deps, err := h.resolver.Resolve(ctx, core.KindRetriever, builderDI, opts)
+       if err != nil {
+           return nil, fmt.Errorf("failed to resolve dependencies: %w", err)
+       }
+       // Factory receives fully-resolved deps
+       built, err := f.Build(ctx, deps, cfg)
+       // ...
+   }
+   ```
+
+#### Rationale
+
+This pattern provides several benefits:
+
+* **Open/Closed Principle:** New retriever types can be supported by registering new resolvers *without modifying the handler*.
+* **Extensibility:** Users or extensions can register custom resolvers to handle new provider patterns.
+* **Type Safety:** Each resolver is responsible for matching options to a specific dependency pattern; no brittle type-switches.
+* **Clarity:** Each resolver encapsulates one construction pattern; the intent is clear.
+* **Testability:** Resolvers can be tested in isolation without a full handler.
+
+#### Implementation Details
+
+**Resolver Matching Strategy:**
+
+Resolvers are tried in registration order. The first resolver that returns `true` from `Matches(opts)` is used to resolve dependencies. The matching strategy can be:
+
+- **Marker Interface Check:** Does `opts` implement interface X? (e.g., `SubRetrieversDep`)
+- **Field Presence Check:** Does `opts` have a required field?
+- **Config Value Check:** Is a config string non-empty?
+
+**Registration Order:** The handler registers resolvers in **priority order**. For retrievers:
+
+1. `SubRetrieverResolver` — Most specific (sub-retrievers are rare)
+2. `DenseRetrieverResolver` — General case (dense retrievers are common)
+3. `NoopRetrieverResolver` — Catch-all (any other retriever type)
+
+**Error Handling:** If no resolver matches, an error is returned. If a resolver matches but resolution fails (e.g., a sub-retriever is not found), that error is propagated with context.
+
+#### Consequences
+
+* Handlers are now **stable**; adding new provider types does not require handler changes.
+* Resolvers can be **independently tested** without spinning up a full handler/builder.
+* The pattern is **reusable** across all component kinds (already applied to retrievers; extensible to other kinds).
+* Handlers become **easier to understand** (single entry point; delegation to resolver).
+
+#### Migration
+
+This pattern is already implemented for retrievers in:
+
+- `core/diapi/di.go` — Interface definition
+- `core/diapi/resolvers.go` — Registry and built-in resolvers
+- `internal/providers/retrievers/handler.go` — Handler using the registry
+
+To extend this pattern to other component kinds (e.g., LLMs, embedders), follow the same steps:
+
+1. Define resolver interfaces as `diapi` marker interfaces (e.g., `APIClientDep`, `ConfigParamDep`).
+2. Implement resolvers in the component handler package (e.g., `internal/providers/llm/resolvers.go`).
+3. Refactor the handler to use `ResolverRegistry`.
+
+#### Example: Adding a New Retriever Type
+
+```go
+// 1. Define marker interface (in core/diapi/di.go)
+type CustomRetrieverDep interface {
+    GetCustomDependency() string
+}
+
+// 2. Implement resolver
+type CustomRetrieverResolver struct{}
+
+func (r *CustomRetrieverResolver) Matches(opts any) bool {
+    _, ok := opts.(CustomRetrieverDep)
+    return ok
+}
+
+func (r *CustomRetrieverResolver) Resolve(ctx context.Context, builderDI any, cfg any) (any, error) {
+    // Resolve custom dependencies...
+    return RetrieverDeps{...}, nil
+}
+
+// 3. Register in handler
+h.resolver.Register(core.KindRetriever, &CustomRetrieverResolver{})
+```
+
+---
+
 ## Appendix: Status & Remediation
 
 ### ADR 9: Remediation Plan for Current Gaps (2025-11-06) - COMPLETED
@@ -424,7 +571,7 @@ An architectural audit on 2025-11-05 incorrectly flagged a violation ("Builder L
 #### Acceptance
 
 - All provider and pipeline handlers were verified to be compliant.
-- The `Builder Leaking into Handler` smell in [`docs/code-review.md`](docs/code-review.md) is marked `Resolved`.
+- All handler-factory pairs now use properly typed `diapi.*Deps` structs.
 - [`docs/CONTEXT.md`](docs/CONTEXT.md) (GAP-001) is updated to `Resolved`.
 - The `stability` frontmatter in [`docs/CONTEXT.md`](docs/CONTEXT.md) and [`docs/LLD.md`](docs/LLD.md) has been changed from `unstable` to `stable`.
 
