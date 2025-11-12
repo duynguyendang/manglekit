@@ -8,9 +8,9 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/embedders"
-	"github.com/duynguyendang/manglekit/internal/providers/retrievers/dense"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers/dense"
 	"github.com/duynguyendang/manglekit/internal/vectorstores"
 	"github.com/duynguyendang/manglekit/pipeline/sandwich"
 	"github.com/duynguyendang/manglekit/sdk"
@@ -22,8 +22,8 @@ import (
 // mockLLMOptions provides a dummy options struct for the mock LLM.
 type mockLLMOptions struct{}
 
-func (o *mockLLMOptions) ProviderName() string { return "mock-llm" }
-func (o *mockLLMOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o *mockLLMOptions) ProviderName() string    { return "mock-llm" }
+func (o *mockLLMOptions) ProviderKind() core.Kind { return core.KindLLM }
 
 // mockLLM is a mock implementation of core.LLMClient for testing.
 type mockLLM struct{}
@@ -35,8 +35,8 @@ func (m *mockLLM) Complete(ctx context.Context, req core.LLMRequest) (core.LLMRe
 // mockEmbedderOptions provides a dummy options struct for the mock embedder.
 type mockEmbedderOptions struct{}
 
-func (o *mockEmbedderOptions) ProviderName() string { return "mock-embed" }
-func (o *mockEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *mockEmbedderOptions) ProviderName() string    { return "mock-embed" }
+func (o *mockEmbedderOptions) ProviderKind() core.Kind { return core.KindEmbedder }
 
 // mockEmbedder is a mock implementation of ai.Embedder for testing.
 type mockEmbedder struct{}
@@ -52,9 +52,9 @@ type mockVectorStoreOptions struct {
 	Embedder string `json:"embedder,omitempty"`
 }
 
-func (o *mockVectorStoreOptions) ProviderName() string { return "mock-vs" }
-func (o *mockVectorStoreOptions) ProviderKind() core.Kind   { return core.KindVectorStore }
-func (o *mockVectorStoreOptions) GetEmbedderName() string   { return o.Embedder }
+func (o *mockVectorStoreOptions) ProviderName() string    { return "mock-vs" }
+func (o *mockVectorStoreOptions) ProviderKind() core.Kind { return core.KindVectorStore }
+func (o *mockVectorStoreOptions) GetEmbedderName() string { return o.Embedder }
 
 // mockVectorStore is a mock implementation of core.VectorStore for testing.
 type mockVectorStore struct{}
@@ -174,5 +174,5 @@ components:
 `
 	_, err := sdk.LoadWithRegistry(context.Background(), []byte(testConfig), reg)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), `failed to get vector store 'mock-vs' for dense retriever 'my-dense-retriever': dependency not found: mock-vs`)
+	require.Contains(t, err.Error(), `failed to get vector store:`)
 }

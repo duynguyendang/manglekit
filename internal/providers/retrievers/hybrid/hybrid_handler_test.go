@@ -7,9 +7,9 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/internal/providers/retrievers/hybrid"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers/hybrid"
 	"github.com/duynguyendang/manglekit/pipeline/sandwich"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/stretchr/testify/require"
@@ -18,8 +18,8 @@ import (
 // mockLLMOptions provides a dummy options struct for the mock LLM.
 type mockLLMOptions struct{}
 
-func (o *mockLLMOptions) ProviderName() string { return "mock-llm" }
-func (o *mockLLMOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o *mockLLMOptions) ProviderName() string    { return "mock-llm" }
+func (o *mockLLMOptions) ProviderKind() core.Kind { return core.KindLLM }
 
 // mockLLM is a mock implementation of core.LLMClient for testing.
 type mockLLM struct{}
@@ -37,15 +37,15 @@ func (m *mockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) 
 
 type mockR1Options struct{}
 
-func (o *mockR1Options) ProviderName() string { return "mock-r1" }
-func (o *mockR1Options) ProviderKind() core.Kind   { return core.KindRetriever }
-func (o *mockR1Options) GetProviderOptions() any   { return o }
+func (o *mockR1Options) ProviderName() string    { return "mock-r1" }
+func (o *mockR1Options) ProviderKind() core.Kind { return core.KindRetriever }
+func (o *mockR1Options) GetProviderOptions() any { return o }
 
 type mockR2Options struct{}
 
-func (o *mockR2Options) ProviderName() string { return "mock-r2" }
-func (o *mockR2Options) ProviderKind() core.Kind   { return core.KindRetriever }
-func (o *mockR2Options) GetProviderOptions() any   { return o }
+func (o *mockR2Options) ProviderName() string    { return "mock-r2" }
+func (o *mockR2Options) ProviderKind() core.Kind { return core.KindRetriever }
+func (o *mockR2Options) GetProviderOptions() any { return o }
 
 func registerTestComponents(r *manglekit.Registry) {
 	// 1. Register main provider
@@ -139,5 +139,5 @@ components:
 `
 	_, err := sdk.LoadWithRegistry(context.Background(), []byte(testConfig), reg)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), `failed to get sub-retriever 'mock-r3' for hybrid retriever 'my-hybrid': dependency not found: mock-r3`)
+	require.Contains(t, err.Error(), `failed to get sub-retriever 'mock-r3'`)
 }

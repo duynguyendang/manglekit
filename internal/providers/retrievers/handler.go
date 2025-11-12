@@ -3,13 +3,17 @@ package retrievers
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 )
 
 // Handler is the component handler for Retrievers.
-type Handler struct{}
+type Handler struct {
+	resolverOnce sync.Once
+	resolver     *diapi.ResolverRegistry
+}
 
 // NewHandler returns a new ComponentHandler for Retrievers.
 func NewHandler() core.ComponentHandler {
@@ -21,7 +25,22 @@ func (h *Handler) Kind() core.Kind {
 	return core.KindRetriever
 }
 
-// BuildComponent builds the Retriever component by multiplexing based on the options type.
+// ensureResolverInitialized initializes the resolver registry on first use.
+// This is done lazily to avoid circular dependency issues during init.
+func (h *Handler) ensureResolverInitialized() {
+	h.resolverOnce.Do(func() {
+		h.resolver = diapi.NewResolverRegistry()
+		// Register resolvers in priority order.
+		// SubRetrieverResolver must come before NoopRetrieverResolver.
+		h.resolver.Register(core.KindRetriever, diapi.NewSubRetrieverResolver(nil))
+		h.resolver.Register(core.KindRetriever, diapi.NewDenseRetrieverResolver())
+		h.resolver.Register(core.KindRetriever, diapi.NewNoopRetrieverResolver())
+	})
+}
+
+// BuildComponent builds the Retriever component by delegating to registered resolvers.
+// This design is extensible—new retriever types can be supported by registering
+// new resolvers without modifying this handler.
 func (h *Handler) BuildComponent(
 	ctx context.Context,
 	builderDI any,
@@ -30,6 +49,8 @@ func (h *Handler) BuildComponent(
 	cfg core.ProviderOptions,
 	name string,
 ) (core.ResourceCloser, error) {
+	h.ensureResolverInitialized()
+
 	b, ok := builderDI.(diapi.Builder)
 	if !ok {
 		return nil, fmt.Errorf("invalid builder DI type for Retriever handler: got %T", builderDI)
@@ -46,45 +67,10 @@ func (h *Handler) BuildComponent(
 	}
 	opts := providerWithOptions.GetProviderOptions()
 
-	coreDeps := b.GetCoreDeps()
-	var deps any
-	switch typedOpts := opts.(type) {
-	case diapi.SubRetrieversDep:
-		hybridDeps := diapi.RetrieverDeps{
-			CoreDeps:      coreDeps,
-			SubRetrievers: make(map[string]core.Retriever),
-		}
-		for _, subName := range typedOpts.GetSubRetrievers() {
-			r, err := b.GetRetriever(subName)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get sub-retriever '%s' for hybrid retriever '%s': %w", subName, name, err)
-			}
-			hybridDeps.SubRetrievers[subName] = r
-		}
-		deps = hybridDeps
-
-	case diapi.EmbedderDep:
-		embedder, err := b.GetEmbedder(typedOpts.GetEmbedder())
-		if err != nil {
-			return nil, fmt.Errorf("failed to get embedder '%s' for dense retriever '%s': %w", typedOpts.GetEmbedder(), name, err)
-		}
-
-		if vsDep, ok := opts.(diapi.VectorStoreDep); ok {
-			vs, err := b.GetVectorStore(vsDep.GetVectorStore())
-			if err != nil {
-				return nil, fmt.Errorf("failed to get vector store '%s' for dense retriever '%s': %w", vsDep.GetVectorStore(), name, err)
-			}
-			deps = diapi.DenseRetrieverDeps{
-				CoreDeps:    coreDeps,
-				Embedder:    embedder,
-				VectorStore: vs,
-			}
-		} else {
-			return nil, fmt.Errorf("dense retriever '%s' is missing a vector store dependency", name)
-		}
-
-	default:
-		deps = diapi.NoopDeps{CoreDeps: coreDeps}
+	// Resolve dependencies using the registry.
+	deps, err := h.resolver.Resolve(ctx, core.KindRetriever, builderDI, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve dependencies for retriever '%s': %w", name, err)
 	}
 
 	built, err := f.Build(ctx, deps, cfg)

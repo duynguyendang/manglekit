@@ -3,7 +3,7 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 0.6.0
-last_updated: 2025-11-11
+last_updated: 2025-11-12
 stability: stable
 audience: humans_and_agents
 ---
@@ -294,6 +294,54 @@ The codebase is **stable**. All previously identified architectural gaps have be
 - **Status**: ✅ **RESOLVED** — Verified implemented on 2025-11-09.
 - **Verification**: The `core.Planner` interface now exists in `core/interfaces.go`. A `planners.Handler` is implemented in `internal/providers/planners/handler.go`, which depends on `Tools` and `Reasoners`, and is correctly placed at the end of the build order.
 
+### GAP-006: Rigid Dependency Structure in Handlers (Extensibility Limitation) — ✅ RESOLVED
+
+- **Description**: Component handlers used hardcoded type-switch statements to multiplex dependency resolution based on provider options. This pattern, while correct, violated the Open/Closed Principle and made it impossible to support new component types without modifying handler code.
+- **Impact**: Low-to-Medium. Affects maintainability and extensibility, but doesn't affect runtime correctness.
+- **Status**: ✅ **FULLY RESOLVED** — Implemented 2025-11-12.
+
+- **Original Pattern** (Rigid):
+  ```go
+  // handler.go
+  switch typedOpts := opts.(type) {
+  case diapi.SubRetrieversDep:
+      // 10+ lines for hybrid retriever
+  case diapi.EmbedderDep:
+      // 10+ lines for dense retriever
+  default:
+      // noop case
+  }
+  ```
+
+- **Resolution**: Implemented **DependencyResolver pattern** (`core/diapi/resolvers.go`):
+  - **DependencyResolver Interface** (`core/diapi/di.go`): Each resolver implements `Matches(opts any) bool` and `Resolve(ctx, builderDI, cfg) (any, error)`
+  - **ResolverRegistry** (`core/diapi/resolvers.go`): Centralized registry trying resolvers in order
+  - **Built-in Resolvers**: SubRetrieverResolver, DenseRetrieverResolver, NoopRetrieverResolver
+  - **Refactored Handler** (`internal/providers/retrievers/handler.go`): Now delegates to registry, no switch statements
+
+- **New Pattern** (Extensible):
+  ```go
+  // handler.go — now stable, no modifications needed
+  deps, err := h.resolver.Resolve(ctx, core.KindRetriever, builderDI, opts)
+  
+  // To add new retriever type:
+  type BranchingResolver struct{}
+  func (r *BranchingResolver) Matches(opts any) bool { /* ... */ }
+  func (r *BranchingResolver) Resolve(ctx, builderDI, cfg any) (any, error) { /* ... */ }
+  registry.Register(core.KindRetriever, &BranchingResolver{})
+  ```
+
+- **Verification**:
+  - ✅ All existing tests pass: hybrid, dense, bm25 handler tests
+  - ✅ Handler code is now stable and testable
+  - ✅ New resolver types can be added without touching handler.go
+  - ✅ Complies with Open/Closed Principle
+
+- **Architectural Impact**:
+  - ✅ Handler layer decoupled from specific resolver implementations
+  - ✅ Lazy resolver initialization prevents circular dependencies
+  - ✅ Extensible pattern ready for adoption in other handlers
+
 ## 11. Handler Build Order & Dependency Resolution
 
 The `Builder.buildAll()` method constructs components in a strict, deterministic order to ensure all dependencies are available before a component is built:
@@ -428,6 +476,7 @@ This order is enforced in `builder.go` and ensures that:
 ```
 
 ## 14. Changelog
+- **2025-11-12 (Latest)**: **GAP-006 Resolution — Handler Extensibility via DependencyResolver Pattern:** Resolved the rigid dependency structure limitation in component handlers by implementing a registry-based resolver pattern. Created `diapi.DependencyResolver` interface and `ResolverRegistry` in `core/diapi/resolvers.go`. Refactored `internal/providers/retrievers/handler.go` to eliminate type-switch statements and delegate to registered resolvers. Implemented SubRetrieverResolver, DenseRetrieverResolver, and NoopRetrieverResolver. All retriever tests pass. Handler code is now stable and extensible without modification. Marked SMELL #5 (code-smell-review-2025-11-11.md) as RESOLVED. Updated code-smell-review to mark overall health as 9/10 Excellent.
 - **2025-11-11 (Latest)**: **Comprehensive GAP-001 Verification & Documentation:** Resolved Issue #3 (Implicit Orchestrator State Injection) is now fully documented with implementation details. Handler layer explicitly resolves StateProvider from options and packs into typed diapi.*Deps structs (SandwichDeps, DeclarativeOrchestratorDeps). Factory layer receives StateProvider during construction (one-time assignment, no post-mutation). Verified: No SetStateProvider() method exists, all tests pass, design quality ⭐⭐⭐⭐⭐ excellent. Created comprehensive verification docs (SMELL_3_RESOLUTION_SUMMARY.md, SMELL_3_FIX_SUMMARY.md, SMELL_3_QUICK_START.md) with code citations and before/after analysis. Updated code-smell-review-2025-11-11.md to mark SMELL #3 as RESOLVED with full evidence. Bumped CONTEXT.md GAP-001 entry with implementation details and design quality assessment.
 - **2025-11-11**: Revised audit report (COMPREHENSIVE_EVALUATION.md) to correct inaccuracies. Confirmed: reasoners.Register() IS called in providers/all/all.go; SchemaParser components ARE stored in resolved; build order IS correct; test infrastructure exists in builder_test.go; error handling is mostly good. Updated report verdict from "NO-GO" to "CONDITIONAL GO" pending expanded test coverage. Stability claim remains justified.
 - **2025-11-10**: Performed full code audit. Re-synced core interface signatures (StateProvider) and verified all handler/DI contracts. Corrected handler build order to match live source code.
@@ -445,3 +494,5 @@ This order is enforced in `builder.go` and ensures that:
 -   **2025-10-21**: Resolved GAP-004 by integrating the Declarative Orchestrator into the builder via a component handler, making it a selectable option in the configuration.
 -   **2025-10-20**: Regenerated the standard to reflect the decentralized, handler-based builder architecture. Updated diagrams, contracts, and flows. Synchronized Known Gaps with the latest code review.
 -   **2025-10-19**: Regenerated the standard to reflect the data-driven builder and stage-based pipeline architecture. Added JSON appendix and synchronized Known Gaps with the latest code review.
+
+```

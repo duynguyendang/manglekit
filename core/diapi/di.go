@@ -2,6 +2,8 @@
 package diapi
 
 import (
+	"context"
+
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
@@ -147,4 +149,20 @@ type PlannerDeps struct {
 // CoreDeps provides access to core framework services.
 type CoreDeps struct {
 	Obs core.Observability
+}
+
+// DependencyResolver is an interface for resolving component-specific dependencies
+// based on the provider options. This pattern allows handlers to be extended
+// without modifying their code—new providers simply register their own resolvers.
+//
+// Implementations of this interface are registered per component Kind and can
+// be used to build dependencies for specific provider types (e.g., hybrid vs. dense
+// retrievers). This eliminates the need for type-switch statements in handlers.
+type DependencyResolver interface {
+	// Matches returns true if this resolver can handle the given provider options.
+	Matches(opts any) bool
+	// Resolve builds the dependencies for the provider options.
+	// The builderDI parameter is the diapi.Builder, and cfg contains the raw options.
+	// Returns the built dependencies (e.g., RetrieverDeps, DenseRetrieverDeps) or error.
+	Resolve(ctx context.Context, builderDI any, cfg any) (any, error)
 }
