@@ -157,17 +157,21 @@ Circular dependencies are prevented by the hard-coded linear build order defined
 *   **Config Struct:** `hybrid.HybridOptions`
 *   **Dependencies:** `diapi.RetrieverDeps` (constructed by the handler). The factory uses `deps.SubRetrievers` to access its dependencies.
 
-### VectorStore: Two-Path Handler (Native vs. Genkit Delegation)
+### VectorStore: Native Manglekit Implementations Only
 *   **Handler:** `internal/vectorstores/handler.go`
-*   **Logic Overview:** The `vectorstores.Handler.BuildComponent()` method implements a two-path strategy:
-    - **Path 1 (Native):** Attempts to build a native Manglekit VectorStore (e.g., `localvec`). If the factory succeeds, return the component as-is.
-    - **Path 2 (Genkit Delegation):** If the native factory fails, the handler extracts the provider name (e.g., `pinecone`, `chroma`) and attempts to resolve a Genkit-based retriever with that name. If successful, it wraps the retriever in a `genkitRetrieverAdapter`, which implements `core.VectorStore` by:
-      - **Search:** Delegates to `retriever.Retrieve(ctx, req)` and returns the results as `[]core.Doc`.
-      - **AddDocuments:** Returns `core.ErrNotSupported` (read-only).
-*   **Adapter:** `genkitRetrieverAdapter` is an internal struct that bridges `core.Retriever` to `core.VectorStore` for Genkit-delegated retrievers.
+*   **Logic Overview:** The `vectorstores.Handler.BuildComponent()` method builds native Manglekit VectorStore implementations only (e.g., `localvec`).
 *   **Config Struct:** `localvec.Options` or any provider options implementing `ProviderName()`.
 *   **Dependencies:** `diapi.VectorStoreDeps` (constructed by the handler). The factory uses `deps.Embedder` if the VectorStore requires one.
-*   **Use Case:** Enables production-grade dense and hybrid RAG pipelines using Genkit-supported retrievers (Pinecone, Chroma, etc.) without requiring separate native Manglekit implementations.
+*   **Use Case:** Local or custom vector storage backends. For Genkit-backed vector stores (Pinecone, Chroma, etc.), use the `genkit-retriever` factory instead.
+
+### Retriever: `genkit-retriever` (NEW - Replaces Dense Orchestrator)
+*   **Handler:** `internal/providers/retrievers/handler.go`
+*   **Factory Registration:** Closure registered via `manglekit.Register()` in `internal/providers/retrievers/genkitretriever/factory.go`.
+*   **Registered Key:** `genkit-retriever`
+*   **Config Struct:** `genkitretriever.GenkitRetrieverOptions`
+*   **Dependencies:** `diapi.NoopDeps` (constructed by the handler). The factory builds a `GenkitRetrieverAdapter` that wraps any Genkit `ai.Retriever` (Pinecone, Chroma, Weaviate, etc.) into a Manglekit `core.Retriever`.
+*   **Adapter:** `internal/adapters/GenkitRetrieverAdapter` wraps Genkit retrievers and implements `core.Retriever`.
+*   **Use Case:** Production-grade semantic search using Genkit-supported vector stores. This replaces the old "dense" retriever approach, which was merely an orchestrator combining an embedder + vector store. Genkit retrievers already perform this internally, so we wrap them directly for a simpler, cleaner architecture.
 
 # 7. Configuration Binding
 
@@ -217,9 +221,9 @@ Tracing the `hybrid` retriever:
     *   It gets the retriever `ComponentHandler` from the registry.
     *   It calls `handler.BuildComponent` for the `my_hybrid` component.
 4.  **Handler Execution (Indirect Multiplexing):**
-    *   The `retrievers.Handler` acts as a multiplexer using an indirect pattern: it type-asserts `cfg` to `diapi.ProviderWithOptions`, calls `GetProviderOptions()` to extract the actual options, and then type-switches on the extracted value.
-    *   For `hybrid.HybridOptions`, it constructs `diapi.RetrieverDeps`, resolving the sub-retrievers named in the config (e.g., `bm25`, `dense`) via `builder.GetRetriever(subName)` (builder DI lookup), NOT from the `resolved` map.
-    *   For `dense.DenseOptions`, it would construct `diapi.DenseRetrieverDeps` instead, resolving the embedder and vector store via builder DI.
+    *   The `retrievers.Handler` acts as a multiplexer using an indirect pattern: it type-asserts `cfg` to `diapi.ProviderWithOptions`, calls `GetProviderOptions()` to extract the actual options, and then delegates to registered resolvers.
+    *   For `hybrid.HybridOptions`, it constructs `diapi.RetrieverDeps`, resolving the sub-retrievers named in the config (e.g., `bm25`, `genkit-retriever`) via `builder.GetRetriever(subName)` (builder DI lookup), NOT from the `resolved` map.
+    *   For `genkitretriever.GenkitRetrieverOptions`, it constructs `diapi.NoopDeps` and the factory handles Genkit provider dispatch internally.
 5.  **Factory Execution:**
     *   The handler gets the `hybrid` factory from the registry.
     *   It calls `factory.Build(ctx, diapi.RetrieverDeps{...}, cfg)`.
@@ -352,7 +356,7 @@ Layering rules (enforced):
 
 - Provider implementations (examples)
   - BM25: [`internal/providers/retrievers/bm25/bm25.go`](internal/providers/retrievers/bm25/bm25.go)
-  - Dense: [`internal/providers/retrievers/dense/dense.go`](internal/providers/retrievers/dense/dense.go)
+  - Genkit Retriever (NEW): [`internal/providers/retrievers/genkitretriever/factory.go`](internal/providers/retrievers/genkitretriever/factory.go)
   - Hybrid: [`internal/providers/retrievers/hybrid/hybrid.go`](internal/providers/retrievers/hybrid/hybrid.go)
   - OpenAI LLM: [`internal/providers/llm/openai.go`](internal/providers/llm/openai.go)
   - Google LLM: [`internal/providers/llm/google.go`](internal/providers/llm/google.go)

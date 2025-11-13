@@ -17,7 +17,7 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers/bm25"
-	"github.com/duynguyendang/manglekit/internal/providers/retrievers/dense"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers/genkitretriever"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers/hybrid"
 	"github.com/duynguyendang/manglekit/internal/providers/rules"
 	"github.com/duynguyendang/manglekit/internal/providers/rules/mangle"
@@ -26,6 +26,7 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/state/inmemory"
 	"github.com/duynguyendang/manglekit/internal/providers/tools"
 	httpTool "github.com/duynguyendang/manglekit/internal/providers/tools/http"
+	"github.com/duynguyendang/manglekit/internal/providers/vectorstores/genkitvectorstore"
 	"github.com/duynguyendang/manglekit/internal/vectorstores"
 	"github.com/duynguyendang/manglekit/pipeline/declarative"
 	"github.com/duynguyendang/manglekit/pipeline/sandwich"
@@ -38,12 +39,15 @@ func Register(r *manglekit.Registry) {
 	bm25.Register(r)
 	cosine.Register(r)
 	declarative.Register(r)
-	dense.Register(r)
+	if err := genkitretriever.Register(r); err != nil {
+		errs = append(errs, fmt.Errorf("genkitretriever registration: %w", err))
+	}
 	hybrid.Register(r)
 	inmemory.Register(r)
 	mangle.Register(r)
 	sandwich.Register(r)
 	httpTool.Register(r)
+	genkitvectorstore.Register(r)
 
 	// NEW: Aggregate Registrations with error handling
 	llm.Register(r)

@@ -392,8 +392,14 @@ if cfg.ProviderName() == "openai" {
 - **Full Details:** `ENHANCEMENT_RECOMMENDATIONS.md`
 - **Action Plan:** `IMPLEMENTATION_SUMMARY.md`
 - **Adapters (Code):** `internal/adapters/genkit_*.go`
-- **Current Implementation:** `internal/vectorstores/handler.go` (reference for two-path pattern)
+- **Genkit VectorStore Factory:** `internal/providers/vectorstores/genkitvectorstore/`
+- **Current Implementation:** `internal/vectorstores/handler.go` (native factories only, no fallback)
 
 ---
 
-**Recommendation:** Implement all 5 phases to achieve maximum DX and code quality. The effort is well-invested for the long-term maintainability gain.
+**Status:** ✅ **REFACTORING COMPLETE** (Nov 13, 2025)
+
+The flawed "Path 2" fallback logic has been removed. VectorStores Handler now only processes native Manglekit factories.
+For Genkit-backed vector stores, use the `genkit-vectorstore` factory which properly wraps Genkit retrievers via `GenkitVectorStoreAdapter`.
+
+```

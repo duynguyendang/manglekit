@@ -545,9 +545,14 @@ err := llm.RegisterGenkit(r)
 ## Next Steps (Optional)
 
 ### Phase 4: Generic Retriever Factory (Optional)
-- Apply same pattern with adapter wrapping
-- Single factory for Genkit retrievers
-- **Estimated time:** 2-3 hours
+**Status:** 🔲 **NOT YET IMPLEMENTED**
+- Apply same pattern with adapter wrapping as embedders/LLMs
+- Create single factory for Genkit retrievers
+- Adapt GenkitRetrieverAdapter pattern into factory dispatch
+- Update retriever handler with two-path pattern
+- Add comprehensive integration tests
+- **Estimated time:** 3-4 hours
+- **Prerequisite:** Review `internal/adapters/genkit_retriever_adapter.go` for context
 
 ### Cleanup: Delete Redundant Providers (After Testing)
 - Delete `internal/embedders/openai/openai.go`

@@ -57,7 +57,45 @@ resolved.VectorStores[name] = adapter
 **Location:** `internal/providers/llm/handler.go`
 
 ```go
+## Part 1: Current Implementation Analysis
+
+### ✅ Architecture Refactoring Complete
+
+#### 1.1 Vectorstores Handler — Native Factories Only (Corrected)
+
+**Location:** `internal/vectorstores/handler.go`
+
+**Previous Issue (DEPRECATED):** This handler previously had a flawed "Path 2" fallback that attempted to wrap Manglekit Retrievers as VectorStores. This was architecturally backward because:
+- Genkit provides vector stores (Pinecone, Chroma, etc.)
+- Manglekit provides retrievers (dense, hybrid)
+- The dependency should flow: Retriever → VectorStore, not the reverse
+
+**Current Corrected Implementation:**
+The handler now only processes native Manglekit VectorStore factories. For Genkit vector store providers, use the dedicated `genkit-vectorstore` factory:
+
+**Location:** `internal/providers/vectorstores/genkitvectorstore/`
+
+The correct flow is now:
+1. **Genkit provides:** Vector stores (Pinecone, Chroma, Weaviate, etc.)
+2. **Manglekit provides:** Retrievers that depend on VectorStores
+3. **Adapter wraps:** GenkitVectorStoreAdapter in `internal/adapters/genkit_vectorstore_adapter.go` bridges Genkit retrievers to core.VectorStore interface
+
+**Strengths of new architecture:**
+- ✅ Clear, unambiguous dependency direction
+- ✅ Genkit backends remain optional and pluggable
+- ✅ No implicit fallback logic
+- ✅ Retrievers explicitly declare their VectorStore dependency in YAML
+- ✅ Configuration-driven provider selection
+
+---
+
+#### 1.2 LLM Handler — Simple, Direct Pattern (Adequate)
+
+**Location:** `internal/providers/llm/handler.go`
+
+```go
 deps := diapi.LLMDeps{
+```
     CoreDeps: b.GetCoreDeps(),
     Genkit:   b.Genkit(),
 }

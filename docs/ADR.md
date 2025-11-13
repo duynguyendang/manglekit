@@ -421,8 +421,10 @@ Accepted
 Component handlers often must dispatch to different construction paths based on provider options. For example, the retriever handler handles three different kinds of retrievers:
 
 1. **Hybrid Retrievers** — Depend on sub-retrievers (e.g., `HybridOptions` implements `diapi.SubRetrieversDep`)
-2. **Dense Retrievers** — Depend on an embedder and vector store (e.g., `DenseOptions` implements `diapi.EmbedderDep` and `diapi.VectorStoreDep`)
-3. **Other Retrievers** — Have no special dependencies beyond `CoreDeps` (e.g., `BM25Options`)
+2. **Genkit-Retriever** (NEW) — Direct Genkit provider wrapping; constructs Genkit instances internally; uses `NoopDeps`
+3. **Other Retrievers** — Have no special dependencies beyond `CoreDeps` (e.g., `BM25Options`, `InMemoryOptions`)
+
+**Note (2025-11-13):** The old "Dense Retriever" pattern (combining embedder + vector store) is now obsolete. Genkit retrievers already perform semantic search internally. The new `genkit-retriever` factory wraps them directly, providing a cleaner, simpler architecture.
 
 A naive implementation would use a large type-switch statement:
 
@@ -464,8 +466,8 @@ Introduce a **DependencyResolver** pattern:
 
 3. **Implement built-in resolvers** for each supported pattern:
    - `SubRetrieverResolver` — Matches `diapi.SubRetrieversDep`; resolves sub-retrievers and builds `RetrieverDeps`
-   - `DenseRetrieverResolver` — Matches `diapi.EmbedderDep` + `diapi.VectorStoreDep`; builds `DenseRetrieverDeps`
    - `NoopRetrieverResolver` — Catch-all; builds `NoopDeps`
+   - **Removed (2025-11-13):** `DenseRetrieverResolver` — Was used for Dense retrievers; now obsolete as genkit-retriever provides superior design
 
 4. **Refactor handlers to delegate** to the resolver:
    ```go

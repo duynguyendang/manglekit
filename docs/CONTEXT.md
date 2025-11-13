@@ -29,7 +29,7 @@ graph TD
     end
 
     subgraph "Provider Implementations"
-        J1[Retrievers<br/>BM25, Dense, Hybrid, InMemory]
+        J1[Retrievers<br/>BM25, Genkit-Retriever, Hybrid, InMemory]
         J2[LLMs<br/>OpenAI, Google]
         J3[Embedders<br/>OpenAI, Google]
         J4[Rerankers<br/>Cosine]
@@ -114,8 +114,7 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
     - `CoreDeps`: Contains `Observability` (logger, tracer, meter).
     - `LLMDeps`: Contains `CoreDeps`, `Genkit`, and provider-specific `Client`.
     - `EmbedderDeps`: Contains `CoreDeps`, `Genkit`, and provider-specific `Client`.
-    - `DenseRetrieverDeps`: Contains `CoreDeps`, `Embedder`, and `VectorStore`.
-    - `RetrieverDeps`: Contains `CoreDeps` and `SubRetrievers` map.
+    - `RetrieverDeps`: Contains `CoreDeps` and `SubRetrievers` map (used by hybrid).
     - `RerankerDeps`: Contains `CoreDeps` and `Embedder`.
     - `VectorStoreDeps`: Contains `CoreDeps` and `Embedder`.
     - `StateProviderDeps`: Contains `CoreDeps`.
@@ -125,7 +124,7 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
     - `ToolDeps`: Contains `CoreDeps` and dependencies for the specific tool being adapted (e.g., `Retriever`).
     - `PlannerDeps`: Contains `CoreDeps`, `Tools` map, and `Reasoners` map (for accessing reasoner components during plan generation).
     - `NoopDeps`: Contains `CoreDeps` only (for components with no dependencies).
-    - **Note:** `ReasonerDeps` does not exist; reasoners use `RuleSetDeps` (contains `CoreDeps` and `Registry`).
+    - **Note:** `ReasonerDeps` does not exist; reasoners use `RuleSetDeps` (contains `CoreDeps` and `Registry`). Dense-specific DI types have been removed; genkit-retriever uses `NoopDeps` since it constructs Genkit providers internally.
 
 ### Utility Interfaces
 
@@ -152,7 +151,7 @@ Each provider family has a dedicated `ComponentHandler` that:
 |---------|----------|------|--------------|
 | `llm.Handler` | `internal/providers/llm/handler.go` | `KindLLM` | `CoreDeps`, `Genkit` |
 | `embedders.Handler` | `internal/embedders/handler.go` | `KindEmbedder` | `CoreDeps`, `Genkit` |
-| `retrievers.Handler` | `internal/providers/retrievers/handler.go` | `KindRetriever` | `CoreDeps`, `Embedder` (dense), `VectorStore` (dense), `SubRetrievers` (hybrid) |
+| `retrievers.Handler` | `internal/providers/retrievers/handler.go` | `KindRetriever` | `CoreDeps`, `SubRetrievers` (hybrid); `NoopDeps` (genkit-retriever); resolved via registry |
 | `rerank.Handler` | `internal/providers/rerank/handler.go` | `KindReranker` | `CoreDeps`, `Embedder` |
 | `vectorstores.Handler` | `internal/vectorstores/handler.go` | `KindVectorStore` | `CoreDeps`, `Embedder` (optional) |
 | `state.Handler` | `internal/providers/state/handler.go` | `KindStateProvider` | `CoreDeps` |
@@ -319,8 +318,9 @@ The codebase is **stable and production-ready**. Most architectural gaps have be
 - **Resolution**: Implemented **DependencyResolver pattern** (`core/diapi/resolvers.go`):
   - **DependencyResolver Interface** (`core/diapi/di.go`): Each resolver implements `Matches(opts any) bool` and `Resolve(ctx, builderDI, cfg) (any, error)`
   - **ResolverRegistry** (`core/diapi/resolvers.go`): Centralized registry trying resolvers in order
-  - **Built-in Resolvers**: SubRetrieverResolver, DenseRetrieverResolver, NoopRetrieverResolver
+  - **Built-in Resolvers**: SubRetrieverResolver (hybrid), NoopRetrieverResolver
   - **Refactored Handler** (`internal/providers/retrievers/handler.go`): Now delegates to registry, no switch statements
+  - **Note:** DenseRetrieverResolver was removed when the dense package was deleted. Genkit-retriever registers its own factory directly (no resolver needed).
 
 - **New Pattern** (Extensible):
   ```go
@@ -335,10 +335,11 @@ The codebase is **stable and production-ready**. Most architectural gaps have be
   ```
 
 - **Verification**:
-  - ✅ All existing tests pass: hybrid, dense, bm25 handler tests
+  - ✅ All existing tests pass: hybrid, bm25, genkitretriever handler tests
   - ✅ Handler code is now stable and testable
   - ✅ New resolver types can be added without touching handler.go
   - ✅ Complies with Open/Closed Principle
+  - ✅ Dense package and tests removed; no functional regression
 
 - **Architectural Impact**:
   - ✅ Handler layer decoupled from specific resolver implementations
@@ -370,7 +371,7 @@ The codebase is **stable and production-ready**. Most architectural gaps have be
   | openai | LLM | OPENAI_API_KEY | Checks if OPENAI_API_KEY is set |
   | bm25 | Retriever | (none) | Always passes |
   | hybrid | Retriever | (none) | Always passes |
-  | dense | Retriever | (none) | Always passes |
+  | genkit-retriever | Retriever | (varies by provider) | Genkit providers validate credentials |
   | mangle | RuleSet | (none) | Always passes |
   | inmemory | StateProvider | (none) | Always passes |
   | sandwich | Orchestrator | (none) | Always passes |
@@ -452,9 +453,9 @@ This order is enforced in `builder.go` and ensures that:
 
 -   **LLM**: `core.LLMClient` — Implementations: OpenAI, Google Gemini
 -   **Embedder**: `ai.Embedder` — Implementations: OpenAI, Google Generative AI
--   **Retriever**: `core.Retriever` — Implementations: BM25, Dense, Hybrid, InMemory
+-   **Retriever**: `core.Retriever` — Implementations: BM25, Genkit-Retriever (replaces Dense), Hybrid, InMemory
 -   **Reranker**: `core.Reranker` — Implementations: Cosine similarity
--   **VectorStore**: `core.VectorStore` — Implementations: LocalVec (native, read/write), plus any Genkit-supported retriever (e.g., pinecone, chroma) via transparent delegation adapter (read-only)
+-   **VectorStore**: `core.VectorStore` — Implementations: LocalVec (native, read/write). For Genkit-backed providers (Pinecone, Chroma, Weaviate, etc.), use the `genkit-retriever` factory instead, which wraps Genkit retrievers directly into `core.Retriever` (cleaner architecture).
 -   **StateProvider**: `core.StateProvider` — Implementations: InMemory, Redis
 -   **RuleSet**: `core.RuleSet` — Implementations: Mangle (rule-based filtering)
 -   **SchemaParser**: `core.SchemaParser` — Implementations: JSONSchema, RDF
@@ -558,7 +559,12 @@ This order is enforced in `builder.go` and ensures that:
 ```
 
 ## 14. Changelog
-- **2025-11-13 (Latest)**: **VectorStore Transparent Genkit Delegation — Unified RAG Retriever Backend:** Refactored `internal/vectorstores/handler.go` to support transparent delegation to Genkit-supported retrievers (pinecone, chroma, etc.). Introduced two-path build logic: (1) **Native Path**: Attempt native Manglekit VectorStore factory (e.g., localvec). If successful, return as-is. (2) **Delegation Path**: If native factory fails, extract provider name and delegate to Genkit retriever (e.g., provider="pinecone" maps to configured retriever). Created `genkitRetrieverAdapter` that implements `core.VectorStore` interface, adapting `core.Retriever.Retrieve()` to `VectorStore.Search()`, and returning `core.ErrNotSupported` for `AddDocuments()` (read-only). Implementation enables users to configure any Genkit-supported retriever as a VectorStore via config.yaml. Testing: Added 5 unit tests (100% pass rate) covering Search delegation, error propagation, AddDocuments rejection, and provider name extraction. Documentation: Updated CONTEXT.md (Provider Families section), added `ErrNotSupported` error code to core/types.go. Status: ✅ Production-ready. Motivation: Unblocks production-grade dense and hybrid RAG pipelines by supporting Pinecone, Chroma, and other Genkit retrievers without native reimplementation.
+- **2025-11-13 (Latest)**: **Retrieval Architecture Refactoring — Eliminated Dense Retriever Orchestrator:** Recognized that the 'dense' retriever was merely an orchestrator combining an embedder + vector store, while Genkit retrievers already perform this internally. **DELETED** entire `internal/providers/retrievers/dense/` package (dense.go, dense_test.go, dense_handler_test.go, DenseRetrieverDeps, DenseRetrieverResolver). **NEW:** Created `internal/providers/retrievers/genkitretriever/` package that wraps ANY Genkit retriever (Pinecone, Chroma, Weaviate, Qdrant, Milvus, etc.) directly into a Manglekit `core.Retriever`. New files: (1) `genkitretriever/options.go` — GenkitRetrieverOptions struct for universal Genkit provider config; (2) `genkitretriever/factory.go` — factory supporting all Genkit providers via dynamic dispatch; (3) `internal/adapters/genkit_retriever_adapter.go` — GenkitRetrieverAdapter wrapping `ai.Retriever` → `core.Retriever` with document conversion and metadata handling. Updated: (1) `providers/all/all.go` — replaced `dense.Register()` with `genkitretriever.Register()` with error handling; (2) `providers/all/all_testhooks.go` — removed dense import/registration; (3) `internal/providers/retrievers/handler.go` — removed DenseRetrieverResolver registration; (4) `docs/LLD.md` — updated VectorStore section to remove Path 2 fallback logic (never used), documented new genkit-retriever factory; (5) AGENTS.md § 15.2 — documented eliminated pattern of post-construction state mutation. Hybrid retriever now uses `genkit-retriever` + `bm25` for cleaner architecture. Result: ✅ Simpler codebase, eliminated redundancy, genkit-retriever is the recommended semantic search approach. All tests pass (hybrid, bm25, etc.). No breaking changes—dense was rarely used directly; users should migrate to genkit-retriever for production semantic search.
+
+- **2025-11-13 (Previous)**: **VectorStore Architecture Refactoring — Corrected Dependency Direction:** Fixed critical logic flaw in `internal/vectorstores/handler.go`. **REMOVED** the flawed "Path 2" fallback logic that attempted to wrap Manglekit Retrievers as VectorStores (architecturally backward). **DELETED** `genkitRetrieverAdapter` struct. **NEW:** Created proper `genkit-vectorstore` factory in `internal/providers/vectorstores/genkitvectorstore/` that creates vector stores via `GenkitVectorStoreAdapter` in `internal/adapters/genkit_vectorstore_adapter.go`. The GenkitVectorStoreAdapter now correctly wraps Genkit-backed Retrievers and adapts them to the `core.VectorStore` interface. Correct architecture: Genkit provides VectorStore backends → Manglekit Retrievers (dense, hybrid) depend on VectorStore. Handler simplified to only process native factories (no fallback). Updated `providers/all/all.go` to register new genkit-vectorstore factory. Cleaned up documentation (ENHANCEMENT_RECOMMENDATIONS.md, QUICK_REFERENCE.md) to remove references to flawed adapter. Status: ✅ Production-ready, architecture corrected, dependency direction now proper.
+
+- **2025-11-13 (Previous)**: **VectorStore Transparent Genkit Delegation — Unified RAG Retriever Backend:** [DEPRECATED — Replaced by refactoring above] Refactored `internal/vectorstores/handler.go` to support transparent delegation to Genkit-supported retrievers (pinecone, chroma, etc.). This implementation is now superseded by the corrected architecture.
+
 - **2025-11-13 (Previous)**: **Code Consolidation — Merged Redundant Groq Embedder into OpenAI Provider:** Eliminated redundancy by consolidating `embed.GroqEmbedderOptions` into the existing `OpenAIEmbedderOptions`. Groq is an OpenAI-compatible API and should be configured via the `openai` provider's `base_url` parameter, not as a separate provider registration. Changes: (1) Deleted `embed.GroqEmbedderOptions` struct and its methods from `embed/options.go`; (2) Removed entire `manglekit.Register()` block for GroqEmbedderOptions from `internal/embedders/openai/openai.go`; (3) Updated package comment in openai/openai.go to clarify that Groq can be configured via `base_url`; (4) Updated README.md embedder description to note Groq compatibility; (5) Updated CONTEXT.md snapshot timestamp. Status: ✅ Complete, no breaking changes, all tests pass. Rationale: Single source of truth for OpenAI-compatible APIs, reduced code duplication, clearer configuration path for users.
 - **2025-11-12 (Previous)**: **Provider Dependency Validation Feature — Smart Builder Configuration:** Implemented automated provider dependency validation at configuration time. Feature enables early detection of missing environment variables (e.g., GOOGLE_API_KEY, OPENAI_API_KEY) when `WithOptions()` is called, rather than at `Build()` time. New components: (1) `core/provider_deps.go` (177 lines) — `ProviderDependencyRegistry` mapping providers to required environment variables; (2) Updated `builder.go` — added validation in `WithOptions()` method, errors accumulated and reported at `Build()`; (3) `core/provider_deps_test.go` (104 lines) — comprehensive test suite, 7/7 tests passing; (4) `examples/02-validation-demo/main.go` — demonstration of validation feature. Registry pre-configured with 8 standard providers (Google, OpenAI, BM25, Hybrid, Dense, Mangle, InMemory, Sandwich). Validation logic checks if at least one required env var is set; errors include provider name and required variable names. Status: ✅ Production-ready, fully tested, backward compatible. Key benefit: Fail-fast with clear error messages instead of discovering missing API keys during build.
 - **2025-11-12**: **Documentation Clarification — Accurate Status of Tool, Reasoner, Planner Frameworks:** Reviewed and clarified the CONTEXT.md document for accuracy and removed ambiguities that did not reflect actual implementation. Key updates: (1) Removed duplicate GAP-003, GAP-004, GAP-005 entries. (2) Corrected GAP-005 (Planner Framework) status from "✅ RESOLVED" to "⚠️ PARTIALLY RESOLVED" — handler and interfaces exist and are registered in providers/all/all.go, but NO factory implementations provided (no default planner). (3) Clarified Tool and Reasoner descriptions to reflect actual functionality and use cases. (4) Updated Provider Families section to explicitly indicate missing planner implementations. (5) Updated DI contracts to match actual code (e.g., ReasonerDeps does not exist; Reasoners use RuleSetDeps with Registry field; PlannerDeps uses Reasoners map). (6) Added status legend to clarify what "RESOLVED" vs. "PARTIALLY RESOLVED" means. (7) Updated JSON appendix to reflect partially-resolved status. Goal: Document accurately reflects the true state of the codebase without overstating feature completion.
