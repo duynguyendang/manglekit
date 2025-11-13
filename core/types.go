@@ -253,4 +253,7 @@ var (
 	// ErrDenied is returned when a Mangle rule evaluation explicitly denies the
 	// request, halting the pipeline as a matter of policy.
 	ErrDenied = errors.New("rules_denied")
+	// ErrNotSupported is returned when a Genkit-delegated retriever adapter
+	// receives an operation it does not support (e.g., AddDocuments on a read-only retriever).
+	ErrNotSupported = errors.New("operation_not_supported")
 )

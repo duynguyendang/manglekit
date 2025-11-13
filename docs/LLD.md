@@ -157,6 +157,18 @@ Circular dependencies are prevented by the hard-coded linear build order defined
 *   **Config Struct:** `hybrid.HybridOptions`
 *   **Dependencies:** `diapi.RetrieverDeps` (constructed by the handler). The factory uses `deps.SubRetrievers` to access its dependencies.
 
+### VectorStore: Two-Path Handler (Native vs. Genkit Delegation)
+*   **Handler:** `internal/vectorstores/handler.go`
+*   **Logic Overview:** The `vectorstores.Handler.BuildComponent()` method implements a two-path strategy:
+    - **Path 1 (Native):** Attempts to build a native Manglekit VectorStore (e.g., `localvec`). If the factory succeeds, return the component as-is.
+    - **Path 2 (Genkit Delegation):** If the native factory fails, the handler extracts the provider name (e.g., `pinecone`, `chroma`) and attempts to resolve a Genkit-based retriever with that name. If successful, it wraps the retriever in a `genkitRetrieverAdapter`, which implements `core.VectorStore` by:
+      - **Search:** Delegates to `retriever.Retrieve(ctx, req)` and returns the results as `[]core.Doc`.
+      - **AddDocuments:** Returns `core.ErrNotSupported` (read-only).
+*   **Adapter:** `genkitRetrieverAdapter` is an internal struct that bridges `core.Retriever` to `core.VectorStore` for Genkit-delegated retrievers.
+*   **Config Struct:** `localvec.Options` or any provider options implementing `ProviderName()`.
+*   **Dependencies:** `diapi.VectorStoreDeps` (constructed by the handler). The factory uses `deps.Embedder` if the VectorStore requires one.
+*   **Use Case:** Enables production-grade dense and hybrid RAG pipelines using Genkit-supported retrievers (Pinecone, Chroma, etc.) without requiring separate native Manglekit implementations.
+
 # 7. Configuration Binding
 
 Configuration from YAML is mapped to provider-specific `Options` structs using `mapstructure`. The `builder.fromConfig()` function performs a type-to-name lookup: it iterates through all registered types in the registry's `OptionsTypeToName` map, matches them by both name and kind, and uses the matched type to decode the raw `map[string]any` from the YAML.
