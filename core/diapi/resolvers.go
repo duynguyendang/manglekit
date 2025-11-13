@@ -93,56 +93,6 @@ func (r *SubRetrieverResolver) Resolve(ctx context.Context, builderDI any, cfg a
 	return hybridDeps, nil
 }
 
-// DenseRetrieverResolver resolves dependencies for dense (embedding-based)
-// retriever types.
-type DenseRetrieverResolver struct{}
-
-// NewDenseRetrieverResolver creates a new resolver for dense retriever types.
-func NewDenseRetrieverResolver() *DenseRetrieverResolver {
-	return &DenseRetrieverResolver{}
-}
-
-// Matches returns true if the options implement both EmbedderDep and VectorStoreDep.
-func (r *DenseRetrieverResolver) Matches(opts any) bool {
-	_, embedderOk := opts.(EmbedderDep)
-	_, vectorStoreOk := opts.(VectorStoreDep)
-	return embedderOk && vectorStoreOk
-}
-
-// Resolve builds DenseRetrieverDeps by looking up the embedder and vector store.
-func (r *DenseRetrieverResolver) Resolve(ctx context.Context, builderDI any, cfg any) (any, error) {
-	b, ok := builderDI.(Builder)
-	if !ok {
-		return nil, fmt.Errorf("invalid builder DI type: got %T", builderDI)
-	}
-
-	embedderDep, ok := cfg.(EmbedderDep)
-	if !ok {
-		return nil, fmt.Errorf("options do not implement EmbedderDep: got %T", cfg)
-	}
-
-	vectorStoreDep, ok := cfg.(VectorStoreDep)
-	if !ok {
-		return nil, fmt.Errorf("options do not implement VectorStoreDep: got %T", cfg)
-	}
-
-	embedder, err := b.GetEmbedder(embedderDep.GetEmbedder())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get embedder: %w", err)
-	}
-
-	vs, err := b.GetVectorStore(vectorStoreDep.GetVectorStore())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get vector store: %w", err)
-	}
-
-	return DenseRetrieverDeps{
-		CoreDeps:    b.GetCoreDeps(),
-		Embedder:    embedder,
-		VectorStore: vs,
-	}, nil
-}
-
 // NoopRetrieverResolver resolves dependencies for retrievers that have no special
 // dependencies (beyond CoreDeps).
 type NoopRetrieverResolver struct{}

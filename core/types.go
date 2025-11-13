@@ -37,29 +37,6 @@ type Doc struct {
 	Meta map[string]any
 }
 
-// VectorStore defines the standard interface for vector database operations,
-// allowing for pluggable vector storage backends. Implementations of this
-// interface handle the storage and retrieval of documents based on vector similarity.
-type VectorStore interface {
-	// AddDocuments embeds and adds a slice of documents to the vector store.
-	// This method is responsible for processing the documents, generating vectors
-	// if necessary, and indexing them for future searches.
-	//
-	// ctx is the context for the operation.
-	// docs is a slice of documents to be added to the store.
-	// It returns an error if the documents could not be added.
-	AddDocuments(ctx context.Context, docs []Doc) error
-
-	// Search retrieves the most relevant documents for a given query vector.
-	//
-	// ctx is the context for the operation.
-	// queryVector is the vector representation of the search query.
-	// topK specifies the maximum number of documents to return.
-	// filter is an optional map of metadata to filter documents before searching.
-	// It returns a slice of documents ranked by similarity and an error if the search fails.
-	Search(ctx context.Context, queryText string, queryVector []float32, topK int, filter map[string]any) ([]Doc, error)
-}
-
 // Orchestrator is the central behavioral interface for the MangleKit SDK. It is
 // a pure executor, responsible for running a configured pipeline but not for
 // exposing the components within it. Typed components should be returned by the
@@ -128,7 +105,6 @@ type Citation struct {
 // from `any` types and runtime assertions.
 type Resolved struct {
 	Retrievers     map[string]Retriever
-	VectorStores   map[string]VectorStore
 	Rerankers      map[string]Reranker
 	Rules          map[string]RuleSet
 	LLMs           map[string]LLMClient
@@ -163,7 +139,7 @@ func (r *Resolved) GetToolByName(name string) (Tool, error) {
 	if t, ok := r.LLMs[name]; ok {
 		return &LLMTool{Llm: t}, nil
 	}
-	// Note: VectorStores, Embedders, and StateProviders are not currently adapted
+	// Note: Embedders and StateProviders are not currently adapted
 	// as tools because they don't represent standalone pipeline steps.
 	return nil, fmt.Errorf("tool with name '%s' not found", name)
 }

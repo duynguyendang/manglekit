@@ -219,11 +219,11 @@ Outstanding:
 - `README.md` - Project overview
 - `CONTRIBUTING.md` - Development guidelines
 
-**Assessment Reports:**
-- `docs/reports/PRODUCTION_READINESS_ASSESSMENT.md` - Main assessment
-- `docs/reports/VERIFICATION_REPORT.md` - Verification of fixes
-- `docs/reports/CONCURRENCY_SAFETY_ANALYSIS.md` - Concurrency analysis
-- `docs/reports/CONCURRENCY_8_EXPLANATION.md` - 8/10 explained
+**Active Reports (in this folder):**
+- `PRODUCTION_READINESS_ASSESSMENT.md` - Main production readiness assessment
+- `VERIFICATION_REPORT.md` - Verification of all fixes against code
+- `CONCURRENCY_SAFETY_ANALYSIS.md` - Detailed concurrency analysis
+- `CONCURRENCY_8_EXPLANATION.md` - Executive summary of 8/10 concurrency rating
 
 ---
 

@@ -79,10 +79,10 @@ Manglekit recognizes the following **kinds**. Each kind is implemented by **prov
 
 **Genkit**
 
-* **Role:** Provider family for embedders, vector stores (e.g., `localvec`), and tools; optionally a planning layer.
-* **How it plugs in:** Ships as providers implementing the standard factory signature. Registered under `embed/`, `vectorstore/`, and `tool/` kinds.
+* **Role:** Provider family for embedders and tools; optionally a planning layer.
+* **How it plugs in:** Ships as providers implementing the standard factory signature. Registered under `embed/` and `tool/` kinds.
 * **Contracts:** Uses `diapi.Deps` for logger/metrics/state; honors ctx for timeouts; contributes `ResourceClosers`.
-* **Examples:** `internal/vectorstores/localvec` for corpus indexing; Genkit tools callable from the Declarative Orchestrator via the **Tool** kind.
+* **Examples:** Genkit tools callable from the Declarative Orchestrator via the **Tool** kind.
 * **Why first‑class:** Enables local/offline experimentation, fast iteration, and unified observability with the rest of the stack.
 
 **Mangle (Rules & Converters)**
@@ -379,7 +379,7 @@ components:
 github.com/duynguyendang/manglekit
 ├── core/           # Contracts, types, and DI interfaces (foundational)
 ├── pipeline/       # Orchestrators and stages (Sandwich, Declarative)
-├── internal/       # Concrete providers (retrievers, llm, rerank, rules, schema, state, embedders, vectorstores)
+├── internal/       # Concrete providers (retrievers, llm, rerank, rules, schema, state, embedders)
 ├── config/         # Config loading, normalization, validation
 ├── sdk/            # Programmatic entrypoints and config bridge
 ├── providers/      # Convenience registrars for built-in providers

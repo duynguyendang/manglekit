@@ -63,7 +63,6 @@ type builder struct {
 	cfgs     []configItem
 
 	embedders      map[string]ai.Embedder
-	vectorStores   map[string]core.VectorStore
 	retrievers     map[string]core.Retriever
 	rerankers      map[string]core.Reranker
 	rules          map[string]core.RuleSet
@@ -91,7 +90,6 @@ func NewBuilder(ctx context.Context, r *Registry, obs core.Observability, g *gen
 		registry:           r,
 		genkit:             g,
 		embedders:          make(map[string]ai.Embedder),
-		vectorStores:       make(map[string]core.VectorStore),
 		retrievers:         make(map[string]core.Retriever),
 		rerankers:          make(map[string]core.Reranker),
 		rules:              make(map[string]core.RuleSet),
@@ -113,9 +111,6 @@ func (b *builder) Registry() any                                 { return b.regi
 func (b *builder) Genkit() *genkit.Genkit                        { return b.genkit }
 func (b *builder) GetEmbedder(n string) (ai.Embedder, error)     { return getComponent(b.embedders, n) }
 func (b *builder) GetLLMClient(n string) (core.LLMClient, error) { return getComponent(b.llms, n) }
-func (b *builder) GetVectorStore(n string) (core.VectorStore, error) {
-	return getComponent(b.vectorStores, n)
-}
 func (b *builder) GetRetriever(n string) (core.Retriever, error) {
 	return getComponent(b.retrievers, n)
 }
@@ -144,7 +139,6 @@ func (b *builder) GetCoreDeps() diapi.CoreDeps {
 func (b *builder) buildAll(ctx context.Context) error {
 	order := []core.Kind{
 		core.KindEmbedder,
-		core.KindVectorStore,
 		core.KindRetriever,
 		core.KindReranker,
 		core.KindRules,
@@ -164,7 +158,6 @@ func (b *builder) buildAll(ctx context.Context) error {
 
 	resolved := &core.Resolved{
 		Retrievers:     b.retrievers,
-		VectorStores:   b.vectorStores,
 		Rerankers:      b.rerankers,
 		Rules:          b.rules,
 		LLMs:           b.llms,

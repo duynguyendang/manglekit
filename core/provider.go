@@ -9,7 +9,6 @@ type Kind string
 
 const (
 	KindRetriever     Kind = "retriever"
-	KindVectorStore   Kind = "vector_store"
 	KindReranker      Kind = "reranker"
 	KindRules         Kind = "rules"
 	KindLLM           Kind = "llm"
@@ -19,7 +18,7 @@ const (
 	KindSchemaParser  Kind = "schema_parser"
 	KindTool          Kind = "tool"
 	KindReasoner      Kind = "reasoner"
-	KindPlanner  Kind = "planner"
+	KindPlanner       Kind = "planner"
 )
 
 // ProviderOptions is the core interface for the new type-safe registration system.
@@ -30,7 +29,7 @@ type ProviderOptions interface {
 	// ProviderName returns the unique, machine-readable name of the provider,
 	// e.g., "openai-chat", "chroma-db", "bm25".
 	ProviderName() string
-	// ProviderKind returns the category of the provider, e.g., KindLLM, KindVectorStore.
+	// ProviderKind returns the category of the provider, e.g., KindLLM, KindRetriever.
 	ProviderKind() Kind
 }
 

@@ -23,7 +23,7 @@ graph TD
     subgraph "Core Engine"
         C --> E[Builder]
         E -- Uses --> F[Registry]
-        F -- Contains --> G["Component Handlers<br/>13 Total"]
+        F -- Contains --> G["Component Handlers<br/>12 Total"]
         F -- Contains --> H[Provider Factories]
         E -- Produces --> I[core.Orchestrator]
     end
@@ -33,7 +33,6 @@ graph TD
         J2[LLMs<br/>OpenAI, Google]
         J3[Embedders<br/>OpenAI, Google]
         J4[Rerankers<br/>Cosine]
-        J5[VectorStores<br/>LocalVec]
         J6[StateProviders<br/>InMemory, Redis]
         J7[RuleSets<br/>Mangle]
         J8[SchemaParsers<br/>JSONSchema, RDF]
@@ -44,7 +43,6 @@ graph TD
         J2 -- Registers --> G
         J3 -- Registers --> G
         J4 -- Registers --> G
-        J5 -- Registers --> G
         J6 -- Registers --> G
         J7 -- Registers --> G
         J8 -- Registers --> G
@@ -98,7 +96,6 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
 -   **`core.Retriever`**: Defines `Retrieve(ctx, req)` for document retrieval based on queries.
 -   **`core.Reranker`**: Defines `Rerank(ctx, req)` for re-scoring and re-ordering documents.
 -   **`core.LLMClient`**: Defines `Complete(ctx, req)` for language model completion.
--   **`core.VectorStore`**: Defines `AddDocuments(ctx, docs)` and `Search(ctx, queryText, queryVector, topK, filter)` for vector operations.
 -   **`ai.Embedder`**: (from genkit) Defines embedding generation for text.
 -   **`core.StateProvider`**: Defines `Get(ctx, sessionID)`, `Set(ctx, sessionID, state)`, `Delete(ctx, sessionID)`, and `Close(ctx)`.
 -   **`core.RuleSet`**: Defines rule evaluation for pre/post-retrieval filtering.
@@ -109,14 +106,13 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
 
 ### Dependency Injection Contracts (Type-Safe DI)
 
--   **`diapi.Builder`**: The dependency injection interface implemented by the `Builder` and consumed by handlers to look up already-built components. Provides typed getter methods: `GetEmbedder(name)`, `GetLLMClient(name)`, `GetVectorStore(name)`, `GetRetriever(name)`, `GetReranker(name)`, `GetStateProvider(name)`, `GetRuleSet(name)`, `GetSchemaParser(name)`, `GetTool(name)`, `GetReasoner(name)`, `GetPlanner(name)`, `Genkit()`, `GetCoreDeps()`, and `SetRetriever(name, retriever)`.
+-   **`diapi.Builder`**: The dependency injection interface implemented by the `Builder` and consumed by handlers to look up already-built components. Provides typed getter methods: `GetEmbedder(name)`, `GetLLMClient(name)`, `GetRetriever(name)`, `GetReranker(name)`, `GetStateProvider(name)`, `GetRuleSet(name)`, `GetSchemaParser(name)`, `GetTool(name)`, `GetReasoner(name)`, `GetPlanner(name)`, `Genkit()`, `GetCoreDeps()`, and `SetRetriever(name, retriever)`.
 -   **`diapi.*Deps` Structs**: Typed dependency containers passed to factories:
     - `CoreDeps`: Contains `Observability` (logger, tracer, meter).
     - `LLMDeps`: Contains `CoreDeps`, `Genkit`, and provider-specific `Client`.
     - `EmbedderDeps`: Contains `CoreDeps`, `Genkit`, and provider-specific `Client`.
     - `RetrieverDeps`: Contains `CoreDeps` and `SubRetrievers` map (used by hybrid).
     - `RerankerDeps`: Contains `CoreDeps` and `Embedder`.
-    - `VectorStoreDeps`: Contains `CoreDeps` and `Embedder`.
     - `StateProviderDeps`: Contains `CoreDeps`.
     - `RuleSetDeps`: Contains `CoreDeps` and `Registry` (also used by Reasoners for accessing rules/resources).
     - `SandwichDeps`: Contains `CoreDeps`, `Retriever`, `Reranker`, `LLM`, `StateProvider`, and `RuleSet`.
@@ -124,7 +120,7 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
     - `ToolDeps`: Contains `CoreDeps` and dependencies for the specific tool being adapted (e.g., `Retriever`).
     - `PlannerDeps`: Contains `CoreDeps`, `Tools` map, and `Reasoners` map (for accessing reasoner components during plan generation).
     - `NoopDeps`: Contains `CoreDeps` only (for components with no dependencies).
-    - **Note:** `ReasonerDeps` does not exist; reasoners use `RuleSetDeps` (contains `CoreDeps` and `Registry`). Dense-specific DI types have been removed; genkit-retriever uses `NoopDeps` since it constructs Genkit providers internally.
+    - **Note:** `ReasonerDeps` does not exist; reasoners use `RuleSetDeps` (contains `CoreDeps` and `Registry`). The genkit-retriever factory uses `NoopDeps` since it constructs Genkit providers internally.
 
 ### Utility Interfaces
 
@@ -133,7 +129,7 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
 
 ## 4. Provider Composition
 
-Providers are self-contained modules in `internal/providers`, `internal/embedders`, `internal/vectorstores`, and `pipeline` that implement one or more `core` interfaces. At startup, they register a `core.ComponentHandler` and one or more `core.Factory` instances with a central `Registry`.
+Providers are self-contained modules in `internal/providers`, `internal/embedders`, and `pipeline` that implement one or more `core` interfaces. At startup, they register a `core.ComponentHandler` and one or more `core.Factory` instances with a central `Registry`.
 
 ### Handler-Based Architecture
 
@@ -145,7 +141,7 @@ Each provider family has a dedicated `ComponentHandler` that:
 5. **Assigns the built component** to the appropriate field in the `core.Resolved` struct.
 6. **Returns a `ResourceCloser`** if the component needs cleanup.
 
-### Registered Handlers (13 Total)
+### Registered Handlers (12 Total)
 
 | Handler | Location | Kind | Dependencies |
 |---------|----------|------|--------------|
@@ -153,7 +149,6 @@ Each provider family has a dedicated `ComponentHandler` that:
 | `embedders.Handler` | `internal/embedders/handler.go` | `KindEmbedder` | `CoreDeps`, `Genkit` |
 | `retrievers.Handler` | `internal/providers/retrievers/handler.go` | `KindRetriever` | `CoreDeps`, `SubRetrievers` (hybrid); `NoopDeps` (genkit-retriever); resolved via registry |
 | `rerank.Handler` | `internal/providers/rerank/handler.go` | `KindReranker` | `CoreDeps`, `Embedder` |
-| `vectorstores.Handler` | `internal/vectorstores/handler.go` | `KindVectorStore` | `CoreDeps`, `Embedder` (optional) |
 | `state.Handler` | `internal/providers/state/handler.go` | `KindStateProvider` | `CoreDeps` |
 | `rules.Handler` | `internal/providers/rules/handler.go` | `KindRules` | `CoreDeps` |
 | `schemaparsers.Handler` | `internal/providers/schemaparsers/handler.go` | `KindSchemaParser` | `CoreDeps` |
@@ -169,7 +164,7 @@ Composition is achieved at runtime by the `Builder`, which:
 1. Loads configuration from YAML via `sdk.FromConfig`.
 2. Resolves the `reflect.Type` of each provider's `Options` struct from the `Registry`.
 3. Unmarshals YAML parameters into strongly-typed `Options` structs.
-4. Invokes `buildAll()` in a deterministic order: Embedders → VectorStores → Retrievers → Rerankers → RuleSets → LLMs → StateProviders → SchemaParsers → Tools → Reasoners → Planners → Orchestrators.
+4. Invokes `buildAll()` in a deterministic order: Embedders → Retrievers → Rerankers → RuleSets → LLMs → StateProviders → SchemaParsers → Tools → Reasoners → Planners → Orchestrators.
 5. For each component, retrieves the registered `ComponentHandler` and invokes `BuildComponent()`.
 6. The handler resolves dependencies, constructs typed deps, and invokes the factory.
 7. The built component is stored in the `core.Resolved` struct for later access by dependent components.
@@ -419,9 +414,8 @@ The codebase is **stable and production-ready**. Most architectural gaps have be
   })
   ```
 
-- **Documentation**: See `docs/PROVIDER_DEPENDENCY_VALIDATION.md` for full guide including usage examples, error handling, and migration instructions.
-
 - **Status**: ✅ **PRODUCTION READY** — Fully tested, documented, and backward compatible.
+- **Documentation**: Full implementation details available in `docs/LLD.md` (Low-Level Design) under Provider Dependency Resolution.
 
 ## 11. Handler Build Order & Dependency Resolution
 
@@ -429,21 +423,20 @@ The `Builder.buildAll()` method constructs components in a strict, deterministic
 
 ```
 1.  Embedders       (KindEmbedder)       — No dependencies
-2.  VectorStores    (KindVectorStore)    — Depends on: Embedders
-3.  Retrievers      (KindRetriever)      — Depends on: Embedders, VectorStores, other Retrievers
-4.  Rerankers       (KindReranker)       — Depends on: Embedders
-5.  RuleSets        (KindRules)          — No dependencies
-6.  Reasoners       (KindReasoner)       — Depends on: RuleSets
-7.  LLMs            (KindLLM)            — No dependencies
-8.  StateProviders  (KindStateProvider)  — No dependencies
-9.  SchemaParsers   (KindSchemaParser)   — No dependencies
-10. Tools           (KindTool)           — Depends on: All previously built components (via adapters)
-11. Planners        (KindPlanner)        — Depends on: Tools, Reasoners
-12. Orchestrators   (KindOrchestrator)   — Depends on: All previously built components
+2.  Retrievers      (KindRetriever)      — Depends on: Embedders, other Retrievers
+3.  Rerankers       (KindReranker)       — Depends on: Embedders
+4.  RuleSets        (KindRules)          — No dependencies
+5.  Reasoners       (KindReasoner)       — Depends on: RuleSets
+6.  LLMs            (KindLLM)            — No dependencies
+7.  StateProviders  (KindStateProvider)  — No dependencies
+8.  SchemaParsers   (KindSchemaParser)   — No dependencies
+9.  Tools           (KindTool)           — Depends on: All previously built components (via adapters)
+10. Planners        (KindPlanner)        — Depends on: Tools, Reasoners
+11. Orchestrators   (KindOrchestrator)   — Depends on: All previously built components
 ```
 
 This order is enforced in `builder.go` and ensures that:
-- Foundational components (Embedders, VectorStores, etc.) are built first.
+- Foundational components (Embedders, etc.) are built first.
 - Tools can be created by adapting any existing component.
 - Reasoners can access RuleSets.
 - Planners can access Tools and Reasoners.
@@ -453,9 +446,8 @@ This order is enforced in `builder.go` and ensures that:
 
 -   **LLM**: `core.LLMClient` — Implementations: OpenAI, Google Gemini
 -   **Embedder**: `ai.Embedder` — Implementations: OpenAI, Google Generative AI
--   **Retriever**: `core.Retriever` — Implementations: BM25, Genkit-Retriever (replaces Dense), Hybrid, InMemory
+-   **Retriever**: `core.Retriever` — Implementations: BM25, Genkit-Retriever, Hybrid, InMemory
 -   **Reranker**: `core.Reranker` — Implementations: Cosine similarity
--   **VectorStore**: `core.VectorStore` — Implementations: LocalVec (native, read/write). For Genkit-backed providers (Pinecone, Chroma, Weaviate, etc.), use the `genkit-retriever` factory instead, which wraps Genkit retrievers directly into `core.Retriever` (cleaner architecture).
 -   **StateProvider**: `core.StateProvider` — Implementations: InMemory, Redis
 -   **RuleSet**: `core.RuleSet` — Implementations: Mangle (rule-based filtering)
 -   **SchemaParser**: `core.SchemaParser` — Implementations: JSONSchema, RDF

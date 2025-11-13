@@ -26,8 +26,6 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/state/inmemory"
 	"github.com/duynguyendang/manglekit/internal/providers/tools"
 	httpTool "github.com/duynguyendang/manglekit/internal/providers/tools/http"
-	"github.com/duynguyendang/manglekit/internal/providers/vectorstores/genkitvectorstore"
-	"github.com/duynguyendang/manglekit/internal/vectorstores"
 	"github.com/duynguyendang/manglekit/pipeline/declarative"
 	"github.com/duynguyendang/manglekit/pipeline/sandwich"
 )
@@ -47,7 +45,6 @@ func Register(r *manglekit.Registry) {
 	mangle.Register(r)
 	sandwich.Register(r)
 	httpTool.Register(r)
-	genkitvectorstore.Register(r)
 
 	// NEW: Aggregate Registrations with error handling
 	llm.Register(r)
@@ -77,6 +74,5 @@ func Register(r *manglekit.Registry) {
 	for _, h := range orchestrators.Handlers() {
 		r.RegisterHandler(h)
 	}
-	r.RegisterHandler(vectorstores.NewHandler())
 	r.RegisterHandler(planners.NewHandler())
 }

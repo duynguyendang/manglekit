@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -181,24 +182,15 @@ func TestValidate_ValidComponentReferences(t *testing.T) {
 		Components: []ComponentConfig{
 			{
 				Name:   "embedder1",
-				Type:   "openai",
+				Type:   "openai-embedder",
 				Kind:   core.KindEmbedder,
 				Params: map[string]any{"model": "text-embedding-3-small"},
 			},
 			{
-				Name:   "vectorstore1",
-				Type:   "localvec",
-				Kind:   core.KindVectorStore,
-				Params: map[string]any{"embedder": "embedder1"},
-			},
-			{
-				Name: "retriever1",
-				Type: "dense",
-				Kind: core.KindRetriever,
-				Params: map[string]any{
-					"embedder":     "embedder1",
-					"vector_store": "vectorstore1",
-				},
+				Name:   "retriever1",
+				Type:   "bm25",
+				Kind:   core.KindRetriever,
+				Params: map[string]any{},
 			},
 		},
 	}
@@ -213,12 +205,11 @@ func TestValidate_MultipleInvalidReferences(t *testing.T) {
 	cfg := &Config{
 		Components: []ComponentConfig{
 			{
-				Name: "retriever1",
-				Type: "dense",
-				Kind: core.KindRetriever,
+				Name: "reranker1",
+				Type: "cosine",
+				Kind: core.KindReranker,
 				Params: map[string]any{
-					"embedder":     "invalid-embedder",
-					"vector_store": "invalid-vectorstore",
+					"embedder": "invalid-embedder",
 				},
 			},
 		},
@@ -228,8 +219,8 @@ func TestValidate_MultipleInvalidReferences(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected validation to fail for invalid component references")
 	}
-	// Should catch first invalid reference
-	if err.Error() != "component \"retriever1\" references invalid component \"invalid-embedder\" in param \"embedder\"" {
+	// Should catch the invalid reference
+	if err.Error() != "component \"reranker1\" references invalid component \"invalid-embedder\" in param \"embedder\"" {
 		t.Errorf("Expected 'invalid component reference' error, got: %v", err)
 	}
 }
@@ -310,7 +301,8 @@ func TestValidate_LongerCircularDependency(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected validation to fail for longer circular dependency")
 	}
-	if err.Error() != "circular dependency detected involving component \"retriever1\"" {
+	// The error message varies depending on which component is detected last
+	if !strings.Contains(err.Error(), "circular dependency detected") {
 		t.Errorf("Expected 'circular dependency detected' error, got: %v", err)
 	}
 }
@@ -402,39 +394,28 @@ func TestValidate_ComplexValidConfig(t *testing.T) {
 		Components: []ComponentConfig{
 			{
 				Name:   "embedder1",
-				Type:   "openai",
+				Type:   "openai-embedder",
 				Kind:   core.KindEmbedder,
 				Params: map[string]any{"model": "text-embedding-3-small"},
 			},
 			{
 				Name:   "embedder2",
-				Type:   "google",
+				Type:   "openai-embedder",
 				Kind:   core.KindEmbedder,
-				Params: map[string]any{"model": "text-embedding-004"},
+				Params: map[string]any{"model": "text-embedding-3-small"},
 			},
 			{
-				Name:   "vectorstore1",
-				Type:   "localvec",
-				Kind:   core.KindVectorStore,
-				Params: map[string]any{"embedder": "embedder1"},
-			},
-			{
-				Name: "retriever1",
-				Type: "dense",
-				Kind: core.KindRetriever,
-				Params: map[string]any{
-					"embedder":     "embedder1",
-					"vector_store": "vectorstore1",
-				},
+				Name:   "retriever1",
+				Type:   "bm25",
+				Kind:   core.KindRetriever,
+				Params: map[string]any{},
 			},
 			{
 				Name: "retriever2",
 				Type: "hybrid",
 				Kind: core.KindRetriever,
 				Params: map[string]any{
-					"retriever":    "retriever1",
-					"embedder":     "embedder2",
-					"vector_store": "vectorstore1",
+					"sub_retrievers": []string{"retriever1"},
 				},
 			},
 			{
@@ -467,8 +448,6 @@ func TestIsComponentReferenceKey(t *testing.T) {
 		{"reranker", true},
 		{"llm", true},
 		{"embedder", true},
-		{"vectorstore", true},
-		{"vector_store", true},
 		{"state_provider", true},
 		{"rule_set", true},
 		{"orchestrator", true},

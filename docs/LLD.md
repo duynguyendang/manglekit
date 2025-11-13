@@ -59,7 +59,7 @@ The `Builder` is the central component for constructing an orchestrator. It foll
 **Process Flow:**
 1.  **Configuration:** The builder is configured programmatically via `With(opts)` calls. The `sdk.FromConfig` function translates YAML into these calls.
 2.  **Component Grouping:** All configured components are grouped by their `core.Kind`.
-3.  **Ordered Build:** The builder iterates through a hard-coded build order (`Embedder` -> `VectorStore` -> `Retriever`, etc.).
+3.  **Ordered Build:** The builder iterates through a hard-coded build order (`Embedder` -> `Retriever`, etc.).
 4.  **Handler Invocation:** For each component, it looks up the corresponding `core.ComponentHandler` in the `Registry`.
 5.  **Delegated Build:** The builder calls the handler's `BuildComponent` method, passing itself as a dependency provider (`builderDI`), the component's factory, its configuration, and the map of already resolved components.
 6.  **Component Construction:** The handler is responsible for creating the dependency struct, calling the factory, and placing the resulting component instance into the resolved map.
@@ -134,7 +134,7 @@ func (h *Handler) BuildComponent(...) (core.ResourceCloser, error) {
 
 # 5. Dependency Injection Layer
 
-The builder implements the `diapi.Builder` interface, which exposes methods like `GetEmbedder(name)` and `GetVectorStore(name)`. This allows component handlers and factories to request specific, named dependencies.
+The builder implements the `diapi.Builder` interface, which exposes methods like `GetEmbedder(name)` and `GetRetriever(name)`. This allows component handlers and factories to request specific, named dependencies.
 
 *   `diapi.Builder`: The core DI interface, implemented by `manglekit.Builder`.
 *   The handler for a given component is responsible for using the `diapi.Builder` to construct the correct dependency struct for its factory.
@@ -157,14 +157,7 @@ Circular dependencies are prevented by the hard-coded linear build order defined
 *   **Config Struct:** `hybrid.HybridOptions`
 *   **Dependencies:** `diapi.RetrieverDeps` (constructed by the handler). The factory uses `deps.SubRetrievers` to access its dependencies.
 
-### VectorStore: Native Manglekit Implementations Only
-*   **Handler:** `internal/vectorstores/handler.go`
-*   **Logic Overview:** The `vectorstores.Handler.BuildComponent()` method builds native Manglekit VectorStore implementations only (e.g., `localvec`).
-*   **Config Struct:** `localvec.Options` or any provider options implementing `ProviderName()`.
-*   **Dependencies:** `diapi.VectorStoreDeps` (constructed by the handler). The factory uses `deps.Embedder` if the VectorStore requires one.
-*   **Use Case:** Local or custom vector storage backends. For Genkit-backed vector stores (Pinecone, Chroma, etc.), use the `genkit-retriever` factory instead.
-
-### Retriever: `genkit-retriever` (NEW - Replaces Dense Orchestrator)
+### Retriever: `genkit-retriever`
 *   **Handler:** `internal/providers/retrievers/handler.go`
 *   **Factory Registration:** Closure registered via `manglekit.Register()` in `internal/providers/retrievers/genkitretriever/factory.go`.
 *   **Registered Key:** `genkit-retriever`
@@ -236,7 +229,6 @@ The `core.Resolved` struct is the final, strongly-typed container of all built c
 
 **Fields:**
 - `Retrievers map[string]Retriever` - All built retriever instances, indexed by name.
-- `VectorStores map[string]VectorStore` - All built vector store instances, indexed by name.
 - `Rerankers map[string]Reranker` - All built reranker instances, indexed by name.
 - `Rules map[string]RuleSet` - All built rule set instances, indexed by name.
 - `LLMs map[string]LLMClient` - All built LLM client instances, indexed by name.
@@ -306,7 +298,7 @@ This section provides a concise, developer-focused view of the repository layout
 manglekit/
 ├── core/         # Foundational contracts, types, DI interfaces
 ├── pipeline/     # Orchestrators and stage implementations
-├── internal/     # Concrete providers (retrievers, llm, rerank, rules, schema, state, embedders, vectorstores)
+├── internal/     # Concrete providers (retrievers, llm, rerank, rules, schema, state, embedders)
 ├── config/       # YAML/ENV loading, normalization, validation
 ├── sdk/          # Programmatic entrypoints and config bridge
 ├── providers/    # Convenience registrars for built-in providers
@@ -346,7 +338,6 @@ Layering rules (enforced):
   - Rerank: [`internal/providers/rerank/handler.go`](internal/providers/rerank/handler.go)
   - Rules: [`internal/providers/rules/handler.go`](internal/providers/rules/handler.go)
   - Embedders: [`internal/embedders/handler.go`](internal/embedders/handler.go)
-  - VectorStores: [`internal/vectorstores/handler.go`](internal/vectorstores/handler.go)
   - State: [`internal/providers/state/handler.go`](internal/providers/state/handler.go)
   - Schema Parsers: [`internal/providers/schemaparsers/handler.go`](internal/providers/schemaparsers/handler.go)
   - Tools: [`internal/providers/tools/handler.go`](internal/providers/tools/handler.go)
@@ -367,7 +358,6 @@ Layering rules (enforced):
   - InMemory State Provider: [`internal/providers/state/inmemory/provider.go`](internal/providers/state/inmemory/provider.go)
   - Redis State Provider: [`internal/providers/state/redis/provider.go`](internal/providers/state/redis/provider.go)
   - Embedders: [`internal/embedders/openai/openai.go`](internal/embedders/openai/openai.go), [`internal/embedders/google/google.go`](internal/embedders/google/google.go)
-  - LocalVec Vector Store: [`internal/vectorstores/localvec/localvec.go`](internal/vectorstores/localvec/localvec.go)
   - Mangle Reasoner: [`internal/providers/reasoners/mangle/reasoner.go`](internal/providers/reasoners/mangle/reasoner.go)
   - Default Planner: [`internal/providers/planners/default/planner.go`](internal/providers/planners/default/planner.go)
   - Tool Adapters: [`internal/providers/tools/http/factory.go`](internal/providers/tools/http/factory.go), [`core/tool_adapters.go`](core/tool_adapters.go)

@@ -14,7 +14,6 @@ import (
 type Builder interface {
 	GetEmbedder(name string) (ai.Embedder, error)
 	GetLLMClient(name string) (core.LLMClient, error)
-	GetVectorStore(name string) (core.VectorStore, error)
 	GetRetriever(name string) (core.Retriever, error)
 	GetReranker(name string) (core.Reranker, error)
 	GetStateProvider(name string) (core.StateProvider, error)
@@ -44,11 +43,6 @@ type EmbedderDep interface {
 	GetEmbedder() string
 }
 
-// VectorStoreDep is an interface for components that depend on a `core.VectorStore`.
-type VectorStoreDep interface {
-	GetVectorStore() string
-}
-
 // SubRetrieversDep is an interface for components that depend on a list of
 // sub-retrievers, identified by their names.
 type SubRetrieversDep interface {
@@ -71,13 +65,6 @@ type RetrieverDeps struct {
 	SubRetrievers map[string]core.Retriever
 }
 
-// DenseRetrieverDeps provides dependencies for a dense retriever.
-type DenseRetrieverDeps struct {
-	CoreDeps
-	Embedder    ai.Embedder
-	VectorStore core.VectorStore
-}
-
 // LLMDeps provides all possible dependencies that an LLM factory might need.
 type LLMDeps struct {
 	CoreDeps
@@ -90,12 +77,6 @@ type EmbedderDeps struct {
 	CoreDeps
 	Genkit *genkit.Genkit
 	Client any // Provider-specific client, e.g., *genai.EmbedderClient
-}
-
-// VectorStoreDeps provides all possible dependencies that a vector store factory might need.
-type VectorStoreDeps struct {
-	CoreDeps
-	Embedder ai.Embedder
 }
 
 // RerankerDeps provides all possible dependencies that a reranker factory might need.
