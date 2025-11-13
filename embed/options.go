@@ -13,9 +13,9 @@ type GoogleEmbedderOptions struct {
 	SkipModelCheck bool `yaml:"skip_model_check,omitempty"`
 }
 
-func (o *GoogleEmbedderOptions) ProviderName() string { return "google" }
-func (o *GoogleEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
-func (o *GoogleEmbedderOptions) ShouldSkipModelCheck() bool      { return o.SkipModelCheck }
+func (o *GoogleEmbedderOptions) ProviderName() string       { return "google" }
+func (o *GoogleEmbedderOptions) ProviderKind() core.Kind    { return core.KindEmbedder }
+func (o *GoogleEmbedderOptions) ShouldSkipModelCheck() bool { return o.SkipModelCheck }
 
 // OpenAIEmbedderOptions provides typed configuration for OpenAI and compatible
 // embedding models.
@@ -38,16 +38,8 @@ type OpenAIEmbedderOptions struct {
 	BaseURL string `yaml:"base_url,omitempty"`
 }
 
-func (o *OpenAIEmbedderOptions) ProviderName() string { return "openai" }
-func (o *OpenAIEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
-func (o *OpenAIEmbedderOptions) GetAPIKey() string       { return o.APIKey }
-func (o *OpenAIEmbedderOptions) GetBaseURL() string      { return o.BaseURL }
-func (o *OpenAIEmbedderOptions) ShouldSkipModelCheck() bool      { return o.SkipModelCheck }
-
-// GroqEmbedderOptions is an alias for OpenAIEmbedderOptions, but for the Groq provider.
-type GroqEmbedderOptions struct {
-	OpenAIEmbedderOptions
-}
-
-func (o *GroqEmbedderOptions) ProviderName() string { return "groq" }
-func (o *GroqEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *OpenAIEmbedderOptions) ProviderName() string       { return "openai" }
+func (o *OpenAIEmbedderOptions) ProviderKind() core.Kind    { return core.KindEmbedder }
+func (o *OpenAIEmbedderOptions) GetAPIKey() string          { return o.APIKey }
+func (o *OpenAIEmbedderOptions) GetBaseURL() string         { return o.BaseURL }
+func (o *OpenAIEmbedderOptions) ShouldSkipModelCheck() bool { return o.SkipModelCheck }

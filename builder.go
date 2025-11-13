@@ -25,6 +25,36 @@ type configItem struct {
 }
 
 // builder provides a fluent, chainable interface for constructing a MangleKit Orchestrator.
+//
+// ⚠️  THREAD SAFETY WARNING: builder is NOT thread-safe and MUST be used by only one goroutine.
+//
+// The builder maintains 11 unprotected component maps (embedders, vectorStores, retrievers, etc.)
+// and should only be accessed from a single goroutine. If you need to construct orchestrators
+// from multiple goroutines, create separate builder instances for each goroutine.
+//
+// Correct Usage:
+//
+//	// Single goroutine usage (thread-safe)
+//	b := NewBuilder(ctx, registry, obs, genkit)
+//	b.WithOptions("component1", opts1)
+//	b.WithOptions("component2", opts2)
+//	orch, closer, err := b.Build(ctx, "orchestrator-name", "")
+//
+// Incorrect Usage (NOT thread-safe):
+//
+//	// ❌ DON'T do this - multiple goroutines accessing the same builder
+//	b := NewBuilder(...)
+//	go b.WithOptions("component1", opts1)  // Race condition!
+//	go b.WithOptions("component2", opts2)  // Race condition!
+//
+// If you need concurrent construction:
+//
+//	// ✓ Create a new builder for each goroutine
+//	go func() {
+//	    b := NewBuilder(...)  // New builder instance
+//	    b.WithOptions("component1", opts1)
+//	    orch, _, _ := b.Build(...)
+//	}()
 type builder struct {
 	registry *Registry
 	genkit   *genkit.Genkit
@@ -230,13 +260,29 @@ func (b *builder) Build(ctx context.Context, orchestratorName, updatableName str
 }
 
 func (b *builder) closeResources(ctx context.Context) error {
-	closeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	timeout := b.opts.ResourceCleanupTimeout
+	if timeout == 0 {
+		timeout = 5 * time.Second // Default to 5 seconds if not configured
+	}
+	closeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var combined error
 	for i := len(b.opts.ResourceClosers) - 1; i >= 0; i-- {
 		if err := b.opts.ResourceClosers[i](closeCtx); err != nil {
+			b.opts.Obs.Logger.Warnf("resource cleanup failed",
+				"closer_index", i,
+				"total_closers", len(b.opts.ResourceClosers),
+				"error", err.Error())
 			combined = errors.Join(combined, err)
+		} else {
+			b.opts.Obs.Logger.Debugf("resource closed successfully",
+				"closer_index", i,
+				"total_closers", len(b.opts.ResourceClosers))
 		}
+	}
+	if combined != nil {
+		b.opts.Obs.Logger.Errorf("resource cleanup completed with errors",
+			"error", combined.Error())
 	}
 	return combined
 }

@@ -336,7 +336,7 @@ MangleKit includes a suite of built-in providers that can be configured in the b
 | **LLM**           | `google`      | Integrates with Google's generative models via Genkit.       | _None_             |
 |                   | `openai`      | Integrates with OpenAI's models (e.g., GPT-4) and compatible APIs like Groq (via `base_url`). | _None_             |
 | **Embedder**      | `google-embedder` | Generates embeddings using Google's models.                  | _None_             |
-|                   | `openai-embedder` | Generates embeddings using OpenAI's models.                  | _None_             |
+|                   | `openai-embedder` | Generates embeddings using OpenAI's models and OpenAI-compatible APIs like Groq (via `base_url`). | _None_             |
 | **Rules Engine**  | `mangle`      | The core Datalog engine for rules-based control.             | _None_             |
 | **Schema Parser** | `jsonschema`  | Parses JSON Schema files into facts for the Mangle engine.   | _None_             |
 |                   | `rdf`         | Parses RDF (Turtle) files into facts for the Mangle engine.  | _None_             |

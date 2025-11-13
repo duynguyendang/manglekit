@@ -484,17 +484,21 @@ for _, provider := range stateProviders {  // Non-deterministic!
 
 #### 1. Configurable Resource Cleanup Timeout
 
-**Location:** `builder.go:222`  
-**Current:** Hard-coded 5-second timeout for cleanup  
-**Impact:** Low (current timeout is reasonable for most use cases)  
-**Acceptable Trade-off:** Yes — can be enhanced in future if needed  
+**Location:** `builder.go:233`  
+**Status:** ✅ **IMPLEMENTED** (as of Nov 2025)  
+**Change:** Timeout is now configurable via `OptionsLike.ResourceCleanupTimeout`  
+**Default:** 5 seconds (backward compatible)  
+**Usage:** Set `opts.ResourceCleanupTimeout` to customize; if unset (0), defaults to 5 seconds  
 
 ```go
-closeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)  // Hard-coded
-defer cancel()
+timeout := b.opts.ResourceCleanupTimeout
+if timeout == 0 {
+    timeout = 5 * time.Second // Default to 5 seconds if not configured
+}
+closeCtx, cancel := context.WithTimeout(ctx, timeout)
 ```
 
-**Enhancement Path:** Make timeout configurable via `BuilderOptions`.
+**Enhancement:** Users can now configure cleanup timeout based on their environment needs (e.g., longer for systems with slow I/O).
 
 #### 2. Cleanup Failure Logging
 
@@ -508,7 +512,6 @@ for i := len(b.opts.ResourceClosers) - 1; i >= 0; i-- {
     if err := b.opts.ResourceClosers[i](closeCtx); err != nil {
         combined = errors.Join(combined, err)  // Aggregated, not logged
     }
-}
 ```
 
 **Enhancement Path:** Add debug logging per closer for troubleshooting.

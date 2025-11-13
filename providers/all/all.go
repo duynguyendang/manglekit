@@ -3,20 +3,24 @@
 package all
 
 import (
+	"errors"
+	"fmt"
+	"log"
+
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/internal/embedders"
-	"github.com/duynguyendang/manglekit/internal/providers/retrievers/bm25"
-	"github.com/duynguyendang/manglekit/internal/providers/retrievers/dense"
-	"github.com/duynguyendang/manglekit/internal/providers/retrievers/hybrid"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
 	"github.com/duynguyendang/manglekit/internal/providers/orchestrators"
+	"github.com/duynguyendang/manglekit/internal/providers/planners"
+	"github.com/duynguyendang/manglekit/internal/providers/reasoners"
 	"github.com/duynguyendang/manglekit/internal/providers/rerank"
 	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers/bm25"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers/dense"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers/hybrid"
 	"github.com/duynguyendang/manglekit/internal/providers/rules"
 	"github.com/duynguyendang/manglekit/internal/providers/rules/mangle"
-	"github.com/duynguyendang/manglekit/internal/providers/planners"
-	"github.com/duynguyendang/manglekit/internal/providers/reasoners"
 	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers"
 	"github.com/duynguyendang/manglekit/internal/providers/state"
 	"github.com/duynguyendang/manglekit/internal/providers/state/inmemory"
@@ -28,6 +32,8 @@ import (
 )
 
 func Register(r *manglekit.Registry) {
+	var errs []error
+
 	// Provider Factories and Options
 	bm25.Register(r)
 	cosine.Register(r)
@@ -39,11 +45,21 @@ func Register(r *manglekit.Registry) {
 	sandwich.Register(r)
 	httpTool.Register(r)
 
-	// NEW: Aggregate Registrations
+	// NEW: Aggregate Registrations with error handling
 	llm.Register(r)
-	embedders.Register(r)
-	schemaparsers.Register(r)
+	if err := embedders.Register(r); err != nil {
+		errs = append(errs, fmt.Errorf("embedders registration: %w", err))
+	}
+	if err := schemaparsers.Register(r); err != nil {
+		errs = append(errs, fmt.Errorf("schemaparsers registration: %w", err))
+	}
 	reasoners.Register(r)
+
+	// If there were any registration errors, log them
+	if len(errs) > 0 {
+		combined := errors.Join(errs...)
+		log.Printf("WARNING: Some providers failed to register: %v\n", combined)
+	}
 
 	// Component Handlers
 	tools.Register(r)

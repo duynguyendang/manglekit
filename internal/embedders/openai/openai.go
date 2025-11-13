@@ -1,5 +1,6 @@
 // Package openai provides a MangleKit embedder implementation for OpenAI and
-// other services that offer an OpenAI-compatible API (like Groq).
+// other services that offer an OpenAI-compatible API (such as Groq).
+// Groq can be configured by setting the base_url parameter in the config.yaml.
 package openai
 
 import (
@@ -14,15 +15,9 @@ import (
 	"github.com/openai/openai-go/option"
 )
 
-func Register(r *manglekit.Registry) {
-	must := func(err error) {
-		if err != nil {
-			panic(err)
-		}
-	}
-
+func Register(r *manglekit.Registry) error {
 	// Register OpenAI Embedder
-	must(manglekit.Register(r, &embed.OpenAIEmbedderOptions{},
+	if err := manglekit.Register(r, &embed.OpenAIEmbedderOptions{},
 		func(ctx context.Context, deps diapi.EmbedderDeps, cfg *embed.OpenAIEmbedderOptions) (ai.Embedder, error) {
 			if deps.Genkit == nil {
 				return nil, fmt.Errorf("missing required dependency 'genkit'")
@@ -44,20 +39,9 @@ func Register(r *manglekit.Registry) {
 			}
 			return embedder, nil
 		},
-	))
+	); err != nil {
+		return fmt.Errorf("failed to register openai embedder: %w", err)
+	}
 
-	// Register Groq Embedder
-	must(manglekit.Register(r, &embed.GroqEmbedderOptions{},
-		func(ctx context.Context, deps diapi.EmbedderDeps, cfg *embed.GroqEmbedderOptions) (ai.Embedder, error) {
-			if deps.Genkit == nil {
-				return nil, fmt.Errorf("missing required dependency 'genkit'")
-			}
-			plugin := &oai.OpenAI{APIKey: cfg.APIKey}
-			embedder := plugin.Embedder(deps.Genkit, cfg.Model)
-			if embedder == nil {
-				return nil, fmt.Errorf("failed to get groq embedder %q from genkit", cfg.Model)
-			}
-			return embedder, nil
-		},
-	))
+	return nil
 }

@@ -91,9 +91,10 @@ Provider Name Notes
   - Retrievers: `bm25`, `dense`, `hybrid`, `in-memory`
   - Reranker: `cosine`
   - LLMs: `openai`, `google`
-  - Embedders: `openai`, `groq`, `google`
+  - Embedders: `openai`, `google`
   - Orchestrators: `sandwich`, `declarative`
 - Field casing in YAML params follows struct field names when no `yaml:"..."` tag exists. For Google LLM and embedders, prefer `APIKey` and `Model` keys. For others with YAML tags (e.g., `base_url`, `vectorStore`, `top_k`), use the tagged name.
+- **Note on Groq:** Use the `openai` embedder/LLM provider with a custom `base_url` parameter pointing to the Groq API endpoint.
 
 Common Variations
 - Add reranking (cosine): requires an embedder.

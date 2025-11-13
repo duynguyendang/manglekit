@@ -4,13 +4,16 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync"
 
 	"github.com/duynguyendang/manglekit/core"
 )
 
 // Registry is the central store for all registered component constructors.
 // It has been refactored to use a single, generic, and type-safe mechanism.
+// It is thread-safe for concurrent reads and writes via an internal mutex.
 type Registry struct {
+	mu                sync.RWMutex
 	factories         map[core.Kind]map[string]core.GenericFactory
 	handlers          map[core.Kind]core.ComponentHandler
 	OptionsTypeToName map[reflect.Type]string
@@ -32,6 +35,8 @@ func NewRegistry() *Registry {
 // which must implement `core.ProviderOptions`. This eliminates string literals
 // and the possibility of mis-categorizing a provider.
 //
+// This method is thread-safe and can be called concurrently from multiple goroutines.
+//
 // Example:
 //
 //	Register(
@@ -46,6 +51,9 @@ func Register[T any, D any, O core.ProviderOptions](
 	optsSample O,
 	fn func(ctx context.Context, deps D, cfg O) (T, error),
 ) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	kind := optsSample.ProviderKind()
 	name := optsSample.ProviderName()
 
@@ -67,7 +75,11 @@ func Register[T any, D any, O core.ProviderOptions](
 }
 
 // Get retrieves a generic factory from the registry by its kind and name.
+// This method is thread-safe and can be called concurrently from multiple goroutines.
 func (r *Registry) Get(kind core.Kind, name string) (core.GenericFactory, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
 	if kindMap, ok := r.factories[kind]; ok {
 		if factory, ok := kindMap[name]; ok {
 			return factory, nil
@@ -77,15 +89,23 @@ func (r *Registry) Get(kind core.Kind, name string) (core.GenericFactory, error)
 }
 
 // RegisterHandler registers a component handler for a specific kind.
+// This method is thread-safe and can be called concurrently from multiple goroutines.
 func (r *Registry) RegisterHandler(handler core.ComponentHandler) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	r.handlers[handler.Kind()] = handler
 }
 
 // GetHandler retrieves a component handler for a specific kind.
+// This method is thread-safe and can be called concurrently from multiple goroutines.
 func (r *Registry) GetHandler(kind core.Kind) (core.ComponentHandler, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
 	handler, ok := r.handlers[kind]
 	if !ok {
-		return nil, fmt.Errorf("no handler registered for kind %q", kind)
+		return nil, fmt.Errorf("no handler for kind %q", kind)
 	}
 	return handler, nil
 }

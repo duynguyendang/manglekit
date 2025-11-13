@@ -21,21 +21,18 @@ const (
 	defaultDim            = 768
 )
 
-func Register(r *manglekit.Registry) {
-	must := func(err error) {
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	must(manglekit.Register(r, &embed.GoogleEmbedderOptions{},
+func Register(r *manglekit.Registry) error {
+	if err := manglekit.Register(r, &embed.GoogleEmbedderOptions{},
 		func(ctx context.Context, deps diapi.EmbedderDeps, cfg *embed.GoogleEmbedderOptions) (ai.Embedder, error) {
 			if deps.Genkit == nil {
 				return nil, fmt.Errorf("missing required dependency 'genkit'")
 			}
 			return New(*cfg, deps.Genkit)
 		},
-	))
+	); err != nil {
+		return fmt.Errorf("failed to register google embedder: %w", err)
+	}
+	return nil
 }
 
 // GoogleEmbedder implements the `ai.Embedder` interface from Genkit, providing

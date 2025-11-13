@@ -16,6 +16,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// mockRetrieverOptions defines options for the mock retriever used in tests.
+type mockRetrieverOptions struct{}
+
+func (o *mockRetrieverOptions) ProviderName() string {
+	return "mock-retriever"
+}
+
+func (o *mockRetrieverOptions) ProviderKind() core.Kind {
+	return core.KindRetriever
+}
+
+// mockRetriever is a minimal retriever implementation for testing.
+type mockRetriever struct{}
+
+func (m *mockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
+	return core.RetrieveResult{
+		Docs: []core.Doc{
+			{
+				ID:     "mock-doc-1",
+				Text:   "Mock document content",
+				Source: "mock",
+				Meta:   make(map[string]any),
+			},
+		},
+		Meta: make(map[string]any),
+	}, nil
+}
+
 func registerTestComponents(r *manglekit.Registry) {
 	sandwich.Register(r)
 	llm.RegisterOpenAI(r)

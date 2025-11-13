@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/firebase/genkit/go/ai"
 )
@@ -35,7 +36,6 @@ type Doc struct {
 	// such as author, creation date, or other annotations.
 	Meta map[string]any
 }
-
 
 // VectorStore defines the standard interface for vector database operations,
 // allowing for pluggable vector storage backends. Implementations of this
@@ -171,11 +171,12 @@ func (r *Resolved) GetToolByName(name string) (Tool, error) {
 // OptionsLike is a temporary struct to hold global settings during the build process.
 // It will be replaced by a more robust configuration management system in the future.
 type OptionsLike struct {
-	TopK              int
-	MaxTokens         int
-	FallbackThreshold float64
-	Obs               Observability
-	ResourceClosers   []ResourceCloser
+	TopK                   int
+	MaxTokens              int
+	FallbackThreshold      float64
+	Obs                    Observability
+	ResourceClosers        []ResourceCloser
+	ResourceCleanupTimeout time.Duration // Optional timeout for resource cleanup; defaults to 5 seconds
 }
 
 // Observability provides a set of interfaces for integrating logging, tracing,
