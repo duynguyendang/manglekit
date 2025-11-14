@@ -22,8 +22,8 @@ import (
 // mockLLMOptions provides a dummy options struct for the mock LLM.
 type mockLLMOptions struct{}
 
-func (o *mockLLMOptions) ProviderName() string { return "mock-llm" }
-func (o *mockLLMOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o *mockLLMOptions) ProviderName() string    { return "mock-llm" }
+func (o *mockLLMOptions) ProviderKind() core.Kind { return core.KindLLM }
 func (o *mockLLMOptions) GetProviderOptions() any { return o }
 
 // mockLLM is a mock implementation of core.LLMClient for testing.
@@ -36,8 +36,8 @@ func (m *mockLLM) Complete(ctx context.Context, req core.LLMRequest) (core.LLMRe
 // mockEmbedderOptions provides a dummy options struct for the mock embedder.
 type mockEmbedderOptions struct{}
 
-func (o *mockEmbedderOptions) ProviderName() string { return "mock-embedder" }
-func (o *mockEmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *mockEmbedderOptions) ProviderName() string    { return "mock-embedder" }
+func (o *mockEmbedderOptions) ProviderKind() core.Kind { return core.KindEmbedder }
 func (o *mockEmbedderOptions) GetProviderOptions() any { return o }
 
 // mockEmbedder is a mock implementation of ai.Embedder for testing.
@@ -46,15 +46,15 @@ type mockEmbedder struct{}
 func (m *mockEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.EmbedResponse, error) {
 	return &ai.EmbedResponse{}, nil
 }
-func (m *mockEmbedder) Name() string                     { return "mock-embedder" }
-func (m *mockEmbedder) Register(r api.Registry)          {}
+func (m *mockEmbedder) Name() string            { return "mock-embedder" }
+func (m *mockEmbedder) Register(r api.Registry) {}
 
 // mockRetrieverOptions provides a dummy options struct for the mock retriever.
 type mockRetrieverOptions struct{}
 
-func (o *mockRetrieverOptions) ProviderName() string { return "mock-retriever" }
-func (o *mockRetrieverOptions) ProviderKind() core.Kind   { return core.KindRetriever }
-func (o *mockRetrieverOptions) GetProviderOptions() any   { return o }
+func (o *mockRetrieverOptions) ProviderName() string    { return "mock-retriever" }
+func (o *mockRetrieverOptions) ProviderKind() core.Kind { return core.KindRetriever }
+func (o *mockRetrieverOptions) GetProviderOptions() any { return o }
 
 // mockRetriever is a mock implementation of core.Retriever for testing.
 type mockRetriever struct{}

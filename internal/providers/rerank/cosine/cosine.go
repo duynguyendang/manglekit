@@ -30,9 +30,9 @@ type CosineOptions struct {
 	VectorDim int `json:"vectorDim,omitempty"`
 }
 
-func (o *CosineOptions) ProviderName() string { return "cosine" }
-func (o *CosineOptions) ProviderKind() core.Kind   { return core.KindReranker }
-func (o *CosineOptions) GetEmbedder() string    { return o.Embedder }
+func (o *CosineOptions) ProviderName() string    { return "cosine" }
+func (o *CosineOptions) ProviderKind() core.Kind { return core.KindReranker }
+func (o *CosineOptions) GetEmbedder() string     { return o.Embedder }
 
 func Register(r *manglekit.Registry) {
 	manglekit.Register(r, &CosineOptions{},

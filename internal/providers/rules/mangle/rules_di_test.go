@@ -10,9 +10,9 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
-	"github.com/duynguyendang/manglekit/internal/providers/rules/mangle"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
 	"github.com/duynguyendang/manglekit/internal/providers/rules"
+	"github.com/duynguyendang/manglekit/internal/providers/rules/mangle"
 	"github.com/duynguyendang/manglekit/pipeline/sandwich"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/stretchr/testify/require"
@@ -21,8 +21,8 @@ import (
 // mockLLMOptions provides a dummy options struct for the mock LLM.
 type mockLLMOptions struct{}
 
-func (o *mockLLMOptions) ProviderName() string { return "mock-llm" }
-func (o *mockLLMOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o *mockLLMOptions) ProviderName() string    { return "mock-llm" }
+func (o *mockLLMOptions) ProviderKind() core.Kind { return core.KindLLM }
 func (o *mockLLMOptions) GetProviderOptions() any { return o }
 
 // mockLLM is a mock implementation of core.LLMClient for testing.
@@ -41,9 +41,9 @@ func (m *mockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) 
 
 type mockRetrieverOptions struct{}
 
-func (o *mockRetrieverOptions) ProviderName() string { return "mock-retriever" }
-func (o *mockRetrieverOptions) ProviderKind() core.Kind   { return core.KindRetriever }
-func (o *mockRetrieverOptions) GetProviderOptions() any   { return o }
+func (o *mockRetrieverOptions) ProviderName() string    { return "mock-retriever" }
+func (o *mockRetrieverOptions) ProviderKind() core.Kind { return core.KindRetriever }
+func (o *mockRetrieverOptions) GetProviderOptions() any { return o }
 
 func registerTestComponents(r *manglekit.Registry) {
 	mangle.Register(r)

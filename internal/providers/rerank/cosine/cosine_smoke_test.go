@@ -37,7 +37,7 @@ func (m *mockSmokeEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*a
 	}, nil
 }
 
-func (m *mockSmokeEmbedder) Name() string          { return "mock-smoke-embedder" }
+func (m *mockSmokeEmbedder) Name() string            { return "mock-smoke-embedder" }
 func (m *mockSmokeEmbedder) Register(r api.Registry) {}
 
 func TestCosineReranker_BasicRanking(t *testing.T) {

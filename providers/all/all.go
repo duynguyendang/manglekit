@@ -12,6 +12,7 @@ import (
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
 	"github.com/duynguyendang/manglekit/internal/providers/orchestrators"
 	"github.com/duynguyendang/manglekit/internal/providers/planners"
+	_ "github.com/duynguyendang/manglekit/internal/providers/planners/symbolic"
 	"github.com/duynguyendang/manglekit/internal/providers/reasoners"
 	"github.com/duynguyendang/manglekit/internal/providers/rerank"
 	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
