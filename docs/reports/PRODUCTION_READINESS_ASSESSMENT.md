@@ -42,7 +42,6 @@ The Manglekit codebase demonstrates **strong architectural foundations** with ex
 - ✅ Proper concurrency controls
 
 **Remaining Issues (Non-Blocking):**
-- ⚠️ Configurable cleanup timeout defaults to 5 seconds — operational tuning knob, not a hard-coded limitation (see `builder.go` and `docs/CONTEXT.md`)
 - ⚠️ Silent cleanup failures are aggregated but not individually logged — observability enhancement opportunity
 - 📋 No default planner implementation (documented gap — GAP-005 in `docs/CONTEXT.md`)
 - 📋 Limited provider dependency validation coverage (non-critical)
