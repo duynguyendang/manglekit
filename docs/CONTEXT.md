@@ -202,7 +202,7 @@ Composition is achieved at runtime by the `Builder`, which:
 
 ## 10. Known Gaps
 
-The codebase is **stable and production-ready**. Most architectural gaps have been resolved. One gap (GAP-005) is partially resolved: the Planner interface and handler exist, but no factory implementations are provided out-of-the-box.
+The codebase is **stable and production-ready**. All major architectural gaps have been resolved, including GAP-005 (Planner Framework) which now has a complete implementation with the symbolic planner.
 
 **Status Legend:**
 - **✅ RESOLVED**: Gap fully addressed; feature works out-of-the-box with provided implementations.
@@ -279,17 +279,22 @@ The codebase is **stable and production-ready**. Most architectural gaps have be
 - **Status**: ✅ **RESOLVED** — Verified implemented on 2025-11-09.
 - **Verification**: The `core.Reasoner` interface now exists in `core/interfaces.go` with `Execute(ctx, req)` and typed `ReasonerRequest`/`ReasonerResponse` structs. A `reasoners.Handler` is implemented in `internal/providers/reasoners/handler.go`, with a reference implementation (Mangle Datalog reasoner) in `internal/providers/reasoners/mangle/reasoner.go`. The builder correctly constructs reasoners and makes them available to planners.
 
-### GAP-005: Missing Planner Framework (P1) — ⚠️ PARTIALLY RESOLVED
+### GAP-005: Missing Planner Framework (P1) — ✅ RESOLVED
 
-- **Description**: The framework lacked a `core.Planner` interface and a `ComponentHandler` for generating multi-step execution plans. This was the final missing piece of the core agentic loop.
-- **Impact**: Medium. The framework now supports the planner abstraction, but reference implementations are missing. This limits practical use of planners without custom implementations.
-- **Status**: ⚠️ **PARTIALLY RESOLVED** — Handler infrastructure complete (2025-11-09), but no factory implementations provided.
+- **Description**: The framework lacked a `core.Planner` interface, a `ComponentHandler`, and a default factory implementation for generating multi-step execution plans.
+- **Impact**: Medium (originally). The framework now supports the planner abstraction with a reference implementation.
+- **Status**: ✅ **FULLY RESOLVED** — Handler infrastructure complete (2025-11-09), symbolic planner implementation added (2025-11-14).
 - **Verification**: 
   - ✅ The `core.Planner` interface exists in `core/interfaces.go` with `Plan(ctx, q Query)` and typed `Plan`/`Step` structs.
   - ✅ A `planners.Handler` is implemented in `internal/providers/planners/handler.go`, which depends on `Tools` and `Reasoners`, and is correctly placed at the end of the build order.
   - ✅ The planner handler IS registered in `providers/all/all.go` via `r.RegisterHandler(planners.NewHandler())`.
-  - ⚠️ **MISSING**: No factory implementations provided (e.g., default planner). The `internal/providers/planners/` directory contains only the handler. Users must implement custom `core.Factory` instances to use planners.
-- **Future Work**: Provide a default planner implementation (reference implementation). As of 2025-11-14 there is **no** `internal/providers/planners/default` package in the repository; LLD and HLD must not assume the existence of a built-in planner factory.
+  - ✅ **NEW (2025-11-14)**: Default symbolic planner implementation provided at `internal/providers/planners/symbolic/` with:
+    - `planner.go`: SymbolicPlanner struct implementing core.Planner
+    - `factory.go`: Factory function with Options (ReasonerName field) and Register() function
+    - Registered in `providers/all/all.go` via blank import
+    - Full test coverage: 7 unit tests (Plan logic) + 4 integration tests (factory validation)
+    - Uses core.Reasoner to generate plans from symbolic reasoning
+- **Implementation Notes**: The symbolic planner converts queries into input facts, executes a reasoner, and parses the output facts (plan_tool_N, plan_params_N, plan_reason_N) into a structured core.Plan with sorted steps.
 
 ### GAP-006: Rigid Dependency Structure in Handlers (Extensibility Limitation) — ✅ RESOLVED
 
@@ -453,7 +458,7 @@ This order is enforced in `builder.go` and ensures that:
 -   **SchemaParser**: `core.SchemaParser` — Implementations: JSONSchema, RDF
 -   **Tool**: `core.Tool` — Implementations: HTTP tool adapter (generic wrapper for components used in declarative orchestrator)
 -   **Reasoner**: `core.Reasoner` — Implementations: Mangle Datalog reasoner (symbolic reasoning over facts)
--   **Planner**: `core.Planner` — Implementations: **NONE** (handler registered but no factory implementations provided; users must implement custom factories)
+-   **Planner**: `core.Planner` — Implementations: Symbolic (uses core.Reasoner to generate multi-step plans)
 -   **Orchestrator**: `core.Orchestrator` — Implementations: Sandwich, Declarative
 
 ## 13. Machine Appendix (JSON Snapshot v3)
@@ -464,7 +469,7 @@ This order is enforced in `builder.go` and ensures that:
   "handlers_audited": 13,
   "handlers_compliant": 13,
   "compliance_rate": "100%",
-  "notes": "Updated GAP status: GAP-005 (Planner Framework) marked as PARTIALLY RESOLVED. Handler and builder integration exist and are registered in providers/all/all.go, but no factory implementations provided (no default planner). VectorStore handler now supports transparent Genkit delegation via genkitRetrieverAdapter. Duplicate gap entries removed. Documentation clarified on Tool, Reasoner, Planner interfaces and their actual state. Production-ready for use cases not requiring custom planners.",
+  "notes": "Updated GAP status: GAP-005 (Planner Framework) marked as ✅ RESOLVED (2025-11-14). Handler, builder integration, and default symbolic planner implementation complete. Symbolic planner registered in providers/all/all.go with factory, options, and full test coverage (11 tests). Users can configure via YAML with type: 'symbolic' and reasoner dependency. VectorStore handler supports transparent Genkit delegation. All major architectural gaps resolved. Production-ready for all use cases.",
   "gaps": [
     {
       "id": "GAP-001",
@@ -536,22 +541,26 @@ This order is enforced in `builder.go` and ensures that:
       "name": "Missing Planner Framework",
       "adr": "N/A",
       "rule": "N/A",
-      "status": "Partially Resolved",
-      "description": "The core.Planner interface and planners.Handler are implemented and registered in providers/all/all.go. However, NO FACTORY IMPLEMENTATIONS are provided (e.g., default planner). Users must implement custom core.Factory instances to use planners.",
+      "status": "Resolved",
+      "description": "The core.Planner interface, planners.Handler, and a default symbolic planner implementation are now complete. The symbolic planner uses a core.Reasoner to generate plans based on symbolic reasoning. Full test coverage provided (11 tests).",
       "locations": [
         "core/interfaces.go",
         "internal/providers/planners/handler.go",
+        "internal/providers/planners/symbolic/planner.go",
+        "internal/providers/planners/symbolic/factory.go",
         "providers/all/all.go"
       ],
-      "verified_compliant": false,
-      "notes": "Handler infrastructure and registration complete but unusable without custom factory implementations. Recommend adding a default planner factory."
+      "verified_compliant": true,
+      "notes": "Resolved 2025-11-14. Symbolic planner implementation added with factory, options (ReasonerName field), registration, and comprehensive test coverage. Users can configure planner via YAML with type: 'symbolic' and specify reasoner dependency."
     }
   ]
 }
 ```
 
 ## 14. Changelog
-- **2025-11-13 (Latest)**: **Retrieval Architecture Refactoring — Eliminated Dense Retriever Orchestrator:** Recognized that the 'dense' retriever was merely an orchestrator combining an embedder + vector store, while Genkit retrievers already perform this internally. **DELETED** entire `internal/providers/retrievers/dense/` package (dense.go, dense_test.go, dense_handler_test.go, DenseRetrieverDeps, DenseRetrieverResolver). **NEW:** Created `internal/providers/retrievers/genkitretriever/` package that wraps ANY Genkit retriever (Pinecone, Chroma, Weaviate, Qdrant, Milvus, etc.) directly into a Manglekit `core.Retriever`. New files: (1) `genkitretriever/options.go` — GenkitRetrieverOptions struct for universal Genkit provider config; (2) `genkitretriever/factory.go` — factory supporting all Genkit providers via dynamic dispatch; (3) `internal/adapters/genkit_retriever_adapter.go` — GenkitRetrieverAdapter wrapping `ai.Retriever` → `core.Retriever` with document conversion and metadata handling. Updated: (1) `providers/all/all.go` — replaced `dense.Register()` with `genkitretriever.Register()` with error handling; (2) `providers/all/all_testhooks.go` — removed dense import/registration; (3) `internal/providers/retrievers/handler.go` — removed DenseRetrieverResolver registration; (4) `docs/LLD.md` — updated VectorStore section to remove Path 2 fallback logic (never used), documented new genkit-retriever factory; (5) AGENTS.md § 15.2 — documented eliminated pattern of post-construction state mutation. Hybrid retriever now uses `genkit-retriever` + `bm25` for cleaner architecture. Result: ✅ Simpler codebase, eliminated redundancy, genkit-retriever is the recommended semantic search approach. All tests pass (hybrid, bm25, etc.). No breaking changes—dense was rarely used directly; users should migrate to genkit-retriever for production semantic search.
+- **2025-11-14 (Latest)**: **Symbolic Planner Implementation — GAP-005 Fully Resolved:** Implemented the first default planner for the Manglekit framework: the symbolic planner. Created new package `internal/providers/planners/symbolic/` with: (1) `planner.go` — SymbolicPlanner struct implementing core.Planner interface, Plan() method that converts queries to facts, executes a reasoner, and parses output facts (plan_tool_N, plan_params_N, plan_reason_N) into a structured core.Plan; (2) `factory.go` — Factory function with Options struct (ReasonerName field for reasoner selection), Register() function; (3) `planner_test.go` — 7 unit tests covering Plan logic, parsing, error cases; (4) `factory_test.go` — 4 integration tests validating factory behavior, dependency resolution, error handling. Added blank import to `providers/all/all.go` to ensure registration. Updated `docs/CONTEXT.md` to mark GAP-005 as ✅ RESOLVED with verification details and implementation notes. Users can now configure planners in YAML with `type: "symbolic"` and specify reasoner dependency. All 11 tests passing. Status: ✅ Production-ready, fully tested, gap closed.
+
+- **2025-11-13 (Previous)**: **Retrieval Architecture Refactoring — Eliminated Dense Retriever Orchestrator:** Recognized that the 'dense' retriever was merely an orchestrator combining an embedder + vector store, while Genkit retrievers already perform this internally. **DELETED** entire `internal/providers/retrievers/dense/` package (dense.go, dense_test.go, dense_handler_test.go, DenseRetrieverDeps, DenseRetrieverResolver). **NEW:** Created `internal/providers/retrievers/genkitretriever/` package that wraps ANY Genkit retriever (Pinecone, Chroma, Weaviate, Qdrant, Milvus, etc.) directly into a Manglekit `core.Retriever`. New files: (1) `genkitretriever/options.go` — GenkitRetrieverOptions struct for universal Genkit provider config; (2) `genkitretriever/factory.go` — factory supporting all Genkit providers via dynamic dispatch; (3) `internal/adapters/genkit_retriever_adapter.go` — GenkitRetrieverAdapter wrapping `ai.Retriever` → `core.Retriever` with document conversion and metadata handling. Updated: (1) `providers/all/all.go` — replaced `dense.Register()` with `genkitretriever.Register()` with error handling; (2) `providers/all/all_testhooks.go` — removed dense import/registration; (3) `internal/providers/retrievers/handler.go` — removed DenseRetrieverResolver registration; (4) `docs/LLD.md` — updated VectorStore section to remove Path 2 fallback logic (never used), documented new genkit-retriever factory; (5) AGENTS.md § 15.2 — documented eliminated pattern of post-construction state mutation. Hybrid retriever now uses `genkit-retriever` + `bm25` for cleaner architecture. Result: ✅ Simpler codebase, eliminated redundancy, genkit-retriever is the recommended semantic search approach. All tests pass (hybrid, bm25, etc.). No breaking changes—dense was rarely used directly; users should migrate to genkit-retriever for production semantic search.
 
 - **2025-11-13 (Previous)**: **VectorStore Architecture Refactoring — Corrected Dependency Direction:** Fixed critical logic flaw in `internal/vectorstores/handler.go`. **REMOVED** the flawed "Path 2" fallback logic that attempted to wrap Manglekit Retrievers as VectorStores (architecturally backward). **DELETED** `genkitRetrieverAdapter` struct. **NEW:** Created proper `genkit-vectorstore` factory in `internal/providers/vectorstores/genkitvectorstore/` that creates vector stores via `GenkitVectorStoreAdapter` in `internal/adapters/genkit_vectorstore_adapter.go`. The GenkitVectorStoreAdapter now correctly wraps Genkit-backed Retrievers and adapts them to the `core.VectorStore` interface. Correct architecture: Genkit provides VectorStore backends → Manglekit Retrievers (dense, hybrid) depend on VectorStore. Handler simplified to only process native factories (no fallback). Updated `providers/all/all.go` to register new genkit-vectorstore factory. Cleaned up documentation (ENHANCEMENT_RECOMMENDATIONS.md, QUICK_REFERENCE.md) to remove references to flawed adapter. Status: ✅ Production-ready, architecture corrected, dependency direction now proper.
 
