@@ -1,8 +1,8 @@
 # Production Readiness Assessment - Manglekit
 
-**Assessment Date:** November 13, 2025  
-**Last Updated:** November 13, 2025 (Phase 1 Completion)
-**Version:** 0.7.0  
+**Assessment Date:** November 14, 2025  
+**Last Updated:** November 14, 2025 (Phase 1 + Architecture Sync)
+**Version:** 0.7.1  
 **Branch:** refactoring  
 **Assessor:** AI Code Review Agent  
 **Test Status:** ✅ 76/76 tests passing
@@ -28,7 +28,7 @@ All critical blocking issues have been resolved:
 
 ## 🎯 Executive Summary
 
-### Overall Verdict: **STRONG GO** (8.5/10) ⬆️ Updated
+### Overall Verdict: **STRONG GO** (8.5/10) ⬆️ Confirmed
 
 The Manglekit codebase demonstrates **strong architectural foundations** with excellent design patterns, comprehensive documentation, and robust testing. **Critical compile and panic issues have been resolved**. Only 2 minor operational enhancements remain before production deployment.
 
@@ -42,9 +42,9 @@ The Manglekit codebase demonstrates **strong architectural foundations** with ex
 - ✅ Proper concurrency controls
 
 **Remaining Issues (Non-Blocking):**
-- ⚠️ Hard-coded cleanup timeout (5 seconds) - operational enhancement
-- ⚠️ Silent cleanup failures (observability improvement) - partially resolved
-- 📋 No planner implementation (documented gap - PAG-005)
+- ⚠️ Configurable cleanup timeout defaults to 5 seconds — operational tuning knob, not a hard-coded limitation (see `builder.go` and `docs/CONTEXT.md`)
+- ⚠️ Silent cleanup failures are aggregated but not individually logged — observability enhancement opportunity
+- 📋 No default planner implementation (documented gap — GAP-005 in `docs/CONTEXT.md`)
 - 📋 Limited provider dependency validation coverage (non-critical)
 
 ---
@@ -215,35 +215,35 @@ $ go build ./providers/all  # ✅ Success
 
 ---
 
-### 3. **No Planner Implementation** 🚧 **DOCUMENTED GAP** (Not a Blocker)
+### 3. **No Default Planner Implementation** 🚧 **DOCUMENTED GAP** (Not a Blocker)
 
 **Severity:** 🟡 **MODERATE** (Expected Gap)  
 **Priority:** P1 (Should implement but not blocking)  
-**Status:** Documented in CONTEXT.md (GAP-005) ⚠️ **Non-Critical**
+**Status:** Documented in CONTEXT.md (GAP-005) ⚠️ **Partially Resolved**
 
-**Current State:**
+**Current State (Confirmed vs `docs/CONTEXT.md` v0.7.1 and Code):**
 - ✅ `core.Planner` interface exists
-- ✅ `planners.Handler` implemented and registered
-- ❌ **NO factory implementations provided**
-- ❌ No default planner available
+- ✅ `planners.Handler` implemented and registered in `providers/all/all.go`
+- ❌ **NO factory implementations provided** (no built-in planners)
+- ❌ No default planner available — users must supply custom `core.Factory` implementations for planners
 
-**From CONTEXT.md (lines 500-510):**
+**From CONTEXT.md (GAP-005 excerpt):**
 ```json
 {
   "id": "GAP-005",
   "name": "Missing Planner Framework",
-  "status": "Partially Resolved",
+    "status": "Partially Resolved",
   "description": "The core.Planner interface and planners.Handler are implemented and registered in providers/all/all.go. However, NO FACTORY IMPLEMENTATIONS are provided (e.g., default planner). Users must implement custom core.Factory instances to use planners.",
   "verified_compliant": false,
-  "notes": "Handler infrastructure and registration complete but unusable without custom factory implementations. Recommend adding a default planner factory."
+    "notes": "Handler infrastructure and registration complete but unusable without custom factory implementations. Recommend adding a default planner factory."
 }
 ```
 
 **Impact:**
-- ⚠️ Users expecting planner functionality will encounter runtime errors
-- ⚠️ Framework advertises planners but can't deliver out-of-the-box
-- ⚠️ Requires custom implementations for basic use cases
-- **NOT A PRODUCTION BLOCKER** - Can be used without planner support
+- ⚠️ Users expecting planner functionality will encounter errors if they reference planner providers without also supplying factories
+- ⚠️ Framework exposes planner contracts and handler, but does not deliver any planner out-of-the-box
+- ⚠️ Requires custom implementations for even basic planner use cases
+- ✅ **NOT A PRODUCTION BLOCKER** — typical RAG use cases (sandwich/declarative orchestrators, retrievers, LLMs, tools, rules, state) function without planners
 
 **Recommended Actions for Phase 2:**
 
