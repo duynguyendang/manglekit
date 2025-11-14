@@ -2,8 +2,8 @@
 context_type: low_level_design
 project: manglekit
 language: go
-version: 0.6.0
-last_updated: 2025-11-12
+version: 0.6.1
+last_updated: 2025-11-14
 stability: stable
 audience: developers
 ---
@@ -359,7 +359,7 @@ Layering rules (enforced):
   - Redis State Provider: [`internal/providers/state/redis/provider.go`](internal/providers/state/redis/provider.go)
   - Embedders: [`internal/embedders/openai/openai.go`](internal/embedders/openai/openai.go), [`internal/embedders/google/google.go`](internal/embedders/google/google.go)
   - Mangle Reasoner: [`internal/providers/reasoners/mangle/reasoner.go`](internal/providers/reasoners/mangle/reasoner.go)
-  - Default Planner: [`internal/providers/planners/default/planner.go`](internal/providers/planners/default/planner.go)
+  - Planner handler only (no default implementation): [`internal/providers/planners/handler.go`](internal/providers/planners/handler.go) — see `docs/CONTEXT.md` GAP-005 for planner status
   - Tool Adapters: [`internal/providers/tools/http/factory.go`](internal/providers/tools/http/factory.go), [`core/tool_adapters.go`](core/tool_adapters.go)
 
 ## 16.3 Quick Tasks Cheat Sheet

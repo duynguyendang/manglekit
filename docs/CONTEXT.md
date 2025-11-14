@@ -2,8 +2,8 @@
 context_type: architecture_standard
 project: manglekit
 language: go
-version: 0.7.0
-last_updated: 2025-11-13
+version: 0.7.1
+last_updated: 2025-11-14
 stability: stable
 audience: humans_and_agents
 ---
@@ -289,7 +289,7 @@ The codebase is **stable and production-ready**. Most architectural gaps have be
   - ✅ A `planners.Handler` is implemented in `internal/providers/planners/handler.go`, which depends on `Tools` and `Reasoners`, and is correctly placed at the end of the build order.
   - ✅ The planner handler IS registered in `providers/all/all.go` via `r.RegisterHandler(planners.NewHandler())`.
   - ⚠️ **MISSING**: No factory implementations provided (e.g., default planner). The `internal/providers/planners/` directory contains only the handler. Users must implement custom `core.Factory` instances to use planners.
-- **Future Work**: Provide a default planner implementation (reference implementation).
+- **Future Work**: Provide a default planner implementation (reference implementation). As of 2025-11-14 there is **no** `internal/providers/planners/default` package in the repository; LLD and HLD must not assume the existence of a built-in planner factory.
 
 ### GAP-006: Rigid Dependency Structure in Handlers (Extensibility Limitation) — ✅ RESOLVED
 
@@ -337,9 +337,9 @@ The codebase is **stable and production-ready**. Most architectural gaps have be
   - ✅ Dense package and tests removed; no functional regression
 
 - **Architectural Impact**:
-  - ✅ Handler layer decoupled from specific resolver implementations
+  - ✅ Handler layer decoupled from specific resolver implementations (retrievers now use a `DependencyResolver` registry)
   - ✅ Lazy resolver initialization prevents circular dependencies
-  - ✅ Extensible pattern ready for adoption in other handlers
+  - ✅ Extensible pattern ready for adoption in other handlers; other handler families still use direct `diapi.Builder` getters today.
 
 ### ENHANCEMENT: Provider Dependency Validation — ✅ COMPLETED
 
@@ -459,8 +459,8 @@ This order is enforced in `builder.go` and ensures that:
 ## 13. Machine Appendix (JSON Snapshot v3)
 ```json
 {
-  "last_updated": "2025-11-13",
-  "audit_date": "2025-11-13",
+  "last_updated": "2025-11-14",
+  "audit_date": "2025-11-14",
   "handlers_audited": 13,
   "handlers_compliant": 13,
   "compliance_rate": "100%",

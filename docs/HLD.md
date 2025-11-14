@@ -66,7 +66,7 @@ Manglekit recognizes the following **kinds**. Each kind is implemented by **prov
 * **Reranker** — Re‑ordering / scoring (cosine or learned).
 * **RuleSet** — Policy & logic evaluation for Pre/Post stages and mid‑flow guards.
 * **Reasoner** — Symbolic/constraint solvers (Datalog, Prolog‑like, SMT wrappers) with structured I/O.
-* **Planner** — Task/Tool planners (symbolic or LLM‑assisted) producing execution plans.
+* **Planner** — Task/Tool planners (symbolic or LLM‑assisted) producing execution plans. The planner framework (interface + handler) exists, but Manglekit does **not** ship a default planner implementation; users provide their own planner factories (see `docs/CONTEXT.md` GAP‑005).
 * **Tool** — Executable capabilities (functions, APIs) invoked by orchestrators or planners.
 * **SchemaParser** — Validates/parses schemas (JSON Schema, RDF/OWL).
 * **FactConverter** — Normalizes/derives facts for the logic layer.
@@ -97,15 +97,30 @@ Manglekit recognizes the following **kinds**. Each kind is implemented by **prov
 
 ## 5. Core Contracts
 
-### 5.1 Factory Signature (Uniform)
+### 5.1 Factory & DI Signature (Uniform, Typed)
+
+All component kinds share the **same conceptual factory shape**, but each kind uses a **typed dependency struct** (no generic `any` or untyped `Deps`). At a high level:
 
 ```go
-func(ctx context.Context, deps diapi.Deps, cfg any) (T, error)
+// Conceptual shape – T is the concrete contract type for the kind.
+func(ctx context.Context, deps diapi.<Kind>Deps, cfg any) (T, error)
+```
+
+Typical examples:
+
+```go
+// Retriever
+func(ctx context.Context, deps diapi.RetrieverDeps, cfg any) (retrieve.Retriever, error)
+
+// Sandwich orchestrator
+func(ctx context.Context, deps diapi.SandwichDeps, cfg any) (pipeline.Sandwich, error)
 ```
 
 * **ctx:** cancellation, deadlines, tracing.
-* **deps:** typed sub‑dependencies supplied by the builder (e.g., an embedder a retriever needs, a vector store for dense search, a logger, etc.).
-* **cfg:** provider options (typed by the caller; registry validates/decodes).
+* **deps:** **typed** sub‑dependencies supplied by the builder via DI (e.g., a vector store a retriever needs, a `StateProvider` for orchestrators, a logger, etc.). Handlers are responsible for populating these structs.
+* **cfg:** provider options (typed by the caller; registry validates/decodes). The config layer decodes YAML/ENV into concrete `Options` structs **before** any factories are called.
+
+To keep handlers extensible, dependency resolution is delegated to pluggable **dependency resolvers** (see `core/diapi`). A resolver decides whether it can handle a particular options type and, if so, produces the appropriate `diapi.*Deps` instance for the factory. This avoids brittle type‑switches inside handlers and makes it possible to add new provider sub‑families without editing core handler code.
 
 ### 5.2 Provider Options Contract (Self‑Identifying)
 
@@ -139,11 +154,27 @@ Orchestrators accept a **typed Resolved** bundle (no `any`) and drive execution 
 
 ### 6.2 Dependency Rules
 
+Manglekit follows a strict **layered architecture**. At a high level:
+
 * `core` is foundational (no project imports).
 * Contracts (`llm`, `retrieve`, `reasoner`, etc.) depend only on `core`.
 * Providers implement contracts; they **never** import the builder.
 * Orchestrators depend on contracts, not provider implementations.
 * Config package depends on nothing but stdlib and its own types.
+
+More concretely, package‑level rules are:
+
+| Layer / Package                 | May import                                   | Must not import                                      |
+|---------------------------------|----------------------------------------------|------------------------------------------------------|
+| `core/`                         | stdlib                                      | `pipeline/`, `internal/`, root cmd/apps              |
+| `pipeline/`                     | `core/`, `config/`                          | concrete providers under `internal/providers/*`      |
+| `internal/providers/*`          | `core/`                                     | `builder`, `sdk`, `pipeline`                         |
+| `sdk/`                          | `core/`, `builder`, `config`, `providers/all` | `internal/providers/*` directly                      |
+| `config/`                       | stdlib, its own subpackages                 | `builder`, `pipeline`, `internal/providers/*`        |
+
+Providers are only discovered via **registration** (e.g., through `providers/all` and blank imports), never by the builder or orchestrators importing provider packages directly. This keeps the boundaries clear and allows the registry to remain the single source of truth for component discovery.
+
+All inter‑component dependencies during construction are obtained via the **DI layer** (`diapi.Builder` + typed `diapi.*Deps` + optional `DependencyResolver` registries). Providers and factories must not directly construct or import other providers; they rely on the builder/handlers to supply dependencies by name and kind.
 
 ### 6.3 Component Interaction (Visual)
 
@@ -260,14 +291,27 @@ Query → [Tool 1] → [Tool 2] → ... → [LLM Tool] → Answer
 
 ## 7. Orchestrators
 
-### 7.1 Sandwich (Deterministic RAG‑plus)
+Orchestrators are responsible for composing stages (rules, retrieval, tools, LLM, reasoning) into end‑to‑end flows. Architecturally, they are treated as another **provider kind** (`KindOrchestrator`): they have options, factories, and handlers, and they are built by the same registry+builder pipeline as all other components.
+
+### 7.1 Orchestrator Contract (Expanded)
+
+An orchestrator factory follows the same typed‑deps pattern as other providers, typically receiving a `diapi.SandwichDeps` or `diapi.DeclarativeDeps` struct populated by the handler. The orchestrator implementation:
+
+* receives a **typed `Resolved` bundle** (or a typed projection of it) from the builder;
+* must **not** reach into the registry or builder directly (no late binding);
+* is responsible for orchestrating stages, propagating `context.Context`, and emitting stage‑level metrics;
+* must honor rule/guard denials as terminal outcomes and ensure all resource closers are invoked on `Close()`.
+
+State handling is unified across orchestrators via the `StateProvider` abstraction. Orchestrator options carry explicit string fields (e.g., `stateProvider`) pointing to a named `StateProvider` implementation in the config, avoiding implicit "first available" selection.
+
+### 7.2 Sandwich (Deterministic RAG‑plus)
 
 A strongly‑typed, fixed‑order pipeline suitable for classic RAG and many hybrid flows:
 
 * **Pre‑Rules → Retrieve → Rerank → (Reasoner optional) → LLM → Post‑Rules**
 * Captures timings in `Answer.Meta` and retains `original_docs` for audit.
 
-### 7.2 Declarative (Flow‑Driven, Neuro‑Symbolic)
+### 7.3 Declarative (Flow‑Driven, Neuro‑Symbolic)
 
 A first‑class orchestrator for **logic‑rich control flow**:
 
@@ -283,6 +327,12 @@ A first‑class orchestrator for **logic‑rich control flow**:
 * Config files define: orchestrator, component kinds & providers, and options.
 * The **config→builder bridge** validates and converts into typed options; any failure occurs **before** runtime construction.
 * Declarative flows may embed logical predicates/policies and tool plans.
+* For each provider referenced in config, three things must be registered (the **3‑part registration rule**):
+  1. A **ComponentHandler** for its kind (e.g., retriever handler).
+  2. A **Factory** registered under the provider name (e.g., `"hybrid"`).
+  3. An **Options** type so the config loader knows what Go struct to decode into.
+
+If any of these are missing, config loading fails early with a clear error instead of producing partially‑constructed components at runtime.
 
 Example sketch:
 
@@ -304,8 +354,10 @@ components:
 
 ## 9. Observability & Lifecycle
 
+Observability is centralized through a shared `core.Observability` struct, which exposes a **Logger**, **Tracer**, and **Meter**. Components access these via DI rather than constructing their own loggers or emitting direct stdout.
+
 * **Logger:** A structured logger is installed if none provided.
-* **Metrics:** Stage timings (`retrieve_ms`, `rerank_ms`, `llm_ms`, `rules_pre_ms`, `rules_post_ms`, plus reasoner/planner/tool timings) are standardized.
+* **Metrics:** Stage timings (`retrieve_ms`, `rerank_ms`, `llm_ms`, `rules_pre_ms`, `rules_post_ms`, plus reasoner/planner/tool timings) are standardized. Any stage that calls out to an external system (LLM, retriever, rules engine, tools, knowledge store) should record latency and error counters, and may record token usage where applicable.
 * **Tracing Hooks:** Optional interfaces for spans at stage boundaries.
 * **Closers:** All providers that hold resources register closers; orchestrators drain LIFO.
 
@@ -313,10 +365,12 @@ components:
 
 ## 10. Security, Safety, and Policy
 
-* **Pre/Post RuleSets** for content policy, PII redaction, safety blocks.
-* **Schema Parsers** enforce structural constraints on inputs/outputs.
+Manglekit defines a **safety perimeter** at the orchestrator layer: all side‑effecting operations (tools, external APIs, stateful writes) must be guarded by explicit policy and schema checks before they execute.
+
+* **Pre/Post RuleSets** for content policy, PII redaction, safety blocks. RuleSets are treated as policy infrastructure: they can deny or mutate flows and surface explicit reasons.
+* **Schema Parsers** enforce structural constraints on inputs/outputs and tool parameters.
 * **State Providers** can implement rate‑limits/quotas per session.
-* **Tool Execution** requires explicit allow‑lists and typed inputs; planner outputs are validated by rules before execution.
+* **Tool Execution** requires explicit allow‑lists and typed inputs; planner outputs are validated by rules before execution. Orchestrators are responsible for ensuring this validation is not bypassed.
 
 ---
 
