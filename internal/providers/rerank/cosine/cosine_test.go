@@ -25,7 +25,7 @@ func (m *mockEmbedder) Embed(ctx context.Context, req *ai.EmbedRequest) (*ai.Emb
 	}
 	return nil, errors.New("EmbedFunc not implemented")
 }
-func (m *mockEmbedder) Name() string          { return "mock-embedder" }
+func (m *mockEmbedder) Name() string            { return "mock-embedder" }
 func (m *mockEmbedder) Register(r api.Registry) {}
 
 func TestNew(t *testing.T) {

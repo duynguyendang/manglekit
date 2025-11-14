@@ -39,4 +39,3 @@ func LoadFromYAML(r io.Reader) (*Config, error) {
 	}
 	return ParseConfig(content)
 }
-

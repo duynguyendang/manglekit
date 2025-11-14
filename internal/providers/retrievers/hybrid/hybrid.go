@@ -32,9 +32,9 @@ type HybridOptions struct {
 	RRF_K float64 `yaml:"rrf_k,omitempty"`
 }
 
-func (o *HybridOptions) ProviderName() string { return "hybrid" }
-func (o *HybridOptions) ProviderKind() core.Kind   { return core.KindRetriever }
-func (o *HybridOptions) GetProviderOptions() any { return o }
+func (o *HybridOptions) ProviderName() string       { return "hybrid" }
+func (o *HybridOptions) ProviderKind() core.Kind    { return core.KindRetriever }
+func (o *HybridOptions) GetProviderOptions() any    { return o }
 func (o *HybridOptions) GetSubRetrievers() []string { return o.Retrievers }
 
 func Register(r *manglekit.Registry) {

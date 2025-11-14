@@ -36,7 +36,7 @@ func TestSymbolicPlanner_Plan_Success(t *testing.T) {
 	// Create a mock reasoner that returns a valid plan
 	params := map[string]any{"query": "test"}
 	paramsJSON, _ := json.Marshal(params)
-	
+
 	mockOutput := map[string]any{
 		"plan_step_0":   "0",
 		"plan_tool_0":   "retriever",

@@ -56,7 +56,7 @@ func NewFactory(deps diapi.PlannerDeps, cfg *Options) (core.Planner, error) {
 		for name := range deps.Reasoners {
 			availableReasoners = append(availableReasoners, name)
 		}
-		return nil, fmt.Errorf("reasoner '%s' not found; available reasoners: %v", 
+		return nil, fmt.Errorf("reasoner '%s' not found; available reasoners: %v",
 			cfg.ReasonerName, availableReasoners)
 	}
 

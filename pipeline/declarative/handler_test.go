@@ -20,9 +20,9 @@ import (
 // Mock Retriever
 type mockRetrieverOptions struct{}
 
-func (o *mockRetrieverOptions) ProviderName() string { return "mock-retriever" }
-func (o *mockRetrieverOptions) ProviderKind() core.Kind   { return core.KindRetriever }
-func (o *mockRetrieverOptions) GetProviderOptions() any  { return o }
+func (o *mockRetrieverOptions) ProviderName() string    { return "mock-retriever" }
+func (o *mockRetrieverOptions) ProviderKind() core.Kind { return core.KindRetriever }
+func (o *mockRetrieverOptions) GetProviderOptions() any { return o }
 
 type mockRetriever struct{}
 
@@ -33,16 +33,18 @@ func (r *mockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) 
 // Mock State Provider
 type mockStateProviderOptions struct{}
 
-func (o *mockStateProviderOptions) ProviderName() string { return "mock-state" }
-func (o *mockStateProviderOptions) ProviderKind() core.Kind   { return core.KindStateProvider }
-func (o *mockStateProviderOptions) GetProviderOptions() any  { return o }
+func (o *mockStateProviderOptions) ProviderName() string    { return "mock-state" }
+func (o *mockStateProviderOptions) ProviderKind() core.Kind { return core.KindStateProvider }
+func (o *mockStateProviderOptions) GetProviderOptions() any { return o }
 
 type mockStateProvider struct{}
 
-func (p *mockStateProvider) Get(ctx context.Context, key string) (interface{}, error) { return nil, nil }
+func (p *mockStateProvider) Get(ctx context.Context, key string) (interface{}, error) {
+	return nil, nil
+}
 func (p *mockStateProvider) Set(ctx context.Context, key string, value interface{}) error { return nil }
-func (p *mockStateProvider) Delete(ctx context.Context, key string) error      { return nil }
-func (p *mockStateProvider) Close(ctx context.Context) error                  { return nil }
+func (p *mockStateProvider) Delete(ctx context.Context, key string) error                 { return nil }
+func (p *mockStateProvider) Close(ctx context.Context) error                              { return nil }
 
 func registerTestDeps(r *manglekit.Registry) {
 	// Register the handler for the component-under-test.

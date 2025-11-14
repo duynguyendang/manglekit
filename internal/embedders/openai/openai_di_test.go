@@ -20,9 +20,9 @@ import (
 // mockLLMOptions provides a dummy options struct for the mock LLM.
 type mockLLMOptions struct{}
 
-func (o *mockLLMOptions) ProviderName() string { return "mock-llm" }
-func (o *mockLLMOptions) ProviderKind() core.Kind   { return core.KindLLM }
-func (o *mockLLMOptions) GetProviderOptions() any   { return o }
+func (o *mockLLMOptions) ProviderName() string    { return "mock-llm" }
+func (o *mockLLMOptions) ProviderKind() core.Kind { return core.KindLLM }
+func (o *mockLLMOptions) GetProviderOptions() any { return o }
 
 // mockLLM is a mock implementation of core.LLMClient for testing.
 type mockLLM struct{}
@@ -40,9 +40,9 @@ func (m *mockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) 
 
 type mockRetrieverOptions struct{}
 
-func (o *mockRetrieverOptions) ProviderName() string { return "mock-retriever" }
-func (o *mockRetrieverOptions) ProviderKind() core.Kind   { return core.KindRetriever }
-func (o *mockRetrieverOptions) GetProviderOptions() any   { return o }
+func (o *mockRetrieverOptions) ProviderName() string    { return "mock-retriever" }
+func (o *mockRetrieverOptions) ProviderKind() core.Kind { return core.KindRetriever }
+func (o *mockRetrieverOptions) GetProviderOptions() any { return o }
 
 func registerTestComponents(r *manglekit.Registry) {
 	openai.Register(r)

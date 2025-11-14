@@ -97,8 +97,8 @@ type RetrieverOptions struct {
 	Pairs map[string]string `json:"pairs"`
 }
 
-func (o *RetrieverOptions) ProviderName() string { return "mock-retriever" }
-func (o *RetrieverOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o *RetrieverOptions) ProviderName() string    { return "mock-retriever" }
+func (o *RetrieverOptions) ProviderKind() core.Kind { return core.KindRetriever }
 func (o *RetrieverOptions) GetProviderOptions() any { return o }
 
 // Reranker is a mock reranker.
@@ -128,10 +128,9 @@ type RerankerOptions struct {
 	Passthrough map[string]bool `json:"passthrough"`
 }
 
-func (o *RerankerOptions) ProviderName() string { return "mock-reranker" }
-func (o *RerankerOptions) ProviderKind() core.Kind   { return core.KindReranker }
+func (o *RerankerOptions) ProviderName() string    { return "mock-reranker" }
+func (o *RerankerOptions) ProviderKind() core.Kind { return core.KindReranker }
 func (o *RerankerOptions) GetProviderOptions() any { return o }
-
 
 // LLM is a mock LLM.
 type LLM struct {
@@ -180,15 +179,15 @@ type LLMOptions struct {
 	Response string `json:"response,omitempty"`
 }
 
-func (o *LLMOptions) ProviderName() string { return "mock-llm" }
-func (o *LLMOptions) ProviderKind() core.Kind   { return core.KindLLM }
+func (o *LLMOptions) ProviderName() string    { return "mock-llm" }
+func (o *LLMOptions) ProviderKind() core.Kind { return core.KindLLM }
 func (o *LLMOptions) GetProviderOptions() any { return o }
 
 // EmbedderOptions is the options for the mock embedder.
 type EmbedderOptions struct{}
 
-func (o *EmbedderOptions) ProviderName() string { return "mock-embedder" }
-func (o *EmbedderOptions) ProviderKind() core.Kind   { return core.KindEmbedder }
+func (o *EmbedderOptions) ProviderName() string    { return "mock-embedder" }
+func (o *EmbedderOptions) ProviderKind() core.Kind { return core.KindEmbedder }
 func (o *EmbedderOptions) GetProviderOptions() any { return o }
 
 // Tool is a mock tool that can be used in tests.
@@ -279,8 +278,8 @@ func (r *RuleSet) Evaluate(stage core.Stage, q core.Query, a *core.Answer) (core
 // ToolOptions is the options for the mock tool.
 type ToolOptions struct{}
 
-func (o *ToolOptions) ProviderName() string { return "noop-tool" }
-func (o *ToolOptions) ProviderKind() core.Kind   { return core.Kind("tool") } // Not a real kind.
+func (o *ToolOptions) ProviderName() string    { return "noop-tool" }
+func (o *ToolOptions) ProviderKind() core.Kind { return core.Kind("tool") } // Not a real kind.
 func (o *ToolOptions) GetProviderOptions() any { return o }
 
 // NoopTool is a tool that does nothing.

@@ -34,7 +34,7 @@ func (p *SymbolicPlanner) Plan(ctx context.Context, q core.Query) (core.Plan, er
 	// Transform the query into input facts for the reasoner
 	inputFacts := make(map[string]any)
 	inputFacts["query_text"] = q.Text
-	
+
 	// Include query metadata if present
 	if q.Meta != nil {
 		for k, v := range q.Meta {
@@ -87,12 +87,12 @@ type planStep struct {
 func (p *SymbolicPlanner) parseSteps(output map[string]any) ([]core.Step, error) {
 	// Collect plan steps by order
 	stepMap := make(map[int]*planStep)
-	
+
 	for key, value := range output {
 		// Parse plan_step_<order> keys
 		var order int
 		var fieldType string
-		
+
 		// Try to parse plan_step_<order>
 		n, err := fmt.Sscanf(key, "plan_step_%d", &order)
 		if n == 1 && err == nil {
@@ -119,12 +119,12 @@ func (p *SymbolicPlanner) parseSteps(output map[string]any) ([]core.Step, error)
 				}
 			}
 		}
-		
+
 		// Ensure step entry exists
 		if _, exists := stepMap[order]; !exists {
 			stepMap[order] = &planStep{Order: order}
 		}
-		
+
 		// Set the appropriate field
 		switch fieldType {
 		case "step":
@@ -159,11 +159,11 @@ func (p *SymbolicPlanner) parseSteps(output map[string]any) ([]core.Step, error)
 			}
 		}
 	}
-	
+
 	if len(stepMap) == 0 {
 		return nil, fmt.Errorf("no plan steps found in reasoner output")
 	}
-	
+
 	// Convert to sorted slice
 	var steps []core.Step
 	orders := make([]int, 0, len(stepMap))
@@ -171,7 +171,7 @@ func (p *SymbolicPlanner) parseSteps(output map[string]any) ([]core.Step, error)
 		orders = append(orders, order)
 	}
 	sort.Ints(orders)
-	
+
 	for _, order := range orders {
 		ps := stepMap[order]
 		if ps.Tool == "" {
@@ -184,6 +184,6 @@ func (p *SymbolicPlanner) parseSteps(output map[string]any) ([]core.Step, error)
 			Reason: ps.Reason,
 		})
 	}
-	
+
 	return steps, nil
 }

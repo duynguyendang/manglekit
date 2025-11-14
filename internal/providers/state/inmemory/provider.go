@@ -16,8 +16,8 @@ type Options struct {
 	ContextWindow int
 }
 
-func (o *Options) ProviderName() string { return "in-memory" }
-func (o *Options) ProviderKind() core.Kind   { return core.KindStateProvider }
+func (o *Options) ProviderName() string    { return "in-memory" }
+func (o *Options) ProviderKind() core.Kind { return core.KindStateProvider }
 func (o *Options) GetProviderOptions() any { return o }
 
 func Register(r *manglekit.Registry) {

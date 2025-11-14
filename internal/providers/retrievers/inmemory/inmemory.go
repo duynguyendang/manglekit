@@ -25,8 +25,8 @@ type InMemoryOptions struct {
 	Logger core.Logger `yaml:"-"`
 }
 
-func (o *InMemoryOptions) ProviderName() string { return "in-memory" }
-func (o *InMemoryOptions) ProviderKind() core.Kind   { return core.KindRetriever }
+func (o *InMemoryOptions) ProviderName() string    { return "in-memory" }
+func (o *InMemoryOptions) ProviderKind() core.Kind { return core.KindRetriever }
 
 // InMemoryRetriever is a simple, thread-safe in-memory document store. It uses
 // a map for efficient O(1) lookups, upserts, and deletes by document ID.
