@@ -6,8 +6,11 @@ import (
 	"log"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/embed"
 	"github.com/duynguyendang/manglekit/internal/providers/llm"
 	"github.com/duynguyendang/manglekit/internal/providers/retrievers/bm25"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers/genkitretriever"
+	"github.com/duynguyendang/manglekit/internal/providers/retrievers/hybrid"
 	"github.com/duynguyendang/manglekit/internal/providers/state/inmemory"
 	"github.com/duynguyendang/manglekit/pipeline/sandwich"
 	"github.com/duynguyendang/manglekit/sdk"
@@ -30,9 +33,35 @@ func main() {
 	}
 
 	// 2. Add components programmatically
-	// BM25 Retriever - keyword-based search
-	bm25Opts := &bm25.BM25Options{
+	// Google Embedder - provides embeddings for semantic search
+	_ = embed.GoogleEmbedderOptions{} // Use default model (text-embedding-004)
+	googleEmbedderOpts := &embed.GoogleEmbedderOptions{
+		// Model defaults to "text-embedding-004", which is fine
+		// API key is read from GOOGLE_API_KEY environment variable
+	}
+
+	// Genkit-based Semantic Retriever - semantic/dense search using Chroma
+	// NOTE: Chroma support requires Genkit Chroma plugin to be available in the Go Genkit SDK.
+	// For local development, you can use Docker: docker run -d -p 8000:8000 chromadb/chroma
+	_ = genkitretriever.GenkitRetrieverOptions{} // Ensure package is imported
+	genkitRetrieverOpts := &genkitretriever.GenkitRetrieverOptions{
+		Provider: "chroma",                // Chroma vector store for semantic search
+		Model:    "text-embedding-004",    // Google embedding model
+		Endpoint: "http://localhost:8000", // Chroma endpoint (adjust if needed)
+	}
+
+	// BM25 Retriever (now sub-retriever) - keyword-based search
+	_ = bm25.BM25Options{} // Ensure package is imported
+	bm25SubRetrieverOpts := &bm25.BM25Options{
 		Path: "examples/01-programmatic-setup/docs",
+	}
+
+	// Hybrid Retriever - combines BM25 and Chroma semantic search
+	// Uses Reciprocal Rank Fusion (RRF) to merge results from both retrievers
+	_ = hybrid.HybridOptions{} // Ensure package is imported
+	hybridRetrieverOpts := &hybrid.HybridOptions{
+		Retrievers: []string{"keyword_retriever", "semantic_retriever"}, // BM25 + Chroma
+		// RRF_K can be customized if needed; defaults to 60.0
 	}
 
 	// Google LLM - language model for generation
@@ -55,13 +84,17 @@ func main() {
 	// Sandwich Orchestrator - RAG pipeline orchestrator
 	sandwichOpts := &sandwich.Options{
 		LLM:           "google",
-		Retriever:     "bm25",
+		Retriever:     "hybrid_retriever", // Changed to hybrid retriever
 		RuleSet:       "mangle",
 		StateProvider: "inmemory",
 	}
 
 	// 3. Configure the builder with all components
-	builder.WithOptions("bm25", bm25Opts).
+	builder.
+		WithOptions("google_embedder", googleEmbedderOpts).
+		WithOptions("semantic_retriever", genkitRetrieverOpts).
+		WithOptions("keyword_retriever", bm25SubRetrieverOpts).
+		WithOptions("hybrid_retriever", hybridRetrieverOpts).
 		WithOptions("google", googleOpts).
 		WithOptions("mangle", mangleOpts).
 		WithOptions("inmemory", stateOpts).

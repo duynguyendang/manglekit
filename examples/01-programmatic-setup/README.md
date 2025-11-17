@@ -12,24 +12,45 @@ This example demonstrates how to build and run a Manglekit pipeline programmatic
     # now edit .env and add your GOOGLE_API_KEY
     ```
 
-2.  **Run the example:**
+2.  **Set up Chroma for semantic search:**
+    Start a Chroma instance (requires Docker):
+
+    ```bash
+    docker run -d -p 8000:8000 chromadb/chroma
+    ```
+
+    Or install Chroma locally:
+
+    ```bash
+    pip install chromadb
+    chroma run --host localhost --port 8000
+    ```
+
+    The example expects Chroma to be available at `http://localhost:8000`.
+
+3.  **Run the example:**
     From the root of the repository, run the following command:
 
     ```bash
     go run ./examples/01-programmatic-setup
     ```
 
+    The example will execute a query using hybrid search (combining BM25 and Chroma semantic search) and return an answer from the Google LLM.
+
 ## What it does
 
 This example builds a "Sandwich" RAG pipeline with the following components:
 
 *   **Orchestrator:** `sandwich` - Orchestrates the RAG pipeline with pre-retrieval and post-retrieval rule stages
-*   **LLM:** `google` (Gemini 1.5 Flash) - Generates answers based on retrieved documents
-*   **Retriever:** `bm25` (indexing documents from `testdata/acme-corp`) - Performs keyword-based document retrieval
+*   **LLM:** `google` (Gemini 2.5 Flash) - Generates answers based on retrieved documents
+*   **Embedder:** `google-embedder` - Provides text embeddings for semantic search
+*   **Retriever:** `hybrid` (combining BM25 keyword search and Chroma semantic search) - Performs hybrid search using both lexical and semantic matching with Reciprocal Rank Fusion (RRF)
 *   **RuleSet:** `mangle` (using rules from `examples/rules/acme-rules.dlog`) - Enforces policies and rules at pre and post stages
 *   **StateProvider:** `inmemory` - Manages session state during pipeline execution
 
 It then executes the query "What is MangleKit?" and prints the answer to the console along with citations.
+
+**Note:** The semantic search component requires Chroma to be running. See the Setup section for instructions.
 
 ## How it works
 
@@ -38,8 +59,11 @@ The example starts by creating a new programmatic builder via `sdk.NewBuilder()`
 
 ### 2. Component Configuration
 Each component is configured with its specific options struct:
-- **BM25Options** - Specifies the path to documents to index
-- **GoogleOptions** - Specifies the model (gemini-1.5-flash) and reads API key from environment
+- **GoogleEmbedderOptions** - Configures the Google embedding model (defaults to `text-embedding-004`)
+- **GenkitRetrieverOptions** - Configures Chroma as the semantic search provider with endpoint configuration
+- **BM25Options** - Specifies the path to documents to index for keyword-based search
+- **HybridOptions** - Combines BM25 and Chroma retrievers using Reciprocal Rank Fusion (RRF) for optimal ranking
+- **GoogleOptions** - Specifies the model (gemini-2.5-flash) and reads API key from environment
 - **MangleOptions** - Specifies the path to Datalog rule files
 - **InMemoryOptions** - Configures the in-memory state provider
 - **SandwichOptions** - Wires together the orchestrator with named component references
@@ -48,12 +72,18 @@ Each component is configured with its specific options struct:
 Components are added to the builder using the fluent `WithOptions()` API, which returns the builder for method chaining:
 
 ```go
-builder.WithOptions("bm25", bm25Opts).
+builder.
+    WithOptions("google_embedder", googleEmbedderOpts).
+    WithOptions("semantic_retriever", genkitRetrieverOpts).
+    WithOptions("keyword_retriever", bm25SubRetrieverOpts).
+    WithOptions("hybrid_retriever", hybridRetrieverOpts).
     WithOptions("google", googleOpts).
     WithOptions("mangle", mangleOpts).
     WithOptions("inmemory", stateOpts).
     WithOptions("sandwich", sandwichOpts)
 ```
+
+The order of component registration ensures that sub-retrievers (keyword and semantic) are built before the hybrid retriever that combines them.
 
 ### 4. Orchestrator Construction
 The `Build()` method constructs the orchestrator and all its dependencies in the correct order:
@@ -73,9 +103,14 @@ answer, err := orch.Execute(ctx, "session-123", query)
 
 This triggers:
 1. **Pre-retrieval rules** - Query validation, normalization, expansion
-2. **Document retrieval** - BM25 keyword search
+2. **Hybrid document retrieval** - Combines results from:
+   - **Keyword search (BM25)** - Lexical matching on indexed documents
+   - **Semantic search (Chroma)** - Vector similarity using embeddings
+   - **Reciprocal Rank Fusion** - Merges rankings from both methods for optimal relevance
 3. **Post-retrieval rules** - Document filtering, redaction, entitlement checks
 4. **LLM generation** - Answer synthesis based on retrieved documents
+
+**Future Enhancement:** When Genkit retriever providers become available, the hybrid retriever will combine results from both keyword search (BM25) and semantic search (Genkit-retriever) using Reciprocal Rank Fusion (RRF) for optimal relevance.
 
 ### 6. Resource Cleanup
 The orchestrator's resources are properly cleaned up using a deferred close:
@@ -143,6 +178,21 @@ This could indicate:
 - Missing rule files or documents
 - Invalid query structure
 - Network connectivity issues with Google API
+
+### "chroma retriever support not yet implemented" or connection errors
+If you see an error about Chroma not being implemented, this means the Genkit Chroma plugin is not yet available in your version of the Go Genkit SDK.
+
+**Troubleshooting:**
+1. **Chroma not running:** Ensure Chroma is running at `http://localhost:8000`:
+   ```bash
+   docker ps | grep chromadb
+   ```
+2. **Connection refused:** Check that the Chroma service is accessible:
+   ```bash
+   curl http://localhost:8000
+   ```
+3. **Genkit plugin not available:** If you see "chroma retriever support not yet implemented", the Chroma plugin may not be available in your Genkit version. This example requires Genkit Chroma support to be available in the Go SDK.
+4. **Fallback to BM25 only:** If you don't have Chroma set up, you can temporarily comment out the semantic_retriever configuration and use only BM25 keyword search by changing `hybridRetrieverOpts.Retrievers` to `[]string{"keyword_retriever"}`.
 
 ## Example Output
 

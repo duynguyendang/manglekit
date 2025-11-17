@@ -73,6 +73,9 @@ type GenkitRetrieverOptions struct {
 func (o *GenkitRetrieverOptions) ProviderName() string    { return "genkit-retriever" }
 func (o *GenkitRetrieverOptions) ProviderKind() core.Kind { return core.KindRetriever }
 
+// GetProviderOptions implements the diapi.ProviderWithOptions interface.
+func (o *GenkitRetrieverOptions) GetProviderOptions() any { return o }
+
 // GetAPIKey provides generic API key access (implements diapi.APIKeyProvider interface).
 func (o *GenkitRetrieverOptions) GetAPIKey() string { return o.APIKey }
 
