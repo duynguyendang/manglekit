@@ -1,6 +1,6 @@
 # AGENTS.md — Manglekit Coding Agent Configuration (2025.11)
 
-*Last updated: 2025-11-12*
+*Last updated: 2025-11-17*
 
 ---
 
@@ -36,7 +36,7 @@ Agents must recognize the following key locations and their purposes (aligned wi
 * `sdk/`: Config→builder bridge (`sdk.FromConfig`).
 * `config/`: YAML parsing, normalization, validation.
 * `pipeline/`: Orchestrators and stages (Sandwich, Declarative).
-* `internal/providers/`: Families of retrievers, rerankers, LLMs, rules, state, schema parsers.
+* `internal/providers/`: Families of retrievers, rerankers, LLMs, rules, state, schema parsers (vectorstores removed).
 * `internal/embedders/`, `internal/vectorstores/`: Embedder and vector store providers and handlers.
 * `providers/all/`: Convenience registrar for standard providers.
 * `docs/`: Technical docs and architecture rules (`docs/rules/manglekit-arch.yml`).

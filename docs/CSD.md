@@ -250,7 +250,7 @@ Answer: "Here are 5 common causes of app crashes and how to fix them..."
 |-----------|-------------|-----------------|
 | **Sandwich Pattern** | Wraps RAG with pre/post rule stages | Policy enforcement, compliance, explainability |
 | **Rule Engine (Mangle)** | Declarative Datalog rules for policies | Business control without code changes |
-| **Hybrid Retrieval** | BM25 (keyword) + Dense (semantic) search | High-quality, high-recall results |
+| **Hybrid Retrieval** | BM25 (keyword) + Genkit semantic search | High-quality, high-recall results |
 | **Reranking** | Re-score documents by relevance | Better answer quality |
 | **Audit Trail** | Log every decision, rule firing, redaction | Regulatory compliance, dispute resolution |
 | **Pluggable Components** | Swap LLMs, retrievers, vector stores | No vendor lock-in, cost optimization |

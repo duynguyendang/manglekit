@@ -1,6 +1,6 @@
 # Manglekit — High‑Level Design (HLD)
 
-**Revision:** Nov 2025
+**Revision:** Nov 2025 (post-cleanup)
 **Scope:** Core SDK (registry, builder, orchestrators, providers, config bridge)
 **Audience:** Framework maintainers, provider authors, application teams
 **Mission:** A **neuro‑symbolic AI composition framework** for building explainable, policy‑aware systems that combine statistical models (LLMs, embedders) with symbolic reasoning (rules, planners, schema/graph tooling).
@@ -66,7 +66,7 @@ Manglekit recognizes the following **kinds**. Each kind is implemented by **prov
 * **Reranker** — Re‑ordering / scoring (cosine or learned).
 * **RuleSet** — Policy & logic evaluation for Pre/Post stages and mid‑flow guards.
 * **Reasoner** — Symbolic/constraint solvers (Datalog, Prolog‑like, SMT wrappers) with structured I/O.
-* **Planner** — Task/Tool planners (symbolic or LLM‑assisted) producing execution plans. The planner framework (interface + handler) exists, but Manglekit does **not** ship a default planner implementation; users provide their own planner factories (see `docs/CONTEXT.md` GAP‑005).
+* **Planner** — Task/Tool planners (symbolic or LLM‑assisted) producing execution plans. Framework complete with symbolic reference implementation.
 * **Tool** — Executable capabilities (functions, APIs) invoked by orchestrators or planners.
 * **SchemaParser** — Validates/parses schemas (JSON Schema, RDF/OWL).
 * **FactConverter** — Normalizes/derives facts for the logic layer.

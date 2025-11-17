@@ -1,0 +1,78 @@
+# Example Configuration for Markdown-based RAG using InMemoryVectorRetriever
+
+# This example demonstrates how to use the InMemoryVectorRetriever with markdown files
+# for Retrieval-Augmented Generation (RAG) in local environments.
+
+# Embedders: Choose an embedder to embed markdown chunks
+embedders:
+  openai:
+    provider: openai
+    model: text-embedding-3-small
+    api_key: ${OPENAI_API_KEY}
+
+# Retrievers: Configure the in-memory vector retriever with markdown files
+retrievers:
+  markdown_retriever:
+    provider: inmemory-vector
+    embedder: openai                    # Required for markdown file loading
+    markdown_files:
+      - ./docs/guide.md
+      - ./docs/api-reference.md
+      - ./docs/examples.md
+    chunk_size: 500                     # Characters per chunk (default: 500)
+    chunk_overlap: 100                  # Overlap between chunks (default: 100)
+    top_k: 5                            # Default number of results to return
+
+# LLMs: Configure your language model
+llms:
+  openai_llm:
+    provider: openai
+    model: gpt-4
+    api_key: ${OPENAI_API_KEY}
+
+# Orchestrator: Wire everything together with Sandwich pattern
+orchestrator:
+  provider: sandwich
+  retriever: markdown_retriever
+  llm: openai_llm
+  top_k: 5
+
+---
+
+# ALTERNATIVE: Pre-embedded Documents Configuration
+# If you prefer to use pre-embedded documents instead of markdown files:
+
+embedders:
+  openai:
+    provider: openai
+    model: text-embedding-3-small
+    api_key: ${OPENAI_API_KEY}
+
+retrievers:
+  preembedded_retriever:
+    provider: inmemory-vector
+    # documents with pre-computed vectors loaded from core.Doc objects
+    # This is typically done programmatically in Go code
+    top_k: 5
+
+---
+
+# ALTERNATIVE: Dynamic Embedder Configuration
+# If you want to embed queries dynamically without pre-embedding documents:
+
+embedders:
+  openai:
+    provider: openai
+    model: text-embedding-3-small
+    api_key: ${OPENAI_API_KEY}
+
+retrievers:
+  dynamic_retriever:
+    provider: inmemory-vector
+    embedder: openai                    # For dynamic query embedding
+    # Markdown files would be loaded and embedded during initialization
+    markdown_files:
+      - ./docs/guide.md
+    chunk_size: 500
+    chunk_overlap: 100
+    top_k: 5

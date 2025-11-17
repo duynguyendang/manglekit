@@ -2,8 +2,8 @@
 context_type: low_level_design
 project: manglekit
 language: go
-version: 0.6.1
-last_updated: 2025-11-14
+version: 0.8.0
+last_updated: 2025-11-17
 stability: stable
 audience: developers
 ---
@@ -272,9 +272,10 @@ This pattern is useful for testing or when model validation is not required.
 
 # 14. Deviations & Blockers
 
-The codebase is **stable** and has no open deviations from the LLD.
+The codebase is **stable** post-cleanup. VectorStore components removed; Genkit retriever adapter now primary semantic search solution.
 
 # 15. Changelog
+*   **2025-11-17**: Documentation sync after cleanup. Removed vectorstores references, updated retriever implementations (dense→genkit-retriever), confirmed 12 handlers total.
 *   **2025-11-12**: Updated `last_updated` timestamp. All architectural patterns documented in AGENTS.md §15 (Resolved Patterns, Anti-Patterns, Known Limitations).
 *   **2025-11-09**: Updated document to include the Tool, Reasoner, and Planner frameworks. Added `Reasoners` and `Planners` to the `Resolved` struct, and included the new handlers and provider implementations in the developer reference.
 *   **2025-11-07**: Comprehensive documentation update to reflect actual implementation. Corrected descriptions of handler multiplexing pattern, sub-retriever resolution via builder DI, lifecycle management, configuration binding, and factory registration. Added documentation for `Resolved` struct fields and `SkipModelCheckProvider` pattern.
@@ -359,7 +360,7 @@ Layering rules (enforced):
   - Redis State Provider: [`internal/providers/state/redis/provider.go`](internal/providers/state/redis/provider.go)
   - Embedders: [`internal/embedders/openai/openai.go`](internal/embedders/openai/openai.go), [`internal/embedders/google/google.go`](internal/embedders/google/google.go)
   - Mangle Reasoner: [`internal/providers/reasoners/mangle/reasoner.go`](internal/providers/reasoners/mangle/reasoner.go)
-  - Planner handler only (no default implementation): [`internal/providers/planners/handler.go`](internal/providers/planners/handler.go) — see `docs/CONTEXT.md` GAP-005 for planner status
+  - Symbolic Planner: [`internal/providers/planners/symbolic/planner.go`](internal/providers/planners/symbolic/planner.go)
   - Tool Adapters: [`internal/providers/tools/http/factory.go`](internal/providers/tools/http/factory.go), [`core/tool_adapters.go`](core/tool_adapters.go)
 
 ## 16.3 Quick Tasks Cheat Sheet

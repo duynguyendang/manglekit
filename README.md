@@ -340,8 +340,6 @@ MangleKit includes a suite of built-in providers that can be configured in the b
 | **Rules Engine**  | `mangle`      | The core Datalog engine for rules-based control.             | _None_             |
 | **Schema Parser** | `jsonschema`  | Parses JSON Schema files into facts for the Mangle engine.   | _None_             |
 |                   | `rdf`         | Parses RDF (Turtle) files into facts for the Mangle engine.  | _None_             |
-| **Vector Store**  | `localvec`    | An in-memory vector store that persists to disk.             | `Embedder`         |
-|                   | `pinecone`, `chroma`, etc. | Any Genkit-supported retriever, configured as a read-only vector store via transparent delegation. Search is supported; ingestion (AddDocuments) returns `ErrNotSupported`. | _None_             |
 
 ## 📂 Simplified Repository Layout
 
