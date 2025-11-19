@@ -102,6 +102,13 @@ type NoopDeps struct {
 	CoreDeps
 }
 
+// GenkitRetrieverDeps provides dependencies for Genkit-based retrievers.
+// It includes the embedder from Manglekit's registry to be used by Genkit providers.
+type GenkitRetrieverDeps struct {
+	CoreDeps
+	Embedder ai.Embedder
+}
+
 // SandwichDeps provides all dependencies required by the sandwich orchestrator.
 type SandwichDeps struct {
 	CoreDeps

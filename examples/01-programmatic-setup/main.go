@@ -40,14 +40,14 @@ func main() {
 		// API key is read from GOOGLE_API_KEY environment variable
 	}
 
-	// Genkit-based Semantic Retriever - semantic/dense search using Chroma
-	// NOTE: Chroma support requires Genkit Chroma plugin to be available in the Go Genkit SDK.
-	// For local development, you can use Docker: docker run -d -p 8000:8000 chromadb/chroma
+	// Genkit-based Semantic Retriever - semantic/dense search using LocalVec
+	// LocalVec is a lightweight, file-based vector database (Genkit plugin)
 	_ = genkitretriever.GenkitRetrieverOptions{} // Ensure package is imported
 	genkitRetrieverOpts := &genkitretriever.GenkitRetrieverOptions{
-		Provider: "chroma",                // Chroma vector store for semantic search
-		Model:    "text-embedding-004",    // Google embedding model
-		Endpoint: "http://localhost:8000", // Chroma endpoint (adjust if needed)
+		Provider:  "localvec",                // Uses LocalVec Genkit plugin
+		Embedder:  "google_embedder",         // Reference to the Manglekit-registered embedder
+		Endpoint:  "/tmp/manglekit-localvec", // LocalVec storage directory
+		IndexName: "documents",               // LocalVec collection/index name
 	}
 
 	// BM25 Retriever (now sub-retriever) - keyword-based search
@@ -56,11 +56,11 @@ func main() {
 		Path: "examples/01-programmatic-setup/docs",
 	}
 
-	// Hybrid Retriever - combines BM25 and Chroma semantic search
+	// Hybrid Retriever - combines BM25 and LocalVec semantic search
 	// Uses Reciprocal Rank Fusion (RRF) to merge results from both retrievers
 	_ = hybrid.HybridOptions{} // Ensure package is imported
 	hybridRetrieverOpts := &hybrid.HybridOptions{
-		Retrievers: []string{"keyword_retriever", "semantic_retriever"}, // BM25 + Chroma
+		Retrievers: []string{"keyword_retriever", "semantic_retriever"}, // BM25 + LocalVec
 		// RRF_K can be customized if needed; defaults to 60.0
 	}
 

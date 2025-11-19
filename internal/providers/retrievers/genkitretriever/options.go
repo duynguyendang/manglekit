@@ -4,7 +4,8 @@ import "github.com/duynguyendang/manglekit/core"
 
 // GenkitRetrieverOptions provides universal configuration for ANY Genkit retriever provider.
 // This single options struct allows users to specify the provider in configuration
-// rather than hard-coding it, supporting Genkit vector store plugins like Pinecone, Chroma,
+// rather than hard-coding it, supporting Genkit vector store plugins like Pinecone, LocalVec,
+// Weaviate, Qdrant, Milvus, etc.
 // Weaviate, Qdrant, Milvus, and others.
 //
 // This replaces the old "dense" retriever approach, which was merely an orchestrator
@@ -25,7 +26,7 @@ import "github.com/duynguyendang/manglekit/core"
 //	      indexName: "my-index"
 type GenkitRetrieverOptions struct {
 	// Provider is the Genkit retriever provider name.
-	// Supported values: "pinecone", "chroma", "weaviate", "qdrant", "milvus", etc.
+	// Supported values: "pinecone", "localvec", "weaviate", "qdrant", "milvus", etc.
 	// Any Genkit-compatible retriever plugin can be specified here.
 	Provider string `json:"provider,omitempty" yaml:"provider,omitempty"`
 
@@ -38,7 +39,7 @@ type GenkitRetrieverOptions struct {
 
 	// APIKey is the API authentication key for providers that require it.
 	// If not provided here, providers typically look for environment variables
-	// (e.g., PINECONE_API_KEY, CHROMA_API_KEY).
+	// (e.g., PINECONE_API_KEY, LOCALVEC_API_KEY).
 	APIKey string `json:"apiKey,omitempty" yaml:"api_key,omitempty"`
 
 	// ProjectID is the project identifier for some providers (e.g., Pinecone).
@@ -48,13 +49,20 @@ type GenkitRetrieverOptions struct {
 	// IndexName or CollectionName is the index/collection name within the vector store.
 	// Examples:
 	//   - Pinecone: "my-index"
-	//   - Chroma: "my-collection"
+	//   - LocalVec: "documents" or "my-data"
+	//   - Weaviate: "Article" or "Product"
 	//   - Weaviate: "MyCollection"
 	IndexName string `json:"indexName,omitempty" yaml:"index_name,omitempty"`
 
 	// Endpoint is the connection endpoint for the vector store (URL or address).
 	// Optional; some providers derive this from environment or default endpoints.
 	Endpoint string `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+
+	// Embedder is the name of a Manglekit-registered embedder to use for generating embeddings.
+	// This embedder will be looked up from the builder and used by the retriever.
+	// Examples: "google_embedder", "openai_embedder"
+	// If not provided, the retriever will attempt to use the Model field with Genkit's embedder registry.
+	Embedder string `json:"embedder,omitempty" yaml:"embedder,omitempty"`
 
 	// SkipModelCheck bypasses live model validation when true.
 	// Useful for testing or when the model is not immediately available.
@@ -72,9 +80,8 @@ type GenkitRetrieverOptions struct {
 
 func (o *GenkitRetrieverOptions) ProviderName() string    { return "genkit-retriever" }
 func (o *GenkitRetrieverOptions) ProviderKind() core.Kind { return core.KindRetriever }
-
-// GetProviderOptions implements the diapi.ProviderWithOptions interface.
 func (o *GenkitRetrieverOptions) GetProviderOptions() any { return o }
+func (o *GenkitRetrieverOptions) GetEmbedder() string     { return o.Embedder }
 
 // GetAPIKey provides generic API key access (implements diapi.APIKeyProvider interface).
 func (o *GenkitRetrieverOptions) GetAPIKey() string { return o.APIKey }

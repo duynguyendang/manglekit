@@ -12,7 +12,7 @@ import (
 
 // GenkitRetrieverAdapter wraps a Genkit ai.Retriever and adapts it to the core.Retriever interface.
 // This adapter is provider-agnostic and works with any Genkit retriever plugin
-// (Pinecone, Chroma, Weaviate, Qdrant, Milvus, etc.).
+// (Pinecone, LocalVec, Weaviate, Qdrant, Milvus, etc.).
 //
 // This eliminates the need for the old "dense" orchestrator, as Genkit retrievers
 // already perform semantic search (embedding + vector store lookup) internally.
@@ -26,7 +26,7 @@ type GenkitRetrieverAdapter struct {
 
 // NewGenkitRetrieverAdapter creates a new adapter wrapping a Genkit retriever.
 // genkitInstance is the Genkit generator instance needed for retrieval operations.
-// retriever is the Genkit ai.Retriever to wrap (e.g., from Pinecone, Chroma plugin).
+// retriever is the Genkit ai.Retriever to wrap (e.g., from Pinecone, LocalVec plugin).
 // provider is used for logging/debugging to identify which Genkit plugin is being used.
 // logger is optional; if nil, no debug logging will occur.
 func NewGenkitRetrieverAdapter(genkitInstance *genkit.Genkit, retriever ai.Retriever, provider string, logger core.Logger) *GenkitRetrieverAdapter {

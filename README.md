@@ -329,7 +329,7 @@ MangleKit includes a suite of built-in providers that can be configured in the b
 | Component Type    | Provider Name | Description                                                  | Depends On         |
 | ----------------- | ------------- | ------------------------------------------------------------ | ------------------ |
 | **Retriever**     | `bm25`        | Keyword-based search (Okapi BM25) over local files.          | _None_             |
-|                   | `genkit-retriever` | Universal semantic search adapter wrapping any Genkit retriever (Pinecone, Chroma, Weaviate, etc.). | _None_             |
+|                   | `genkit-retriever` | Universal semantic search adapter wrapping any Genkit retriever (Pinecone, LocalVec, Weaviate, etc.). | _None_             |
 |                   | `hybrid`      | Fuses results from `bm25` and `genkit-retriever` using RRF.   | `bm25`, `genkit-retriever` |
 |                   | `in-memory`   | A simple, updatable in-memory store for testing.             | _None_             |
 | **Reranker**      | `cosine`      | Re-ranks documents based on cosine similarity of embeddings. | `Embedder`         |

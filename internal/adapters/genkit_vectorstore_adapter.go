@@ -9,7 +9,7 @@ import (
 
 // GenkitVectorStoreAdapter wraps a Genkit-backed Retriever and adapts it to the core.VectorStore interface.
 // This adapter is provider-agnostic and works with any Genkit vector store plugin
-// (Pinecone, Chroma, Weaviate, Qdrant, Milvus, etc.).
+// (Pinecone, LocalVec, Weaviate, Qdrant, Milvus, etc.).
 //
 // Note: This adapter delegates Genkit retriever operations to core.VectorStore semantics.
 // Since Genkit retrievers are primarily read-oriented, write operations (AddDocuments)

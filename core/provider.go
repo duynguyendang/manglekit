@@ -27,7 +27,7 @@ const (
 // removing the need for string literals during registration.
 type ProviderOptions interface {
 	// ProviderName returns the unique, machine-readable name of the provider,
-	// e.g., "openai-chat", "chroma-db", "bm25".
+	// e.g., "openai-chat", "localvec-db", "bm25".
 	ProviderName() string
 	// ProviderKind returns the category of the provider, e.g., KindLLM, KindRetriever.
 	ProviderKind() Kind

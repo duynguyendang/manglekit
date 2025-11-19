@@ -3,7 +3,7 @@ context_type: low_level_design
 project: manglekit
 language: go
 version: 0.8.0
-last_updated: 2025-11-17
+last_updated: 2025-11-19
 stability: stable
 audience: developers
 ---
@@ -162,7 +162,7 @@ Circular dependencies are prevented by the hard-coded linear build order defined
 *   **Factory Registration:** Closure registered via `manglekit.Register()` in `internal/providers/retrievers/genkitretriever/factory.go`.
 *   **Registered Key:** `genkit-retriever`
 *   **Config Struct:** `genkitretriever.GenkitRetrieverOptions`
-*   **Dependencies:** `diapi.NoopDeps` (constructed by the handler). The factory builds a `GenkitRetrieverAdapter` that wraps any Genkit `ai.Retriever` (Pinecone, Chroma, Weaviate, etc.) into a Manglekit `core.Retriever`.
+*   **Dependencies:** `diapi.NoopDeps` (constructed by the handler). The factory builds a `GenkitRetrieverAdapter` that wraps any Genkit `ai.Retriever` (Pinecone, LocalVec, Weaviate, etc.) into a Manglekit `core.Retriever`.
 *   **Adapter:** `internal/adapters/GenkitRetrieverAdapter` wraps Genkit retrievers and implements `core.Retriever`.
 *   **Use Case:** Production-grade semantic search using Genkit-supported vector stores. This replaces the old "dense" retriever approach, which was merely an orchestrator combining an embedder + vector store. Genkit retrievers already perform this internally, so we wrap them directly for a simpler, cleaner architecture.
 
@@ -275,6 +275,7 @@ This pattern is useful for testing or when model validation is not required.
 The codebase is **stable** post-cleanup. VectorStore components removed; Genkit retriever adapter now primary semantic search solution.
 
 # 15. Changelog
+*   **2025-11-19**: Documentation sync. Clarified `InMemory` retriever availability and `genkit-retriever` dynamic dispatch capabilities.
 *   **2025-11-17**: Documentation sync after cleanup. Removed vectorstores references, updated retriever implementations (dense→genkit-retriever), confirmed 12 handlers total.
 *   **2025-11-12**: Updated `last_updated` timestamp. All architectural patterns documented in AGENTS.md §15 (Resolved Patterns, Anti-Patterns, Known Limitations).
 *   **2025-11-09**: Updated document to include the Tool, Reasoner, and Planner frameworks. Added `Reasoners` and `Planners` to the `Resolved` struct, and included the new handlers and provider implementations in the developer reference.

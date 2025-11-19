@@ -95,6 +95,59 @@ func (r *SubRetrieverResolver) Resolve(ctx context.Context, builderDI any, cfg a
 
 // NoopRetrieverResolver resolves dependencies for retrievers that have no special
 // dependencies (beyond CoreDeps).
+// ============================================================================
+// GenkitRetrieverResolver for embedder-dependent retrievers
+// ============================================================================
+
+// GenkitRetrieverResolver resolves dependencies for Genkit retriever types that
+// require an embedder (e.g., LocalVec, Pinecone).
+type GenkitRetrieverResolver struct{}
+
+// NewGenkitRetrieverResolver creates a new resolver for Genkit retriever types.
+func NewGenkitRetrieverResolver() *GenkitRetrieverResolver {
+	return &GenkitRetrieverResolver{}
+}
+
+// Matches returns true if the options implement EmbedderDep.
+func (r *GenkitRetrieverResolver) Matches(opts any) bool {
+	_, ok := opts.(EmbedderDep)
+	return ok
+}
+
+// Resolve builds GenkitRetrieverDeps by looking up the embedder.
+func (r *GenkitRetrieverResolver) Resolve(ctx context.Context, builderDI any, cfg any) (any, error) {
+	b, ok := builderDI.(Builder)
+	if !ok {
+		return nil, fmt.Errorf("invalid builder DI type: got %T", builderDI)
+	}
+
+	typedOpts, ok := cfg.(EmbedderDep)
+	if !ok {
+		return nil, fmt.Errorf("options do not implement EmbedderDep: got %T", cfg)
+	}
+
+	embedderName := typedOpts.GetEmbedder()
+	if embedderName == "" {
+		return nil, fmt.Errorf("embedder name is required for Genkit retriever (EmbedderDep.GetEmbedder() returned empty)")
+	}
+
+	embedder, err := b.GetEmbedder(embedderName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get embedder '%s': %w", embedderName, err)
+	}
+
+	return GenkitRetrieverDeps{
+		CoreDeps: b.GetCoreDeps(),
+		Embedder: embedder,
+	}, nil
+}
+
+// ============================================================================
+// NoopRetrieverResolver for retrievers with no special dependencies
+// ============================================================================
+
+// NoopRetrieverResolver resolves dependencies for retrievers that have no special
+// dependencies (beyond CoreDeps).
 type NoopRetrieverResolver struct{}
 
 // NewNoopRetrieverResolver creates a new resolver for noop retriever types.

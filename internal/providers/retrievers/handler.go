@@ -31,8 +31,10 @@ func (h *Handler) ensureResolverInitialized() {
 	h.resolverOnce.Do(func() {
 		h.resolver = diapi.NewResolverRegistry()
 		// Register resolvers in priority order.
-		// SubRetrieverResolver must come before NoopRetrieverResolver.
+		// SubRetrieverResolver must come before GenkitRetrieverResolver.
+		// GenkitRetrieverResolver must come before NoopRetrieverResolver.
 		h.resolver.Register(core.KindRetriever, diapi.NewSubRetrieverResolver(nil))
+		h.resolver.Register(core.KindRetriever, diapi.NewGenkitRetrieverResolver())
 		h.resolver.Register(core.KindRetriever, diapi.NewNoopRetrieverResolver())
 	})
 }

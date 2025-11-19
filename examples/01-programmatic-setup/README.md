@@ -12,30 +12,14 @@ This example demonstrates how to build and run a Manglekit pipeline programmatic
     # now edit .env and add your GOOGLE_API_KEY
     ```
 
-2.  **Set up Chroma for semantic search:**
-    Start a Chroma instance (requires Docker):
-
-    ```bash
-    docker run -d -p 8000:8000 chromadb/chroma
-    ```
-
-    Or install Chroma locally:
-
-    ```bash
-    pip install chromadb
-    chroma run --host localhost --port 8000
-    ```
-
-    The example expects Chroma to be available at `http://localhost:8000`.
-
-3.  **Run the example:**
+2.  **Run the example:**
     From the root of the repository, run the following command:
 
     ```bash
     go run ./examples/01-programmatic-setup
     ```
 
-    The example will execute a query using hybrid search (combining BM25 and Chroma semantic search) and return an answer from the Google LLM.
+    The example will execute a query using hybrid search (combining BM25 keyword search and LocalVec semantic search via Genkit) and return an answer from the Google LLM.
 
 ## What it does
 
@@ -43,14 +27,17 @@ This example builds a "Sandwich" RAG pipeline with the following components:
 
 *   **Orchestrator:** `sandwich` - Orchestrates the RAG pipeline with pre-retrieval and post-retrieval rule stages
 *   **LLM:** `google` (Gemini 2.5 Flash) - Generates answers based on retrieved documents
-*   **Embedder:** `google-embedder` - Provides text embeddings for semantic search
-*   **Retriever:** `hybrid` (combining BM25 keyword search and Chroma semantic search) - Performs hybrid search using both lexical and semantic matching with Reciprocal Rank Fusion (RRF)
+*   **Embedder:** `google-embedder` - Provides text embeddings for semantic search via Google's text-embedding-004 model
+*   **Retriever:** `hybrid` (combining BM25 keyword search and LocalVec semantic search) - Performs hybrid search using:
+    - **BM25 sub-retriever:** Lexical (keyword) matching on the document corpus
+    - **LocalVec sub-retriever:** Semantic (embedding-based) search using Genkit's local vector database
+    - **Merging strategy:** Reciprocal Rank Fusion (RRF) to combine results from both retrievers for optimal relevance
 *   **RuleSet:** `mangle` (using rules from `examples/rules/acme-rules.dlog`) - Enforces policies and rules at pre and post stages
 *   **StateProvider:** `inmemory` - Manages session state during pipeline execution
 
 It then executes the query "What is MangleKit?" and prints the answer to the console along with citations.
 
-**Note:** The semantic search component requires Chroma to be running. See the Setup section for instructions.
+**Note:** The semantic search component uses LocalVec as the vector store. See the Setup section for instructions on running LocalVec.
 
 ## How it works
 
@@ -60,10 +47,14 @@ The example starts by creating a new programmatic builder via `sdk.NewBuilder()`
 ### 2. Component Configuration
 Each component is configured with its specific options struct:
 - **GoogleEmbedderOptions** - Configures the Google embedding model (defaults to `text-embedding-004`)
-- **GenkitRetrieverOptions** - Configures Chroma as the semantic search provider with endpoint configuration
+- **GenkitRetrieverOptions** - Configures LocalVec as the semantic search provider via Genkit:
+  - `Provider`: "localvec" - Routes to LocalVec Genkit plugin
+  - `Model`: "text-embedding-004" - Embedding model for semantic vectors
+  - `Endpoint`: "/tmp/manglekit-localvec" - Local storage directory for vector data
+  - `IndexName`: "documents" - LocalVec collection name (auto-created if needed)
 - **BM25Options** - Specifies the path to documents to index for keyword-based search
-- **HybridOptions** - Combines BM25 and Chroma retrievers using Reciprocal Rank Fusion (RRF) for optimal ranking
-- **GoogleOptions** - Specifies the model (gemini-2.5-flash) and reads API key from environment
+- **HybridOptions** - Combines BM25 and LocalVec retrievers using Reciprocal Rank Fusion (RRF)
+- **GoogleOptions** - Specifies the model (gemini-2.5-flash) and reads API key from `GOOGLE_API_KEY` environment variable
 - **MangleOptions** - Specifies the path to Datalog rule files
 - **InMemoryOptions** - Configures the in-memory state provider
 - **SandwichOptions** - Wires together the orchestrator with named component references
@@ -74,7 +65,7 @@ Components are added to the builder using the fluent `WithOptions()` API, which 
 ```go
 builder.
     WithOptions("google_embedder", googleEmbedderOpts).
-    WithOptions("semantic_retriever", genkitRetrieverOpts).
+    WithOptions("semantic_retriever", genkitRetrieverOpts).  // LocalVec via Genkit
     WithOptions("keyword_retriever", bm25SubRetrieverOpts).
     WithOptions("hybrid_retriever", hybridRetrieverOpts).
     WithOptions("google", googleOpts).
@@ -82,6 +73,8 @@ builder.
     WithOptions("inmemory", stateOpts).
     WithOptions("sandwich", sandwichOpts)
 ```
+
+The order of component registration ensures that sub-retrievers (keyword and semantic) are built before the hybrid retriever that combines them.
 
 The order of component registration ensures that sub-retrievers (keyword and semantic) are built before the hybrid retriever that combines them.
 
@@ -105,12 +98,10 @@ This triggers:
 1. **Pre-retrieval rules** - Query validation, normalization, expansion
 2. **Hybrid document retrieval** - Combines results from:
    - **Keyword search (BM25)** - Lexical matching on indexed documents
-   - **Semantic search (Chroma)** - Vector similarity using embeddings
+   - **Semantic search (LocalVec via Genkit)** - Vector similarity using Google embeddings
    - **Reciprocal Rank Fusion** - Merges rankings from both methods for optimal relevance
 3. **Post-retrieval rules** - Document filtering, redaction, entitlement checks
 4. **LLM generation** - Answer synthesis based on retrieved documents
-
-**Future Enhancement:** When Genkit retriever providers become available, the hybrid retriever will combine results from both keyword search (BM25) and semantic search (Genkit-retriever) using Reciprocal Rank Fusion (RRF) for optimal relevance.
 
 ### 6. Resource Cleanup
 The orchestrator's resources are properly cleaned up using a deferred close:
@@ -170,29 +161,35 @@ This error occurs when the retriever cannot find any documents matching the quer
 4. **Rules denying the request:** Check the Mangle rules in `examples/rules/acme-rules.dlog`. The current rules deny queries containing "secret".
 
 ### "Authentication failed"
-Ensure your `GOOGLE_API_KEY` environment variable is set correctly and has the necessary permissions to access Gemini models.
+Ensure your `GOOGLE_API_KEY` environment variable is set correctly and has the necessary permissions to access Gemini models and text embeddings.
 
 ### "Failed to execute query"
 This could indicate:
 - Missing or invalid Google API key
-- Missing rule files or documents
+- Missing rule files or markdown documents to index
 - Invalid query structure
 - Network connectivity issues with Google API
+- Markdown files at specified paths don't exist (verify `MarkdownFiles` paths in `InMemoryVectorOptions`)
 
-### "chroma retriever support not yet implemented" or connection errors
-If you see an error about Chroma not being implemented, this means the Genkit Chroma plugin is not yet available in your version of the Go Genkit SDK.
+### LocalVec Storage Issues
+LocalVec stores vector data in local JSON files. If you encounter issues:
 
-**Troubleshooting:**
-1. **Chroma not running:** Ensure Chroma is running at `http://localhost:8000`:
+1. **Storage directory not writable:** Ensure `/tmp/manglekit-localvec/` is writable:
    ```bash
-   docker ps | grep chromadb
+   ls -la /tmp/manglekit-localvec/
+   chmod 755 /tmp/manglekit-localvec/
    ```
-2. **Connection refused:** Check that the Chroma service is accessible:
+
+2. **Corrupted vector database:** Delete the stored vectors to reset:
    ```bash
-   curl http://localhost:8000
+   rm /tmp/manglekit-localvec/__db_documents.json
    ```
-3. **Genkit plugin not available:** If you see "chroma retriever support not yet implemented", the Chroma plugin may not be available in your Genkit version. This example requires Genkit Chroma support to be available in the Go SDK.
-4. **Fallback to BM25 only:** If you don't have Chroma set up, you can temporarily comment out the semantic_retriever configuration and use only BM25 keyword search by changing `hybridRetrieverOpts.Retrievers` to `[]string{"keyword_retriever"}`.
+   The example will recreate the index on next run.
+
+3. **Query returns no results:** Ensure documents have been indexed. The LocalVec plugin:
+   - Automatically embeds documents using the configured embedder
+   - Stores embeddings alongside documents in JSON format
+   - Persists to disk for future queries
 
 ## Example Output
 
