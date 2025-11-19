@@ -1,22 +1,27 @@
 # Heavy Wrapper Anti-Pattern Audit & Fix Report
 
-**Status:** ✅ **COMPLETED - NO ANTI-PATTERNS FOUND**
+**Status:** ✅ **COMPLETED - ANTI-PATTERNS FOUND & FIXED**
 
 **Date:** November 19, 2025  
-**Scope:** `internal/embedders/*` and `internal/providers/llm/*`  
-**Conclusion:** The Manglekit codebase has already been properly refactored to follow the **Thin Adapter Pattern**. All Genkit provider wrappers are legitimate bridges between Genkit interfaces and Manglekit core interfaces—NOT heavy wrappers duplicating SDK logic.
+**Scope:** `internal/embedders/*`, `internal/providers/llm/*`, and `internal/adapters/*`  
+**Conclusion:** The Manglekit codebase has been properly refactored to follow the **Thin Adapter Pattern**. All Genkit provider wrappers are legitimate bridges between Genkit interfaces and Manglekit core interfaces—NOT heavy wrappers. Unused adapter files have been identified and removed.
 
 ---
 
 ## Executive Summary
 
-The audit discovered that **no heavy wrapper anti-patterns exist** in the target packages. The code has already been successfully refactored to:
+The audit discovered that **no active heavy wrapper anti-patterns exist** in the target packages. The code has already been successfully refactored to:
 
 1. ✅ Act as a **configuration/wiring layer only** for Genkit plugins
 2. ✅ Delegate all runtime logic to Genkit's official implementations
 3. ✅ Use the **GenkitLLMAdapter** pattern for legitimate interface bridging
 4. ✅ Remove all redundant raw SDK logic and manual API request construction
 5. ✅ Eliminate unused Google SDK dependencies (proof of refactoring completion)
+
+**Additional Finding:** Two unused adapter files were discovered as dead code and removed:
+- ❌ `internal/adapters/genkit_embedder_adapter.go` — Never instantiated; removed
+- ❌ `internal/adapters/genkit_vectorstore_adapter.go` — Never instantiated; removed
+- ✅ `internal/adapters/genkit_retriever_adapter.go` — Properly used by GenkitRetriever factory; retained
 
 **Dependency Cleanup Evidence:** `go mod tidy` removed **9 unused dependencies** related to raw Google SDKs:
 - `github.com/google/generative-ai-go`
@@ -216,6 +221,70 @@ func createOpenAILLM(g *genkit.Genkit, opts *GenkitLLMOptions) (ai.Model, error)
 - ✅ No manual API request construction
 - ✅ No SDK client wrapper—just configuration assembly
 - ✅ Extensible design: new providers added by adding switch case
+
+---
+
+## Task 1.5: Dead Code Discovery & Removal
+
+### Unused Adapters Identified
+
+During the audit, two adapter files were discovered that **define public types and functions but are never instantiated or called anywhere in the codebase**:
+
+#### `internal/adapters/genkit_embedder_adapter.go` ❌ REMOVED
+
+**Status:** Dead Code (0 usages)
+
+**Issue:** 
+- Defines `GenkitEmbedderAdapter` struct and `NewGenkitEmbedderAdapter()` constructor
+- Never called by any embedder factory
+- Provides no value: embedders already return Genkit's `ai.Embedder` directly
+
+**Why It's Unnecessary:**
+The thin factory pattern for embedders (Google, OpenAI) already returns Genkit embedder instances directly:
+```go
+// Google Embedder Factory (WORKING)
+return googlegenai.GoogleAIEmbedder(g, modelName)  // ← Returns Genkit's official type
+
+// What the dead adapter attempted to do:
+return &GenkitEmbedderAdapter{
+    embedder: googlegenai.GoogleAIEmbedder(g, modelName),
+    provider: "google",
+}  // ← Unnecessary wrapper!
+```
+
+**Action Taken:** ✅ Deleted `internal/adapters/genkit_embedder_adapter.go`
+
+#### `internal/adapters/genkit_vectorstore_adapter.go` ❌ REMOVED
+
+**Status:** Dead Code (0 usages)
+
+**Issue:**
+- Defines `GenkitVectorStoreAdapter` struct and `NewGenkitVectorStoreAdapter()` constructor
+- Never called by any vectorstore factory
+- Attempted to adapt Genkit retrievers to vectorstore interface (architecturally backwards)
+
+**Why It's Unnecessary:**
+According to CONTEXT.md, the correct architecture is:
+- Genkit provides **VectorStore backends** (via vector store plugins)
+- Manglekit **Retrievers** (dense, hybrid) depend on VectorStore (not the other way around)
+
+This adapter attempted to do the reverse (wrap retrievers as vectorstores), which is architecturally incorrect.
+
+**Action Taken:** ✅ Deleted `internal/adapters/genkit_vectorstore_adapter.go`
+
+#### `internal/adapters/genkit_retriever_adapter.go` ✅ RETAINED
+
+**Status:** Active & Used
+
+**Usage:** Called by `internal/providers/retrievers/genkitretriever/factory.go`
+
+**Legitimacy:** This adapter is **necessary and correct**:
+- Wraps Genkit `ai.Retriever` → adapts to Manglekit `core.Retriever` interface
+- Bridges incompatible interfaces (legitimate adapter pattern)
+- Provides document conversion and metadata handling
+- Actively used in the GenkitRetriever factory
+
+**Verdict:** Retained (not a heavy wrapper; proper interface bridging)
 
 ---
 
