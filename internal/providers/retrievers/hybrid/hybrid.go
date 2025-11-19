@@ -163,7 +163,7 @@ func (h *Retriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (cor
 	})
 
 	// Ensure the number of returned documents does not exceed TopK.
-	if len(finalDocs) > req.TopK {
+	if req.TopK > 0 && len(finalDocs) > req.TopK {
 		finalDocs = finalDocs[:req.TopK]
 	}
 

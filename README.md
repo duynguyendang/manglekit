@@ -215,9 +215,7 @@ import (
 	"log"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/llm"
 	"github.com/duynguyendang/manglekit/pipeline/sandwich"
-	"github.com/duynguyendang/manglekit/retrieve"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/joho/godotenv"
 )
@@ -233,15 +231,17 @@ func main() {
 	}
 
 	// 2. Configure and add each component by name.
+	// Note: For built-in providers like 'bm25' and 'google', we use map[string]any
+	// for configuration if their option structs are not exported.
 	builder.
 		WithOptions("rules", &core.MangleOptions{
 			Path: []string{"./rules/policy.dlog"},
 		}).
-		WithOptions("retriever", &retrieve.BM25Options{
-			Path: "./testdata/docs",
+		WithOptions("retriever", map[string]any{
+			"path": "./testdata/docs",
 		}).
-		WithOptions("llm", &llm.GoogleOptions{
-			Model: "gemini-2.0-flash",
+		WithOptions("llm", map[string]any{
+			"model": "gemini-2.0-flash",
 		}).
 		WithOptions("sandwich", &sandwich.Options{
 			LLM:       "llm",
@@ -340,6 +340,9 @@ MangleKit includes a suite of built-in providers that can be configured in the b
 | **Rules Engine**  | `mangle`      | The core Datalog engine for rules-based control.             | _None_             |
 | **Schema Parser** | `jsonschema`  | Parses JSON Schema files into facts for the Mangle engine.   | _None_             |
 |                   | `rdf`         | Parses RDF (Turtle) files into facts for the Mangle engine.  | _None_             |
+| **Tool**          | `http`        | Adapter for calling HTTP APIs as tools.                      | _None_             |
+| **Reasoner**      | `mangle`      | Symbolic reasoner using the Mangle Datalog engine.           | `RuleSet`          |
+| **Planner**       | `symbolic`    | Generates execution plans using symbolic reasoning.          | `Reasoner`, `Tool` |
 
 ## 📂 Simplified Repository Layout
 
@@ -361,7 +364,10 @@ This is a high-level overview of the most important directories in the MangleKit
 │   └── declarative/
 ├── internal/               # Internal logic and concrete provider implementations
 │   ├── providers/          # Providers organized by Kind
-│   │   ├── retrievers/     # Contains bm25, dense, hybrid, etc.
+│   │   ├── retrievers/     # Contains bm25, genkitretriever, hybrid, etc.
+│   │   ├── planners/       # Planner implementations
+│   │   ├── reasoners/      # Reasoner implementations
+│   │   ├── tools/          # Tool adapters
 │   │   └── ...
 │   ├── testproviders/      # Mock providers for testing
 │   └── ...                 # Other internal packages

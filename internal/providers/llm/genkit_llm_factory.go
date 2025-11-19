@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
@@ -16,7 +17,7 @@ import (
 // RegisterGenkit registers the generic Genkit LLM factory with the Manglekit registry.
 // This factory supports ANY Genkit LLM provider by dispatching based on configuration.
 func RegisterGenkit(r *manglekit.Registry) error {
-	factory := func(ctx context.Context, deps diapi.LLMDeps, cfg *GenkitLLMOptions) (ai.Model, error) {
+	factory := func(ctx context.Context, deps diapi.LLMDeps, cfg *GenkitLLMOptions) (core.LLMClient, error) {
 		if deps.Genkit == nil {
 			return nil, fmt.Errorf("genkit instance is required for LLM factory")
 		}
@@ -48,7 +49,14 @@ func RegisterGenkit(r *manglekit.Registry) error {
 			)
 		}
 
-		return model, nil
+		return NewGenkitLLMAdapter(
+			deps.Genkit,
+			model,
+			cfg.Provider,
+			cfg.Model,
+			cfg.Temperature,
+			cfg.MaxOutputTokens,
+		), nil
 	}
 
 	return manglekit.Register(r, &GenkitLLMOptions{}, factory)

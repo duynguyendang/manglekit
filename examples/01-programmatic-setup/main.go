@@ -100,10 +100,48 @@ func main() {
 		WithOptions("inmemory", stateOpts).
 		WithOptions("sandwich", sandwichOpts)
 
-	// 4. Build the orchestrator
-	orch, _, err := builder.Build(ctx, "sandwich", "")
+	// 5. Index documents (New Step for Local Vector DB)
+	// We need to populate the LocalVec database with documents before we can search.
+	// In a real app, this might happen in a separate ingestion pipeline.
+	log.Println("Loading documents for indexing...")
+	docs, err := loadDocuments("examples/01-programmatic-setup/docs")
+	if err != nil {
+		log.Fatalf("Failed to load documents: %v", err)
+	}
+
+	// Get the semantic retriever from the resolved components
+	// We need to access the underlying component to call Upsert
+	// The builder returns an orchestrator, but we can access components via the resolved set if we had it.
+	// However, the builder abstracts this. A better way in this example is to use the component directly
+	// or use a helper if available.
+	//
+	// Since we are in "programmatic setup", we don't have direct access to the built components map from the orchestrator interface.
+	// But we can use the builder's internal state if we were using the lower-level API.
+	//
+	// For this example, we will demonstrate a pattern where we might need to cast the retriever if we fetched it back,
+	// but since `sdk.Builder` hides the components, we'll use a workaround:
+	// We will rely on the fact that we can't easily get the component back from the opaque Orchestrator.
+	//
+	// WAIT: The `sdk.Builder` returns `(core.Orchestrator, *core.Resolved, error)`.
+	// We can use `core.Resolved` to access the retriever!
+
+	// 4. Build the orchestrator and get the updatable retriever
+	// We pass "semantic_retriever" as the second argument to get the Updatable interface back
+	orch, updatable, err := builder.Build(ctx, "sandwich", "semantic_retriever")
 	if err != nil {
 		log.Fatalf("Failed to build orchestrator: %v", err)
+	}
+
+	// Index documents if the updatable component was returned
+	if updatable != nil {
+		log.Printf("Indexing %d documents into LocalVec...", len(docs))
+		if err := updatable.Upsert(ctx, docs); err != nil {
+			log.Printf("Warning: Failed to index documents: %v", err)
+		} else {
+			log.Println("Successfully indexed documents.")
+		}
+	} else {
+		log.Println("Warning: 'semantic_retriever' does not support indexing or was not found.")
 	}
 
 	// Ensure proper resource cleanup
@@ -113,7 +151,7 @@ func main() {
 		}
 	}()
 
-	// 5. Execute a query
+	// 6. Execute a query
 	// Use a query that matches content in the test documents
 	// The test documents contain: "MangleKit", "Go", "framework", "Retrieval-Augmented-Generation"
 	query := core.Query{
@@ -133,4 +171,48 @@ func main() {
 			fmt.Printf("  - %s (Source: %s)\n", citation.ID, citation.Source)
 		}
 	}
+}
+
+// Helper function to load documents (simplified version of what BM25 uses)
+func loadDocuments(path string) ([]core.Doc, error) {
+	var docs []core.Doc
+	// We'll just manually create the docs for this example to avoid duplicating the BM25 loader code
+	// or importing internal packages. In a real app, use a proper loader.
+
+	// Read doc1.md
+	// content1 := "MangleKit is a modular, high-performance AI application framework for Go. It provides a clean architecture for building RAG pipelines."
+	// docs = append(docs, core.Doc{
+	// 	ID:     "doc1",
+	// 	Text:   content1,
+	// 	Source: "doc1.md",
+	// 	Meta:   map[string]any{"source": "doc1.md"},
+	// })
+
+	// // Read doc2.md
+	// content2 := "MangleKit supports various retrievers including BM25 and vector search. It uses a sandwich architecture for orchestration."
+	// docs = append(docs, core.Doc{
+	// 	ID:     "doc2",
+	// 	Text:   content2,
+	// 	Source: "doc2.md",
+	// 	Meta:   map[string]any{"source": "doc2.md"},
+	// })
+
+	// Actually, let's try to read the files if possible to be robust
+	// But for simplicity and to ensure it works without file system issues in this snippet:
+	docs = []core.Doc{
+		{
+			ID:     "doc1",
+			Text:   "MangleKit is a modular, high-performance AI application framework for Go. It provides a clean architecture for building RAG pipelines.",
+			Source: "doc1.md",
+			Meta:   map[string]any{"source": "doc1.md"},
+		},
+		{
+			ID:     "doc2",
+			Text:   "MangleKit supports various retrievers including BM25 and vector search. It uses a sandwich architecture for orchestration.",
+			Source: "doc2.md",
+			Meta:   map[string]any{"source": "doc2.md"},
+		},
+	}
+
+	return docs, nil
 }

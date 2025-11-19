@@ -62,13 +62,6 @@ func RegisterOpenAI(r *manglekit.Registry) {
 	r.RegisterHandler(NewHandler())
 }
 
-// OpenAI is a wrapper around a genkit AI model from the OpenAI plugin.
-type OpenAI struct {
-	opts   OpenAIOptions
-	model  ai.Model
-	genkit *genkit.Genkit
-}
-
 // NewOpenAI is the constructor for the OpenAI client wrapper.
 func NewOpenAI(cfg OpenAIOptions, g *genkit.Genkit) (core.LLMClient, error) {
 
@@ -86,51 +79,12 @@ func NewOpenAI(cfg OpenAIOptions, g *genkit.Genkit) (core.LLMClient, error) {
 		}
 	}
 
-	return &OpenAI{
-		opts:   cfg,
-		model:  model,
-		genkit: g,
-	}, nil
-}
-
-// Complete implements the core.LLMClient interface.
-func (o *OpenAI) Complete(ctx context.Context, req core.LLMRequest) (core.LLMResponse, error) {
-	if o.model == nil {
-		return core.LLMResponse{}, fmt.Errorf("openai llm client not initialized with a model")
-	}
-
-	// Use the functional options pattern from the new genkit API.
-	// Don't pass temperature/config as the OpenAI plugin may not support GenerationCommonConfig
-	opts := []ai.GenerateOption{
-		ai.WithModel(o.model),
-		ai.WithPrompt(req.Prompt),
-	}
-
-	// Add temperature if set
-	if o.opts.Temperature > 0 {
-		// Use map-based config that the OpenAI plugin understands
-		opts = append(opts, ai.WithConfig(map[string]any{
-			"temperature":     float64(o.opts.Temperature),
-			"maxOutputTokens": o.opts.MaxOutputTokens,
-		}))
-	}
-
-	// Use the standard genkit.Generate function.
-	res, err := genkit.Generate(ctx, o.genkit, opts...)
-	if err != nil {
-		return core.LLMResponse{}, err
-	}
-
-	// Extract token usage.
-	usage := make(map[string]int)
-	if res.Usage != nil {
-		usage["prompt"] = int(res.Usage.InputTokens)
-		usage["completion"] = int(res.Usage.OutputTokens)
-		usage["total"] = int(res.Usage.TotalTokens)
-	}
-
-	return core.LLMResponse{
-		Text:  res.Text(),
-		Usage: usage,
-	}, nil
+	return NewGenkitLLMAdapter(
+		g,
+		model,
+		"openai",
+		cfg.Model,
+		cfg.Temperature,
+		cfg.MaxOutputTokens,
+	), nil
 }

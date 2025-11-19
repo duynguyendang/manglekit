@@ -7,7 +7,7 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 )
 
-// GenkitVectorStoreAdapter wraps a Genkit-backed Retriever and adapts it to the core.VectorStore interface.
+// GenkitVectorStoreAdapter wraps a Genkit-backed Retriever and provides a vector store-like interface.
 // This adapter is provider-agnostic and works with any Genkit vector store plugin
 // (Pinecone, LocalVec, Weaviate, Qdrant, Milvus, etc.).
 //
@@ -33,10 +33,10 @@ func NewGenkitVectorStoreAdapter(retriever core.Retriever, provider string, logg
 // Search delegates a vector store search to the underlying Genkit retriever.
 // It converts the search request into a Manglekit retrieval request and returns results as core.Docs.
 //
-// queryText: The text query to search for.
-// queryVector: The query vector (may be ignored if retriever uses text-based search).
-// topK: Number of results to return.
-// filter: Optional metadata filters.
+// queryText is the text query to search for.
+// queryVector is the query vector (may be ignored if retriever uses text-based search).
+// topK is the number of results to return.
+// filter is the optional metadata filters.
 func (a *GenkitVectorStoreAdapter) Search(
 	ctx context.Context,
 	queryText string,

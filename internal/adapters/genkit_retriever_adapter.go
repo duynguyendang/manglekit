@@ -17,22 +17,33 @@ import (
 // This eliminates the need for the old "dense" orchestrator, as Genkit retrievers
 // already perform semantic search (embedding + vector store lookup) internally.
 // By wrapping them directly, we get a simpler, cleaner architecture.
+// GenkitIndexer is an interface for Genkit providers that support indexing.
+// Since Genkit doesn't have a unified Indexer interface yet, we define one here
+// to abstract over different provider implementations (like localvec).
+type GenkitIndexer interface {
+	Index(ctx context.Context, docs []*ai.Document) error
+}
+
 type GenkitRetrieverAdapter struct {
 	retriever      *genkit.Genkit // The Genkit instance needed to call Retrieve
 	genktRetriever ai.Retriever   // The actual ai.Retriever to delegate to
+	indexer        GenkitIndexer  // The optional indexer for Upsert operations
 	logger         core.Logger
 	provider       string // For logging and debugging
 }
 
 // NewGenkitRetrieverAdapter creates a new adapter wrapping a Genkit retriever.
+//
 // genkitInstance is the Genkit generator instance needed for retrieval operations.
 // retriever is the Genkit ai.Retriever to wrap (e.g., from Pinecone, LocalVec plugin).
+// indexer is the GenkitIndexer to wrap (optional, can be nil if read-only).
 // provider is used for logging/debugging to identify which Genkit plugin is being used.
 // logger is optional; if nil, no debug logging will occur.
-func NewGenkitRetrieverAdapter(genkitInstance *genkit.Genkit, retriever ai.Retriever, provider string, logger core.Logger) *GenkitRetrieverAdapter {
+func NewGenkitRetrieverAdapter(genkitInstance *genkit.Genkit, retriever ai.Retriever, indexer GenkitIndexer, provider string, logger core.Logger) *GenkitRetrieverAdapter {
 	return &GenkitRetrieverAdapter{
 		retriever:      genkitInstance,
 		genktRetriever: retriever,
+		indexer:        indexer,
 		logger:         logger,
 		provider:       provider,
 	}
@@ -44,6 +55,7 @@ func NewGenkitRetrieverAdapter(genkitInstance *genkit.Genkit, retriever ai.Retri
 //
 // ctx is the context for the API call.
 // req is the Manglekit retrieval request (query, TopK, metadata filters).
+//
 // It returns a RetrieveResult containing the retrieved documents, or an error if retrieval fails.
 func (a *GenkitRetrieverAdapter) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
 	if a.retriever == nil {
@@ -177,4 +189,57 @@ func extractSource(metadata map[string]any) string {
 		return uri
 	}
 	return ""
+}
+
+// Upsert adds or updates documents in the underlying Genkit index.
+// It implements the core.Updatable interface.
+func (a *GenkitRetrieverAdapter) Upsert(ctx context.Context, docs []core.Doc) error {
+	if a.indexer == nil {
+		return fmt.Errorf("genkit retriever adapter (%s): indexer is nil (provider does not support indexing or failed to initialize)", a.provider)
+	}
+
+	if a.logger != nil {
+		a.logger.Debugf(
+			"upserting documents to Genkit provider",
+			"provider", a.provider,
+			"count", len(docs),
+		)
+	}
+
+	// Convert core.Doc to Genkit ai.Document
+	var genkitDocs []*ai.Document
+	for _, d := range docs {
+		// Ensure metadata is not nil
+		meta := d.Meta
+		if meta == nil {
+			meta = make(map[string]any)
+		}
+		// Preserve ID and Source in metadata if not already present
+		if _, ok := meta["doc_id"]; !ok && d.ID != "" {
+			meta["doc_id"] = d.ID
+		}
+		if _, ok := meta["source"]; !ok && d.Source != "" {
+			meta["source"] = d.Source
+		}
+
+		gDoc := ai.DocumentFromText(d.Text, meta)
+		genkitDocs = append(genkitDocs, gDoc)
+	}
+
+	// Index the documents
+	err := a.indexer.Index(ctx, genkitDocs)
+	if err != nil {
+		return fmt.Errorf("genkit retriever (%s) upsert failed: %w", a.provider, err)
+	}
+
+	return nil
+}
+
+// Replace clears and replaces the index.
+// For now, it just calls Upsert as many vector stores handle upsert as replace-if-exists.
+// True "replace collection" semantics depend on the specific Genkit plugin capabilities.
+func (a *GenkitRetrieverAdapter) Replace(ctx context.Context, docs []core.Doc) error {
+	// TODO: Check if Genkit supports a "clear" or "reset" operation for the indexer.
+	// For now, we assume Upsert is sufficient for adding/updating.
+	return a.Upsert(ctx, docs)
 }

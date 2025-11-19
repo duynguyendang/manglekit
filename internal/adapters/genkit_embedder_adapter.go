@@ -8,7 +8,7 @@ import (
 	"github.com/firebase/genkit/go/ai"
 )
 
-// GenkitEmbedderAdapter wraps a Genkit ai.Embedder and adapts it to ai.Embedder interface.
+// GenkitEmbedderAdapter wraps a Genkit ai.Embedder and adapts it to the ai.Embedder interface.
 // This adapter is provider-agnostic and works with any Genkit embedder plugin
 // (OpenAI, Google, Vertex, Cohere, Anthropic, etc.).
 type GenkitEmbedderAdapter struct {

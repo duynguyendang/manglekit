@@ -49,64 +49,14 @@ func RegisterGoogle(r *manglekit.Registry) {
 	)
 }
 
-// Google is a wrapper around a genkit AI model.
-type Google struct {
-	opts   GoogleOptions
-	model  ai.Model
-	genkit *genkit.Genkit
-}
-
 // NewGoogle creates a new Google LLM client.
 func NewGoogle(opts GoogleOptions, model ai.Model, g *genkit.Genkit) (core.LLMClient, error) {
-	return &Google{opts: opts, model: model, genkit: g}, nil
-}
-
-// Complete implements the core.LLMClient interface.
-func (g *Google) Complete(ctx context.Context, req core.LLMRequest) (core.LLMResponse, error) {
-	if g.model == nil {
-		return core.LLMResponse{}, fmt.Errorf("google llm client not initialized with a model")
-	}
-
-	// Use the functional options pattern from the new genkit API.
-	// Don't pass temperature/config as the Google plugin may not support it
-	opts := []ai.GenerateOption{
-		ai.WithModel(g.model),
-		ai.WithPrompt(req.Prompt),
-	}
-
-	// Add temperature if set
-	if g.opts.Temperature > 0 {
-		// Try to use GenerateConfig directly
-		opts = append(opts, ai.WithConfig(map[string]any{
-			"temperature":     float64(g.opts.Temperature),
-			"maxOutputTokens": g.opts.MaxOutputTokens,
-		}))
-	}
-
-	res, err := genkit.Generate(ctx, g.genkit, opts...)
-
-	if err != nil {
-		return core.LLMResponse{}, fmt.Errorf("google: llm completion failed: %w", err)
-	}
-
-	// Extract token usage.
-	usage := make(map[string]int)
-	if res.Usage != nil {
-		usage["prompt"] = int(res.Usage.InputTokens)
-		usage["completion"] = int(res.Usage.OutputTokens)
-		usage["total"] = int(res.Usage.TotalTokens)
-	}
-
-	return core.LLMResponse{
-		Text:  res.Text(),
-		Usage: usage,
-	}, nil
-}
-
-func (g *Google) Model() string {
-	return g.opts.Model
-}
-
-func (g *Google) GetName() string {
-	return "google"
+	return NewGenkitLLMAdapter(
+		g,
+		model,
+		"google",
+		opts.Model,
+		opts.Temperature,
+		opts.MaxOutputTokens,
+	), nil
 }

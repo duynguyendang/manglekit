@@ -1,108 +1,115 @@
 # Manglekit Examples
 
-This directory contains canonical examples demonstrating the major capabilities of the **Manglekit SDK (v0.5.0)**.  
-Each example is **self-contained**, **config-first**, and can be run independently using a local YAML configuration.
+This directory contains canonical examples demonstrating the major capabilities of the **Manglekit SDK**.
 
-Manglekit now provides a **type-safe, declarative, and orchestrator-driven architecture**.  
-All examples load their configuration through:
+Manglekit supports two primary construction patterns:
 
-```go
-orch, _ := sdk.FromConfig(ctx, "config.yaml")
-defer orch.Close(ctx)
-ans, _ := orch.Execute(ctx, "your prompt here")
-````
+1.  **Declarative (Config-First):** Defining the pipeline in YAML and loading it via `sdk.FromConfig` (Recommended for production).
+2.  **Programmatic:** Building the pipeline via the Go `sdk.NewBuilder` API (Useful for dynamic construction, testing, or advanced integration).
 
----
+Most examples in this directory utilize the **declarative** approach for clarity and reproducibility.
+
+-----
 
 ## 🧱 Example Catalog
 
-| #      | Folder                                                           | Orchestrator  | Purpose                                                                                                                                                                              |
-| ------ | ---------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **01** | [01-programmatic-setup](./01-programmatic-setup)        | `sandwich`    | This example demonstrates how to build and run a Manglekit pipeline programmatically using the `sdk.NewBuilder()` API. |
-| **02** | [02-rag-chat-app](./02-rag-chat-app)                             | `sandwich`    | Stateful chat application that can answer questions over your documents. Demonstrates how **StateProvider** integrates with the pipeline for multi-turn context.                     |
-| **03** | [03-neuro-symbolic-declarative](./03-neuro-symbolic-declarative) | `declarative` | Showcases the **Declarative Orchestrator** for neuro-symbolic composition: combining rules, reasoner, retriever, and LLM stages with policy guards and logic control.                |
-| **04** | [04-schema-validation](./04-schema-validation)                   | `sandwich`    | Demonstrates the use of **SchemaParser** providers for validating input/output structure and enforcing contracts around the LLM.                                                     |
-| **05** | [05-rdf-knowledge-store](./05-rdf-knowledge-store)               | `declarative` | Integrates an RDF or graph knowledge base via the **KnowledgeStore** provider. Enables hybrid retrieval with symbolic reasoning over structured data.                                |
-| **06** | [06-genkit-integration](./06-genkit-integration)                 | —             | Demonstrates how Manglekit can act as a **Genkit Tool** or sub-pipeline, showing interoperability between Manglekit and Genkit frameworks.                                           |
-| **07** | [07-custom-prompts](./07-custom-prompts)                         | `sandwich`    | Illustrates prompt customization and templating. Shows how to pass a custom `prompt_template` through YAML to influence LLM behavior.                                                |
-| **08** | [08-tool-calling-declarative](./08-tool-calling-declarative)     | `declarative` | Demonstrates **policy-aware tool invocation** (HTTP/OpenAPI). Rulesets guard external calls and planners decide which tools to use under explicit constraints.                       |
+| \# | Folder | Orchestrator | Purpose |
+|---|---|---|---|
+| **01** | [01-programmatic-setup](https://www.google.com/search?q=./01-programmatic-setup) | `sandwich` | **Programmatic Construction & Hybrid Search.**<br>Demonstrates using `sdk.NewBuilder()` to wire a Hybrid Retriever (BM25 + Genkit) + Google Embedder + LLM without YAML. |
+| **02** | [02-rag-chat-app](https://www.google.com/search?q=./02-rag-chat-app) | `sandwich` | **Stateful RAG Chat.**<br>A chat application answering questions over documents. Demonstrates how **StateProvider** integrates with the pipeline for multi-turn context. |
+| **03** | [03-neuro-symbolic-declarative](https://www.google.com/search?q=./03-neuro-symbolic-declarative) | `declarative` | **Logic-Driven Workflow.**<br>Showcases the **Declarative Orchestrator**: combining rules, reasoner, retriever, and LLM stages with policy guards defined in Datalog. |
+| **04** | [04-schema-validation](https://www.google.com/search?q=./04-schema-validation) | `sandwich` | **Structured Data Guardrails.**<br>Demonstrates using **SchemaParser** providers to validate input/output structures and enforce API contracts around the LLM. |
+| **05** | [05-rdf-knowledge-store](https://www.google.com/search?q=./05-rdf-knowledge-store) | `declarative` | **Knowledge Graph Integration.**<br>Integrates an RDF/Graph knowledge base via the **KnowledgeStore** provider. Enables hybrid retrieval with symbolic reasoning. |
+| **06** | [06-genkit-integration](https://www.google.com/search?q=./06-genkit-integration) | — | **Genkit Interoperability.**<br>Demonstrates how Manglekit can act as a **Genkit Tool** or sub-pipeline, leveraging the broader Genkit ecosystem. |
+| **07** | [07-custom-prompts](https://www.google.com/search?q=./07-custom-prompts) | `sandwich` | **Prompt Engineering.**<br>Illustrates prompt customization and templating. Shows how to pass custom `prompt_template` via YAML configuration. |
+| **08** | [08-tool-calling-declarative](https://www.google.com/search?q=./08-tool-calling-declarative) | `declarative` | **Agentic Tool Use.**<br>Demonstrates **policy-aware tool invocation** (HTTP/OpenAPI). Rulesets guard external calls and planners decide usage. |
 
----
+-----
 
 ## 🧩 Architectural Highlights
 
 Each example demonstrates one or more of the following SDK features:
 
-| Feature                        | Description                                                                                                                             |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| **Config-First Construction**  | All pipelines are built declaratively from YAML using `sdk.FromConfig`. No manual builder wiring.                                       |
-| **Typed Dependency Injection** | Components request their dependencies via the `diapi.Builder` interface.                                                                |
-| **Orchestrators**              | `sandwich` for deterministic RAG; `declarative` for logic-rich and policy-aware flows.                                                  |
-| **Provider Composition**       | Providers (retriever, reranker, rule, reasoner, tool, etc.) register themselves via `providers/all` and are referenced by name in YAML. |
-| **Observability & Lifecycle**  | Logs, metrics, and graceful shutdown (`Close()`) are managed automatically by the framework.                                            |
-| **Policy & Schema Layers**     | Declarative rule and schema enforcement before and after LLM execution.                                                                 |
-| **Neuro-Symbolic Integration** | Blends neural (LLM, embedder, retriever) and symbolic (rules, reasoner, planner) components.                                            |
+| Feature | Description |
+|---|---|
+| **Config-First Construction** | Pipelines built declaratively from YAML using `sdk.FromConfig`. |
+| **Programmatic Builder** | Dynamic pipeline construction using `sdk.NewBuilder` (See Example 01). |
+| **Typed Dependency Injection** | Components request dependencies via `diapi.Builder` (e.g., Hybrid retriever requesting sub-retrievers). |
+| **Orchestrators** | `sandwich` for linear RAG; `declarative` for complex, rule-driven flows. |
+| **Provider Composition** | Providers (retriever, rules, llm, etc.) register via `providers/all` and are referenced by name. |
+| **Neuro-Symbolic Integration** | Blends neural components (Embedders, LLMs) with symbolic ones (Rules, Reasoners). |
 
----
+-----
 
 ## 🧠 Running the Examples
 
 ### Prerequisites
 
-* Go 1.22+
-* Environment variables for providers (e.g., `OPENAI_API_KEY`)
-* Example-specific dependencies (local data, RDF files, etc.)
+  * Go 1.24+
+  * **API Keys:** Most examples require a `GOOGLE_API_KEY` or `OPENAI_API_KEY`.
+  * **Setup:**
+    ```bash
+    cp .env.example .env
+    # Edit .env with your keys
+    ```
 
-### Common Run Pattern
+### Running an Example
+
+Navigate to the specific example directory and run the `main.go` file.
+
+**Example 01 (Programmatic):**
 
 ```bash
-cd examples/01-rag-sandwich
-go run . "What is Manglekit architecture?"
+cd examples/01-programmatic-setup
+go run .
 ```
 
-or for declarative flow:
+**Example 02 (Declarative with YAML):**
 
 ```bash
-cd examples/03-neuro-symbolic-declarative
-go run . "Detect anomalies and call audit tool if allowed."
+cd examples/02-rag-chat-app
+go run . "How do I configure the state provider?"
 ```
 
-### Environment Configuration
+### Common Configuration Pattern (YAML)
 
-Each example may reference environment variables in YAML, e.g.:
+For examples 02-08, the `config.yaml` defines the entire stack:
 
 ```yaml
-options:
-  api_key: env:OPENAI_API_KEY
+orchestrator:
+  type: sandwich
+
+providers:
+  google:
+    api_key: ${GOOGLE_API_KEY}
+
+retriever:
+  name: hybrid
+  params:
+    retrievers: ["bm25", "semantic"]
+
+llm:
+  name: google
 ```
 
-Ensure they are exported before running.
-
----
+-----
 
 ## 🔬 Testing & Extension
 
-You can write end-to-end tests using the same `sdk.FromConfig` API:
+To create a new example:
+
+1.  Copy an existing folder (e.g., `01-programmatic-setup` for code-heavy or `02-rag-chat-app` for config-heavy).
+2.  If using YAML, update `config.yaml`.
+3.  If using Programmatic builder, update the chain in `main.go`.
+4.  Ensure `providers/all` is imported to register standard components.
+
+<!-- end list -->
 
 ```go
-orch, _ := sdk.FromConfig(ctx, "../examples/01-rag-sandwich/config.yaml")
-out, _ := orch.Execute(ctx, "What is Manglekit?")
+import _ "github.com/duynguyendang/manglekit/providers/all"
 ```
 
-New examples can be added by copying one folder and editing only the **config.yaml** and **main.go**.
-
----
-
-## 🗺 Example Roadmap
-
-| Theme                     | Planned Examples                                                   |
-| ------------------------- | ------------------------------------------------------------------ |
-| **Performance & Caching** | Demonstrate warm-up, connection pooling, and token budgets.        |
-| **Multi-Tenant Configs**  | Load profiles dynamically (`config.dev.yaml`, `config.prod.yaml`). |
-| **Benchmark Suite**       | Compare retriever configurations (RRF, top_k) from YAML only.      |
-| **WASM/Plugin Sandbox**   | Upcoming architecture extension (see ADR roadmap).                 |
-
----
+-----
 
 ### License
 
