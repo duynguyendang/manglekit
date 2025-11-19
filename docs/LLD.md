@@ -118,14 +118,14 @@ Each component kind has one or more corresponding **typed dependency structs** i
 type LLMDeps struct {
     CoreDeps
     Genkit *genkit.Genkit  // Initialized genkit instance
-    Client ai.Model         // Optional; used by some providers
+    Client any             // Provider-specific client (e.g., *openai.Client)
 }
 
 // GenkitRetrieverDeps: Used by Genkit-based retrievers.
 // Provides access to the Embedder (needed by LocalVec and other Genkit plugins).
 type GenkitRetrieverDeps struct {
     CoreDeps
-    Embedder core.Embedder  // Embedder instance, required by Genkit retriever plugins
+    Embedder ai.Embedder  // Embedder instance, required by Genkit retriever plugins
 }
 
 // RetrieverDeps: Used by multi-retriever families (e.g., Hybrid).
@@ -165,7 +165,7 @@ Instead of using type-switches in handlers, resolvers determine which `Deps` str
 // internal/providers/retrievers/handler.go
 type RetrieverResolver interface {
     Matches(opts any) bool
-    Resolve(ctx context.Context, builderDI any, opts any) (diapi.RetrieverDeps, error)
+    Resolve(ctx context.Context, builderDI any, opts any) (any, error)
 }
 
 // GenkitRetrieverResolver handles genkitretriever.GenkitRetrieverOptions
@@ -174,7 +174,7 @@ func (r *GenkitRetrieverResolver) Matches(opts any) bool {
     _, ok := opts.(diapi.EmbedderDep)  // Check if it requires an embedder
     return ok
 }
-func (r *GenkitRetrieverResolver) Resolve(ctx context.Context, builderDI any, opts any) (diapi.RetrieverDeps, error) {
+func (r *GenkitRetrieverResolver) Resolve(ctx context.Context, builderDI any, opts any) (any, error) {
     b := builderDI.(diapi.Builder)
     o := opts.(*genkitretriever.GenkitRetrieverOptions)
     embedder, _ := b.GetEmbedder(o.Embedder)
@@ -187,10 +187,10 @@ func (r *GenkitRetrieverResolver) Resolve(ctx context.Context, builderDI any, op
 // SubRetrieverResolver handles hybrid.HybridOptions
 type SubRetrieverResolver struct{}
 func (r *SubRetrieverResolver) Matches(opts any) bool {
-    _, ok := opts.(diapi.SubRetrieverDep)  // Check if it has sub-retrievers
+    _, ok := opts.(diapi.SubRetrieversDep)  // Check if it has sub-retrievers
     return ok
 }
-func (r *SubRetrieverResolver) Resolve(ctx context.Context, builderDI any, opts any) (diapi.RetrieverDeps, error) {
+func (r *SubRetrieverResolver) Resolve(ctx context.Context, builderDI any, opts any) (any, error) {
     b := builderDI.(diapi.Builder)
     o := opts.(*hybrid.HybridOptions)
     subs := make(map[string]core.Retriever)
@@ -273,7 +273,7 @@ Adapter returns core.LLMClient (implements complete generation logic)
 *   **Handler:** `internal/providers/llm/handler.go`
 *   **Factory Location:** `internal/providers/llm/openai.go` (registered via `func RegisterOpenAI()`)
 *   **Registered Key:** `openai`
-*   **Config Struct:** `openai.Options` with fields: `Model`, `APIKey`, `BaseURL`, `Temperature`, `MaxOutputTokens`, `SkipModelCheck`
+*   **Config Struct:** `openai.OpenAIOptions` with fields: `Model`, `APIKey`, `BaseURL`, `Temperature`, `MaxOutputTokens`, `SkipModelCheck`
 *   **Factory Logic (12 lines):**
     1. Validate options (check APIKey is set)
     2. Create OpenAI Genkit plugin: `openaimodel.OpenAIModel(deps.Genkit, opts.Model, opts.APIKey, ...)`
@@ -286,7 +286,7 @@ Adapter returns core.LLMClient (implements complete generation logic)
 *   **Handler:** `internal/providers/llm/handler.go`
 *   **Factory Location:** `internal/providers/llm/google.go` (registered via `func RegisterGoogle()`)
 *   **Registered Key:** `google`
-*   **Config Struct:** `google.Options` with fields: `Model`, `Temperature`, `MaxOutputTokens`
+*   **Config Struct:** `google.GoogleOptions` with fields: `Model`, `Temperature`, `MaxOutputTokens`
 *   **Factory Logic (10 lines):**
     1. Validate options (check Model is set)
     2. Create Google GenAI plugin: `googlegenai.GoogleAIModel(deps.Genkit, opts.Model)` (reads `GOOGLE_API_KEY` from environment automatically)
@@ -347,7 +347,7 @@ retrievers:
   - name: my_hybrid
     provider: hybrid
     options:
-      retrievers: ["bm25", "dense"]
+      retrievers: ["bm25", "genkit-retriever"]
       rrf_k: 60.0
 ```
 

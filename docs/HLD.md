@@ -64,7 +64,7 @@ Manglekit recognizes the following **kinds**. Each kind is implemented by **prov
 
 * **LLM** — Text generation / reasoning engines. Implemented as thin factories that configure Genkit plugins and delegate to a universal adapter (`adapters.GenkitLLMAdapter`), ensuring consistent, maintainable LLM integration.
 * **Embedder** — Vectorization for dense retrieval/similarity.
-* **Retriever** — Evidence discovery (BM25, dense, hybrid, KG search).
+* **Retriever** — Evidence discovery (BM25, Genkit-based [LocalVec, Pinecone], hybrid, KG search).
 * **Reranker** — Re‑ordering / scoring (cosine or learned).
 * **RuleSet** — Policy & logic evaluation for Pre/Post stages and mid‑flow guards.
 * **Reasoner** — Symbolic/constraint solvers (Datalog, Prolog‑like, SMT wrappers) with structured I/O.
@@ -81,10 +81,10 @@ Manglekit recognizes the following **kinds**. Each kind is implemented by **prov
 
 **Genkit**
 
-* **Role:** Provider family for embedders and tools; optionally a planning layer.
-* **How it plugs in:** Ships as providers implementing the standard factory signature. Registered under `embed/` and `tool/` kinds.
+* **Role:** Provider family for embedders, retrievers, and tools; optionally a planning layer.
+* **How it plugs in:** Ships as providers implementing the standard factory signature. Registered under `embed/`, `retrieve/` (via `genkit-retriever`), and `tool/` kinds.
 * **Contracts:** Uses `diapi.Deps` for logger/metrics/state; honors ctx for timeouts; contributes `ResourceClosers`.
-* **Examples:** Genkit tools callable from the Declarative Orchestrator via the **Tool** kind.
+* **Examples:** Genkit tools callable from the Declarative Orchestrator via the **Tool** kind; LocalVec retriever.
 * **Why first‑class:** Enables local/offline experimentation, fast iteration, and unified observability with the rest of the stack.
 
 **LLM Universal Adapter**

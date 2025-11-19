@@ -56,12 +56,6 @@ func NewProviderDependencyRegistry() *ProviderDependencyRegistry {
 				RequiredEnvVars: []string{}, // No env vars needed (uses embedded models)
 				Description:     "Hybrid retriever combining BM25 and semantic search",
 			},
-			"dense": {
-				Name:            "dense",
-				Kind:            KindRetriever,
-				RequiredEnvVars: []string{}, // Embedder and VectorStore may have requirements
-				Description:     "Dense semantic retriever",
-			},
 
 			// Rules Providers (no special requirements)
 			"mangle": {

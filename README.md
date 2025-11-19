@@ -117,43 +117,48 @@ MangleKit can be configured to read API keys from environment variables. The eas
 
 ### Example 1: Config-First Setup with YAML (Sandwich Pattern) — RECOMMENDED
 
-For easy configuration changes, you can define the entire sandwich pipeline in a `config.yaml` file.
+For easy configuration changes, you can define the entire pipeline in a `config.yaml` file.
 
 **`config.yaml`:**
 
 ```yaml
-# Set default pipeline parameters for the "sandwich" orchestrator.
-orchestrator:
-  type: "sandwich"
+# The name of the component to use as the main orchestrator
+orchestrator: "my-pipeline"
 
-topK: 6
-fallbackThreshold: 0.35
+components:
+  # 1. Define the Orchestrator
+  - name: "my-pipeline"
+    kind: "orchestrator"
+    type: "sandwich"
+    params:
+      retriever: "my-retriever"
+      llm: "my-llm"
+      rules: "my-rules"
 
-# Configure API keys and other provider-specific settings. The ${VAR} syntax
-# expands environment variables at load time.
-providers:
-  google:
-    apiKey: "${GOOGLE_API_KEY}"
+  # 2. Define the Retriever (BM25)
+  - name: "my-retriever"
+    kind: "retriever"
+    type: "bm25"
+    params:
+      path: "./data"
 
-rules:
-  name: "mangle"
-  params:
-    path:
-      - "./rules/kb.facts"
-      - "./rules/policy.dlog"
-    defaultConverters: true
-    fileFirst: true
+  # 3. Define the LLM (Google Gemini)
+  - name: "my-llm"
+    kind: "llm"
+    type: "google"
+    params:
+      model: "gemini-1.5-flash"
 
-# Define the components for each stage of the pipeline
-retriever:
-  name: "bm25"
-  params:
-    path: "./data"
-
-llm:
-  name: "google"
-  params:
-    model: "gemini-1.5-flash"
+  # 4. Define Rules (Mangle)
+  - name: "my-rules"
+    kind: "rules"
+    type: "mangle"
+    params:
+      path:
+        - "./rules/kb.facts"
+        - "./rules/policy.dlog"
+      defaultConverters: true
+      fileFirst: true
 ```
 
 **Go code to load the YAML:**
@@ -165,6 +170,7 @@ import (
     "context"
     "fmt"
     "log"
+    "os"
 
     "github.com/duynguyendang/manglekit/core"
     "github.com/duynguyendang/manglekit/sdk"
@@ -176,9 +182,15 @@ func main() {
     _ = godotenv.Load()
     ctx := context.Background()
 
-    // Load the orchestrator directly from the YAML config file.
-    // The blank import (\"_\") ensures all providers are registered.
-    orch, err := sdk.LoadWithRegistry(ctx, "config.yaml")
+    // Read the config file
+    data, err := os.ReadFile("config.yaml")
+    if err != nil {
+        log.Fatalf("Failed to read config: %v", err)
+    }
+
+    // Load the orchestrator from the YAML config data.
+    // This automatically initializes the registry and Genkit plugins.
+    orch, err := sdk.Load(ctx, data)
     if err != nil {
         log.Fatalf("Failed to load orchestrator: %v", err)
     }
@@ -198,6 +210,59 @@ func main() {
 ---
 
 ### Example 2: Programmatic Setup (Sandwich Pattern)
+
+You can also build the pipeline entirely in Go using the fluent Builder API.
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+
+    "github.com/duynguyendang/manglekit/core"
+    "github.com/duynguyendang/manglekit/sdk"
+    "github.com/duynguyendang/manglekit/internal/providers/llm"
+    "github.com/duynguyendang/manglekit/internal/providers/retrievers/bm25"
+    "github.com/duynguyendang/manglekit/pipeline/sandwich"
+    _ "github.com/duynguyendang/manglekit/providers/all"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // 1. Create a Builder
+    b, err := sdk.NewBuilder(ctx)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // 2. Configure Components
+    // Note: In a real app, use typed Options structs from provider packages
+    b.WithOptions("my-retriever", &bm25.BM25Options{
+        Path: "./data",
+    })
+
+    b.WithOptions("my-llm", &llm.GoogleOptions{
+        Model: "gemini-1.5-flash",
+    })
+
+    b.WithOptions("my-pipeline", &sandwich.SandwichOptions{
+        Retriever: "my-retriever",
+        LLM:       "my-llm",
+    })
+
+    // 3. Build the Orchestrator
+    orch, _, err := b.Build(ctx, "my-pipeline", "")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer orch.Close(ctx)
+
+    // 4. Execute
+    // ...
+}
+```
 
 As of ADR-010, the programmatic builder is available for advanced use cases like testing or dynamic pipeline construction. The recommended production approach is the declarative, YAML-based setup.
 
