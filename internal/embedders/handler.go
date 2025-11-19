@@ -22,12 +22,9 @@ func (h *Handler) Kind() core.Kind {
 	return core.KindEmbedder
 }
 
-// BuildComponent builds the Embedder component with two-path pattern:
-// Path 1: Try native Manglekit embedder factory (e.g., google, openai native implementations)
-// Path 2: Fall back to suggesting Genkit delegation via "genkit-embedder" type
-//
-// This ensures consistent behavior with VectorStores and other components,
-// providing clear error messages and migration guidance.
+// BuildComponent builds the Embedder component.
+// Embedders are registered as thin factories that delegate to Genkit plugins.
+// Supported embedders: google, openai
 func (h *Handler) BuildComponent(
 	ctx context.Context,
 	builderDI any,
@@ -66,46 +63,29 @@ func (h *Handler) BuildComponent(
 		Genkit:   b.Genkit(),
 	}
 
-	// STEP 1: Try native Manglekit embedder factory
+	// Build embedder via factory
 	built, err := f.Build(ctx, deps, cfg)
-	if err == nil {
-		// Native build succeeded
-		embedder, ok := built.(ai.Embedder)
-		if !ok {
-			return nil, fmt.Errorf("component %s is not a valid Embedder", name)
-		}
-		resolved.Embedders[name] = embedder
-
-		if deps.Obs.Logger != nil {
-			deps.Obs.Logger.Debugf(
-				"embedder component built successfully via native factory",
-				"name", name,
-				"type", getEmbedderType(cfg),
-			)
-		}
-
-		return core.NopCloser, nil
+	if err != nil {
+		return nil, fmt.Errorf("embedder factory for '%s' failed: %w", name, err)
 	}
 
-	// STEP 2: Native factory failed - provide helpful error message
+	// Verify result is a valid embedder
+	embedder, ok := built.(ai.Embedder)
+	if !ok {
+		return nil, fmt.Errorf("component %s is not a valid Embedder", name)
+	}
+
+	resolved.Embedders[name] = embedder
+
 	if deps.Obs.Logger != nil {
 		deps.Obs.Logger.Debugf(
-			"native embedder factory failed, genkit delegation recommended",
+			"embedder component built successfully",
 			"name", name,
-			"native_error", err.Error(),
+			"type", getEmbedderType(cfg),
 		)
 	}
 
-	// Return error with helpful hint about Genkit delegation
-	return nil, fmt.Errorf(
-		"embedder factory for '%s' failed: %w\n"+
-			"\nHint: For Genkit providers (OpenAI, Google, Vertex, Cohere, etc.), use:\n"+
-			"  type: 'genkit-embedder'\n"+
-			"  params:\n"+
-			"    provider: openai  # or google, vertex, cohere, anthropic, etc.\n"+
-			"    model: text-embedding-3-small",
-		name, err,
-	)
+	return core.NopCloser, nil
 }
 
 // getEmbedderType extracts the provider type for logging

@@ -1,9 +1,0 @@
-# Minimal configuration for genkit-embedder
-orchestrator: test-orch
-components:
-  - name: minimal-embedder
-    kind: embedder
-    type: genkit-embedder
-    params:
-      provider: openai
-      model: text-embedding-3-small
