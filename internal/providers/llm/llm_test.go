@@ -6,8 +6,11 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/adapters"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"github.com/openai/openai-go/option"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,8 +32,21 @@ func TestLLMProviders_Integration(t *testing.T) {
 	g := genkit.Init(ctx, nil)
 
 	t.Run("openai", func(t *testing.T) {
-		client, err := NewOpenAI(OpenAIOptions{APIKey: openaiAPIKey, Model: "gpt-3.5-turbo"}, g)
-		require.NoError(t, err)
+		// Create OpenAI client via Genkit
+		opts := []option.RequestOption{option.WithAPIKey(openaiAPIKey)}
+		openAIClient := &openai.OpenAI{APIKey: openaiAPIKey, Opts: opts}
+
+		// Get the model from OpenAI client
+		model := openAIClient.Model(g, "gpt-3.5-turbo")
+		require.NotNil(t, model)
+
+		// Create adapter for the model
+		client := adapters.NewGenkitLLMAdapter(
+			g,
+			model,
+			"openai/gpt-3.5-turbo",
+			core.LLMOptions{Temperature: 0.7, MaxOutputTokens: 100},
+		)
 
 		req := core.LLMRequest{
 			Prompt:    "hello",
@@ -51,8 +67,13 @@ func TestLLMProviders_Integration(t *testing.T) {
 		model := googlegenai.GoogleAIModel(g, "gemini-1.5-flash-latest")
 		require.NotNil(t, model)
 
-		client, err := NewGoogle(GoogleOptions{}, model, g)
-		require.NoError(t, err)
+		// Create adapter for the model
+		client := adapters.NewGenkitLLMAdapter(
+			g,
+			model,
+			"google/gemini-1.5-flash-latest",
+			core.LLMOptions{Temperature: 0.7, MaxOutputTokens: 100},
+		)
 
 		req := core.LLMRequest{
 			Prompt:    "hello",

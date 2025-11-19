@@ -7,8 +7,8 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
+	"github.com/duynguyendang/manglekit/internal/adapters"
 	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 	"github.com/openai/openai-go/option"
 )
@@ -22,10 +22,6 @@ type OpenAIOptions struct {
 	// Model is the identifier for the specific model to be used for completions,
 	// for example, "gpt-4-turbo" or "llama3-8b-8192".
 	Model string `json:"model,omitempty"`
-	// PromptTemplate is an optional custom Go template string for formatting the
-	// final prompt that is sent to the LLM. If this is empty, a default
-	// prompt template will be used by the client.
-	PromptTemplate string `json:"promptTemplate,omitempty"`
 	// Temperature controls the randomness of the model's output.
 	Temperature float32 `json:"temperature,omitempty"`
 	// MaxOutputTokens is the maximum number of tokens to generate in the response.
@@ -44,47 +40,47 @@ func (o *OpenAIOptions) GetAPIKey() string       { return o.APIKey }
 func (o *OpenAIOptions) GetBaseURL() string      { return o.BaseURL }
 
 func RegisterOpenAI(r *manglekit.Registry) {
-	// Factory function for OpenAI
-	openAIFactory := func(ctx context.Context, deps diapi.LLMDeps, cfg *OpenAIOptions) (core.LLMClient, error) {
-		if deps.Genkit == nil {
-			return nil, fmt.Errorf("missing required dependency 'genkit'")
-		}
-		if cfg.APIKey == "" {
-			return nil, fmt.Errorf("authentication is required: apiKey must be provided for openai provider")
-		}
-		client, err := NewOpenAI(*cfg, deps.Genkit)
-		if err != nil {
-			return nil, err
-		}
-		return client, nil
-	}
-	manglekit.Register(r, &OpenAIOptions{}, openAIFactory)
-	r.RegisterHandler(NewHandler())
-}
+	manglekit.Register(r, &OpenAIOptions{},
+		func(ctx context.Context, deps diapi.LLMDeps, cfg *OpenAIOptions) (core.LLMClient, error) {
+			if deps.Genkit == nil {
+				return nil, fmt.Errorf("missing required dependency 'genkit'")
+			}
 
-// NewOpenAI is the constructor for the OpenAI client wrapper.
-func NewOpenAI(cfg OpenAIOptions, g *genkit.Genkit) (core.LLMClient, error) {
+			if cfg.Model == "" {
+				return nil, fmt.Errorf("openai provider: model must be specified")
+			}
 
-	opts := []option.RequestOption{option.WithAPIKey(cfg.GetAPIKey())}
-	if cfg.GetBaseURL() != "" {
-		opts = append(opts, option.WithBaseURL(cfg.GetBaseURL()))
-	}
-	client := &openai.OpenAI{APIKey: cfg.GetAPIKey(), Opts: opts}
+			// 1. Initialize the OpenAI Model via Genkit Plugin.
+			// APIKey is used if provided, otherwise read from OPENAI_API_KEY environment variable.
+			opts := []option.RequestOption{}
+			if cfg.APIKey != "" {
+				opts = append(opts, option.WithAPIKey(cfg.APIKey))
+			}
+			if cfg.BaseURL != "" {
+				opts = append(opts, option.WithBaseURL(cfg.BaseURL))
+			}
 
-	var model ai.Model
-	if !cfg.SkipModelCheck {
-		model = client.Model(g, cfg.Model)
-		if model == nil {
-			return nil, fmt.Errorf("failed to get openai model %q from genkit", cfg.Model)
-		}
-	}
+			client := &openai.OpenAI{APIKey: cfg.APIKey, Opts: opts}
 
-	return NewGenkitLLMAdapter(
-		g,
-		model,
-		"openai",
-		cfg.Model,
-		cfg.Temperature,
-		cfg.MaxOutputTokens,
-	), nil
+			var model ai.Model
+			if !cfg.SkipModelCheck {
+				model = client.Model(deps.Genkit, cfg.Model)
+				if model == nil {
+					return nil, fmt.Errorf("failed to initialize OpenAI model '%s'", cfg.Model)
+				}
+			}
+
+			// 2. Return the Universal Adapter configured with this model.
+			// The adapter handles all LLM completion logic, response handling, and token usage tracking.
+			return adapters.NewGenkitLLMAdapter(
+				deps.Genkit,
+				model,
+				"openai/"+cfg.Model,
+				core.LLMOptions{
+					Temperature:     cfg.Temperature,
+					MaxOutputTokens: cfg.MaxOutputTokens,
+				},
+			), nil
+		},
+	)
 }

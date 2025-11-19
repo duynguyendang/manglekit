@@ -20,6 +20,16 @@ type ConversationHistory struct {
 	Messages []Message `json:"messages"`
 }
 
+// LLMOptions defines configuration parameters for LLM generation.
+// It is used by LLM providers and adapters to configure model behavior.
+type LLMOptions struct {
+	// Temperature controls the randomness of the model's output.
+	// Higher values (e.g., 0.9) make output more random; lower values (e.g., 0.1) make it more deterministic.
+	Temperature float32
+	// MaxOutputTokens is the maximum number of tokens to generate in a single response.
+	MaxOutputTokens int
+}
+
 // Doc represents a single document chunk, which is the fundamental unit of
 // information for retrieval and generation. It contains the content as well as
 // metadata about its origin.

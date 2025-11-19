@@ -3,7 +3,7 @@ context_type: low_level_design
 project: manglekit
 language: go
 version: 0.8.0
-last_updated: 2025-11-19
+last_updated: 2025-11-19T18:00:00Z
 stability: stable
 audience: developers
 ---
@@ -104,11 +104,114 @@ type Factory interface {
 
 This generic interface is made type-safe by the `ComponentHandler`, which is responsible for creating the specific, typed dependency (`diapi.*`) and configuration structs required by the factory.
 
-The handler uses a DependencyResolver pattern: it type-asserts the `cfg` parameter to `diapi.ProviderWithOptions`, calls `GetProviderOptions()` to extract the actual options, and then delegates to registered resolvers to determine which dependency struct to construct. This pattern allows new provider types to be supported by registering new resolvers without modifying the handler code.
+The handler uses a **DependencyResolver pattern**: it type-asserts the `cfg` parameter to `diapi.ProviderWithOptions`, calls `GetProviderOptions()` to extract the actual options, and then delegates to registered resolvers to determine which dependency struct to construct. This pattern allows new provider types to be supported by registering new resolvers without modifying the handler code.
+
+### 4.1 Typed Dependency Structs
+
+Each component kind has one or more corresponding **typed dependency structs** in `core/diapi/di.go`. These structs ensure that factories receive exactly the dependencies they need, with full compile-time type safety.
+
+**Key Deps Structs:**
+
+```go
+// LLMDeps: Used by all LLM providers (Google, OpenAI, generic Genkit).
+// Provides access to the Genkit instance and core observability.
+type LLMDeps struct {
+    CoreDeps
+    Genkit *genkit.Genkit  // Initialized genkit instance
+    Client ai.Model         // Optional; used by some providers
+}
+
+// GenkitRetrieverDeps: Used by Genkit-based retrievers.
+// Provides access to the Embedder (needed by LocalVec and other Genkit plugins).
+type GenkitRetrieverDeps struct {
+    CoreDeps
+    Embedder core.Embedder  // Embedder instance, required by Genkit retriever plugins
+}
+
+// RetrieverDeps: Used by multi-retriever families (e.g., Hybrid).
+// Provides access to subordinate retrievers.
+type RetrieverDeps struct {
+    CoreDeps
+    SubRetrievers map[string]core.Retriever  // Named retriever instances
+}
+
+// SandwichDeps: Used by the Sandwich orchestrator.
+// Provides all pipeline components the orchestrator may need.
+type SandwichDeps struct {
+    CoreDeps
+    Retriever      core.Retriever
+    LLM            core.LLMClient
+    Reranker       core.Reranker      // Optional
+    RuleSet        core.RuleSet       // Optional
+    StateProvider  core.StateProvider // Optional
+}
+
+// DeclarativeOrchestratorDeps: Used by the Declarative orchestrator.
+// Provides access to the tool registry and optional state provider.
+type DeclarativeOrchestratorDeps struct {
+    CoreDeps
+    Tools         map[string]core.Tool  // Named tool instances
+    StateProvider core.StateProvider    // Optional
+}
+```
+
+Additional structs: `RerankerDeps`, `StateProviderDeps`, `RuleSetDeps`, `ToolDeps`, `PlannerDeps`, `ReasonerDeps`, `SchemaParsersDepse`, `EmbedderDeps`, etc. (12 total for all component kinds).
+
+### 4.2 Resolver Pattern
+
+Instead of using type-switches in handlers, resolvers determine which `Deps` struct to construct based on the provider options type:
 
 ```go
 // internal/providers/retrievers/handler.go
-func (h *Handler) BuildComponent(...) (core.ResourceCloser, error) {
+type RetrieverResolver interface {
+    Matches(opts any) bool
+    Resolve(ctx context.Context, builderDI any, opts any) (diapi.RetrieverDeps, error)
+}
+
+// GenkitRetrieverResolver handles genkitretriever.GenkitRetrieverOptions
+type GenkitRetrieverResolver struct{}
+func (r *GenkitRetrieverResolver) Matches(opts any) bool {
+    _, ok := opts.(diapi.EmbedderDep)  // Check if it requires an embedder
+    return ok
+}
+func (r *GenkitRetrieverResolver) Resolve(ctx context.Context, builderDI any, opts any) (diapi.RetrieverDeps, error) {
+    b := builderDI.(diapi.Builder)
+    o := opts.(*genkitretriever.GenkitRetrieverOptions)
+    embedder, _ := b.GetEmbedder(o.Embedder)
+    return diapi.GenkitRetrieverDeps{
+        CoreDeps:  b.GetCoreDeps(),
+        Embedder:  embedder,
+    }, nil
+}
+
+// SubRetrieverResolver handles hybrid.HybridOptions
+type SubRetrieverResolver struct{}
+func (r *SubRetrieverResolver) Matches(opts any) bool {
+    _, ok := opts.(diapi.SubRetrieverDep)  // Check if it has sub-retrievers
+    return ok
+}
+func (r *SubRetrieverResolver) Resolve(ctx context.Context, builderDI any, opts any) (diapi.RetrieverDeps, error) {
+    b := builderDI.(diapi.Builder)
+    o := opts.(*hybrid.HybridOptions)
+    subs := make(map[string]core.Retriever)
+    for _, name := range o.Retrievers {
+        r, _ := b.GetRetriever(name)
+        subs[name] = r
+    }
+    return diapi.RetrieverDeps{
+        CoreDeps:      b.GetCoreDeps(),
+        SubRetrievers: subs,
+    }, nil
+}
+```
+
+The handler maintains a list of resolvers and iterates through them until a match is found. This allows new provider sub-families to be supported without modifying the core handler.
+
+### 4.3 Handler Execution Example
+
+```go
+// internal/providers/retrievers/handler.go
+func (h *Handler) BuildComponent(ctx, builderDI, factory, resolved, cfg, name) (core.ResourceCloser, error) {
     // The handler knows the specific types needed.
     b, _ := builderDI.(diapi.Builder)
     f, _ := factory.(core.Factory)
@@ -132,6 +235,8 @@ func (h *Handler) BuildComponent(...) (core.ResourceCloser, error) {
 }
 ```
 
+---
+
 # 5. Dependency Injection Layer
 
 The builder implements the `diapi.Builder` interface, which exposes methods like `GetEmbedder(name)` and `GetRetriever(name)`. This allows component handlers and factories to request specific, named dependencies.
@@ -143,28 +248,94 @@ Circular dependencies are prevented by the hard-coded linear build order defined
 
 # 6. Provider Family Details
 
-### LLM: `openai`
+### 6.1 LLM Providers (All Use Universal Adapter Pattern)
+
+**Overview:** All LLM providers (Google, OpenAI, custom Genkit) follow the thin factory pattern. The handler constructs `diapi.LLMDeps`, passes it to the factory, and the factory returns a `core.LLMClient` instance (typically wrapping a `GenkitLLMAdapter`).
+
+**Thin Factory Flow:**
+```
+Config YAML (provider: "google", model: "gemini-2.0-flash")
+  ↓
+Handler looks up LLM handler from registry
+  ↓
+Handler constructs LLMDeps { CoreDeps, Genkit, Client }
+  ↓
+Handler invokes Factory(ctx, deps, opts)
+  ↓
+Factory validates opts, creates Genkit plugin instance
+  ↓
+Factory calls adapters.NewGenkitLLMAdapter(plugin, opts)
+  ↓
+Adapter returns core.LLMClient (implements complete generation logic)
+```
+
+#### `openai` Provider (Thin Factory with Universal Adapter)
 *   **Handler:** `internal/providers/llm/handler.go`
-*   **Factory Registration:** Closure registered via `manglekit.Register()` in `internal/providers/llm/register.go`. The closure calls `openai.New()` internally.
+*   **Factory Location:** `internal/providers/llm/openai.go` (registered via `func RegisterOpenAI()`)
 *   **Registered Key:** `openai`
-*   **Config Struct:** `openai.Options`
-*   **Dependencies:** `diapi.LLMDeps` (constructed by the handler).
+*   **Config Struct:** `openai.Options` with fields: `Model`, `APIKey`, `BaseURL`, `Temperature`, `MaxOutputTokens`, `SkipModelCheck`
+*   **Factory Logic (12 lines):**
+    1. Validate options (check APIKey is set)
+    2. Create OpenAI Genkit plugin: `openaimodel.OpenAIModel(deps.Genkit, opts.Model, opts.APIKey, ...)`
+    3. Return `adapters.NewGenkitLLMAdapter(plugin, opts)` — delegates all logic
+*   **Dependencies:** `diapi.LLMDeps` (contains CoreDeps, Genkit instance, optional Client)
+*   **Execution:** Adapter handles Complete() calls, prompt formatting, response parsing, token extraction
+*   **Pattern:** Minimal factory code (configuration + plugin creation) → Universal adapter handles all business logic
 
-### Retriever: `hybrid`
-*   **Handler:** `internal/providers/retrievers/handler.go`
-*   **Factory Registration:** Closure registered via `manglekit.Register()` in `internal/providers/retrievers/hybrid/hybrid.go`. The closure calls `hybrid.New()` internally.
+#### `google` Provider (Thin Factory with Universal Adapter)
+*   **Handler:** `internal/providers/llm/handler.go`
+*   **Factory Location:** `internal/providers/llm/google.go` (registered via `func RegisterGoogle()`)
+*   **Registered Key:** `google`
+*   **Config Struct:** `google.Options` with fields: `Model`, `Temperature`, `MaxOutputTokens`
+*   **Factory Logic (10 lines):**
+    1. Validate options (check Model is set)
+    2. Create Google GenAI plugin: `googlegenai.GoogleAIModel(deps.Genkit, opts.Model)` (reads `GOOGLE_API_KEY` from environment automatically)
+    3. Return `adapters.NewGenkitLLMAdapter(plugin, opts)` — delegates all logic
+*   **Dependencies:** `diapi.LLMDeps` (contains CoreDeps, Genkit instance)
+*   **Execution:** Adapter handles Complete() calls with Google's API
+*   **Pattern:** Simplest LLM provider (only 10 lines) — environment-based auth, thin factory, universal adapter
+
+#### `genkit-llm` Provider (Placeholder)
+*   **Location:** `internal/providers/llm/genkit/factory.go`
+*   **Status:** Registered but returns error; pending future Genkit API enhancements
+*   **Intent:** Allow dynamic model lookup from Genkit's model registry (when supported by Genkit)
+*   **Helper:** `CustomModelLLMAdapter()` available for applications that register custom Genkit models
+
+### 6.2 Retriever Providers
+
+**Overview:** Retrievers use handler-based resolution to support multiple sub-families (multi-retriever orchestration, Genkit plugins, no-op). Each sub-family has a dedicated resolver that constructs the appropriate `diapi.*Deps` struct.
+
+#### `hybrid` Provider
+*   **Handler:** `internal/providers/retrievers/handler.go` + `SubRetrieverResolver`
+*   **Factory Location:** `internal/providers/retrievers/hybrid/hybrid.go`
 *   **Registered Key:** `hybrid`
-*   **Config Struct:** `hybrid.HybridOptions`
-*   **Dependencies:** `diapi.RetrieverDeps` (constructed by the handler). The factory uses `deps.SubRetrievers` to access its dependencies.
+*   **Config Struct:** `hybrid.HybridOptions` with fields: `Retrievers` (list of sub-retriever names), `RRF_K`, `FusionStrategy`
+*   **Resolver Logic:** Constructs `diapi.RetrieverDeps` by looking up sub-retrievers from builder DI via `builder.GetRetriever(name)` for each configured retriever
+*   **Dependencies:** `diapi.RetrieverDeps` (contains CoreDeps, `SubRetrievers map[string]core.Retriever`)
+*   **Factory Logic:** Implements RRF (Reciprocal Rank Fusion) or other fusion strategies to combine results from multiple retrievers
+*   **Use Case:** Combine BM25 (lexical) + dense retrieval (semantic) for best of both worlds
 
-### Retriever: `genkit-retriever`
-*   **Handler:** `internal/providers/retrievers/handler.go`
-*   **Factory Registration:** Closure registered via `manglekit.Register()` in `internal/providers/retrievers/genkitretriever/factory.go`.
+#### `genkit-retriever` Provider (Thin Factory with Universal Adapter)
+*   **Handler:** `internal/providers/retrievers/handler.go` + `GenkitRetrieverResolver`
+*   **Factory Location:** `internal/providers/retrievers/genkitretriever/factory.go` (197 lines)
 *   **Registered Key:** `genkit-retriever`
-*   **Config Struct:** `genkitretriever.GenkitRetrieverOptions`
-*   **Dependencies:** `diapi.NoopDeps` (constructed by the handler). The factory builds a `GenkitRetrieverAdapter` that wraps any Genkit `ai.Retriever` (Pinecone, LocalVec, Weaviate, etc.) into a Manglekit `core.Retriever`.
-*   **Adapter:** `internal/adapters/GenkitRetrieverAdapter` wraps Genkit retrievers and implements `core.Retriever`.
-*   **Use Case:** Production-grade semantic search using Genkit-supported vector stores. This replaces the old "dense" retriever approach, which was merely an orchestrator combining an embedder + vector store. Genkit retrievers already perform this internally, so we wrap them directly for a simpler, cleaner architecture.
+*   **Config Struct:** `genkitretriever.GenkitRetrieverOptions` with fields: `Plugin` (e.g., "local-vec"), `Embedder` (name of embedder to use), plugin-specific options
+*   **Resolver Logic:** Constructs `diapi.GenkitRetrieverDeps` by looking up the named embedder via `builder.GetEmbedder(opts.Embedder)`
+*   **Factory Logic (30 lines):**
+    1. Validate options (check Plugin and Embedder are set)
+    2. Dispatch to plugin-specific initialization (LocalVec, Pinecone, etc.)
+    3. Create Genkit retriever plugin instance with embedder
+    4. Return `adapters.NewGenkitRetrieverAdapter(plugin, embedder)` — delegates all logic
+*   **Dependencies:** `diapi.GenkitRetrieverDeps` (contains CoreDeps, Embedder instance)
+*   **Adapter:** `internal/adapters/GenkitRetrieverAdapter` wraps Genkit retriever and implements `core.Retriever`
+*   **Execution:** Adapter handles Retrieve(), Upsert(), Replace() calls with Genkit plugin
+*   **Pattern:** Thin factory with resolver pattern for embedder dependency; universal adapter handles all retriever logic
+*   **Plugins Supported:** LocalVec (default), with extensibility for Pinecone, Weaviate, etc. via Genkit plugin ecosystem
+
+#### Other Retriever Providers
+- **`bm25`**: Full-text search using BM25 algorithm; direct `core.Retriever` implementation
+- **`inmemory`**: Simple in-memory key-value storage; direct implementation
+- **`inmemory-vector`**: In-memory vector search (embeddings stored as JSON in memory); direct implementation
 
 # 7. Configuration Binding
 
@@ -275,6 +446,7 @@ This pattern is useful for testing or when model validation is not required.
 The codebase is **stable** post-cleanup. VectorStore components removed; Genkit retriever adapter now primary semantic search solution.
 
 # 15. Changelog
+*   **2025-11-19 (Evening)**: Refactored Google and OpenAI LLM providers to use thin factory pattern with universal adapter. All LLM logic now in `internal/adapters/GenkitLLMAdapter`; providers focus on configuration and plugin initialization. Added `genkit-llm` placeholder provider. Updated adapter registration in `internal/providers/llm/register.go`.
 *   **2025-11-19**: Documentation sync. Clarified `InMemory` retriever availability and `genkit-retriever` dynamic dispatch capabilities.
 *   **2025-11-17**: Documentation sync after cleanup. Removed vectorstores references, updated retriever implementations (dense→genkit-retriever), confirmed 12 handlers total.
 *   **2025-11-12**: Updated `last_updated` timestamp. All architectural patterns documented in AGENTS.md §15 (Resolved Patterns, Anti-Patterns, Known Limitations).

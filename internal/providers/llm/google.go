@@ -7,8 +7,7 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
+	"github.com/duynguyendang/manglekit/internal/adapters"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 )
 
@@ -18,10 +17,6 @@ type GoogleOptions struct {
 	// Model is the identifier for the specific Google model to be used for
 	// completions, for example, "gemini-1.5-flash".
 	Model string `json:"model"`
-	// PromptTemplate is an optional custom Go template string for formatting the
-	// final prompt that is sent to the LLM. If this is empty, a default
-	// prompt template will be used by the client.
-	PromptTemplate string `json:"promptTemplate"`
 	// Temperature controls the randomness of the model's output.
 	Temperature float32 `json:"temperature,omitempty"`
 	// MaxOutputTokens is the maximum number of tokens to generate in the response.
@@ -35,28 +30,31 @@ func RegisterGoogle(r *manglekit.Registry) {
 	manglekit.Register(r, &GoogleOptions{},
 		func(ctx context.Context, deps diapi.LLMDeps, cfg *GoogleOptions) (core.LLMClient, error) {
 			if deps.Genkit == nil {
-				return nil, fmt.Errorf("missing required dependency 'genkit' of type *genkit.Genkit")
+				return nil, fmt.Errorf("missing required dependency 'genkit'")
 			}
 
-			// Try to get or create the Google AI model
+			if cfg.Model == "" {
+				return nil, fmt.Errorf("google provider: model must be specified")
+			}
+
+			// 1. Initialize the Google GenAI Model via Genkit Plugin.
+			// This uses the GOOGLE_API_KEY from the environment automatically.
 			model := googlegenai.GoogleAIModel(deps.Genkit, cfg.Model)
 			if model == nil {
-				return nil, fmt.Errorf("failed to initialize Google model '%s': ensure GOOGLE_API_KEY environment variable is set", cfg.Model)
+				return nil, fmt.Errorf("failed to initialize Google model '%s'", cfg.Model)
 			}
 
-			return NewGoogle(*cfg, model, deps.Genkit)
+			// 2. Return the Universal Adapter configured with this model.
+			// The adapter handles all LLM completion logic, message conversion, and response handling.
+			return adapters.NewGenkitLLMAdapter(
+				deps.Genkit,
+				model,
+				"google/"+cfg.Model,
+				core.LLMOptions{
+					Temperature:     cfg.Temperature,
+					MaxOutputTokens: cfg.MaxOutputTokens,
+				},
+			), nil
 		},
 	)
-}
-
-// NewGoogle creates a new Google LLM client.
-func NewGoogle(opts GoogleOptions, model ai.Model, g *genkit.Genkit) (core.LLMClient, error) {
-	return NewGenkitLLMAdapter(
-		g,
-		model,
-		"google",
-		opts.Model,
-		opts.Temperature,
-		opts.MaxOutputTokens,
-	), nil
 }

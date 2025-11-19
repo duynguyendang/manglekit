@@ -2,8 +2,8 @@
 context_type: architecture_standard
 project: manglekit
 language: go
-version: 0.8.0
-last_updated: 2025-11-19
+version: 0.8.1
+last_updated: 2025-11-19T20:00:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -29,11 +29,11 @@ graph TD
     end
 
     subgraph "Provider Implementations"
-        J1[Retrievers<br/>BM25, GenkitRetriever, Hybrid, InMemory]
-        J2[LLMs<br/>OpenAI, Google]
+        J1[Retrievers<br/>BM25, GenkitRetriever, Hybrid, InMemory<br/>GenkitRetriever uses Universal Adapter]
+        J2[LLMs<br/>OpenAI, Google<br/>Thin Factories with Universal GenkitLLMAdapter]
         J3[Embedders<br/>OpenAI, Google]
         J4[Rerankers<br/>Cosine]
-        J6[StateProviders<br/>InMemory, Redis]
+        J6[StateProviders<br/>InMemory]
         J7[RuleSets<br/>Mangle]
         J8[SchemaParsers<br/>JSONSchema, RDF]
         J9[Tools<br/>HTTP Adapter]
@@ -93,9 +93,9 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
 
 ### Component Interfaces
 
--   **`core.Retriever`**: Defines `Retrieve(ctx, req)` for document retrieval based on queries.
+-   **`core.Retriever`**: Defines `Retrieve(ctx, req)` for document retrieval based on queries. All Genkit-based retrievers (LocalVec, future Pinecone/Weaviate) are implemented using a thin factory pattern that delegates to the universal `adapters.GenkitRetrieverAdapter`.
 -   **`core.Reranker`**: Defines `Rerank(ctx, req)` for re-scoring and re-ordering documents.
--   **`core.LLMClient`**: Defines `Complete(ctx, req)` for language model completion.
+-   **`core.LLMClient`**: Defines `Complete(ctx, req)` for language model completion. All LLM providers (Google, OpenAI, etc.) are implemented as thin factories that configure the Genkit plugin and delegate to the universal `adapters.GenkitLLMAdapter`.
 -   **`ai.Embedder`**: (from genkit) Defines embedding generation for text.
 -   **`core.StateProvider`**: Defines `Get(ctx, sessionID)`, `Set(ctx, sessionID, state)`, `Delete(ctx, sessionID)`, and `Close(ctx)`.
 -   **`core.RuleSet`**: Defines rule evaluation for pre/post-retrieval filtering.
@@ -159,6 +159,26 @@ Each provider family has a dedicated `ComponentHandler` that:
 | `declarative.Handler` | `pipeline/declarative/handler.go` | `KindOrchestrator` | `CoreDeps`, `StateProvider` (optional), `Tools` map |
 | `planners.Handler` | `internal/providers/planners/handler.go` | `KindPlanner` | `CoreDeps`, `Tools`, `Reasoners` |
 
+### Provider-Specific Resolution & Factories
+
+**Retriever Resolution (`internal/providers/retrievers/handler.go`):**
+- `SubRetrieverResolver`: Handles `hybrid.Options` — identifies and resolves multiple retriever dependencies (primary, reranker, fusion strategy).
+- `GenkitRetrieverResolver`: Handles `genkitretriever.Options` — initializes Genkit-based retrievers (LocalVec, etc.) and delegates to `adapters.GenkitRetrieverAdapter`.
+- `NoopRetrieverResolver`: Handles `noop.Options` — returns a no-op retriever for testing.
+
+**LLM Resolution (`internal/providers/llm/handler.go`):**
+- All LLM providers (Google, OpenAI, generic Genkit) are thin factories that resolve provider-specific options, configure Genkit plugins, and delegate logic to the universal `adapters.GenkitLLMAdapter`.
+- Configuration flow: `LLMOptions` → handler validates and retrieves factory → factory creates provider + delegates to adapter → `core.LLMClient` returned.
+
+**State Providers (`internal/providers/state/handler.go`):**
+- `InMemory` (simple session storage; default).
+
+**Other Providers (One Implementation Each):**
+- `Reranker`: `MMRReranker` (maximal marginal relevance reranking)
+- `Rules`: `DatalogRuleSet` (Datalog-based symbolic reasoning)
+- `SchemaParser`: `SimpleJSONSchemaParser` (structure extraction)
+- `Embedders`: Google, OpenAI (via genkit integration)
+
 ### Composition at Runtime
 
 Composition is achieved at runtime by the `Builder`, which:
@@ -167,8 +187,9 @@ Composition is achieved at runtime by the `Builder`, which:
 3. Unmarshals YAML parameters into strongly-typed `Options` structs.
 4. Invokes `buildAll()` in a deterministic order: Embedders → Retrievers → Rerankers → RuleSets → LLMs → StateProviders → SchemaParsers → Tools → Reasoners → Planners → Orchestrators.
 5. For each component, retrieves the registered `ComponentHandler` and invokes `BuildComponent()`.
-6. The handler resolves dependencies, constructs typed deps, and invokes the factory.
-7. The built component is stored in the `core.Resolved` struct for later access by dependent components.
+6. The handler uses a resolver (e.g., `GenkitRetrieverResolver`, `SubRetrieverResolver`) to determine dependencies and construct typed deps.
+7. The handler invokes the factory with the typed deps and options (factory is thin — mostly delegates to universal adapter).
+8. The built component is stored in the `core.Resolved` struct for later access by dependent components.
 
 ## 5. Configuration Flow
 

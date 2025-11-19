@@ -111,11 +111,11 @@ MangleKit can be configured to read API keys from environment variables. The eas
 
 ## 💻 Usage Examples
 
-You can configure MangleKit either programmatically using the fluent Builder API or declaratively with a single YAML file.
+**Best Practice:** Use the **Config-First (YAML)** approach for production applications. It separates configuration from code, enables environment portability, and leverages Manglekit's declarative design.
 
 ---
 
-### Example 1: Declarative Setup with YAML (Sandwich Pattern)
+### Example 1: Config-First Setup with YAML (Sandwich Pattern) — RECOMMENDED
 
 For easy configuration changes, you can define the entire sandwich pipeline in a `config.yaml` file.
 
@@ -165,10 +165,10 @@ import (
     "context"
     "fmt"
     "log"
-    "os"
 
     "github.com/duynguyendang/manglekit/core"
     "github.com/duynguyendang/manglekit/sdk"
+    _ "github.com/duynguyendang/manglekit/providers/all"  // Register all built-in providers
     "github.com/joho/godotenv"
 )
 
@@ -176,14 +176,9 @@ func main() {
     _ = godotenv.Load()
     ctx := context.Background()
 
-    // Read the YAML configuration file.
-    data, err := os.ReadFile("config.yaml")
-    if err != nil {
-        log.Fatalf("Failed to read config file: %v", err)
-    }
-
-    // Load the orchestrator directly from the YAML config.
-    orch, err := sdk.Load(ctx, data)
+    // Load the orchestrator directly from the YAML config file.
+    // The blank import (\"_\") ensures all providers are registered.
+    orch, err := sdk.LoadWithRegistry(ctx, "config.yaml")
     if err != nil {
         log.Fatalf("Failed to load orchestrator: %v", err)
     }

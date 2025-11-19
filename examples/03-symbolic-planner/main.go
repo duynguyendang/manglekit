@@ -1,76 +1,92 @@
-// Package main demonstrates how to use the symbolic planner in Manglekit.
-// The symbolic planner uses a reasoner to generate multi-step execution plans.
+// Package main demonstrates how to use planners in Manglekit.
+// This example shows configuration-based setup of a symbolic planner orchestrator.
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
-	"os"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/diapi"
-	obslogger "github.com/duynguyendang/manglekit/internal/logger"
-	"github.com/duynguyendang/manglekit/internal/providers/planners/symbolic"
+	"github.com/duynguyendang/manglekit/internal/registry"
+	_ "github.com/duynguyendang/manglekit/providers/all" // Auto-registers all standard providers
+	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/joho/godotenv"
 )
 
-// This example demonstrates using the symbolic planner directly without YAML configuration.
-
-// mockReasoner is a simple reasoner that returns a predefined plan.
-type mockReasoner struct{}
-
-func (m *mockReasoner) Execute(ctx context.Context, req core.ReasonerRequest) (core.ReasonerResponse, error) {
-	// In a real implementation, this would perform symbolic reasoning
-	// based on the input facts and return a logical plan.
-	// For this demo, we return a simple two-step plan.
-	
-	output := map[string]any{
-		// Step 0: Search for documents
-		"plan_tool_0":   "retriever",
-		"plan_params_0": `{"query": "machine learning", "topK": 5}`,
-		"plan_reason_0": "Search for relevant documents about the query topic",
-		
-		// Step 1: Generate summary
-		"plan_tool_1":   "llm",
-		"plan_params_1": `{"prompt": "Summarize the following documents", "maxTokens": 500}`,
-		"plan_reason_1": "Generate a comprehensive summary from retrieved documents",
-	}
-	
-	return core.ReasonerResponse{Output: output}, nil
-}
-
 func main() {
-	ctx := context.Background()
-	
-	// Create a mock reasoner
-	reasoner := &mockReasoner{}
-	
-	// Create dependencies for the planner
-	logger := obslogger.NewStdLogger()
-	deps := diapi.PlannerDeps{
-		CoreDeps: diapi.CoreDeps{
-			Obs: core.Observability{
-				Logger: logger,
-			},
-		},
-		Reasoners: map[string]core.Reasoner{
-			"demo-reasoner": reasoner,
-		},
-	}
-	
-	// Create planner options
-	opts := &symbolic.Options{
-		ReasonerName: "demo-reasoner",
-	}
-	
-	// Create the planner
-	planner, err := symbolic.NewFactory(deps, opts)
+	err := godotenv.Load()
 	if err != nil {
-		log.Fatalf("Failed to create planner: %v", err)
+		log.Println("Note: .env file not found, will fall back to environment variables")
 	}
-	
-	// Create a query
+
+	ctx := context.Background()
+
+	// This example demonstrates using a symbolic planner in Manglekit.
+	// The planner generates multi-step execution plans based on reasoner outputs.
+
+	fmt.Println("=== Symbolic Planner Example ===")
+	fmt.Println()
+
+	// Try to load a config file with a planner-based orchestrator
+	configPaths := []string{
+		"examples/03-symbolic-planner/config.yaml",
+		"testdata/config_valid.yaml",
+	}
+
+	var configData []byte
+	for _, path := range configPaths {
+		data, err := ioutil.ReadFile(path)
+		if err == nil {
+			configData = data
+			fmt.Printf("Loaded configuration from %s\n", path)
+			break
+		}
+	}
+
+	if configData == nil {
+		fmt.Println("Note: No planner config file found")
+		fmt.Println("To use this example, create a config.yaml with a planner-based orchestrator")
+		fmt.Println()
+		fmt.Println("Example config snippet:")
+		fmt.Println("  orchestrators:")
+		fmt.Println("    - name: symbolic-planner")
+		fmt.Println("      provider: symbolic-planner")
+		fmt.Println("      options:")
+		fmt.Println("        reasoner: my_reasoner")
+		fmt.Println("        tools:")
+		fmt.Println("          - retriever")
+		fmt.Println("          - llm")
+		return
+	}
+
+	fmt.Println()
+
+	// Get the global registry
+	reg := registry.Global()
+
+	// Load and build from config
+	fmt.Println("Loading and building planner orchestrator...")
+	fmt.Println()
+
+	orch, err := sdk.LoadWithRegistry(ctx, configData, reg)
+	if err != nil {
+		fmt.Printf("Note: Failed to load configuration: %v\n", err)
+		fmt.Println("This is OK for a demo - ensure GOOGLE_API_KEY is set if using Google LLM")
+		return
+	}
+
+	defer func() {
+		if err := orch.Close(ctx); err != nil {
+			log.Printf("Warning: Error closing orchestrator: %v", err)
+		}
+	}()
+
+	// Execute a query
+	fmt.Println("✓ Planner orchestrator built successfully!")
+	fmt.Println()
+
 	query := core.Query{
 		Text: "What are the latest advances in machine learning?",
 		Meta: map[string]any{
@@ -78,35 +94,26 @@ func main() {
 			"session": "example-session",
 		},
 	}
-	
-	// Generate a plan
-	fmt.Println("Generating plan for query:", query.Text)
+
+	fmt.Printf("Executing query: %s\n", query.Text)
 	fmt.Println()
-	
-	plan, err := planner.Plan(ctx, query)
+
+	answer, err := orch.Execute(ctx, "session-123", query)
 	if err != nil {
-		log.Fatalf("Failed to generate plan: %v", err)
-	}
-	
-	// Display the plan
-	fmt.Printf("Generated plan with %d steps:\n\n", len(plan.Steps))
-	
-	for i, step := range plan.Steps {
-		fmt.Printf("Step %d:\n", i+1)
-		fmt.Printf("  Tool:   %s\n", step.Tool)
-		fmt.Printf("  Reason: %s\n", step.Reason)
-		
-		if len(step.Params) > 0 {
-			paramsJSON, _ := json.MarshalIndent(step.Params, "  ", "  ")
-			fmt.Printf("  Params: %s\n", string(paramsJSON))
-		}
+		log.Printf("Note: Query execution failed (expected if not fully configured): %v\n", err)
 		fmt.Println()
+		fmt.Println("In a real application, the planner would:")
+		fmt.Println("  1. Generate a multi-step execution plan")
+		fmt.Println("  2. Execute each step using the specified tools")
+		fmt.Println("  3. Combine results into a final answer")
+		return
 	}
-	
-	// In a real application, you would execute these steps using the orchestrator
-	fmt.Println("✓ Plan generated successfully!")
-	fmt.Println("\nIn a real application, this plan would be executed by the orchestrator,")
-	fmt.Println("which would call each tool in sequence with the specified parameters.")
-	
-	os.Exit(0)
+
+	fmt.Printf("\nAnswer: %s\n", answer.Text)
+	if len(answer.Citations) > 0 {
+		fmt.Println("\nCitations:")
+		for _, citation := range answer.Citations {
+			fmt.Printf("  - %s (Source: %s)\n", citation.ID, citation.Source)
+		}
+	}
 }
