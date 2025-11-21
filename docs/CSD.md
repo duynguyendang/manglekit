@@ -1,292 +1,125 @@
-# Conceptual Solution Design (CSD) for Manglekit
+# Conceptual Solution Design (CSD) — Manglekit Framework
 
-## Overview
-Manglekit is a lightweight, embeddable Go framework for building **neuro-symbolic AI applications** that combine neural components (LLMs, embedders, retrievers) with symbolic reasoning (rules, logic engines). It enables organizations to build trustworthy, explainable AI systems where every response is grounded in policy, verifiable, and auditable.
+**Version:** 1.0.0
+**Status:** Approved
+**Scope:** Core Framework Architecture & Integration Strategy
+**Context:** Neuro-Symbolic Governance for Generative AI
 
-Unlike traditional RAG systems that blindly retrieve and generate, Manglekit wraps AI with explicit business rules, ensuring responses are policy-compliant, PII-safe, and traceable. This makes it ideal for regulated industries, compliance-critical applications, and enterprises where AI explainability is non-negotiable.
+## 1. Introduction
 
-## Business Value Proposition
+### 1.1 Purpose
+Manglekit is a governance and orchestration framework designed to operate as a control layer above Generative AI execution engines (specifically Genkit). Its primary purpose is to enforce deterministic policy, ensure data safety, and manage complex logic flows using symbolic reasoning (Datalog), while delegating low-level execution tasks (LLM inference, Vector search) to the underlying Genkit ecosystem.
 
-**The Problem**: Traditional AI systems (LLMs, RAG) are powerful but risky:
-- ❌ Hallucinations and inaccurate answers
-- ❌ Uncontrolled data leaks (PII, confidential info)
-- ❌ No audit trail or explainability
-- ❌ Difficult to enforce business policies
-- ❌ Vendor lock-in with proprietary solutions
-
-**The Solution**: Manglekit bridges neural and symbolic AI:
-- ✅ **Policy-Driven**: Rules enforce business logic before and after AI generation
-- ✅ **Explainable**: Every answer traces back to source documents and applied rules
-- ✅ **Compliant**: Automated PII redaction, access control, and audit trails
-- ✅ **Flexible**: Swap components (LLMs, retrievers, vector stores) without code changes
-- ✅ **Embeddable**: Lightweight Go library works on cloud, on-premise, or edge devices
+### 1.2 Problem Space
+Native integration of LLMs into enterprise systems introduces non-deterministic behaviors that are difficult to audit and control. Direct dependency on specific model providers creates vendor lock-in. Manglekit addresses these issues by decoupling **Business Logic (Governance)** from **AI Execution (Infrastructure)**.
 
 ---
 
-## Business Use Cases & Manglekit Capabilities
+## 2. High-Level Architecture
 
-### 1. Compliance-Checked Customer Service Chatbot
-**Business Problem**: Customer service chatbots leak PII, violate regulations, and lack explainability.
+The system follows a layered architecture pattern, enforcing a strict separation of concerns between decision-making ("Brain") and task execution ("Muscle").
 
-**How Manglekit Solves It**:
-```
-Customer Query
-    ↓
-[Pre-Rules] → Validate customer identity, scope to their account
-    ↓
-[Retrieve] → Find relevant FAQ/docs (hybrid BM25 + semantic search)
-    ↓
-[Rerank] → Score documents by relevance
-    ↓
-[Post-Rules] → Redact PII (SSN, credit card, email), filter by policy
-    ↓
-[LLM] → Generate response from vetted documents
-    ↓
-[Audit Trail] → Log which rules fired, what was redacted, why
-    ↓
-Customer Answer (Safe, Compliant, Traceable)
-```
+### 2.1 Architectural Layers
 
-**Manglekit Capabilities Demonstrated**:
-- **Sandwich Pattern**: Pre/post rule stages wrap RAG for policy enforcement
-- **Rule Engine (Mangle)**: Declarative rules redact PII, validate access, filter content
-- **Hybrid Retrieval**: BM25 (keyword) + Dense (semantic) for high-quality results
-- **Audit Trail**: Every decision logged with rule annotations for compliance audits
-- **Pluggable LLMs**: Swap OpenAI ↔ Google without code changes
+| Layer | Component | Responsibility |
+| :--- | :--- | :--- |
+| **L4: Application** | `sdk.Builder`, YAML Config | Entry point for configuration and pipeline assembly. |
+| **L3: Governance (Brain)** | **Manglekit Core** | Orchestration, State Management, Rule Evaluation (Policy), Data-to-Fact Conversion. |
+| **L2: Adaptation** | **Universal Adapters** | Protocol translation between Manglekit Interfaces and Genkit Plugins. |
+| **L1: Execution (Muscle)** | **Genkit Ecosystem** | Drivers for LLMs, Vector DBs, Embedders, and External Tools. |
 
-**Business Outcomes**:
-- Reduce GDPR/CCPA violation risk (fines up to $20M+)
-- Deflect 30-40% of support tickets → $200K-$500K/year savings
-- 24/7 availability with transparent, explainable denials
-- Full audit trail for regulatory compliance
+### 2.2 Integration Model: The Universal Adapter Pattern
+
+Manglekit minimizes code maintenance by utilizing generic adapters that wrap Genkit interfaces.
+
+* **LLM Integration:** The `GenkitLLMAdapter` wraps `ai.Model` from Genkit, exposing it as `core.LLMClient`. It handles prompt marshaling, parameter injection, and response standardization.
+* **Retriever Integration:** The `GenkitRetrieverAdapter` wraps `ai.Retriever`, exposing it as `core.Retriever`. It manages query formatting and metadata filtering.
+* **Tool Integration:** The `HTTP` tool adapter allows Declarative Orchestrators to invoke external microservices or Genkit Flows via standard REST protocols.
 
 ---
 
-### 2. Internal Knowledge Base with Role-Based Access
-**Business Problem**: Developers waste time searching docs; sensitive info (roadmap, salaries) leaks; knowledge silos when people leave.
+## 3. Core Capabilities & Design Patterns
 
-**How Manglekit Solves It**:
-```
-Developer Query: "How do I set up the payment API?"
-    ↓
-[Pre-Rules] → Check user role (engineer, manager, intern)
-             → Scope query to relevant team docs
-    ↓
-[Retrieve] → Find docs matching query (hybrid search)
-    ↓
-[Post-Rules] → Remove sections marked "managers-only" or "confidential"
-    ↓
-[LLM] → Synthesize answer from approved docs
-    ↓
-Answer: "Here's how to set up payment API... [with citations]"
-```
+### 3.1 The "Safety Sandwich" Orchestration Pattern
+All execution flows within Manglekit enforce a strict "intercept-execute-intercept" lifecycle:
 
-**Manglekit Capabilities Demonstrated**:
-- **Pre-Rules**: Role-based access control (RBAC) at query time
-- **Post-Rules**: Redact sensitive sections (roadmap, salaries, internal metrics)
-- **Hybrid Retrieval**: Find docs by keyword (API name) + semantic meaning (setup, integration)
-- **Deterministic Behavior**: Same query + rules = same answer (no randomness)
-- **Lightweight**: Embeddable in internal tools, Slack bots, wikis
+1.  **Pre-Execution Phase (Policy Check):**
+    * Input data is converted to Logical Facts.
+    * **Pre-Rules** evaluate authorization (AuthZ), input validation, and routing logic.
+    * *Outcome:* Proceed, Reject, or Mutate Input.
+2.  **Execution Phase (Neural Processing):**
+    * The request is passed to the selected Provider (via Universal Adapter).
+    * Operations include Retrieval (RAG), Generation (LLM), or Tool Invocation.
+3.  **Post-Execution Phase (Compliance Check):**
+    * Output data is analyzed against **Post-Rules**.
+    * Operations include PII Redaction, Format Validation (JSON/Schema), and Logic Consistency checks.
+    * *Outcome:* Return Data or Reject.
 
-**Business Outcomes**:
-- 40-50% faster onboarding (new hires get instant answers)
-- 20-30% reduction in support tickets
-- Prevent knowledge silos and IP leaks
-- Centralized, searchable knowledge base
+### 3.2 Neuro-Symbolic Data Processing
+Manglekit bridges the gap between unstructured data (Text/Vector) and structured logic (Rules) via the **Struct-to-Fact Converter**.
+
+* **Mechanism:** Uses Golang Reflection to traverse application structures (Config, AST, User Profile).
+* **Transformation:** Maps struct fields and tags to Datalog predicates (e.g., `User{Role: "admin"}` $\to$ `role(user_id, "admin")`).
+* **Usage:** Enables the Rule Engine to reason directly about runtime application state without manual boilerplate code.
+
+### 3.3 Declarative Microservices Orchestration
+For distributed systems, Manglekit functions as an intelligent Gateway:
+
+* **Symbolic Routing:** Uses rules to determine the optimal downstream service based on query intent and complexity (e.g., routing complex queries to GPT-4, simple ones to local Llama).
+* **Tool Abstraction:** External services are modeled as `core.Tool` instances. The orchestrator invokes them dynamically based on the logical plan defined in Datalog.
 
 ---
 
-### 3. Regulated Industry Compliance (Finance, Healthcare)
-**Business Problem**: Financial advisors and healthcare portals must comply with strict regulations (HIPAA, SOX, GDPR) while providing AI-powered answers.
+## 4. Data Flow Specification
 
-**How Manglekit Solves It**:
-```
-Patient Query: "What are my recent test results?"
-    ↓
-[Pre-Rules] → Verify patient identity (MFA, session validation)
-             → Check authorization (can this patient see this data?)
-    ↓
-[Retrieve] → Find patient's medical records
-    ↓
-[Post-Rules] → Redact sensitive fields (doctor notes, billing info)
-             → Log access for HIPAA audit trail
-    ↓
-[LLM] → Explain results in patient-friendly language
-    ↓
-[Audit Trail] → Record: who asked, what was shown, what was redacted, why
-    ↓
-Patient Answer (Compliant, Auditable, Explainable)
-```
+### 4.1 Request Lifecycle (RAG Flow Example)
 
-**Manglekit Capabilities Demonstrated**:
-- **Rule Engine**: Enforce compliance policies (HIPAA, SOX, GDPR)
-- **Post-Rules**: Redact sensitive data before LLM sees it
-- **Audit Trail**: Complete traceability for regulatory audits
-- **Declarative Orchestrator**: Complex conditional workflows (escalate to human if high-risk)
-- **Deterministic**: No randomness; same input = same compliant output
-
-**Business Outcomes**:
-- Avoid regulatory fines ($1M-$10M+ per violation)
-- Meet HIPAA/SOX/GDPR audit requirements
-- Build customer trust with transparent, explainable AI
-- Reduce manual compliance review overhead
+1.  **Ingestion:** `Orchestrator.Execute(ctx, query)` is called.
+2.  **Fact Generation:** Query metadata and User Context are converted to Facts.
+3.  **Pre-Rule Evaluation:** Mangle Engine evaluates `allow_query(User, Query)`.
+    * *If Deny:* Return Error immediately.
+4.  **Retrieval:** `GenkitRetrieverAdapter` calls the underlying Vector Store (e.g., LocalVec, Pinecone).
+5.  **Reranking (Optional):** Documents are re-scored based on semantic relevance.
+6.  **Generation:** `GenkitLLMAdapter` constructs the prompt and invokes the LLM.
+7.  **Post-Rule Evaluation:** Generated text is scanned for sensitive patterns defined in the RuleSet.
+8.  **Response:** Final sanitized answer is returned with a `DecisionTrace` (Audit Log).
 
 ---
 
-### 4. Exploratory Analytics & Business Intelligence
-**Business Problem**: Business teams need instant answers from reports/dashboards but depend on data scientists for every query.
+## 5. Component Specifications
 
-**How Manglekit Solves It**:
-```
-Sales Manager Query: "What was Q3 revenue?"
-    ↓
-[Pre-Rules] → Expand ambiguous query
-             → "Q3 revenue" → includes all regions, products, customer segments
-    ↓
-[Retrieve] → Find Q3 reports, dashboards, datasets
-    ↓
-[Post-Rules] → Aggregate results, format for business consumption
-             → Filter by user's region/department
-    ↓
-[Declarative Orchestrator] → Multi-step workflow:
-                            1. Retrieve Q3 data
-                            2. Compare to Q2 (trend analysis)
-                            3. Identify top performers
-                            4. Synthesize insights
-    ↓
-Answer: "Q3 revenue was $X, up Y% from Q2. Top performers: [list]"
-```
+### 5.1 Governance Components
+* **RuleSet (Interface):** Abstract interface for policy engines.
+    * *Default Implementation:* `mangle` (Datalog).
+    * *Future Extensions:* `opa` (Rego), `casbin` (ACL).
+* **StateProvider:** Manages session consistency.
+    * *Implementations:* `inmemory`, `redis`.
+* **SchemaParser:** Validates and parses structured data (JSON, RDF, AST) into Facts.
 
-**Manglekit Capabilities Demonstrated**:
-- **Pre-Rules**: Query expansion (ambiguous → specific)
-- **Hybrid Retrieval**: Find reports by keyword + semantic meaning
-- **Declarative Orchestrator**: Multi-step workflows without code changes
-- **Post-Rules**: Aggregate, filter, format results
-- **Pluggable Components**: Swap vector stores, embedders, LLMs
-
-**Business Outcomes**:
-- Instant answers (seconds vs. 1-2 day wait for data team)
-- Self-service analytics (reduce data scientist dependency)
-- Faster decision-making (hours vs. days)
-- $100K-$200K/year productivity gains
+### 5.2 Execution Components (via Genkit)
+* **Retriever:** Provides semantic search capabilities.
+    * *Supported:* Any Genkit-compliant plugin (Pinecone, Weaviate, Qdrant, LocalVec).
+* **LLM:** Provides generative capabilities.
+    * *Supported:* Any Genkit-compliant model (Google Gemini, OpenAI GPT, Anthropic Claude, Ollama).
 
 ---
 
-### 5. Edge Deployment (Mobile & Field Operations)
-**Business Problem**: Field teams (sales, service, logistics) need instant knowledge access in remote/offline environments without cloud dependency.
+## 6. Non-Functional Requirements (NFRs)
 
-**How Manglekit Solves It**:
-```
-Field Sales Rep (offline, no internet):
-    ↓
-[Query] → "What's the warranty on product X?"
-    ↓
-[Local Manglekit] → Runs entirely on device
-                  → BM25 retriever (no cloud needed)
-                  → Local vector store (pre-embedded docs)
-                  → Rules engine (policy enforcement)
-    ↓
-[Instant Answer] → "Warranty is 2 years, covers..."
-    ↓
-[Sync Later] → When internet returns, sync query logs + new docs
-```
+### 6.1 Extensibility
+* **Zero-Code Provider Adoption:** New Genkit plugins must be usable via configuration (`config.yaml`) without requiring code changes in the Manglekit core.
+* **Open Registry:** The component registry allows external developers to register custom providers (implementing `core` interfaces) at runtime.
 
-**Manglekit Capabilities Demonstrated**:
-- **Lightweight Go Library**: Embeddable in mobile apps, edge devices
-- **Offline-First**: Works without cloud (BM25 + local vector store)
-- **Low Latency**: Instant responses (no cloud round-trip)
-- **Deterministic**: Same behavior on cloud and edge
-- **Pluggable**: Swap LLMs (cloud-based when online, local when offline)
+### 6.2 Observability
+* **Auditability:** All rule decisions (Allow/Deny) must be logged with the specific rule ID and reason.
+* **Tracing:** Integration with OpenTelemetry to trace requests across the Logic Layer (Mangle) and Execution Layer (Genkit).
 
-**Business Outcomes**:
-- Low latency in remote/offline environments
-- 80-90% reduction in cloud API costs
-- Deploy to 1000+ field devices without infrastructure scaling
-- Reliable, always-available knowledge access
+### 6.3 Deployment
+* **Single Binary:** The framework compiles into a standalone Go binary, suitable for containerized environments (Kubernetes) or edge devices.
+* **Configuration:** All behavior is controlled via declarative files (YAML for structure, Datalog for logic).
 
 ---
 
-### 6. Query Expansion & Ontology-Aware Search
-**Business Problem**: Users ask ambiguous questions; traditional search misses relevant results.
+## 7. Conclusion
 
-**How Manglekit Solves It**:
-```
-Support Ticket: "App keeps crashing"
-    ↓
-[Pre-Rules] → Expand query using ontology:
-             → "app crash" → includes:
-                - "application error"
-                - "system failure"
-                - "unexpected termination"
-                - "segmentation fault"
-                - "out of memory"
-    ↓
-[Hybrid Retrieval] → Find docs matching expanded terms
-    ↓
-[Rerank] → Score by relevance to original query
-    ↓
-[LLM] → Synthesize troubleshooting guide
-    ↓
-Answer: "Here are 5 common causes of app crashes and how to fix them..."
-```
-
-**Manglekit Capabilities Demonstrated**:
-- **Pre-Rules**: Query expansion using domain ontologies
-- **Hybrid Retrieval**: Keyword + semantic search for high recall
-- **Reranking**: Score results by relevance
-- **Rule Engine**: Declarative ontology definitions (no code changes)
-
-**Business Outcomes**:
-- Higher search recall (find more relevant docs)
-- Better user satisfaction (fewer "no results" responses)
-- Reduce support ticket volume
-- Customizable per domain/business unit
-
----
-
-## Manglekit's Core Capabilities Summary
-
-| Capability | What It Does | Business Benefit |
-|-----------|-------------|-----------------|
-| **Sandwich Pattern** | Wraps RAG with pre/post rule stages | Policy enforcement, compliance, explainability |
-| **Rule Engine (Mangle)** | Declarative Datalog rules for policies | Business control without code changes |
-| **Hybrid Retrieval** | BM25 (keyword) + Genkit semantic search | High-quality, high-recall results |
-| **Reranking** | Re-score documents by relevance | Better answer quality |
-| **Audit Trail** | Log every decision, rule firing, redaction | Regulatory compliance, dispute resolution |
-| **Pluggable Components** | Swap LLMs, retrievers, vector stores | No vendor lock-in, cost optimization |
-| **Declarative Orchestrator** | Define workflows in Datalog, not code | Dynamic, complex pipelines without engineering |
-| **Lightweight Go Library** | Embeddable in any Go application | Cloud, on-premise, edge deployment |
-| **Offline-Capable** | Works without cloud/internet | Field operations, remote teams |
-| **Type-Safe DI** | Compile-time guarantees for wiring | Reliable, testable, maintainable |
-
----
-
-## Deployment Flexibility
-
-Manglekit adapts to any deployment model:
-
-- **Cloud SaaS**: Kubernetes + managed vector DB + LLM APIs ($5K-$20K/month)
-- **On-Premise**: Private data center + local vector store + optional private LLM ($50K-$200K upfront)
-- **Edge/Mobile**: Embedded in apps, works offline, minimal bandwidth ($30K-$80K development)
-- **Hybrid**: Cloud primary + edge fallback for high availability ($20K-$50K development)
-
----
-
-## Why Manglekit?
-
-**vs. Traditional RAG**: Manglekit adds policy enforcement, explainability, and compliance guardrails that raw RAG lacks.
-
-**vs. Proprietary Solutions**: Open-source, embeddable, no vendor lock-in, full control over data and rules.
-
-**vs. Building In-House**: Manglekit provides battle-tested patterns (Sandwich, Declarative), type-safe DI, and observability out of the box.
-
----
-
-## Next Steps
-
-1. **Identify Your Use Case**: Which scenario above matches your business need?
-2. **Prototype**: Build a proof-of-concept with Manglekit in 2-4 weeks
-3. **Validate**: Measure business outcomes (cost savings, compliance, user satisfaction)
-4. **Scale**: Deploy to production with confidence
-
-Manglekit makes it possible to build AI systems that are **powerful, safe, compliant, and explainable** — without sacrificing flexibility or vendor independence.
+Manglekit defines a standardized architecture for **Governed AI**. By decoupling policy from execution and leveraging the Universal Adapter pattern, it provides a robust foundation for building enterprise-grade, compliant, and explainable AI systems.
