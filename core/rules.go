@@ -64,22 +64,24 @@ func (o *MangleOptions) ProviderKind() Kind   { return KindRules }
 type RuleSet interface {
 	// Evaluate runs the configured rules for a given pipeline stage.
 	//
+	// ctx is the context for evaluation.
 	// stage is the pipeline stage (Pre or Post) at which to evaluate rules.
 	// q is the incoming query. Rules can read its contents and metadata.
 	// a is the current answer object. In the 'pre' stage, this is typically empty.
 	// In the 'post' stage, it contains the LLM-generated text and citations.
 	// It returns a RuleResult indicating the outcome of the evaluation and
 	// an error if the evaluation itself fails.
-	Evaluate(stage Stage, q Query, a *Answer) (RuleResult, error)
+	Evaluate(ctx context.Context, stage Stage, q Query, a *Answer) (RuleResult, error)
 
 	// EvaluateFacts runs the configured rules for a given pipeline stage using
 	// explicit facts provided by the caller, rather than converting a Query object.
 	//
+	// ctx is the context for evaluation.
 	// stage is the pipeline stage (Pre or Post).
 	// facts is the slice of Mangle atoms representing the input state.
 	// a is the current answer object, used for mutation if needed.
 	// It returns a RuleResult indicating the outcome of the evaluation.
-	EvaluateFacts(stage Stage, facts []ast.Atom, a *Answer) (RuleResult, error)
+	EvaluateFacts(ctx context.Context, stage Stage, facts []ast.Atom, a *Answer) (RuleResult, error)
 }
 
 // RuleResult encapsulates the outcome of a rule evaluation. It communicates

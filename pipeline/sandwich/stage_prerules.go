@@ -42,7 +42,7 @@ func (s *PreRulesStage) Execute(p *pipeline.PipelineContext) error {
 		// We'll proceed but log it.
 	}
 
-	res, err := s.RuleSet.EvaluateFacts(core.Pre, facts, &p.Answer)
+	res, err := s.RuleSet.EvaluateFacts(p.Ctx, core.Pre, facts, &p.Answer)
 	if s.Meter != nil {
 		s.Meter.Record("manglekit.rules_pre_ms", float64(time.Since(tPreRulesStart).Milliseconds()))
 	}

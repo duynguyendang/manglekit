@@ -251,18 +251,18 @@ func parseSchemas(sources []core.SchemaSource, r *manglekit.Registry) ([]ast.Ato
 // the Datalog engine, and then collects the results (like denials or mutations)
 // to return to the orchestrator.
 // This method satisfies the `core.RuleSet` interface.
-func (r *RuleSet) Evaluate(stage core.Stage, q core.Query, a *core.Answer) (core.RuleResult, error) {
+func (r *RuleSet) Evaluate(ctx context.Context, stage core.Stage, q core.Query, a *core.Answer) (core.RuleResult, error) {
 	switch stage {
 	case core.Pre:
-		return r.preProcess(q)
+		return r.preProcess(ctx, q)
 	case core.Post:
-		return r.postProcess(q, a)
+		return r.postProcess(ctx, q, a)
 	}
 	return core.RuleResult{}, fmt.Errorf("unknown stage: %v", stage)
 }
 
 // preProcess normalizes the user query and enriches it with expansions.
-func (r *RuleSet) preProcess(query core.Query) (core.RuleResult, error) {
+func (r *RuleSet) preProcess(ctx context.Context, query core.Query) (core.RuleResult, error) {
 	workingStore := factstore.NewSimpleInMemoryStore()
 	workingStore.Merge(r.baseFactStore)
 
@@ -284,7 +284,7 @@ func (r *RuleSet) preProcess(query core.Query) (core.RuleResult, error) {
 }
 
 // EvaluateFacts satisfies the core.RuleSet interface by evaluating rules against explicit facts.
-func (r *RuleSet) EvaluateFacts(stage core.Stage, facts []ast.Atom, a *core.Answer) (core.RuleResult, error) {
+func (r *RuleSet) EvaluateFacts(ctx context.Context, stage core.Stage, facts []ast.Atom, a *core.Answer) (core.RuleResult, error) {
 	workingStore := factstore.NewSimpleInMemoryStore()
 	workingStore.Merge(r.baseFactStore)
 	for _, f := range facts {
@@ -590,7 +590,7 @@ func (r *RuleSet) Post(ctx context.Context, q core.Query, evidence []core.Doc, m
 }
 
 // postProcess filters an answer based on Mangle rules.
-func (r *RuleSet) postProcess(query core.Query, answer *core.Answer) (core.RuleResult, error) {
+func (r *RuleSet) postProcess(ctx context.Context, query core.Query, answer *core.Answer) (core.RuleResult, error) {
 	workingStore := factstore.NewSimpleInMemoryStore()
 	workingStore.Merge(r.baseFactStore)
 

@@ -271,12 +271,12 @@ func NewRuleSet() *RuleSet {
 }
 
 // Evaluate evaluates the rules.
-func (r *RuleSet) Evaluate(stage core.Stage, q core.Query, a *core.Answer) (core.RuleResult, error) {
+func (r *RuleSet) Evaluate(ctx context.Context, stage core.Stage, q core.Query, a *core.Answer) (core.RuleResult, error) {
 	return core.RuleResult{Allowed: true}, nil
 }
 
 // EvaluateFacts evaluates the rules using explicit facts.
-func (r *RuleSet) EvaluateFacts(stage core.Stage, facts []ast.Atom, a *core.Answer) (core.RuleResult, error) {
+func (r *RuleSet) EvaluateFacts(ctx context.Context, stage core.Stage, facts []ast.Atom, a *core.Answer) (core.RuleResult, error) {
 	return core.RuleResult{Allowed: true}, nil
 }
 
