@@ -42,6 +42,18 @@ func (s *PreRulesStage) Execute(p *pipeline.PipelineContext) error {
 		// We'll proceed but log it.
 	}
 
+	// Use reflection to generate facts from Meta if it contains structs.
+	if p.Query.Meta != nil {
+		for k, v := range p.Query.Meta {
+			// We use the key as the entityID
+			// Note: ToFacts expects a struct or pointer to struct. If it's not, it returns an error.
+			// We ignore errors here as Meta can contain anything (strings, ints, etc.) that ToFacts doesn't support yet.
+			if metaFacts, err := reflection.ToFacts(k, v); err == nil && len(metaFacts) > 0 {
+				facts = append(facts, metaFacts...)
+			}
+		}
+	}
+
 	res, err := s.RuleSet.EvaluateFacts(p.Ctx, core.Pre, facts, &p.Answer)
 	if s.Meter != nil {
 		s.Meter.Record("manglekit.rules_pre_ms", float64(time.Since(tPreRulesStart).Milliseconds()))
