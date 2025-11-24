@@ -64,11 +64,13 @@ graph TD
         M[core/interfaces.go]
         N[core/diapi<br/>Type-Safe DI]
         O[core/handler.go<br/>ComponentHandler]
+        P[core/reflection<br/>Struct-to-Fact]
     end
 
     E -- Implements --> N
     G -- Implements --> O
     H -- Adheres to --> M
+    L -- Uses --> P
 ```
 
 ## 1. Architectural Overview
@@ -126,6 +128,7 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
 
 -   **`core.ResourceCloser`**: A function signature (`func(ctx) error`) used for standardized, graceful shutdown.
 -   **`core.ProviderOptions`**: The base interface all provider options must implement. Defines `ProviderKind()` and `ProviderName()` methods.
+-   **`core.Reflection`**: The `core/reflection` package provides `ToFacts(id, entity)` to project application state into logic facts.
 
 ## 4. Provider Composition
 
@@ -368,6 +371,13 @@ The codebase is **stable and production-ready**. All major architectural gaps ha
   - ✅ Lazy resolver initialization prevents circular dependencies
   - ✅ Extensible pattern ready for adoption in other handlers; other handler families still use direct `diapi.Builder` getters today.
 
+### GAP-007: Missing Struct-to-Fact Reflection — ✅ RESOLVED
+
+- **Description**: The system lacked a mechanism to project Go structs (Application State) into Mangle atoms (Logic State) for governance checks.
+- **Impact**: High. Prevented orchestrators from exposing runtime state to the rules engine, blocking self-reflection capabilities.
+- **Status**: ✅ **RESOLVED** — Implemented 2025-11-20.
+- **Verification**: `core/reflection` package implemented with `ToFacts(id, entity)`. 100% test coverage for structs, pointers, and primitive types.
+
 ### ENHANCEMENT: Provider Dependency Validation — ✅ COMPLETED
 
 - **Description**: Added automated validation of provider environment variable dependencies at configuration time. When users call `WithOptions()` to configure a provider, the builder now checks if all required environment variables are set (e.g., `GOOGLE_API_KEY` for Google LLM, `OPENAI_API_KEY` for OpenAI). If any required variables are missing, the validation error is accumulated and reported at `Build()` time with a clear, actionable error message.
@@ -491,8 +501,21 @@ This order is enforced in `builder.go` and ensures that:
   "handlers_audited": 12,
   "handlers_compliant": 12,
   "compliance_rate": "100%",
-  "notes": "Full audit 2025-11-19: 12 handlers verified compliant with Type-Safe DI. Retrievers handler uses extensible DependencyResolver registry. All providers registered via providers/all/all.go (except in-memory retriever which is available but manual). Current implementations: 4 retrievers (BM25, GenkitRetriever, Hybrid, InMemory), HTTP Tool adapter, Symbolic Planner. Production-ready, stable architecture.",
+  "notes": "Full audit 2025-11-20: Added Struct-to-Fact reflection engine. 12 handlers verified compliant with Type-Safe DI. Retrievers handler uses extensible DependencyResolver registry. All providers registered via providers/all/all.go. Production-ready, stable architecture.",
   "gaps": [
+    {
+      "id": "GAP-007",
+      "name": "Missing Struct-to-Fact Reflection",
+      "adr": "N/A",
+      "rule": "N/A",
+      "status": "Resolved",
+      "description": "Implemented core/reflection package to convert tagged Go structs into Mangle atoms.",
+      "locations": [
+        "core/reflection/converter.go"
+      ],
+      "verified_compliant": true,
+      "notes": "Implemented 2025-11-20. Supports string, int, bool, and pointers."
+    },
     {
       "id": "GAP-001",
       "name": "Implicit Orchestrator State Injection Design Inconsistency",
@@ -580,6 +603,7 @@ This order is enforced in `builder.go` and ensures that:
 ```
 
 ## 14. Changelog
+- **2025-11-20**: **Feature Complete:** Implemented `core/reflection` engine to convert Go structs into Mangle facts (GAP-007). Updated `LLD.md` and `CONTEXT.md` with new Core Utilities section and gap resolution.
 - **2025-11-19**: **Documentation Sync:** Updated documentation to reflect that `InMemory` retriever (`internal/providers/retrievers/inmemory`) is available in the codebase but not automatically registered in `providers/all/all.go` (unlike `state/inmemory`). Users can register it manually if needed for testing. Confirmed `genkit-retriever` factory supports dynamic dispatch to any Genkit provider (localvec, pinecone, etc.).
 - **2025-11-17**: **Documentation Sync After Cleanup:** Removed references to deleted `dense` retriever and `vectorstores` components. Updated handler count to 12 (removed vectorstores handler). Confirmed current retrievers: BM25, GenkitRetriever, Hybrid, InMemory. Updated Mermaid snapshot, Provider Families list, Build Order (removed vectorstores), JSON appendix (12 handlers, 100% compliant). All providers correctly registered via `providers/all/all.go` (79 lines). Status: ✅ Fully synchronized post-cleanup.
 

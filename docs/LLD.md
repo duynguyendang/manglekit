@@ -31,6 +31,7 @@ graph TD
         G[core/interfaces.go]
         H[core/handler.go]
         I[core/diapi]
+        M[core/reflection]
     end
 
     subgraph "Implementation Layer"
@@ -50,10 +51,22 @@ graph TD
 
     G --> K
     G --> L
+    M --> L
 ```
 
-# 3. Builder Subsystem
+# 3. Core Utilities
 
+### 3.1 Reflection Utility (`core/reflection`)
+- **Purpose**: Provides a mechanism to project arbitrary Go structs (Application State) into Mangle logic facts (Logic State).
+- **Core Function**: `ToFacts(id string, entity any) ([]ast.Atom, error)`
+- **Mechanism**:
+  - Uses runtime reflection (`reflect` package).
+  - Inspects struct fields for the `mangle:"predicate_name"` tag.
+  - Converts Go types (string, int, bool) to Mangle `ast.Constant` types.
+  - Generates atoms in the format: `predicate_name(id, value)`.
+- **Usage**: Intended for use by Orchestrators (specifically the Declarative Orchestrator's Pre-Check phase) to expose runtime state to the logic engine for governance checks.
+
+# 4. Builder Subsystem
 The `Builder` is the central component for constructing an orchestrator. It follows a handler-based process that is decentralized and respects the Open/Closed Principle.
 
 **Process Flow:**
@@ -91,7 +104,7 @@ sequenceDiagram
     Builder-->>-User/Config: Returns final orchestrator
 ```
 
-# 4. Factory Interface Layer
+# 5. Factory Interface Layer
 
 All component factories must adhere to the `core.Factory` interface.
 
@@ -106,7 +119,7 @@ This generic interface is made type-safe by the `ComponentHandler`, which is res
 
 The handler uses a **DependencyResolver pattern**: it type-asserts the `cfg` parameter to `diapi.ProviderWithOptions`, calls `GetProviderOptions()` to extract the actual options, and then delegates to registered resolvers to determine which dependency struct to construct. This pattern allows new provider types to be supported by registering new resolvers without modifying the handler code.
 
-### 4.1 Typed Dependency Structs
+### 5.1 Typed Dependency Structs
 
 Each component kind has one or more corresponding **typed dependency structs** in `core/diapi/di.go`. These structs ensure that factories receive exactly the dependencies they need, with full compile-time type safety.
 
@@ -157,7 +170,7 @@ type DeclarativeOrchestratorDeps struct {
 
 Additional structs: `RerankerDeps`, `StateProviderDeps`, `RuleSetDeps`, `ToolDeps`, `PlannerDeps`, `ReasonerDeps`, `SchemaParsersDepse`, `EmbedderDeps`, etc. (12 total for all component kinds).
 
-### 4.2 Resolver Pattern
+### 5.2 Resolver Pattern
 
 Instead of using type-switches in handlers, resolvers determine which `Deps` struct to construct based on the provider options type:
 
@@ -207,7 +220,7 @@ func (r *SubRetrieverResolver) Resolve(ctx context.Context, builderDI any, opts 
 
 The handler maintains a list of resolvers and iterates through them until a match is found. This allows new provider sub-families to be supported without modifying the core handler.
 
-### 4.3 Handler Execution Example
+### 5.3 Handler Execution Example
 
 ```go
 // internal/providers/retrievers/handler.go
@@ -237,7 +250,7 @@ func (h *Handler) BuildComponent(ctx, builderDI, factory, resolved, cfg, name) (
 
 ---
 
-# 5. Dependency Injection Layer
+# 6. Dependency Injection Layer
 
 The builder implements the `diapi.Builder` interface, which exposes methods like `GetEmbedder(name)` and `GetRetriever(name)`. This allows component handlers and factories to request specific, named dependencies.
 
@@ -246,9 +259,9 @@ The builder implements the `diapi.Builder` interface, which exposes methods like
 
 Circular dependencies are prevented by the hard-coded linear build order defined in `builder.go`.
 
-# 6. Provider Family Details
+# 7. Provider Family Details
 
-### 6.1 LLM Providers (All Use Universal Adapter Pattern)
+### 7.1 LLM Providers (All Use Universal Adapter Pattern)
 
 **Overview:** All LLM providers (Google, OpenAI, custom Genkit) follow the thin factory pattern. The handler constructs `diapi.LLMDeps`, passes it to the factory, and the factory returns a `core.LLMClient` instance (typically wrapping a `GenkitLLMAdapter`).
 
@@ -301,7 +314,7 @@ Adapter returns core.LLMClient (implements complete generation logic)
 *   **Intent:** Allow dynamic model lookup from Genkit's model registry (when supported by Genkit)
 *   **Helper:** `CustomModelLLMAdapter()` available for applications that register custom Genkit models
 
-### 6.2 Retriever Providers
+### 7.2 Retriever Providers
 
 **Overview:** Retrievers use handler-based resolution to support multiple sub-families (multi-retriever orchestration, Genkit plugins, no-op). Each sub-family has a dedicated resolver that constructs the appropriate `diapi.*Deps` struct.
 
@@ -337,7 +350,7 @@ Adapter returns core.LLMClient (implements complete generation logic)
 - **`inmemory`**: Simple in-memory key-value storage; direct implementation
 - **`inmemory-vector`**: In-memory vector search (embeddings stored as JSON in memory); direct implementation
 
-# 7. Configuration Binding
+# 8. Configuration Binding
 
 Configuration from YAML is mapped to provider-specific `Options` structs using `mapstructure`. The `builder.fromConfig()` function performs a type-to-name lookup: it iterates through all registered types in the registry's `OptionsTypeToName` map, matches them by both name and kind, and uses the matched type to decode the raw `map[string]any` from the YAML.
 
@@ -354,7 +367,7 @@ retrievers:
 **Go Mapping:**
 The loader iterates through registered types and finds the `hybrid.HybridOptions` type by matching the provider name `hybrid` and kind `retriever` against the registry's type mappings. It creates an instance of the matched type and uses `mapstructure` to decode the `options` map into the struct. This typed options object is then passed to `builder.WithOptions()`.
 
-# 8. Lifecycle & Resource Management
+# 9. Lifecycle & Resource Management
 
 Resource cleanup is handled via the `core.ResourceCloser` function type.
 
@@ -371,11 +384,11 @@ Resource cleanup is handled via the `core.ResourceCloser` function type.
 
 Note: The `core.Resolved` struct has a `Closers` field, but it is not populated during the build process. Resource management is handled by the builder, not through the `Resolved` struct.
 
-# 9. Logging & Observability Hooks
+# 10. Logging & Observability Hooks
 
 The `core.Observability` struct (logger, tracer, meter) is the central point for instrumentation. It is configured on the `Builder` and passed to the final orchestrator via the `core.Resolved` struct. The `Sandwich` orchestrator then passes the logger and meter to each of its pipeline stages.
 
-# 10. Example Construction Path
+# 11. Example Construction Path
 
 Tracing the `hybrid` retriever:
 1.  **Config:** YAML defines a retriever named `my_hybrid` with provider `hybrid`.
@@ -394,7 +407,7 @@ Tracing the `hybrid` retriever:
     *   The factory correctly consumes the `diapi.RetrieverDeps` struct to access its sub-retrievers.
 6.  **Instance Registration:** The fully constructed `hybrid` retriever is returned to the handler, which calls `builder.SetRetriever(name, retriever)` to register it with the builder's internal `retrievers` map. This map is later copied to the `Resolved` struct during the build process.
 
-# 11. Resolved Struct
+# 12. Resolved Struct
 
 The `core.Resolved` struct is the final, strongly-typed container of all built components and configuration settings. It is passed to the orchestrator factory, ensuring that orchestrators receive their dependencies in a type-safe manner.
 
@@ -419,7 +432,7 @@ The `core.Resolved` struct is the final, strongly-typed container of all built c
 **Usage:**
 The `Resolved` struct is passed to orchestrator factories, which use it to access their dependencies. The declarative orchestrator uses the `GetToolByName()` method to resolve tool names to `core.Tool` adapters.
 
-# 12. Special Cases & Patterns
+# 13. Special Cases & Patterns
 
 ### SkipModelCheckProvider Pattern
 
@@ -435,17 +448,18 @@ if p, ok := cfg.(diapi.SkipModelCheckProvider); ok {
 
 This pattern is useful for testing or when model validation is not required.
 
-# 13. Design Constraints & Guardrails
+# 14. Design Constraints & Guardrails
 
 *   **No Global Singletons:** All component instances are managed by the builder and contained within the orchestrator.
 *   **Stateless Factories & Handlers:** Provider factories and handlers should be stateless.
 *   **Type-Safe DI:** The combination of `ComponentHandler` and `diapi` structs ensures that dependency injection is type-safe without runtime reflection.
 
-# 14. Deviations & Blockers
+# 15. Deviations & Blockers
 
 The codebase is **stable** post-cleanup. VectorStore components removed; Genkit retriever adapter now primary semantic search solution.
 
-# 15. Changelog
+# 16. Changelog
+*   **2025-11-20**: Added `core/reflection` package for Struct-to-Fact conversion, resolving the missing governance link. Updated Component Diagram and added Core Utilities section.
 *   **2025-11-19 (Evening)**: Refactored Google and OpenAI LLM providers to use thin factory pattern with universal adapter. All LLM logic now in `internal/adapters/GenkitLLMAdapter`; providers focus on configuration and plugin initialization. Added `genkit-llm` placeholder provider. Updated adapter registration in `internal/providers/llm/register.go`.
 *   **2025-11-19**: Documentation sync. Clarified `InMemory` retriever availability and `genkit-retriever` dynamic dispatch capabilities.
 *   **2025-11-17**: Documentation sync after cleanup. Removed vectorstores references, updated retriever implementations (dense→genkit-retriever), confirmed 12 handlers total.
@@ -462,11 +476,11 @@ The codebase is **stable** post-cleanup. VectorStore components removed; Genkit 
 *   **2025-10-20**: Regenerated LLD to reflect the decentralized, handler-based builder architecture. Updated diagrams and construction path to show the new flow. Synchronized deviations with the latest code review.
 *   **2025-10-19**: Initial draft of the LLD.
 
-# 16. Project Layout (Developer Reference)
+# 17. Project Layout (Developer Reference)
 
 This section provides a concise, developer-focused view of the repository layout to support day-to-day navigation and extension work. It complements the abstract layout in HLD with concrete entrypoints and responsibilities.
 
-## 16.1 High-Level Structure
+## 17.1 High-Level Structure
 
 ```
 manglekit/
@@ -488,7 +502,7 @@ Layering rules (enforced):
 - internal/ providers depend only on core/ contracts
 - sdk/ and config/ bridge configuration to the builder without leaking provider internals
 
-## 16.2 Key Developer Entry Points
+## 17.2 Key Developer Entry Points
 
 - Builder and Registry
   - [`builder.go`](builder.go)
@@ -536,7 +550,7 @@ Layering rules (enforced):
   - Symbolic Planner: [`internal/providers/planners/symbolic/planner.go`](internal/providers/planners/symbolic/planner.go)
   - Tool Adapters: [`internal/providers/tools/http/factory.go`](internal/providers/tools/http/factory.go), [`core/tool_adapters.go`](core/tool_adapters.go)
 
-## 16.3 Quick Tasks Cheat Sheet
+## 17.3 Quick Tasks Cheat Sheet
 
 - Add a new provider:
   1. Define Options (implements ProviderOptions) under appropriate internal family
