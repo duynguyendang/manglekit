@@ -28,8 +28,8 @@ func (s *LLMStage) Name() string {
 // the final citations for the answer.
 func (s *LLMStage) Execute(p *pipeline.PipelineContext) error {
 	if s.LLM == nil {
-		s.Logger.Warnf("LLM client is nil, skipping llm stage")
-		return fmt.Errorf("LLM client is not configured")
+		s.Logger.Infof("LLM client is nil, skipping llm stage")
+		return nil
 	}
 
 	// 1. Prepare passages and citations for the LLM.
