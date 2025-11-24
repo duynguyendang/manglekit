@@ -67,8 +67,8 @@ func (o *mockSandwichOptions) ProviderKind() core.Kind { return core.KindOrchest
 
 type mockSandwichDeps struct {
 	diapi.CoreDeps
-	Retriever core.Retriever
-	LLM       core.LLMClient
+	Action core.Action
+	LLM    core.LLMClient
 }
 
 type mockOrchestrator struct{}
@@ -106,7 +106,9 @@ func (h *mockComponentHandler) BuildComponent(ctx context.Context, b any, f any,
 		if err != nil {
 			return nil, fmt.Errorf("failed to get llm dependency for mock sandwich: %w", err)
 		}
-		deps = &mockSandwichDeps{CoreDeps: builder.GetCoreDeps(), Retriever: r, LLM: l}
+		// Wrap the retriever in an Action adapter
+		action := &core.RetrieverAction{Retriever: r}
+		deps = &mockSandwichDeps{CoreDeps: builder.GetCoreDeps(), Action: action, LLM: l}
 	case *mockLLMOptions:
 		deps = diapi.LLMDeps{CoreDeps: builder.GetCoreDeps(), Genkit: builder.Genkit()}
 	case *mockRetrieverOptions:

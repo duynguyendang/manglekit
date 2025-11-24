@@ -129,7 +129,7 @@ deny("reason_m") :- query_version(1).
 
 	// The RuleSet is now set up with deterministic sorting
 	// The test verifies that we don't panic and handle multiple deny facts correctly
-	result, _ := rs.Evaluate(core.Pre, query, nil)
+	result, _ := rs.Evaluate(context.Background(), core.Pre, query, nil)
 
 	// With deny facts present, the evaluation should return consistent results
 	// The key fix is that denied reasons are now sorted before extraction
@@ -162,7 +162,7 @@ drop_doc("doc_m", "reason_m").
 
 	query := core.Query{}
 	// In the post stage, drop_doc facts are evaluated
-	result, err := rs.Evaluate(core.Post, query, &core.Answer{})
+	result, err := rs.Evaluate(context.Background(), core.Post, query, &core.Answer{})
 
 	// Verify that post-filter completes without error
 	// (the determinism is in the implementation's sort logic)
@@ -199,7 +199,7 @@ fact("b").
 		// Run collect multiple times and verify consistent ordering
 		for i := 0; i < 3; i++ {
 			query := core.Query{}
-			result, err := rs.Evaluate(core.Pre, query, nil)
+			result, err := rs.Evaluate(context.Background(), core.Pre, query, nil)
 			require.NoError(t, err)
 			assert.NotNil(t, result)
 

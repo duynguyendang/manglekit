@@ -32,7 +32,7 @@ func (s *PostRulesStage) Execute(p *pipeline.PipelineContext) error {
 	}
 
 	tPostRulesStart := time.Now()
-	res, err := s.RuleSet.Evaluate(core.Post, p.Query, &p.Answer)
+	res, err := s.RuleSet.Evaluate(p.Ctx, core.Post, p.Query, &p.Answer)
 	if s.Meter != nil {
 		s.Meter.Record("manglekit.rules_post_ms", float64(time.Since(tPostRulesStart).Milliseconds()))
 	}

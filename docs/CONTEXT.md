@@ -118,7 +118,7 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
     - `RerankerDeps`: Contains `CoreDeps` and `Embedder`.
     - `StateProviderDeps`: Contains `CoreDeps`.
     - `RuleSetDeps`: Contains `CoreDeps` and `Registry` (also used by Reasoners for accessing rules/resources).
-    - `SandwichDeps`: Contains `CoreDeps`, `Action`, `Reranker`, `LLM`, `StateProvider`, and `RuleSet`.
+    - `SandwichDeps`: Contains `CoreDeps`, `Action` (generic, typically Retriever), `Reranker`, `LLM`, `StateProvider`, and `RuleSet`.
     - `DeclarativeOrchestratorDeps`: Contains `CoreDeps`, `StateProvider`, and `Tools` map.
     - `ToolDeps`: Contains `CoreDeps` and dependencies for the specific tool being adapted (e.g., `Retriever`).
     - `PlannerDeps`: Contains `CoreDeps`, `Tools` map, and `Reasoners` map (for accessing reasoner components during plan generation).
@@ -159,7 +159,7 @@ Each provider family has a dedicated `ComponentHandler` that:
 | `tools.Handler` | `internal/providers/tools/handler.go` | `KindTool` | `CoreDeps`, Adaptee (e.g., Retriever, LLM) |
 | `reasoners.Handler` | `internal/providers/reasoners/handler.go` | `KindReasoner` | `CoreDeps`, `RuleSet` |
 | `planners.Handler` | `internal/providers/planners/handler.go` | `KindPlanner` | `CoreDeps`, `Tools`, `Reasoner` |
-| `sandwich.Handler` | `pipeline/sandwich/handler.go` | `KindOrchestrator` | `CoreDeps`, `Retriever`, `LLM`, `Reranker` (optional), `RuleSet` (optional), `StateProvider` (optional) |
+| `sandwich.Handler` | `pipeline/sandwich/handler.go` | `KindOrchestrator` | `CoreDeps`, `Action`, `LLM`, `Reranker` (optional), `RuleSet` (optional), `StateProvider` (optional) |
 | `declarative.Handler` | `pipeline/declarative/handler.go` | `KindOrchestrator` | `CoreDeps`, `StateProvider` (optional), `Tools` map |
 | `planners.Handler` | `internal/providers/planners/handler.go` | `KindPlanner` | `CoreDeps`, `Tools`, `Reasoners` |
 

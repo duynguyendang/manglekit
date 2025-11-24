@@ -32,6 +32,7 @@ graph TD
         H[core/handler.go]
         I[core/diapi]
         M[core/reflection]
+        N[core/action_adapters.go]
     end
 
     subgraph "Implementation Layer"
@@ -152,7 +153,7 @@ type RetrieverDeps struct {
 // Provides all pipeline components the orchestrator may need.
 type SandwichDeps struct {
     CoreDeps
-    Retriever      core.Retriever
+    Action         core.Action        // Generic action (typically adapted Retriever)
     LLM            core.LLMClient
     Reranker       core.Reranker      // Optional
     RuleSet        core.RuleSet       // Optional
