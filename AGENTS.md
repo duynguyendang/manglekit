@@ -297,7 +297,7 @@ if opts.StateProvider != "" {
 // Typed deps struct populated by handler
 deps := diapi.SandwichDeps{
     CoreDeps:      b.GetCoreDeps(),
-    Retriever:     retriever,
+    Action:        &core.RetrieverAction{Retriever: retriever, TopK: opts.TopK},
     StateProvider: stateProvider,  // ← Instance set by handler
 }
 

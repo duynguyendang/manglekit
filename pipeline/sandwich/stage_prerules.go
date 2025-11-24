@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/reflection"
 	"github.com/duynguyendang/manglekit/pipeline"
 )
 
@@ -32,7 +33,16 @@ func (s *PreRulesStage) Execute(p *pipeline.PipelineContext) error {
 	}
 
 	tPreRulesStart := time.Now()
-	res, err := s.RuleSet.Evaluate(core.Pre, p.Query, &p.Answer)
+
+	// Use reflection to generate facts from the query.
+	facts, err := reflection.ToFacts("current_query", p.Query)
+	if err != nil {
+		s.Logger.Warnf("failed to generate facts from query", "error", err)
+		// Proceed with empty facts or handle error depending on strictness.
+		// We'll proceed but log it.
+	}
+
+	res, err := s.RuleSet.EvaluateFacts(core.Pre, facts, &p.Answer)
 	if s.Meter != nil {
 		s.Meter.Record("manglekit.rules_pre_ms", float64(time.Since(tPreRulesStart).Milliseconds()))
 	}

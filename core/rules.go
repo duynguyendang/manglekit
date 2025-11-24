@@ -71,6 +71,15 @@ type RuleSet interface {
 	// It returns a RuleResult indicating the outcome of the evaluation and
 	// an error if the evaluation itself fails.
 	Evaluate(stage Stage, q Query, a *Answer) (RuleResult, error)
+
+	// EvaluateFacts runs the configured rules for a given pipeline stage using
+	// explicit facts provided by the caller, rather than converting a Query object.
+	//
+	// stage is the pipeline stage (Pre or Post).
+	// facts is the slice of Mangle atoms representing the input state.
+	// a is the current answer object, used for mutation if needed.
+	// It returns a RuleResult indicating the outcome of the evaluation.
+	EvaluateFacts(stage Stage, facts []ast.Atom, a *Answer) (RuleResult, error)
 }
 
 // RuleResult encapsulates the outcome of a rule evaluation. It communicates

@@ -275,6 +275,11 @@ func (r *RuleSet) Evaluate(stage core.Stage, q core.Query, a *core.Answer) (core
 	return core.RuleResult{Allowed: true}, nil
 }
 
+// EvaluateFacts evaluates the rules using explicit facts.
+func (r *RuleSet) EvaluateFacts(stage core.Stage, facts []ast.Atom, a *core.Answer) (core.RuleResult, error) {
+	return core.RuleResult{Allowed: true}, nil
+}
+
 // ToolOptions is the options for the mock tool.
 type ToolOptions struct{}
 
