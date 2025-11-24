@@ -76,7 +76,7 @@ func (h *Handler) BuildComponent(
 
 	deps := diapi.SandwichDeps{
 		CoreDeps:      b.GetCoreDeps(),
-		Retriever:     retriever,
+		Action:        &core.RetrieverAction{Retriever: retriever, TopK: opts.TopK},
 		LLM:           llm,
 		Reranker:      reranker,
 		RuleSet:       ruleSet,

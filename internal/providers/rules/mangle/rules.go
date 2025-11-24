@@ -280,6 +280,28 @@ func (r *RuleSet) preProcess(query core.Query) (core.RuleResult, error) {
 		return core.RuleResult{Allowed: false, Reason: "Mangle pre-process failed"}, fmt.Errorf("mangle: pre-process evaluation failed: %w", err)
 	}
 
+	return r.collectPreResults(workingStore)
+}
+
+// EvaluateFacts satisfies the core.RuleSet interface by evaluating rules against explicit facts.
+func (r *RuleSet) EvaluateFacts(stage core.Stage, facts []ast.Atom, a *core.Answer) (core.RuleResult, error) {
+	workingStore := factstore.NewSimpleInMemoryStore()
+	workingStore.Merge(r.baseFactStore)
+	for _, f := range facts {
+		workingStore.Add(f)
+	}
+
+	if err := evaluate(r.programInfo, r.strata, r.predToStratum, workingStore); err != nil {
+		return core.RuleResult{Allowed: false, Reason: "Mangle evaluation failed"}, fmt.Errorf("mangle: evaluation failed: %w", err)
+	}
+
+	if stage == core.Pre {
+		return r.collectPreResults(workingStore)
+	}
+	return core.RuleResult{Allowed: true}, nil
+}
+
+func (r *RuleSet) collectPreResults(workingStore factstore.ReadOnlyFactStore) (core.RuleResult, error) {
 	// Skipped stages
 	skipped, err := collectStrings(workingStore, "skip_stage", 1)
 	if err != nil {

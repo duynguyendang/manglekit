@@ -71,7 +71,7 @@ type Orchestrator interface {
 // text and any associated metadata.
 type Query struct {
 	// Text is the natural language query string from the user.
-	Text string `json:"text"`
+	Text string `json:"text" mangle:"query_text"`
 	// Meta is a map for arbitrary user-supplied metadata. This can be used by
 	// rules or other pipeline components to influence their behavior, for example,
 	// by passing user identity or session information.

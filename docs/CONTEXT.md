@@ -2,8 +2,8 @@
 context_type: architecture_standard
 project: manglekit
 language: go
-version: 0.8.1
-last_updated: 2025-11-19T20:00:00Z
+version: 0.8.2
+last_updated: 2025-11-24T15:00:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -100,8 +100,9 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
 -   **`core.LLMClient`**: Defines `Complete(ctx, req)` for language model completion. All LLM providers (Google, OpenAI, etc.) are implemented as thin factories that configure the Genkit plugin and delegate to the universal `adapters.GenkitLLMAdapter`.
 -   **`ai.Embedder`**: (from genkit) Defines embedding generation for text.
 -   **`core.StateProvider`**: Defines `Get(ctx, sessionID)`, `Set(ctx, sessionID, state)`, `Delete(ctx, sessionID)`, and `Close(ctx)`.
--   **`core.RuleSet`**: Defines rule evaluation for pre/post-retrieval filtering.
+-   **core.RuleSet**: Defines rule evaluation (`Evaluate`) and explicit fact evaluation (`EvaluateFacts`) for pre/post-retrieval filtering.
 -   **`core.SchemaParser`**: Defines schema parsing for structured data extraction.
+-   **core.Action**: Defines `Execute(ctx, input) (output, error)` for generic executable units. Generalizes Retrievers and Tools.
 -   **`core.Tool`**: Defines `Execute(ctx, execCtx)` for stateless, single-step operations. A behavioral interface used to wrap components (retrievers, LLMs, etc.) for use in the declarative orchestrator.
 -   **`core.Reasoner`**: Defines `Execute(ctx, req)` for symbolic reasoning over facts. Accepts structured input data and returns structured output (e.g., via Datalog rules).
 -   **`core.Planner`**: Defines `Plan(ctx, q Query)` for generating multi-step execution plans. Returns a `Plan` struct containing `Steps`, each specifying a tool and parameters.
@@ -117,7 +118,7 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
     - `RerankerDeps`: Contains `CoreDeps` and `Embedder`.
     - `StateProviderDeps`: Contains `CoreDeps`.
     - `RuleSetDeps`: Contains `CoreDeps` and `Registry` (also used by Reasoners for accessing rules/resources).
-    - `SandwichDeps`: Contains `CoreDeps`, `Retriever`, `Reranker`, `LLM`, `StateProvider`, and `RuleSet`.
+    - `SandwichDeps`: Contains `CoreDeps`, `Action`, `Reranker`, `LLM`, `StateProvider`, and `RuleSet`.
     - `DeclarativeOrchestratorDeps`: Contains `CoreDeps`, `StateProvider`, and `Tools` map.
     - `ToolDeps`: Contains `CoreDeps` and dependencies for the specific tool being adapted (e.g., `Retriever`).
     - `PlannerDeps`: Contains `CoreDeps`, `Tools` map, and `Reasoners` map (for accessing reasoner components during plan generation).
@@ -603,6 +604,7 @@ This order is enforced in `builder.go` and ensures that:
 ```
 
 ## 14. Changelog
+- **2025-11-24**: **Action-Centric Refactoring:** Generalized Sandwich orchestrator to use `core.Action` interface instead of `core.Retriever`. Added `core.Action` interface and adapters (`RetrieverAction`, `HTTPToolAdapter`). Updated `core.RuleSet` to support `EvaluateFacts`. Integrated `core/reflection` for Pre-Check rule evaluation in Sandwich orchestrator.
 - **2025-11-20**: **Feature Complete:** Implemented `core/reflection` engine to convert Go structs into Mangle facts (GAP-007). Updated `LLD.md` and `CONTEXT.md` with new Core Utilities section and gap resolution.
 - **2025-11-19**: **Documentation Sync:** Updated documentation to reflect that `InMemory` retriever (`internal/providers/retrievers/inmemory`) is available in the codebase but not automatically registered in `providers/all/all.go` (unlike `state/inmemory`). Users can register it manually if needed for testing. Confirmed `genkit-retriever` factory supports dynamic dispatch to any Genkit provider (localvec, pinecone, etc.).
 - **2025-11-17**: **Documentation Sync After Cleanup:** Removed references to deleted `dense` retriever and `vectorstores` components. Updated handler count to 12 (removed vectorstores handler). Confirmed current retrievers: BM25, GenkitRetriever, Hybrid, InMemory. Updated Mermaid snapshot, Provider Families list, Build Order (removed vectorstores), JSON appendix (12 handlers, 100% compliant). All providers correctly registered via `providers/all/all.go` (79 lines). Status: ✅ Fully synchronized post-cleanup.

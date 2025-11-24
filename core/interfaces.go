@@ -190,6 +190,17 @@ type Planner interface {
 	Plan(ctx context.Context, q Query) (Plan, error)
 }
 
+// Action defines a generic interface for an executable unit of work.
+// It generalizes components like Retrievers, Tools, and other processors.
+type Action interface {
+	// Execute performs the action with the given input and returns an output.
+	//
+	// ctx is the context for the operation.
+	// input is the input data for the action.
+	// It returns the output data or an error if the execution fails.
+	Execute(ctx context.Context, input any) (any, error)
+}
+
 // Updatable defines the interface for retrievers that support runtime
 // modification of their document index. This is useful for systems where the
 // knowledge base can change without restarting the application. A component that
