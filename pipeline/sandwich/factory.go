@@ -31,7 +31,7 @@ func (f *Factory) Build(ctx context.Context, deps any, cfg any) (any, error) {
 	}
 
 	s := &Orchestrator{
-		retriever:           sandwichDeps.Retriever,
+		action:              sandwichDeps.Action,
 		reranker:            sandwichDeps.Reranker,
 		ruleset:             sandwichDeps.RuleSet,
 		llm:                 sandwichDeps.LLM,

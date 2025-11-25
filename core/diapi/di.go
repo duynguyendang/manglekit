@@ -112,7 +112,7 @@ type GenkitRetrieverDeps struct {
 // SandwichDeps provides all dependencies required by the sandwich orchestrator.
 type SandwichDeps struct {
 	CoreDeps
-	Retriever     core.Retriever
+	Action        core.Action
 	Reranker      core.Reranker
 	LLM           core.LLMClient
 	StateProvider core.StateProvider

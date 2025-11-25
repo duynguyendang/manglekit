@@ -251,18 +251,18 @@ func parseSchemas(sources []core.SchemaSource, r *manglekit.Registry) ([]ast.Ato
 // the Datalog engine, and then collects the results (like denials or mutations)
 // to return to the orchestrator.
 // This method satisfies the `core.RuleSet` interface.
-func (r *RuleSet) Evaluate(stage core.Stage, q core.Query, a *core.Answer) (core.RuleResult, error) {
+func (r *RuleSet) Evaluate(ctx context.Context, stage core.Stage, q core.Query, a *core.Answer) (core.RuleResult, error) {
 	switch stage {
 	case core.Pre:
-		return r.preProcess(q)
+		return r.preProcess(ctx, q)
 	case core.Post:
-		return r.postProcess(q, a)
+		return r.postProcess(ctx, q, a)
 	}
 	return core.RuleResult{}, fmt.Errorf("unknown stage: %v", stage)
 }
 
 // preProcess normalizes the user query and enriches it with expansions.
-func (r *RuleSet) preProcess(query core.Query) (core.RuleResult, error) {
+func (r *RuleSet) preProcess(ctx context.Context, query core.Query) (core.RuleResult, error) {
 	workingStore := factstore.NewSimpleInMemoryStore()
 	workingStore.Merge(r.baseFactStore)
 
@@ -280,6 +280,28 @@ func (r *RuleSet) preProcess(query core.Query) (core.RuleResult, error) {
 		return core.RuleResult{Allowed: false, Reason: "Mangle pre-process failed"}, fmt.Errorf("mangle: pre-process evaluation failed: %w", err)
 	}
 
+	return r.collectPreResults(workingStore)
+}
+
+// EvaluateFacts satisfies the core.RuleSet interface by evaluating rules against explicit facts.
+func (r *RuleSet) EvaluateFacts(ctx context.Context, stage core.Stage, facts []ast.Atom, a *core.Answer) (core.RuleResult, error) {
+	workingStore := factstore.NewSimpleInMemoryStore()
+	workingStore.Merge(r.baseFactStore)
+	for _, f := range facts {
+		workingStore.Add(f)
+	}
+
+	if err := evaluate(r.programInfo, r.strata, r.predToStratum, workingStore); err != nil {
+		return core.RuleResult{Allowed: false, Reason: "Mangle evaluation failed"}, fmt.Errorf("mangle: evaluation failed: %w", err)
+	}
+
+	if stage == core.Pre {
+		return r.collectPreResults(workingStore)
+	}
+	return core.RuleResult{Allowed: true}, nil
+}
+
+func (r *RuleSet) collectPreResults(workingStore factstore.ReadOnlyFactStore) (core.RuleResult, error) {
 	// Skipped stages
 	skipped, err := collectStrings(workingStore, "skip_stage", 1)
 	if err != nil {
@@ -568,7 +590,7 @@ func (r *RuleSet) Post(ctx context.Context, q core.Query, evidence []core.Doc, m
 }
 
 // postProcess filters an answer based on Mangle rules.
-func (r *RuleSet) postProcess(query core.Query, answer *core.Answer) (core.RuleResult, error) {
+func (r *RuleSet) postProcess(ctx context.Context, query core.Query, answer *core.Answer) (core.RuleResult, error) {
 	workingStore := factstore.NewSimpleInMemoryStore()
 	workingStore.Merge(r.baseFactStore)
 
