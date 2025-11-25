@@ -154,6 +154,7 @@ type RetrieverDeps struct {
 type SandwichDeps struct {
     CoreDeps
     Action         core.Action        // Generic action (typically adapted Retriever)
+    SubActions     map[string]core.Action // Named alternative actions for the router
     LLM            core.LLMClient
     Reranker       core.Reranker      // Optional
     RuleSet        core.RuleSet       // Optional
@@ -459,7 +460,23 @@ This pattern is useful for testing or when model validation is not required.
 
 The codebase is **stable** post-cleanup. VectorStore components removed; Genkit retriever adapter now primary semantic search solution.
 
+### 7.3 Sandwich Orchestrator (Smart Router)
+
+The `pipeline/sandwich` orchestrator implements a dynamic dispatch mechanism known as the "Smart Router". This allows the orchestrator to select which `core.Action` to execute at runtime based on the results of the pre-check rule evaluation.
+
+**Execution Flow:**
+1.  **Fact Projection:** The orchestrator converts the incoming `core.Query` and its `Meta` field into Datalog facts.
+2.  **Rule Evaluation:** The `PreRulesStage` evaluates the configured `RuleSet`.
+3.  **Routing Signal:** The rules can generate an `add_meta("target_action", "action_name")` fact. The `RuleSet`'s `collectPreResults` function gathers these facts and places them into the `core.Answer.Meta` map.
+4.  **Dynamic Dispatch:** The `ActionStage` inspects `answer.Meta["target_action"]`.
+    *   If the key exists and its value corresponds to an action in the `SubActions` map (provided via `SandwichDeps`), that action is executed.
+    *   If the key does not exist or the action is not found, the default `Action` is executed.
+5.  **Audit:** The name of the executed action is logged and also stored in `answer.Meta["executed_action"]`.
+
+This architecture enables sophisticated, policy-driven routing logic, such as selecting a local, privacy-preserving model for sensitive data or a more powerful model for complex queries.
+
 # 16. Changelog
+*   **2025-11-25**: Implemented "Smart Router" architecture in the Sandwich orchestrator. Updated `SandwichDeps` to include `SubActions`, and modified the `ActionStage` to perform dynamic dispatch based on Datalog rule evaluation.
 *   **2025-11-20**: Added `core/reflection` package for Struct-to-Fact conversion, resolving the missing governance link. Updated Component Diagram and added Core Utilities section.
 *   **2025-11-19 (Evening)**: Refactored Google and OpenAI LLM providers to use thin factory pattern with universal adapter. All LLM logic now in `internal/adapters/GenkitLLMAdapter`; providers focus on configuration and plugin initialization. Added `genkit-llm` placeholder provider. Updated adapter registration in `internal/providers/llm/register.go`.
 *   **2025-11-19**: Documentation sync. Clarified `InMemory` retriever availability and `genkit-retriever` dynamic dispatch capabilities.

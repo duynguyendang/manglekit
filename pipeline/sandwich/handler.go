@@ -74,9 +74,19 @@ func (h *Handler) BuildComponent(
 		}
 	}
 
+	subActions := make(map[string]core.Action)
+	for _, saName := range opts.SubActions {
+		saRetriever, err := b.GetRetriever(saName)
+		if err != nil {
+			return nil, fmt.Errorf("sandwich orchestrator: failed to get sub-action retriever %q: %w", saName, err)
+		}
+		subActions[saName] = &core.RetrieverAction{Retriever: saRetriever, TopK: opts.TopK}
+	}
+
 	deps := diapi.SandwichDeps{
 		CoreDeps:      b.GetCoreDeps(),
 		Action:        &core.RetrieverAction{Retriever: retriever, TopK: opts.TopK},
+		SubActions:    subActions,
 		LLM:           llm,
 		Reranker:      reranker,
 		RuleSet:       ruleSet,

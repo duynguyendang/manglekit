@@ -113,6 +113,7 @@ type GenkitRetrieverDeps struct {
 type SandwichDeps struct {
 	CoreDeps
 	Action        core.Action
+	SubActions    map[string]core.Action
 	Reranker      core.Reranker
 	LLM           core.LLMClient
 	StateProvider core.StateProvider
