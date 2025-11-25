@@ -70,6 +70,18 @@ graph TD
   - **Type Conversion**: Converts primitive Go types (string, int, bool, float) into their corresponding `ast.Constant` representations.
 - **Usage**: Used by orchestrators to expose runtime state to the rules engine for governance checks, enabling policies that can self-reflect on the application's current state.
 
+### 3.1.1 Type Hook Mechanism
+- **Purpose**: To provide a way to customize the conversion of specific Go types that should not be recursively flattened. This is ideal for types that have a natural single-value representation, like `time.Time` or `net.IP`.
+- **Core Function**: `RegisterHook(t reflect.Type, fn ConverterFunc)`
+- **Mechanism**:
+  - The reflection walker checks a registry of type hooks *before* inspecting a value's `Kind`.
+  - If a hook is found for the value's `reflect.Type`, the walker invokes the hook's `ConverterFunc` to get a single `ast.Constant`.
+  - The walker then stops recursing for that node, effectively treating the complex type as a primitive.
+- **Default Hooks**:
+  - `time.Time`: Converted to an `ast.Number` representing the Unix timestamp (`int64`).
+  - `net.IP`: Converted to an `ast.String` representing the IP address.
+- **Usage**: Allows developers to extend the reflection system with domain-specific type conversions without modifying the core library.
+
 # 4. Builder Subsystem
 The `Builder` is the central component for constructing an orchestrator. It follows a handler-based process that is decentralized and respects the Open/Closed Principle.
 
@@ -479,6 +491,7 @@ The `pipeline/sandwich` orchestrator implements a dynamic dispatch mechanism kno
 This architecture enables sophisticated, policy-driven routing logic, such as selecting a local, privacy-preserving model for sensitive data or a more powerful model for complex queries.
 
 # 16. Changelog
+*   **2025-11-25**: Implemented a universal reflector with type hooks in `core/reflection`. This allows for custom conversion of types like `time.Time` and `net.IP` without recursive flattening.
 *   **2025-11-25**: Implemented "Smart Router" architecture in the Sandwich orchestrator. Updated `SandwichDeps` to include `SubActions`, and modified the `ActionStage` to perform dynamic dispatch based on Datalog rule evaluation.
 *   **2025-11-20**: Added `core/reflection` package for Struct-to-Fact conversion, resolving the missing governance link. Updated Component Diagram and added Core Utilities section.
 *   **2025-11-19 (Evening)**: Refactored Google and OpenAI LLM providers to use thin factory pattern with universal adapter. All LLM logic now in `internal/adapters/GenkitLLMAdapter`; providers focus on configuration and plugin initialization. Added `genkit-llm` placeholder provider. Updated adapter registration in `internal/providers/llm/register.go`.

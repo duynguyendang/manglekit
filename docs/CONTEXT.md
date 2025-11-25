@@ -379,8 +379,8 @@ The codebase is **stable and production-ready**. All major architectural gaps ha
 
 - **Description**: The system lacked a mechanism to project Go structs (Application State) into Mangle atoms (Logic State) for governance checks.
 - **Impact**: High. Prevented orchestrators from exposing runtime state to the rules engine, blocking self-reflection capabilities.
-- **Status**: ✅ **RESOLVED** — Implemented 2025-11-20.
-- **Verification**: `core/reflection` package implemented with `ToFacts(id, entity)`. The new implementation uses a recursive "Walker" algorithm to handle complex, nested data structures. It supports auto-dereferencing of pointers, dot-notation flattening for nested structs and maps, and correctly handles slices/arrays by generating multiple facts. Test coverage is 100% for all specified types.
+- **Status**: ✅ **RESOLVED** — Implemented 2025-11-25.
+- **Verification**: `core/reflection` package implemented with `ToFacts(id, entity)`. The new implementation uses a recursive "Walker" algorithm to handle complex, nested data structures. It supports auto-dereferencing of pointers, dot-notation flattening for nested structs and maps, and correctly handles slices/arrays by generating multiple facts. The reflection engine now includes a type hook mechanism (`RegisterHook`) to allow for custom conversion of specific types (e.g., `time.Time` to Unix timestamp), preventing unnecessary recursive traversal.
 
 ### ENHANCEMENT: Provider Dependency Validation — ✅ COMPLETED
 
@@ -607,6 +607,7 @@ This order is enforced in `builder.go` and ensures that:
 ```
 
 ## 14. Changelog
+- **2025-11-25**: **Universal Reflector with Type Hooks**: Enhanced the `core/reflection` package to support a type hook mechanism (`RegisterHook`). This allows for custom, non-recursive conversion of special types like `time.Time` and `net.IP`.
 - **2025-11-25 (Afternoon)**: **Smart Router Architecture:** Implemented dynamic dispatch in the Sandwich orchestrator. The `ActionStage` can now select an action from a map of `SubActions` based on the `target_action` metadata returned by the pre-rules stage. This enables policy-driven routing to different models or actions.
 - **2025-11-25**: **Experimental Feature:** Added `policy/copilot` package, a natural language to Datalog compiler. It uses an LLM with in-context learning to generate Mangle rules from Go structs.
 - **2025-11-24**: **Action-Centric Refactoring:** Generalized Sandwich orchestrator to use `core.Action` interface instead of `core.Retriever`. Added `core.Action` interface and adapters (`RetrieverAction`, `HTTPToolAdapter`). Updated `core.RuleSet` to support `EvaluateFacts`. Integrated `core/reflection` for Pre-Check rule evaluation in Sandwich orchestrator.
