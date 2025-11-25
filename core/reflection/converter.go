@@ -41,6 +41,16 @@ func walk(id string, val reflect.Value, prefix string) ([]ast.Atom, error) {
 		val = val.Elem()
 	}
 
+	// Check for a type hook first.
+	if hook := getHook(val.Type()); hook != nil {
+		constant, err := hook(val)
+		if err != nil {
+			return nil, fmt.Errorf("hook for type %v failed: %w", val.Type(), err)
+		}
+		atom := ast.NewAtom(prefix, ast.String(id), constant)
+		return []ast.Atom{atom}, nil
+	}
+
 	switch val.Kind() {
 	case reflect.Struct:
 		for i := 0; i < val.NumField(); i++ {
