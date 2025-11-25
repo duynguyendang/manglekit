@@ -7,7 +7,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/reflection"
-	"github.com/duynguyendang/manglekit/policy/copilot"
+	"github.com/duynguyendang/manglekit/policy/rulegenerator"
 	"github.com/google/mangle/analysis"
 	"github.com/google/mangle/ast"
 	"github.com/google/mangle/engine"
@@ -25,7 +25,9 @@ type Payment struct {
 type mockLLM struct{}
 
 func (m *mockLLM) Complete(ctx context.Context, req core.LLMRequest) (core.LLMResponse, error) {
-	expectedRule := `deny(Req) :- amount(Req, Amount), Amount > 500, region(Req, "US").`
+	// This mock is now simplified. In a real scenario, it would adapt to the prompt.
+	// For this example, we'll just return a rule that matches the custom "allow" head.
+	expectedRule := `allow(Req) :- amount(Req, Amount), Amount < 100.`
 	return core.LLMResponse{Text: expectedRule}, nil
 }
 
@@ -33,9 +35,21 @@ func main() {
 	ctx := context.Background()
 
 	llm := &mockLLM{}
-	generator := copilot.New(llm)
+	// Demonstrate custom options. We'll change the rule head to "allow".
+	opts := rulegenerator.GeneratorOptions{
+		RuleHead: "allow",
+		Examples: `
+- User Policy: "Permit if amount < 100"
+- Your Output:
+allow(Req) :- amount(Req, Amount), Amount < 100.
+`,
+	}
+	generator, err := rulegenerator.New(llm, opts)
+	if err != nil {
+		log.Fatalf("Failed to create generator: %v", err)
+	}
 
-	policyText := "Deny payment if amount is over 500 and region is 'US'"
+	policyText := "Allow payment if amount is less than 100"
 	samplePayment := Payment{}
 
 	fmt.Printf("Natural Language Policy: \"%s\"\n", policyText)
@@ -49,24 +63,25 @@ func main() {
 	fmt.Printf("Generated Datalog Rule: %s\n", generatedRule)
 	fmt.Println("--------------------------------------------------")
 
-	violatingPayment := Payment{Amount: 600, Region: "US"}
-	compliantPayment := Payment{Amount: 400, Region: "US"}
+	// Test cases are updated to match the new "allow" policy.
+	compliantPayment := Payment{Amount: 50, Region: "ANY"} // Should be allowed
+	violatingPayment := Payment{Amount: 150, Region: "ANY"} // Should NOT be allowed
 
-	if err := executeAndVerify(generatedRule, violatingPayment, "violatingPayment", true); err != nil {
-		log.Fatalf("Verification failed for violating payment: %v", err)
-	}
-
-	if err := executeAndVerify(generatedRule, compliantPayment, "compliantPayment", false); err != nil {
+	if err := executeAndVerify(generatedRule, compliantPayment, "compliantPayment", true); err != nil {
 		log.Fatalf("Verification failed for compliant payment: %v", err)
 	}
 
-	fmt.Println("✅ Policy Copilot demonstration successful!")
+	if err := executeAndVerify(generatedRule, violatingPayment, "violatingPayment", false); err != nil {
+		log.Fatalf("Verification failed for violating payment: %v", err)
+	}
+
+	fmt.Println("✅ Policy Rule Generator demonstration successful!")
 }
 
 // executeAndVerify uses the mangle v0.3.0 Bottom-Up Materialization pattern.
-func executeAndVerify(rule string, payment Payment, paymentID string, expectDeny bool) error {
-	fmt.Printf("Verifying rule against '%s' (Amount: %d, Region: '%s')... Expecting deny=%v\n",
-		paymentID, payment.Amount, payment.Region, expectDeny)
+func executeAndVerify(rule string, payment Payment, paymentID string, expectAllow bool) error {
+	fmt.Printf("Verifying rule against '%s' (Amount: %d, Region: '%s')... Expecting allow=%v\n",
+		paymentID, payment.Amount, payment.Region, expectAllow)
 
 	// 1. Parse the rule and prepare the program.
 	clause, err := parse.Clause(rule)
@@ -107,17 +122,17 @@ func executeAndVerify(rule string, payment Payment, paymentID string, expectDeny
 	}
 
 	// 7. Directly inspect the store for the result. No top-down query is needed.
-	query, err := parse.Atom(fmt.Sprintf(`deny("%s")`, paymentID))
+	query, err := parse.Atom(fmt.Sprintf(`allow("%s")`, paymentID))
 	if err != nil {
 		return fmt.Errorf("failed to parse query atom: %w", err)
 	}
 
-	denied := store.Contains(query)
+	allowed := store.Contains(query)
 
-	if denied != expectDeny {
-		return fmt.Errorf("unexpected outcome: got deny=%v, want deny=%v", denied, expectDeny)
+	if allowed != expectAllow {
+		return fmt.Errorf("unexpected outcome: got allow=%v, want allow=%v", allowed, expectAllow)
 	}
 
-	fmt.Printf("-> Correctly evaluated. Denied: %v\n", denied)
+	fmt.Printf("-> Correctly evaluated. Allowed: %v\n", allowed)
 	return nil
 }
