@@ -32,7 +32,7 @@ const DefaultPromptTemplate = `System: You are an expert Mangle Datalog Compiler
 
 Constraints:
 1.  You MUST use only the predicates defined in the "Schema Context".
-2.  The target rule head MUST be '{{.RuleHead}}(Req)'.
+2.  The target rule head MUST match the signature: '{{.RuleHead}}'.
 3.  The output MUST be ONLY the raw Datalog code. Do not include markdown, explanations, or any other text.
 4.  Variables in the rule body must be bound to the 'Req' variable from the head.
 5.  Use ':=' for assignment and comparison operators like '>', '<', '==' for checks.
@@ -54,17 +54,17 @@ const DefaultExamples = `
 Example 1:
 - User Policy: "Block if amount > 1000"
 - Your Output:
-deny(Req) :- amount(Req, X), X > 1000.
+{{.RuleHead}} :- amount(Req, X), X > 1000.
 
 Example 2:
 - User Policy: "Block transactions from the 'FR' region."
 - Your Output:
-deny(Req) :- region(Req, "FR").
+{{.RuleHead}} :- region(Req, "FR").
 
 Example 3:
 - User Policy: "Deny if region is 'US' and the amount is less than 50"
 - Your Output:
-deny(Req) :- region(Req, "US"), amount(Req, Amount), Amount < 50.`
+{{.RuleHead}} :- region(Req, "US"), amount(Req, Amount), Amount < 50.`
 
 // Generator uses an LLM to translate natural language into Mangle rules.
 type Generator struct {
@@ -76,7 +76,7 @@ type Generator struct {
 // New creates a new Generator.
 func New(llm core.LLMClient, opts GeneratorOptions) (*Generator, error) {
 	if opts.RuleHead == "" {
-		opts.RuleHead = "deny"
+		opts.RuleHead = "deny(Req)"
 	}
 	if opts.PromptTemplate == "" {
 		opts.PromptTemplate = DefaultPromptTemplate
