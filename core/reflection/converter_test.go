@@ -1,150 +1,159 @@
 package reflection_test
 
 import (
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/duynguyendang/manglekit/core/reflection"
 	"github.com/google/mangle/ast"
 )
 
-type TestUser struct {
-	Name    string `mangle:"user_name"`
-	Age     int    `mangle:"user_age"`
-	Active  bool   `mangle:"user_active"`
-	Ignored string
-	Score   *int `mangle:"user_score"`
+// Custom types for testing
+type Role string
+type DeviceOS string
+
+// Nested structs for testing
+type Device struct {
+	OS DeviceOS `mangle:"os"`
 }
 
-func TestToFacts(t *testing.T) {
-	score := 100
-	user := TestUser{
-		Name:    "Alice",
-		Age:     30,
-		Active:  true,
-		Ignored: "secret",
-		Score:   &score,
+type Metadata struct {
+	Device   Device
+	Settings map[string]string `mangle:"settings"`
+}
+
+type User struct {
+	Name      string    `mangle:"user_name"`
+	Role      Role      `mangle:"user_role"`
+	Tags      []string  `mangle:"user_tags"`
+	Meta      Metadata  `mangle:"user_meta"`
+	Pointer   *****int  `mangle:"user_pointer"`
+	NilField  *string   `mangle:"user_nil"`
+	Interface interface{} `mangle:"user_interface"`
+}
+
+// Helper to sort facts for deterministic comparison.
+func sortFacts(facts []ast.Atom) {
+	sort.Slice(facts, func(i, j int) bool {
+		return strings.Compare(facts[i].String(), facts[j].String()) < 0
+	})
+}
+
+func TestToFacts_Comprehensive(t *testing.T) {
+	// Pointer Hell setup
+	p1 := 100
+	p2 := &p1
+	p3 := &p2
+	p4 := &p3
+	p5 := &p4
+
+	user := User{
+		Name: "Alice",
+		Role: "admin",
+		Tags: []string{"dev", "ops"},
+		Meta: Metadata{
+			Device: Device{
+				OS: "linux",
+			},
+			Settings: map[string]string{
+				"theme": "dark",
+				"lang":  "en",
+			},
+		},
+		Pointer:   &p5,
+		NilField:  nil, // This should be ignored
+		Interface: "interface_value",
 	}
 
-	facts, err := reflection.ToFacts("u1", user)
+	facts, err := reflection.ToFacts("u1", &user)
 	if err != nil {
 		t.Fatalf("ToFacts failed: %v", err)
 	}
 
-	expectedCount := 4
-	if len(facts) != expectedCount {
-		t.Errorf("Expected %d facts, got %d", expectedCount, len(facts))
+	expectedFacts := []ast.Atom{
+		ast.NewAtom("user_name", ast.String("u1"), ast.String("Alice")),
+		ast.NewAtom("user_role", ast.String("u1"), ast.String("admin")),
+		ast.NewAtom("user_tags", ast.String("u1"), ast.String("dev")),
+		ast.NewAtom("user_tags", ast.String("u1"), ast.String("ops")),
+		ast.NewAtom("user_meta.device.os", ast.String("u1"), ast.String("linux")),
+		ast.NewAtom("user_meta.settings.theme", ast.String("u1"), ast.String("dark")),
+		ast.NewAtom("user_meta.settings.lang", ast.String("u1"), ast.String("en")),
+		ast.NewAtom("user_pointer", ast.String("u1"), ast.Number(100)),
+		ast.NewAtom("user_interface", ast.String("u1"), ast.String("interface_value")),
 	}
 
-	// Helper to find fact by predicate
-	findFact := func(pred string) *ast.Atom {
+	sortFacts(facts)
+	sortFacts(expectedFacts)
+
+	if len(facts) != len(expectedFacts) {
+		t.Errorf("Expected %d facts, got %d", len(expectedFacts), len(facts))
 		for _, f := range facts {
-			if f.Predicate.Symbol == pred {
-				return &f
-			}
+			t.Logf("Got fact: %s", f.String())
 		}
-		return nil
+		return
 	}
 
-	// Verify user_name
-	fName := findFact("user_name")
-	if fName == nil {
-		t.Error("Missing user_name fact")
-	} else {
-		// user_name("u1", "Alice")
-		// Args[0] is entityID, Args[1] is value
-		if len(fName.Args) != 2 {
-			t.Errorf("user_name expected 2 args, got %d", len(fName.Args))
-		} else {
-			if fName.Args[1].String() != "\"Alice\"" { // ast.String quotes the string
-				t.Errorf("user_name value mismatch: got %s, want \"Alice\"", fName.Args[1].String())
-			}
+	for i := range facts {
+		if facts[i].String() != expectedFacts[i].String() {
+			t.Errorf("Fact mismatch at index %d:\ngot:  %s\nwant: %s", i, facts[i].String(), expectedFacts[i].String())
 		}
 	}
-
-	// Verify user_age
-	fAge := findFact("user_age")
-	if fAge == nil {
-		t.Error("Missing user_age fact")
-	} else {
-		if fAge.Args[1].String() != "30" {
-			t.Errorf("user_age value mismatch: got %s, want 30", fAge.Args[1].String())
-		}
-	}
-
-	// Verify user_active
-	fActive := findFact("user_active")
-	if fActive == nil {
-		t.Error("Missing user_active fact")
-	} else {
-		if fActive.Args[1].String() != "\"true\"" {
-			t.Errorf("user_active value mismatch: got %s, want \"true\"", fActive.Args[1].String())
-		}
-	}
-
-	// Verify user_score (pointer)
-	fScore := findFact("user_score")
-	if fScore == nil {
-		t.Error("Missing user_score fact")
-	} else {
-		if fScore.Args[1].String() != "100" {
-			t.Errorf("user_score value mismatch: got %s, want 100", fScore.Args[1].String())
-		}
-	}
-
-	// Verify Ignored field
-	// We can't easily check for *absence* without iterating all, but we checked count.
-	// 4 facts: name, age, active, score. "Ignored" should not be there.
 }
 
-func TestToFacts_Pointers(t *testing.T) {
-	score := 50
-	user := TestUser{
-		Name:  "Bob",
-		Age:   25,
-		Score: &score,
-	}
-
-	// Test passing pointer to struct
-	facts, err := reflection.ToFacts("u2", &user)
+func TestToFacts_NilInput(t *testing.T) {
+	facts, err := reflection.ToFacts("id", nil)
 	if err != nil {
-		t.Fatalf("ToFacts with pointer failed: %v", err)
+		t.Fatalf("ToFacts with nil input failed: %v", err)
+	}
+	if len(facts) != 0 {
+		t.Errorf("Expected 0 facts for nil input, got %d", len(facts))
 	}
 
-	if len(facts) != 4 { // Name, Age, Active(false), Score
-		t.Errorf("Expected 4 facts, got %d", len(facts))
-	}
-
-	// Test nil pointer field
-	user.Score = nil
-	facts, err = reflection.ToFacts("u3", &user)
+	var nilPtr *User = nil
+	facts, err = reflection.ToFacts("id", nilPtr)
 	if err != nil {
-		t.Fatalf("ToFacts with nil field pointer failed: %v", err)
+		t.Fatalf("ToFacts with nil pointer failed: %v", err)
 	}
-	if len(facts) != 3 { // Name, Age, Active(false). Score is nil -> skipped
-		t.Errorf("Expected 3 facts (score skipped), got %d", len(facts))
-	}
-}
-
-func TestToFacts_InvalidInput(t *testing.T) {
-	_, err := reflection.ToFacts("id", "not a struct")
-	if err == nil {
-		t.Error("Expected error for non-struct input, got nil")
-	}
-
-	var nilPtr *TestUser = nil
-	_, err = reflection.ToFacts("id", nilPtr)
-	if err == nil {
-		t.Error("Expected error for nil pointer input, got nil")
+	if len(facts) != 0 {
+		t.Errorf("Expected 0 facts for nil pointer, got %d", len(facts))
 	}
 }
 
-func TestToFacts_UnsupportedType(t *testing.T) {
-	type BadStruct struct {
-		Data []string `mangle:"bad_data"`
+func TestToFacts_EmptyStruct(t *testing.T) {
+	type Empty struct{}
+	facts, err := reflection.ToFacts("id", Empty{})
+	if err != nil {
+		t.Fatalf("ToFacts with empty struct failed: %v", err)
 	}
-	s := BadStruct{Data: []string{"a", "b"}}
-	_, err := reflection.ToFacts("id", s)
-	if err == nil {
-		t.Error("Expected error for unsupported field type (slice), got nil")
+	if len(facts) != 0 {
+		t.Errorf("Expected 0 facts for empty struct, got %d", len(facts))
+	}
+}
+
+func TestToFacts_SnakeCaseConversion(t *testing.T) {
+	type MyStruct struct {
+		JSONField string
+		APIKey    string
+	}
+	s := MyStruct{JSONField: "value1", APIKey: "value2"}
+	facts, err := reflection.ToFacts("s1", s)
+	if err != nil {
+		t.Fatalf("ToFacts failed: %v", err)
+	}
+
+	expected := []ast.Atom{
+		ast.NewAtom("json_field", ast.String("s1"), ast.String("value1")),
+		ast.NewAtom("api_key", ast.String("s1"), ast.String("value2")),
+	}
+
+	sortFacts(facts)
+	sortFacts(expected)
+
+	if len(facts) != len(expected) {
+		t.Fatalf("Expected %d facts, got %d", len(expected), len(facts))
+	}
+	if facts[0].String() != expected[0].String() || facts[1].String() != expected[1].String() {
+		t.Errorf("Snake case conversion failed.\nGot: %v\nWant: %v", facts, expected)
 	}
 }

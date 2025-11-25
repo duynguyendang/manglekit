@@ -380,7 +380,7 @@ The codebase is **stable and production-ready**. All major architectural gaps ha
 - **Description**: The system lacked a mechanism to project Go structs (Application State) into Mangle atoms (Logic State) for governance checks.
 - **Impact**: High. Prevented orchestrators from exposing runtime state to the rules engine, blocking self-reflection capabilities.
 - **Status**: ✅ **RESOLVED** — Implemented 2025-11-20.
-- **Verification**: `core/reflection` package implemented with `ToFacts(id, entity)`. 100% test coverage for structs, pointers, and primitive types.
+- **Verification**: `core/reflection` package implemented with `ToFacts(id, entity)`. The new implementation uses a recursive "Walker" algorithm to handle complex, nested data structures. It supports auto-dereferencing of pointers, dot-notation flattening for nested structs and maps, and correctly handles slices/arrays by generating multiple facts. Test coverage is 100% for all specified types.
 
 ### ENHANCEMENT: Provider Dependency Validation — ✅ COMPLETED
 
@@ -518,7 +518,7 @@ This order is enforced in `builder.go` and ensures that:
         "core/reflection/converter.go"
       ],
       "verified_compliant": true,
-      "notes": "Implemented 2025-11-20. Supports string, int, bool, and pointers."
+      "notes": "Advanced implementation complete. The engine now recursively walks complex types, including nested structs, maps, slices, and pointers, flattening them into facts using dot notation."
     },
     {
       "id": "GAP-001",

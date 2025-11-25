@@ -60,12 +60,15 @@ graph TD
 ### 3.1 Reflection Utility (`core/reflection`)
 - **Purpose**: Provides a mechanism to project arbitrary Go structs (Application State) into Mangle logic facts (Logic State).
 - **Core Function**: `ToFacts(id string, entity any) ([]ast.Atom, error)`
-- **Mechanism**:
-  - Uses runtime reflection (`reflect` package).
-  - Inspects struct fields for the `mangle:"predicate_name"` tag.
-  - Converts Go types (string, int, bool) to Mangle `ast.Constant` types.
-  - Generates atoms in the format: `predicate_name(id, value)`.
-- **Usage**: Intended for use by Orchestrators (specifically the Declarative Orchestrator's Pre-Check phase) to expose runtime state to the logic engine for governance checks.
+- **Mechanism**: A recursive "Walker" algorithm traverses any Go object and flattens it into Mangle atoms.
+  - **Auto-Dereference**: Automatically iterates through pointers (`.Elem()`) and interfaces to reach concrete values. Nil pointers are safely skipped.
+  - **Dot Notation Flattening**: Nested structures are flattened into a single predicate name using dot notation. For example, `User.Meta.Device.OS` becomes the predicate `user.meta.device.os`.
+    - **Structs**: Traverses exported fields. Uses the `mangle:"tag_name"` tag if present, otherwise defaults to the field's snake_case name. A tag of `"-"` skips the field.
+    - **Maps**: Iterates over keys, converting them to strings and appending them to the predicate path.
+  - **Collection Handling**:
+    - **Slices/Arrays**: Generates a separate fact for each element using the same predicate name. For a field `Tags: []string{"a", "b"}`, it produces `tags(id, "a")` and `tags(id, "b")`. Array indices are not included in the predicate.
+  - **Type Conversion**: Converts primitive Go types (string, int, bool, float) into their corresponding `ast.Constant` representations.
+- **Usage**: Used by orchestrators to expose runtime state to the rules engine for governance checks, enabling policies that can self-reflect on the application's current state.
 
 # 4. Builder Subsystem
 The `Builder` is the central component for constructing an orchestrator. It follows a handler-based process that is decentralized and respects the Open/Closed Principle.
