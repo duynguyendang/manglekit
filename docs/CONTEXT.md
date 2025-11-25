@@ -3,7 +3,7 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 0.8.2
-last_updated: 2025-11-24T15:00:00Z
+last_updated: 2025-11-25T01:02:43Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -130,6 +130,9 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
 -   **`core.ResourceCloser`**: A function signature (`func(ctx) error`) used for standardized, graceful shutdown.
 -   **`core.ProviderOptions`**: The base interface all provider options must implement. Defines `ProviderKind()` and `ProviderName()` methods.
 -   **`core.Reflection`**: The `core/reflection` package provides `ToFacts(id, entity)` to project application state into logic facts.
+
+### Core Utilities
+-   **`policy.Copilot`**: An experimental package that provides a `Generator` to translate natural language policies into executable Mangle Datalog rules. It uses "In-Context Learning" by dynamically generating a schema from a Go struct's `mangle` tags to guide an LLM.
 
 ## 4. Provider Composition
 
@@ -604,6 +607,7 @@ This order is enforced in `builder.go` and ensures that:
 ```
 
 ## 14. Changelog
+- **2025-11-25**: **Experimental Feature:** Added `policy/copilot` package, a natural language to Datalog compiler. It uses an LLM with in-context learning to generate Mangle rules from Go structs.
 - **2025-11-24**: **Action-Centric Refactoring:** Generalized Sandwich orchestrator to use `core.Action` interface instead of `core.Retriever`. Added `core.Action` interface and adapters (`RetrieverAction`, `HTTPToolAdapter`). Updated `core.RuleSet` to support `EvaluateFacts`. Integrated `core/reflection` for Pre-Check rule evaluation in Sandwich orchestrator.
 - **2025-11-20**: **Feature Complete:** Implemented `core/reflection` engine to convert Go structs into Mangle facts (GAP-007). Updated `LLD.md` and `CONTEXT.md` with new Core Utilities section and gap resolution.
 - **2025-11-19**: **Documentation Sync:** Updated documentation to reflect that `InMemory` retriever (`internal/providers/retrievers/inmemory`) is available in the codebase but not automatically registered in `providers/all/all.go` (unlike `state/inmemory`). Users can register it manually if needed for testing. Confirmed `genkit-retriever` factory supports dynamic dispatch to any Genkit provider (localvec, pinecone, etc.).
