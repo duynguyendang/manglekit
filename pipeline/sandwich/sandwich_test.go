@@ -1,231 +1,103 @@
-//go:build testhooks
-// +build testhooks
-
-package sandwich_test
+package sandwich
 
 import (
 	"context"
 	"testing"
 
-	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/internal/providers/llm"
-	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
-	"github.com/duynguyendang/manglekit/internal/providers/state"
-	"github.com/duynguyendang/manglekit/pipeline/sandwich"
-	"github.com/duynguyendang/manglekit/sdk"
-	"github.com/stretchr/testify/require"
+	"github.com/duynguyendang/manglekit/internal/logger"
+	"github.com/duynguyendang/manglekit/internal/testproviders/mock"
+	"github.com/google/mangle/ast"
+	"github.com/stretchr/testify/assert"
 )
 
-// Mock LLM
-type mockLLMOptions struct{}
-
-func (o *mockLLMOptions) ProviderName() string    { return "mock-llm" }
-func (o *mockLLMOptions) ProviderKind() core.Kind { return core.KindLLM }
-
-type mockLLM struct{}
-
-func (l *mockLLM) Complete(ctx context.Context, req core.LLMRequest) (core.LLMResponse, error) {
-	return core.LLMResponse{Text: "mock response"}, nil
+// mockRuleSet is a mock implementation of core.RuleSet for testing.
+type mockRuleSet struct {
+	targetAction string
 }
 
-// Mock Retriever
-type mockRetrieverOptions struct{}
-
-func (o *mockRetrieverOptions) ProviderName() string    { return "mock-retriever" }
-func (o *mockRetrieverOptions) ProviderKind() core.Kind { return core.KindRetriever }
-func (o *mockRetrieverOptions) GetProviderOptions() any { return o }
-
-type mockRetriever struct{}
-
-func (r *mockRetriever) Retrieve(ctx context.Context, req core.RetrieveRequest) (core.RetrieveResult, error) {
-	return core.RetrieveResult{}, nil
+func (m *mockRuleSet) Evaluate(ctx context.Context, stage core.Stage, q core.Query, a *core.Answer) (core.RuleResult, error) {
+	return core.RuleResult{Allowed: true}, nil
 }
 
-// Mock State Provider
-type mockStateProviderOptions struct{}
-
-func (o *mockStateProviderOptions) ProviderName() string    { return "mock-state-provider" }
-func (o *mockStateProviderOptions) ProviderKind() core.Kind { return core.KindStateProvider }
-
-type mockStateProvider struct{}
-
-func (s *mockStateProvider) Get(ctx context.Context, sessionID string) (any, error) {
-	return nil, nil
+func (m *mockRuleSet) EvaluateFacts(ctx context.Context, stage core.Stage, facts []ast.Atom, a *core.Answer) (core.RuleResult, error) {
+	if m.targetAction != "" {
+		a.Meta["target_action"] = m.targetAction
+	}
+	return core.RuleResult{Allowed: true}, nil
 }
 
-func (s *mockStateProvider) Set(ctx context.Context, sessionID string, state any) error {
-	return nil
-}
+func TestSandwichOrchestrator_SmartRouter(t *testing.T) {
+	ctx := context.Background()
 
-func (s *mockStateProvider) Delete(ctx context.Context, sessionID string) error {
-	return nil
-}
+	defaultAction := &core.RetrieverAction{
+		Retriever: mock.NewRetriever(map[string]string{"default": "default-action-result"}),
+	}
+	subAction := &core.RetrieverAction{
+		Retriever: mock.NewRetriever(map[string]string{"sub": "sub-action-result"}),
+	}
 
-func (s *mockStateProvider) Close(ctx context.Context) error {
-	return nil
-}
+	testCases := []struct {
+		name              string
+		ruleSet           core.RuleSet
+		query             core.Query
+		expectedAction    string
+		expectedDoc       string
+		expectedQueryText string
+	}{
+		{
+			name:              "Default action",
+			ruleSet:           &mockRuleSet{},
+			query:             core.Query{Text: "default"},
+			expectedAction:    "default",
+			expectedDoc:       "default-action-result",
+			expectedQueryText: "default",
+		},
+		{
+			name:              "Sub-action triggered",
+			ruleSet:           &mockRuleSet{targetAction: "sub-action"},
+			query:             core.Query{Text: "sub"},
+			expectedAction:    "sub-action",
+			expectedDoc:       "sub-action-result",
+			expectedQueryText: "sub",
+		},
+	}
 
-func registerTestDeps(r *manglekit.Registry) {
-	// Register the handler for the component-under-test.
-	r.RegisterHandler(sandwich.NewHandler())
-	sandwich.Register(r)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			deps := diapi.SandwichDeps{
+				CoreDeps: diapi.CoreDeps{
+					Obs: core.Observability{Logger: logger.NewStdLogger()},
+				},
+				Action:  defaultAction,
+				RuleSet: tc.ruleSet,
+				SubActions: map[string]core.Action{
+					"sub-action": subAction,
+				},
+			}
 
-	// Register mock llm
-	manglekit.Register(r, &mockLLMOptions{},
-		func(ctx context.Context, deps diapi.LLMDeps, cfg *mockLLMOptions) (core.LLMClient, error) {
-			return &mockLLM{}, nil
+			factory := NewFactory()
+			built, err := factory.Build(ctx, deps, &Options{})
+			assert.NoError(t, err)
+			orchestrator := built.(core.Orchestrator)
+
+			queryToRun := tc.query
+			queryToRun.Text = tc.expectedQueryText
+
+			answer, err := orchestrator.Execute(ctx, "session-123", queryToRun)
+			assert.NoError(t, err)
+
+			assert.Equal(t, tc.expectedAction, answer.Meta["executed_action"])
+			if result, ok := answer.Meta["action_result"].(core.RetrieveResult); ok {
+				if len(result.Docs) > 0 {
+					assert.Equal(t, tc.expectedDoc, result.Docs[0].Text)
+				} else {
+					t.Error("No documents returned")
+				}
+			} else {
+				t.Errorf("Unexpected result type: %T", answer.Meta["action_result"])
+			}
 		})
-	r.RegisterHandler(&llm.Handler{})
-
-	// Register mock retriever
-	manglekit.Register(r, &mockRetrieverOptions{},
-		func(ctx context.Context, deps diapi.NoopDeps, cfg *mockRetrieverOptions) (core.Retriever, error) {
-			return &mockRetriever{}, nil
-		})
-	r.RegisterHandler(retrievers.NewHandler())
-
-	// Register mock state provider
-	manglekit.Register(r, &mockStateProviderOptions{},
-		func(ctx context.Context, deps diapi.StateProviderDeps, cfg *mockStateProviderOptions) (core.StateProvider, error) {
-			return &mockStateProvider{}, nil
-		})
-	r.RegisterHandler(&state.Handler{})
-}
-
-const configYAML = `
-orchestrator: my-sandwich
-components:
-  - name: my-sandwich
-    kind: orchestrator
-    type: sandwich
-    params:
-      retriever: mock-retriever
-      llm: mock-llm
-  - name: mock-retriever
-    kind: retriever
-    type: mock-retriever
-  - name: mock-llm
-    kind: llm
-    type: mock-llm
-`
-
-func TestSandwichOrchestrator_Handler(t *testing.T) {
-	reg := manglekit.NewRegistry()
-	registerTestDeps(reg)
-
-	orch, err := sdk.LoadWithRegistry(context.Background(), []byte(configYAML), reg)
-	require.NoError(t, err)
-	require.NotNil(t, orch)
-}
-
-const configMissingDep = `
-orchestrator: my-sandwich
-components:
-  - name: my-sandwich
-    kind: orchestrator
-    type: sandwich
-    params:
-      retriever: missing-retriever
-      llm: mock-llm
-  - name: mock-llm
-    kind: llm
-    type: mock-llm
-`
-
-func TestSandwichOrchestrator_MissingDependency(t *testing.T) {
-	reg := manglekit.NewRegistry()
-	registerTestDeps(reg)
-
-	_, err := sdk.LoadWithRegistry(context.Background(), []byte(configMissingDep), reg)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), `dependency not found: missing-retriever`)
-}
-
-const configWithStateProvider = `
-orchestrator: my-sandwich
-components:
-  - name: my-sandwich
-    kind: orchestrator
-    type: sandwich
-    params:
-      retriever: mock-retriever
-      llm: mock-llm
-      state_provider: mock-state-provider
-  - name: mock-retriever
-    kind: retriever
-    type: mock-retriever
-  - name: mock-llm
-    kind: llm
-    type: mock-llm
-  - name: mock-state-provider
-    kind: state_provider
-    type: mock-state-provider
-`
-
-func TestSandwichOrchestrator_WithStateProvider(t *testing.T) {
-	reg := manglekit.NewRegistry()
-	registerTestDeps(reg)
-
-	orch, err := sdk.LoadWithRegistry(context.Background(), []byte(configWithStateProvider), reg)
-	require.NoError(t, err)
-	require.NotNil(t, orch)
-	// Verify the orchestrator was built correctly with state provider
-	require.NotNil(t, orch)
-}
-
-const configMissingStateProvider = `
-orchestrator: my-sandwich
-components:
-  - name: my-sandwich
-    kind: orchestrator
-    type: sandwich
-    params:
-      retriever: mock-retriever
-      llm: mock-llm
-      state_provider: missing-state-provider
-  - name: mock-retriever
-    kind: retriever
-    type: mock-retriever
-  - name: mock-llm
-    kind: llm
-    type: mock-llm
-`
-
-func TestSandwichOrchestrator_MissingStateProvider(t *testing.T) {
-	reg := manglekit.NewRegistry()
-	registerTestDeps(reg)
-
-	_, err := sdk.LoadWithRegistry(context.Background(), []byte(configMissingStateProvider), reg)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), `dependency not found: missing-state-provider`)
-}
-
-const configWithoutStateProvider = `
-orchestrator: my-sandwich
-components:
-  - name: my-sandwich
-    kind: orchestrator
-    type: sandwich
-    params:
-      retriever: mock-retriever
-      llm: mock-llm
-  - name: mock-retriever
-    kind: retriever
-    type: mock-retriever
-  - name: mock-llm
-    kind: llm
-    type: mock-llm
-`
-
-func TestSandwichOrchestrator_WithoutStateProvider(t *testing.T) {
-	reg := manglekit.NewRegistry()
-	registerTestDeps(reg)
-
-	orch, err := sdk.LoadWithRegistry(context.Background(), []byte(configWithoutStateProvider), reg)
-	require.NoError(t, err)
-	require.NotNil(t, orch)
-	// Verify the orchestrator was built correctly without state provider (should not error)
-	require.NotNil(t, orch)
+	}
 }

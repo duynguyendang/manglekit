@@ -6,9 +6,10 @@ import "github.com/duynguyendang/manglekit/core"
 // Options defines the YAML configuration for the Sandwich orchestrator.
 type Options struct {
 	// Named dependencies
-	LLM           string `yaml:"llm"`
-	Retriever     string `yaml:"retriever"`
-	Reranker      string `yaml:"reranker,omitempty"`
+	LLM           string   `yaml:"llm"`
+	Retriever     string   `yaml:"retriever"`
+	SubActions    []string `yaml:"subActions,omitempty"`
+	Reranker      string   `yaml:"reranker,omitempty"`
 	StateProvider string `yaml:"state_provider,omitempty"`
 	RuleSet       string `yaml:"ruleSet,omitempty"`
 

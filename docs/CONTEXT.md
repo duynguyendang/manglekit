@@ -118,7 +118,7 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
     - `RerankerDeps`: Contains `CoreDeps` and `Embedder`.
     - `StateProviderDeps`: Contains `CoreDeps`.
     - `RuleSetDeps`: Contains `CoreDeps` and `Registry` (also used by Reasoners for accessing rules/resources).
-    - `SandwichDeps`: Contains `CoreDeps`, `Action` (generic, typically Retriever), `Reranker`, `LLM`, `StateProvider`, and `RuleSet`.
+    - `SandwichDeps`: Contains `CoreDeps`, `Action` (default), `SubActions` (for routing), `Reranker`, `LLM`, `StateProvider`, and `RuleSet`.
     - `DeclarativeOrchestratorDeps`: Contains `CoreDeps`, `StateProvider`, and `Tools` map.
     - `ToolDeps`: Contains `CoreDeps` and dependencies for the specific tool being adapted (e.g., `Retriever`).
     - `PlannerDeps`: Contains `CoreDeps`, `Tools` map, and `Reasoners` map (for accessing reasoner components during plan generation).
@@ -607,6 +607,7 @@ This order is enforced in `builder.go` and ensures that:
 ```
 
 ## 14. Changelog
+- **2025-11-25 (Afternoon)**: **Smart Router Architecture:** Implemented dynamic dispatch in the Sandwich orchestrator. The `ActionStage` can now select an action from a map of `SubActions` based on the `target_action` metadata returned by the pre-rules stage. This enables policy-driven routing to different models or actions.
 - **2025-11-25**: **Experimental Feature:** Added `policy/copilot` package, a natural language to Datalog compiler. It uses an LLM with in-context learning to generate Mangle rules from Go structs.
 - **2025-11-24**: **Action-Centric Refactoring:** Generalized Sandwich orchestrator to use `core.Action` interface instead of `core.Retriever`. Added `core.Action` interface and adapters (`RetrieverAction`, `HTTPToolAdapter`). Updated `core.RuleSet` to support `EvaluateFacts`. Integrated `core/reflection` for Pre-Check rule evaluation in Sandwich orchestrator.
 - **2025-11-20**: **Feature Complete:** Implemented `core/reflection` engine to convert Go structs into Mangle facts (GAP-007). Updated `LLD.md` and `CONTEXT.md` with new Core Utilities section and gap resolution.

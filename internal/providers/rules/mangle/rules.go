@@ -343,12 +343,24 @@ func (r *RuleSet) collectPreResults(workingStore factstore.ReadOnlyFactStore) (c
 		return core.RuleResult{}, fmt.Errorf("failed to collect 'query_filter' facts: %w", err)
 	}
 
+	meta, err := collectKeyValue(workingStore, "add_meta")
+	if err != nil {
+		return core.RuleResult{}, fmt.Errorf("failed to collect 'add_meta' facts: %w", err)
+	}
+
 	mutateFn := func(q *core.Query, a *core.Answer) {
 		if q.Meta == nil {
 			q.Meta = make(map[string]any)
 		}
 		q.Meta["filters"] = filters
 		q.Meta["expansion_terms"] = expansions
+
+		if a.Meta == nil {
+			a.Meta = make(map[string]any)
+		}
+		for k, v := range meta {
+			a.Meta[k] = v
+		}
 	}
 
 	return core.RuleResult{Allowed: true, Mutate: mutateFn, SkippedStages: skippedMap}, nil
