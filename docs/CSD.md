@@ -1,125 +1,154 @@
-# Conceptual Solution Design (CSD) — Manglekit Framework
+# Conceptual Solution Design (CSD) — Manglekit
 
-**Version:** 1.0.0
-**Status:** Approved
-**Scope:** Core Framework Architecture & Integration Strategy
-**Context:** Neuro-Symbolic Governance for Generative AI
+**Version:** 2.0
+**Status:** Stable
+**Context:** Operational Neuro-Symbolic AI Framework
 
-## 1. Introduction
+## 1. Problem Statement
 
-### 1.1 Purpose
-Manglekit is a governance and orchestration framework designed to operate as a control layer above Generative AI execution engines (specifically Genkit). Its primary purpose is to enforce deterministic policy, ensure data safety, and manage complex logic flows using symbolic reasoning (Datalog), while delegating low-level execution tasks (LLM inference, Vector search) to the underlying Genkit ecosystem.
+The current AI engineering landscape faces a fundamental **Impedance Mismatch**:
 
-### 1.2 Problem Space
-Native integration of LLMs into enterprise systems introduces non-deterministic behaviors that are difficult to audit and control. Direct dependency on specific model providers creates vendor lock-in. Manglekit addresses these issues by decoupling **Business Logic (Governance)** from **AI Execution (Infrastructure)**.
+1.  **The Probabilistic Gap:** Business logic requires **100% determinism** (RBAC, Quotas, Regulatory Compliance), but LLMs operate on **stochastic probabilities**. Controlling behavior via Prompt Engineering is fragile and non-testable.
+2.  **The Runtime Mismatch:** AI logic is predominantly Python-based (heavy, slow start, GIL-bound), while modern Cloud-Native infrastructure is Go-based (lightweight, concurrent, static binary).
+3.  **The Unstructured Data Trap:** Software logic operates on structured data (JSON/Structs), but AI operates on unstructured text/vectors, creating a disconnect between application state and model reasoning.
 
----
+## 2. Design Philosophy
 
-## 2. High-Level Architecture
+Manglekit is an **Embeddable Governance Framework** written in Go. It aims to solve the impedance mismatch by treating AI not as a magic box, but as a **Governed Subsystem**.
 
-The system follows a layered architecture pattern, enforcing a strict separation of concerns between decision-making ("Brain") and task execution ("Muscle").
+### 2.1 The Core Concept: "Prefrontal Cortex" Architecture
 
-### 2.1 Architectural Layers
+The system enforces a strict separation of concerns based on the Neuro-Symbolic principle:
 
-| Layer | Component | Responsibility |
-| :--- | :--- | :--- |
-| **L4: Application** | `sdk.Builder`, YAML Config | Entry point for configuration and pipeline assembly. |
-| **L3: Governance (Brain)** | **Manglekit Core** | Orchestration, State Management, Rule Evaluation (Policy), Data-to-Fact Conversion. |
-| **L2: Adaptation** | **Universal Adapters** | Protocol translation between Manglekit Interfaces and Genkit Plugins. |
-| **L1: Execution (Muscle)** | **Genkit Ecosystem** | Drivers for LLMs, Vector DBs, Embedders, and External Tools. |
+  * **The Neuro Layer (Genkit):** Handles fuzzy perception, semantic extraction, and natural language synthesis. It acts as the **I/O mechanism**.
+  * **The Symbolic Layer (Mangle):** Handles decision-making, routing, and policy enforcement. It acts as the **Control Unit**.
 
-### 2.2 Integration Model: The Universal Adapter Pattern
+### 2.2 Engineering Principles
 
-Manglekit minimizes code maintenance by utilizing generic adapters that wrap Genkit interfaces.
+  * **Safety by Design:** Default-deny architecture. No action executes without passing a logic gate.
+  * **Zero-Cost Abstraction:** Leveraging Go's compile-time safety and reflection to map data without heavy runtime overhead.
+  * **Infrastructure Agnostic:** The core logic is decoupled from the underlying model provider (OpenAI/Gemini) via Universal Adapters.
 
-* **LLM Integration:** The `GenkitLLMAdapter` wraps `ai.Model` from Genkit, exposing it as `core.LLMClient`. It handles prompt marshaling, parameter injection, and response standardization.
-* **Retriever Integration:** The `GenkitRetrieverAdapter` wraps `ai.Retriever`, exposing it as `core.Retriever`. It manages query formatting and metadata filtering.
-* **Tool Integration:** The `HTTP` tool adapter allows Declarative Orchestrators to invoke external microservices or Genkit Flows via standard REST protocols.
+-----
 
----
+## 3. Architectural Patterns
 
-## 3. Core Capabilities & Design Patterns
+### 3.1 The "Action Sandwich" (Intercept-Execute-Intercept)
 
-### 3.1 The "Safety Sandwich" Orchestration Pattern
-All execution flows within Manglekit enforce a strict "intercept-execute-intercept" lifecycle:
+Manglekit replaces ad-hoc chains with a formalized execution pipeline. Every operation (RAG, RPC Call, Computation) is wrapped in a standard governance loop.
 
-1.  **Pre-Execution Phase (Policy Check):**
-    * Input data is converted to Logical Facts.
-    * **Pre-Rules** evaluate authorization (AuthZ), input validation, and routing logic.
-    * *Outcome:* Proceed, Reject, or Mutate Input.
-2.  **Execution Phase (Neural Processing):**
-    * The request is passed to the selected Provider (via Universal Adapter).
-    * Operations include Retrieval (RAG), Generation (LLM), or Tool Invocation.
-3.  **Post-Execution Phase (Compliance Check):**
-    * Output data is analyzed against **Post-Rules**.
-    * Operations include PII Redaction, Format Validation (JSON/Schema), and Logic Consistency checks.
-    * *Outcome:* Return Data or Reject.
+```text
+[ Request Context (Go Struct) ]
+        │
+        ▼
+[ REFLECTION LAYER ] ───► Projects State into Datalog Facts
+        │
+        ▼
+[ 1. PRE-COMPUTATION GATE ] 🛡️
+    ├── AuthZ Check: "Can User U perform Action A?"
+    ├── Validation: "Is the input schema valid?"
+    └── Symbolic Routing: "Based on intent, select Provider P."
+        │
+        ├── [ DENY ] ──► Return Error (Zero Cost)
+        │
+        ▼
+[ 2. EXECUTION UNIT (Generic Action) ] ⚡
+    ├── RAG: Vector Search + Re-ranking
+    ├── Tool: gRPC / REST API Call
+    └── Local: Native Go Function
+        │
+        ▼
+[ 3. POST-COMPUTATION GATE ] 🛡️
+    ├── Data Masking: Redact PII/Sensitive fields based on User Role.
+    ├── Consistency Check: Logic validation of the output.
+    └── Audit Logging: Record the decision trace.
+        │
+        ▼
+[ Response Generation (LLM Synthesis) ]
+```
 
-### 3.2 Neuro-Symbolic Data Processing
-Manglekit bridges the gap between unstructured data (Text/Vector) and structured logic (Rules) via the **Struct-to-Fact Converter**.
+### 3.2 Data Bridge: Struct-to-Fact Reflection
 
-* **Mechanism:** Uses Golang Reflection to traverse application structures (Config, AST, User Profile).
-* **Transformation:** Maps struct fields and tags to Datalog predicates (e.g., `User{Role: "admin"}` $\to$ `role(user_id, "admin")`).
-* **Usage:** Enables the Rule Engine to reason directly about runtime application state without manual boilerplate code.
+To enable reasoning over application state without glue code, Manglekit implements a zero-config reflection engine.
 
-### 3.3 Declarative Microservices Orchestration
-For distributed systems, Manglekit functions as an intelligent Gateway:
+  * **Input:** Standard Go Structs (`User`, `Config`, `AST`).
+  * **Process:** The engine traverses the object graph at runtime, converting fields and tags into Datalog predicates.
+  * **Output:** A queryable knowledge base representing the exact runtime state.
 
-* **Symbolic Routing:** Uses rules to determine the optimal downstream service based on query intent and complexity (e.g., routing complex queries to GPT-4, simple ones to local Llama).
-* **Tool Abstraction:** External services are modeled as `core.Tool` instances. The orchestrator invokes them dynamically based on the logical plan defined in Datalog.
+-----
 
----
+## 4. Orchestration Modes
 
-## 4. Data Flow Specification
+The framework provides two orchestration strategies depending on control flow requirements:
 
-### 4.1 Request Lifecycle (RAG Flow Example)
+### 4.1 Pipeline Mode (Imperative)
 
-1.  **Ingestion:** `Orchestrator.Execute(ctx, query)` is called.
-2.  **Fact Generation:** Query metadata and User Context are converted to Facts.
-3.  **Pre-Rule Evaluation:** Mangle Engine evaluates `allow_query(User, Query)`.
-    * *If Deny:* Return Error immediately.
-4.  **Retrieval:** `GenkitRetrieverAdapter` calls the underlying Vector Store (e.g., LocalVec, Pinecone).
-5.  **Reranking (Optional):** Documents are re-scored based on semantic relevance.
-6.  **Generation:** `GenkitLLMAdapter` constructs the prompt and invokes the LLM.
-7.  **Post-Rule Evaluation:** Generated text is scanned for sensitive patterns defined in the RuleSet.
-8.  **Response:** Final sanitized answer is returned with a `DecisionTrace` (Audit Log).
+  * **Pattern:** Linear Chain.
+  * **Use Case:** High-throughput, low-latency tasks (e.g., Search, Form Processing).
+  * **Mechanism:** A compiled sequence of `Pre-Check -> Action -> Post-Check`. Zero reasoning latency.
 
----
+### 4.2 Agent Mode (Declarative)
 
-## 5. Component Specifications
+  * **Pattern:** Dynamic Dispatch.
+  * **Use Case:** Complex problem solving requiring multi-step execution.
+  * **Mechanism:** The **Action Router** evaluates Symbolic Rules to dynamically select the next tool.
+      * *Example:* `next_step(tool_B) :- result(tool_A, "incomplete").`
 
-### 5.1 Governance Components
-* **RuleSet (Interface):** Abstract interface for policy engines.
-    * *Default Implementation:* `mangle` (Datalog).
-    * *Future Extensions:* `opa` (Rego), `casbin` (ACL).
-* **StateProvider:** Manages session consistency.
-    * *Implementations:* `inmemory`, `redis`.
-* **SchemaParser:** Validates and parses structured data (JSON, RDF, AST) into Facts.
+-----
 
-### 5.2 Execution Components (via Genkit)
-* **Retriever:** Provides semantic search capabilities.
-    * *Supported:* Any Genkit-compliant plugin (Pinecone, Weaviate, Qdrant, LocalVec).
-* **LLM:** Provides generative capabilities.
-    * *Supported:* Any Genkit-compliant model (Google Gemini, OpenAI GPT, Anthropic Claude, Ollama).
+## 5. Capabilities & Modules
 
----
+### 5.1 Logic Engine (Mangle)
 
-## 6. Non-Functional Requirements (NFRs)
+  * **Engine:** Google Mangle (Datalog).
+  * **Storage:** In-memory execution (Microsecond latency).
+  * **Policy Loading:** Supports Hot-Reload via file watchers (`.dl`, YAML) or GitOps pipelines.
 
-### 6.1 Extensibility
-* **Zero-Code Provider Adoption:** New Genkit plugins must be usable via configuration (`config.yaml`) without requiring code changes in the Manglekit core.
-* **Open Registry:** The component registry allows external developers to register custom providers (implementing `core` interfaces) at runtime.
+### 5.2 Universal Adapters
 
-### 6.2 Observability
-* **Auditability:** All rule decisions (Allow/Deny) must be logged with the specific rule ID and reason.
-* **Tracing:** Integration with OpenTelemetry to trace requests across the Logic Layer (Mangle) and Execution Layer (Genkit).
+  * **LLM/Embedder:** Wraps Genkit `ai.Model` and `ai.Embedder`.
+  * **Action:** Generic interface for wrapping `func(ctx, input) output`.
+  * **Semantic Extraction:** Dedicated agents for converting unstructured text (Docs, Logs) into structured Facts for the logic engine.
 
-### 6.3 Deployment
-* **Single Binary:** The framework compiles into a standalone Go binary, suitable for containerized environments (Kubernetes) or edge devices.
-* **Configuration:** All behavior is controlled via declarative files (YAML for structure, Datalog for logic).
+-----
 
----
+## 6. Engineering Use Cases
 
-## 7. Conclusion
+### Pattern A: The Deterministic RAG Gateway
 
-Manglekit defines a standardized architecture for **Governed AI**. By decoupling policy from execution and leveraging the Universal Adapter pattern, it provides a robust foundation for building enterprise-grade, compliant, and explainable AI systems.
+**Problem:** Vector DBs lack Row-Level Security (RLS). Metadata filtering is insufficient for complex ACLs.
+**Solution:**
+
+1.  **Retrieve:** Fetch documents with metadata (tags, owner).
+2.  **Project:** Convert metadata + User Context to Facts.
+3.  **Filter:** Execute Datalog rules to filter the document list *before* context injection.
+    **Outcome:** Mathematically guaranteed data isolation.
+
+### Pattern B: Architectural Linter (Code-as-Data)
+
+**Problem:** LLMs generate code that violates architectural constraints (e.g., Layer violations).
+**Solution:**
+
+1.  **Parse:** Convert generated code to AST facts (using Tree-sitter integration).
+2.  **Validate:** Check against dependency graph rules (e.g., `deny :- import(domain, infrastructure)`).
+3.  **Reject:** Block code committing or return feedback to LLM for self-correction.
+
+### Pattern C: Edge AI Controller (IoT)
+
+**Problem:** Cloud latency and connectivity issues make cloud-only AI unsafe for physical control.
+**Solution:**
+
+1.  **Local Runtime:** Run Manglekit as a static binary on Edge Gateway (ARM64).
+2.  **Local Logic:** Enforce safety rules locally (e.g., "Do not open door if time \> 22:00").
+3.  **Hybrid AI:** Offload complex understanding to Cloud LLM, but keep execution control local.
+
+-----
+
+## 7. Summary
+
+Manglekit is **Infrastructure for AI**.
+It moves the complexity of AI governance from "Prompt Engineering" (Fragile) to "Systems Engineering" (Robust).
+
+  * **Language:** Go.
+  * **Paradigm:** Neuro-Symbolic.
+  * **Deliverable:** Single Static Binary / Library.
