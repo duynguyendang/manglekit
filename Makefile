@@ -39,6 +39,11 @@ context-refresh:
 run:
 	$(GO) run ./cmd/agent
 
+# Install the mkit CLI
+.PHONY: install-cli
+install-cli:
+	$(GO) install ./cmd/mkit
+
 # Clean build artifacts
 .PHONY: clean
 clean:

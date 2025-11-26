@@ -60,12 +60,27 @@ graph TD
 ### 3.1 Reflection Utility (`core/reflection`)
 - **Purpose**: Provides a mechanism to project arbitrary Go structs (Application State) into Mangle logic facts (Logic State).
 - **Core Function**: `ToFacts(id string, entity any) ([]ast.Atom, error)`
+- **Mechanism**: A recursive "Walker" algorithm traverses any Go object and flattens it into Mangle atoms.
+  - **Auto-Dereference**: Automatically iterates through pointers (`.Elem()`) and interfaces to reach concrete values. Nil pointers are safely skipped.
+  - **Dot Notation Flattening**: Nested structures are flattened into a single predicate name using dot notation. For example, `User.Meta.Device.OS` becomes the predicate `user.meta.device.os`.
+    - **Structs**: Traverses exported fields. Uses the `mangle:"tag_name"` tag if present, otherwise defaults to the field's snake_case name. A tag of `"-"` skips the field.
+    - **Maps**: Iterates over keys, converting them to strings and appending them to the predicate path.
+  - **Collection Handling**:
+    - **Slices/Arrays**: Generates a separate fact for each element using the same predicate name. For a field `Tags: []string{"a", "b"}`, it produces `tags(id, "a")` and `tags(id, "b")`. Array indices are not included in the predicate.
+  - **Type Conversion**: Converts primitive Go types (string, int, bool, float) into their corresponding `ast.Constant` representations.
+- **Usage**: Used by orchestrators to expose runtime state to the rules engine for governance checks, enabling policies that can self-reflect on the application's current state.
+
+### 3.1.1 Type Hook Mechanism
+- **Purpose**: To provide a way to customize the conversion of specific Go types that should not be recursively flattened. This is ideal for types that have a natural single-value representation, like `time.Time` or `net.IP`.
+- **Core Function**: `RegisterHook(t reflect.Type, fn ConverterFunc)`
 - **Mechanism**:
-  - Uses runtime reflection (`reflect` package).
-  - Inspects struct fields for the `mangle:"predicate_name"` tag.
-  - Converts Go types (string, int, bool) to Mangle `ast.Constant` types.
-  - Generates atoms in the format: `predicate_name(id, value)`.
-- **Usage**: Intended for use by Orchestrators (specifically the Declarative Orchestrator's Pre-Check phase) to expose runtime state to the logic engine for governance checks.
+  - The reflection walker checks a registry of type hooks *before* inspecting a value's `Kind`.
+  - If a hook is found for the value's `reflect.Type`, the walker invokes the hook's `ConverterFunc` to get a single `ast.Constant`.
+  - The walker then stops recursing for that node, effectively treating the complex type as a primitive.
+- **Default Hooks**:
+  - `time.Time`: Converted to an `ast.Number` representing the Unix timestamp (`int64`).
+  - `net.IP`: Converted to an `ast.String` representing the IP address.
+- **Usage**: Allows developers to extend the reflection system with domain-specific type conversions without modifying the core library.
 
 # 4. Builder Subsystem
 The `Builder` is the central component for constructing an orchestrator. It follows a handler-based process that is decentralized and respects the Open/Closed Principle.
@@ -154,6 +169,7 @@ type RetrieverDeps struct {
 type SandwichDeps struct {
     CoreDeps
     Action         core.Action        // Generic action (typically adapted Retriever)
+    SubActions     map[string]core.Action // Named alternative actions for the router
     LLM            core.LLMClient
     Reranker       core.Reranker      // Optional
     RuleSet        core.RuleSet       // Optional
@@ -459,7 +475,24 @@ This pattern is useful for testing or when model validation is not required.
 
 The codebase is **stable** post-cleanup. VectorStore components removed; Genkit retriever adapter now primary semantic search solution.
 
+### 7.3 Sandwich Orchestrator (Smart Router)
+
+The `pipeline/sandwich` orchestrator implements a dynamic dispatch mechanism known as the "Smart Router". This allows the orchestrator to select which `core.Action` to execute at runtime based on the results of the pre-check rule evaluation.
+
+**Execution Flow:**
+1.  **Fact Projection:** The orchestrator converts the incoming `core.Query` and its `Meta` field into Datalog facts.
+2.  **Rule Evaluation:** The `PreRulesStage` evaluates the configured `RuleSet`.
+3.  **Routing Signal:** The rules can generate an `add_meta("target_action", "action_name")` fact. The `RuleSet`'s `collectPreResults` function gathers these facts and places them into the `core.Answer.Meta` map.
+4.  **Dynamic Dispatch:** The `ActionStage` inspects `answer.Meta["target_action"]`.
+    *   If the key exists and its value corresponds to an action in the `SubActions` map (provided via `SandwichDeps`), that action is executed.
+    *   If the key does not exist or the action is not found, the default `Action` is executed.
+5.  **Audit:** The name of the executed action is logged and also stored in `answer.Meta["executed_action"]`.
+
+This architecture enables sophisticated, policy-driven routing logic, such as selecting a local, privacy-preserving model for sensitive data or a more powerful model for complex queries.
+
 # 16. Changelog
+*   **2025-11-25**: Implemented a universal reflector with type hooks in `core/reflection`. This allows for custom conversion of types like `time.Time` and `net.IP` without recursive flattening.
+*   **2025-11-25**: Implemented "Smart Router" architecture in the Sandwich orchestrator. Updated `SandwichDeps` to include `SubActions`, and modified the `ActionStage` to perform dynamic dispatch based on Datalog rule evaluation.
 *   **2025-11-20**: Added `core/reflection` package for Struct-to-Fact conversion, resolving the missing governance link. Updated Component Diagram and added Core Utilities section.
 *   **2025-11-19 (Evening)**: Refactored Google and OpenAI LLM providers to use thin factory pattern with universal adapter. All LLM logic now in `internal/adapters/GenkitLLMAdapter`; providers focus on configuration and plugin initialization. Added `genkit-llm` placeholder provider. Updated adapter registration in `internal/providers/llm/register.go`.
 *   **2025-11-19**: Documentation sync. Clarified `InMemory` retriever availability and `genkit-retriever` dynamic dispatch capabilities.

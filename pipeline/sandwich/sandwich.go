@@ -24,6 +24,7 @@ import (
 // 4.  **Post-retrieval rules**: Filter the final answer and citations for compliance.
 type Orchestrator struct {
 	action              core.Action
+	subActions          map[string]core.Action
 	reranker            core.Reranker
 	ruleset             core.RuleSet
 	llm                 core.LLMClient
@@ -66,7 +67,7 @@ func (s *Orchestrator) Execute(ctx context.Context, sessionID string, q core.Que
 	// 3. Assemble the pipeline runner with stages.
 	runner := &pipeline.Runner{}
 	runner.Add(&PreRulesStage{RuleSet: s.ruleset, Logger: logger, Meter: s.obs.Meter})
-	runner.Add(&ActionStage{Action: s.action, Logger: logger, Meter: s.obs.Meter})
+	runner.Add(&ActionStage{DefaultAction: s.action, SubActions: s.subActions, Logger: logger, Meter: s.obs.Meter})
 	runner.Add(&RerankStage{Reranker: s.reranker, TopK: s.topK, FallbackThreshold: s.fallbackThreshold, Logger: logger, Meter: s.obs.Meter})
 	runner.Add(&LLMStage{LLM: s.llm, MaxTokens: s.maxTokens, Logger: logger, Meter: s.obs.Meter})
 	runner.Add(&PostRulesStage{RuleSet: s.ruleset, Logger: logger, Meter: s.obs.Meter})

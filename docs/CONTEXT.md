@@ -118,7 +118,7 @@ Manglekit is a Go framework for building Retrieval-Augmented Generation (RAG) ap
     - `RerankerDeps`: Contains `CoreDeps` and `Embedder`.
     - `StateProviderDeps`: Contains `CoreDeps`.
     - `RuleSetDeps`: Contains `CoreDeps` and `Registry` (also used by Reasoners for accessing rules/resources).
-    - `SandwichDeps`: Contains `CoreDeps`, `Action` (generic, typically Retriever), `Reranker`, `LLM`, `StateProvider`, and `RuleSet`.
+    - `SandwichDeps`: Contains `CoreDeps`, `Action` (default), `SubActions` (for routing), `Reranker`, `LLM`, `StateProvider`, and `RuleSet`.
     - `DeclarativeOrchestratorDeps`: Contains `CoreDeps`, `StateProvider`, and `Tools` map.
     - `ToolDeps`: Contains `CoreDeps` and dependencies for the specific tool being adapted (e.g., `Retriever`).
     - `PlannerDeps`: Contains `CoreDeps`, `Tools` map, and `Reasoners` map (for accessing reasoner components during plan generation).
@@ -379,8 +379,8 @@ The codebase is **stable and production-ready**. All major architectural gaps ha
 
 - **Description**: The system lacked a mechanism to project Go structs (Application State) into Mangle atoms (Logic State) for governance checks.
 - **Impact**: High. Prevented orchestrators from exposing runtime state to the rules engine, blocking self-reflection capabilities.
-- **Status**: ✅ **RESOLVED** — Implemented 2025-11-20.
-- **Verification**: `core/reflection` package implemented with `ToFacts(id, entity)`. 100% test coverage for structs, pointers, and primitive types.
+- **Status**: ✅ **RESOLVED** — Implemented 2025-11-25.
+- **Verification**: `core/reflection` package implemented with `ToFacts(id, entity)`. The new implementation uses a recursive "Walker" algorithm to handle complex, nested data structures. It supports auto-dereferencing of pointers, dot-notation flattening for nested structs and maps, and correctly handles slices/arrays by generating multiple facts. The reflection engine now includes a type hook mechanism (`RegisterHook`) to allow for custom conversion of specific types (e.g., `time.Time` to Unix timestamp), preventing unnecessary recursive traversal.
 
 ### ENHANCEMENT: Provider Dependency Validation — ✅ COMPLETED
 
@@ -518,7 +518,7 @@ This order is enforced in `builder.go` and ensures that:
         "core/reflection/converter.go"
       ],
       "verified_compliant": true,
-      "notes": "Implemented 2025-11-20. Supports string, int, bool, and pointers."
+      "notes": "Advanced implementation complete. The engine now recursively walks complex types, including nested structs, maps, slices, and pointers, flattening them into facts using dot notation."
     },
     {
       "id": "GAP-001",
@@ -607,6 +607,8 @@ This order is enforced in `builder.go` and ensures that:
 ```
 
 ## 14. Changelog
+- **2025-11-25**: **Universal Reflector with Type Hooks**: Enhanced the `core/reflection` package to support a type hook mechanism (`RegisterHook`). This allows for custom, non-recursive conversion of special types like `time.Time` and `net.IP`.
+- **2025-11-25 (Afternoon)**: **Smart Router Architecture:** Implemented dynamic dispatch in the Sandwich orchestrator. The `ActionStage` can now select an action from a map of `SubActions` based on the `target_action` metadata returned by the pre-rules stage. This enables policy-driven routing to different models or actions.
 - **2025-11-25**: **Experimental Feature:** Added `policy/copilot` package, a natural language to Datalog compiler. It uses an LLM with in-context learning to generate Mangle rules from Go structs.
 - **2025-11-24**: **Action-Centric Refactoring:** Generalized Sandwich orchestrator to use `core.Action` interface instead of `core.Retriever`. Added `core.Action` interface and adapters (`RetrieverAction`, `HTTPToolAdapter`). Updated `core.RuleSet` to support `EvaluateFacts`. Integrated `core/reflection` for Pre-Check rule evaluation in Sandwich orchestrator.
 - **2025-11-20**: **Feature Complete:** Implemented `core/reflection` engine to convert Go structs into Mangle facts (GAP-007). Updated `LLD.md` and `CONTEXT.md` with new Core Utilities section and gap resolution.
