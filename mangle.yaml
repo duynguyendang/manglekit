@@ -1,0 +1,55 @@
+# Manglekit Configuration
+#
+# This is a sample configuration file for initializing a Manglekit Client
+# with policies, observability, and pre-defined actions.
+#
+# Environment variables can be referenced using ${VAR_NAME} syntax.
+# Example: ${API_KEY} will be replaced with the value of the API_KEY environment variable.
+
+# Policy configuration
+# Defines where the Datalog policy file is located and evaluation settings
+policy:
+  # Path to the Datalog policy file (.dl)
+  # This file contains the authorization rules and logic
+  path: "${POLICY_PATH:-./policies/main.dl}"
+  
+  # Timeout for policy evaluation in seconds
+  evaluation_timeout: 30
+
+# Observability configuration
+# Controls logging, tracing, and metrics collection
+observability:
+  # Enable or disable observability (tracing, logging, metrics)
+  enabled: true
+  
+  # Service name for observability reporting
+  # Used in traces and logs to identify this service
+  service_name: "${SERVICE_NAME:-manglekit-app}"
+  
+  # Logging level: debug, info, warn, error
+  log_level: "${LOG_LEVEL:-info}"
+  
+  # OpenTelemetry Protocol (OTLP) endpoint for exporting traces and metrics
+  # Leave empty to disable OTLP export
+  otlp_endpoint: "${OTLP_ENDPOINT:-}"
+
+# Pre-defined Actions (optional)
+# These are commonly used LLMs, Retrievers, and other components
+# that can be referenced by name throughout your application
+# This section is reserved for future use and extension
+actions:
+  # Example LLM configuration
+  llm_google:
+    type: llm
+    provider: google
+    options:
+      model: gemini-pro
+      temperature: 0.7
+
+  # Example Retriever configuration
+  retriever_vector:
+    type: retriever
+    provider: vector
+    options:
+      top_k: 5
+      similarity_threshold: 0.8

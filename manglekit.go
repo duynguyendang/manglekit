@@ -7,6 +7,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	funcAdapter "github.com/duynguyendang/manglekit/adapters/func"
+	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/engine"
 	"github.com/duynguyendang/manglekit/guard"
@@ -72,6 +73,63 @@ func NewClient(ctx context.Context, policyFile string, opts ...ClientOption) (*C
 			return nil, err
 		}
 	}
+
+	return c, nil
+}
+
+// NewClientFromConfig creates a new Manglekit Client from a configuration file.
+// The config file is expected to be in YAML format and can use environment variable
+// expansion (e.g., ${API_KEY}).
+//
+// This is the recommended way to initialize Manglekit in production environments,
+// as it allows configuration to be managed externally via files and environment variables.
+//
+// Example:
+//
+//	client, err := manglekit.NewClientFromConfig(ctx, "mangle.yaml")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientOption) (*Client, error) {
+	// Load configuration from file
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	// Initialize logger (use default for now)
+	log := logger.NewStdLogger()
+
+	// Create client with loaded configuration
+	c := &Client{
+		logger: log,
+	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	// SAFETY FIX: Ensure tracer is never nil to prevent nil pointer dereferences
+	if c.tracer == nil {
+		c.otelTracer = trace.NewNoopTracerProvider().Tracer(TracerName)
+		c.tracer = telemetry.NewOTelTracer(c.otelTracer)
+	}
+
+	// Initialize Engine with observability
+	c.engine = engine.NewWithObservability(c.tracer, c.logger)
+
+	// Load policy from the configured path
+	if cfg.Policy.Path != "" {
+		if err := c.engine.LoadFromPath(cfg.Policy.Path); err != nil {
+			return nil, fmt.Errorf("failed to load policy from %q: %w", cfg.Policy.Path, err)
+		}
+	}
+
+	// Log configuration loaded successfully
+	c.logger.Info("Manglekit client initialized from config",
+		"config_path", configPath,
+		"service_name", cfg.Observability.ServiceName,
+		"observability_enabled", cfg.Observability.Enabled)
 
 	return c, nil
 }
