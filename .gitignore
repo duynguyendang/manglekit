@@ -36,3 +36,6 @@ manglekit
 
 # custom apps
 apps/
+
+# old code
+v1/

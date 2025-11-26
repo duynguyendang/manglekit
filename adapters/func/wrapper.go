@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/duynguyendang/manglekit/v2/core"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // ToolFunc is a generic function signature for tools.

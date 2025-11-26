@@ -2,18 +2,25 @@ package guard
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/duynguyendang/manglekit/v2/core"
-	"github.com/duynguyendang/manglekit/v2/engine"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/engine"
 )
 
 // GuardedAction wraps a core.Action to enforce policies.
+// It provides the main transaction span for tracing the entire execution flow.
 type GuardedAction struct {
 	inner  core.Action
 	engine *engine.PolicyEngine
+	tracer trace.Tracer
 }
 
-// New creates a new GuardedAction.
+// New creates a new GuardedAction without tracing (for backward compatibility).
 func New(action core.Action, eng *engine.PolicyEngine) *GuardedAction {
 	return &GuardedAction{
 		inner:  action,
@@ -21,21 +28,96 @@ func New(action core.Action, eng *engine.PolicyEngine) *GuardedAction {
 	}
 }
 
+// NewWithTracer creates a new GuardedAction with OTel tracing enabled.
+func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer trace.Tracer) *GuardedAction {
+	return &GuardedAction{
+		inner:  action,
+		engine: eng,
+		tracer: tracer,
+	}
+}
+
 // Execute runs the action through the policy engine's checks.
+// The entire execution flow (Authorize → Inner Action → Validate) is wrapped
+// in a top-level OTel span for full observability.
 func (g *GuardedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	if err := g.engine.Authorize(ctx, g.inner.Metadata(), input); err != nil {
+	// If no tracer is configured, execute without tracing
+	if g.tracer == nil {
+		return g.executeInternal(ctx, input)
+	}
+
+	// Get action metadata for span naming and attributes
+	meta := g.inner.Metadata()
+
+	// Start the main transaction span named after the action
+	ctx, span := g.tracer.Start(ctx, fmt.Sprintf("Action.%s", meta.Name),
+		trace.WithAttributes(
+			attribute.String("action.name", meta.Name),
+			attribute.String("action.type", meta.Type),
+		),
+	)
+	defer span.End()
+
+	result, err := g.executeInternal(ctx, input)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		span.RecordError(err)
 		return core.Envelope{}, err
 	}
 
+	span.SetStatus(codes.Ok, "action completed successfully")
+	return result, nil
+}
+
+// executeInternal contains the actual execution logic.
+// It receives the context with the active span so child spans can be created.
+// The logger is injected into the context here, ensuring all downstream code
+// can access it via core.LoggerFromContext(ctx).
+func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope) (core.Envelope, error) {
+	// Inject the logger into the context for downstream access
+	ctx = core.LoggerWithContext(ctx, g.engine.Logger())
+
+	logger := core.LoggerFromContext(ctx)
+	meta := g.inner.Metadata()
+	logger.Debug("starting action execution",
+		"action.name", meta.Name,
+		"action.type", meta.Type,
+		"envelope.id", input.ID.String(),
+	)
+
+	// Pre-execution authorization check
+	if err := g.engine.Authorize(ctx, g.inner.Metadata(), input); err != nil {
+		logger.Warn("authorization failed",
+			"action.name", meta.Name,
+			"error", err.Error(),
+		)
+		return core.Envelope{}, fmt.Errorf("authorization failed: %w", err)
+	}
+
+	// Execute the inner action (passes context with trace and logger for continuity)
 	result, err := g.inner.Execute(ctx, input)
 	if err != nil {
-		return core.Envelope{}, err
+		logger.Error("action execution failed",
+			"action.name", meta.Name,
+			"error", err.Error(),
+		)
+		return core.Envelope{}, fmt.Errorf("action execution failed: %w", err)
 	}
 
+	// Post-execution validation check
 	validatedResult, err := g.engine.Validate(ctx, g.inner.Metadata(), result)
 	if err != nil {
-		return core.Envelope{}, err
+		logger.Warn("validation failed",
+			"action.name", meta.Name,
+			"error", err.Error(),
+		)
+		return core.Envelope{}, fmt.Errorf("validation failed: %w", err)
 	}
+
+	logger.Debug("action execution completed successfully",
+		"action.name", meta.Name,
+		"action.type", meta.Type,
+	)
 
 	return validatedResult, nil
 }
