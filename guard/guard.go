@@ -4,10 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/engine"
 )
@@ -17,7 +13,7 @@ import (
 type GuardedAction struct {
 	inner  core.Action
 	engine *engine.PolicyEngine
-	tracer trace.Tracer
+	tracer core.Tracer
 }
 
 // New creates a new GuardedAction without tracing (for backward compatibility).
@@ -25,11 +21,15 @@ func New(action core.Action, eng *engine.PolicyEngine) *GuardedAction {
 	return &GuardedAction{
 		inner:  action,
 		engine: eng,
+		tracer: &core.NopTracer{},
 	}
 }
 
-// NewWithTracer creates a new GuardedAction with OTel tracing enabled.
-func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer trace.Tracer) *GuardedAction {
+// NewWithTracer creates a new GuardedAction with tracing enabled.
+func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer core.Tracer) *GuardedAction {
+	if tracer == nil {
+		tracer = &core.NopTracer{}
+	}
 	return &GuardedAction{
 		inner:  action,
 		engine: eng,
@@ -39,33 +39,31 @@ func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer trace.Tr
 
 // Execute runs the action through the policy engine's checks.
 // The entire execution flow (Authorize → Inner Action → Validate) is wrapped
-// in a top-level OTel span for full observability.
+// in a top-level span for full observability.
 func (g *GuardedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	// If no tracer is configured, execute without tracing
 	if g.tracer == nil {
 		return g.executeInternal(ctx, input)
 	}
 
-	// Get action metadata for span naming and attributes
+	// Get action metadata for span naming
 	meta := g.inner.Metadata()
 
 	// Start the main transaction span named after the action
-	ctx, span := g.tracer.Start(ctx, fmt.Sprintf("Action.%s", meta.Name),
-		trace.WithAttributes(
-			attribute.String("action.name", meta.Name),
-			attribute.String("action.type", meta.Type),
-		),
-	)
+	ctx, span := g.tracer.Start(ctx, fmt.Sprintf("Action.%s", meta.Name))
 	defer span.End()
+
+	// Set attributes on the span
+	span.SetAttr("action.name", meta.Name)
+	span.SetAttr("action.type", meta.Type)
 
 	result, err := g.executeInternal(ctx, input)
 	if err != nil {
-		span.SetStatus(codes.Error, err.Error())
-		span.RecordError(err)
+		span.Error(err)
 		return core.Envelope{}, err
 	}
 
-	span.SetStatus(codes.Ok, "action completed successfully")
+	span.SetAttr("outcome", "success")
 	return result, nil
 }
 

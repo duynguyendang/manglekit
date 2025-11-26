@@ -1,6 +1,7 @@
 // Package rulegenerator provides a Natural Language to Datalog compiler.
-// It uses an LLM to translate human-readable policies into executable
+// It uses a core.Action (typically an LLM) to translate human-readable policies into executable
 // Mangle Datalog rules, leveraging schema context from Go structs.
+// This is a dogfooding example that demonstrates using core.Action as a universal unit of work.
 package rulegenerator
 
 import (
@@ -11,7 +12,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/duynguyendang/manglekit/adapters/ai"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/google/mangle/parse"
 )
 
@@ -70,15 +71,19 @@ Example 3:
 - Your Output:
 deny(Req) :- region(Req, "US"), amount(Req, Amount), Amount < 50.`
 
-// Generator uses an LLM to translate natural language into Mangle rules.
+// Generator uses a core.Action to translate natural language into Mangle rules.
+// The action is typically an LLM (via adapters/ai.NewGenkitAction) but can be any
+// core.Action that takes a string prompt and returns a string response.
 type Generator struct {
-	llm      ai.TextGenerator
-	opts     GeneratorOptions
-	template *template.Template
+	llmAction core.Action
+	opts      GeneratorOptions
+	template  *template.Template
 }
 
-// New creates a new Generator with the provided LLM client and options.
-func New(llm ai.TextGenerator, opts GeneratorOptions) (*Generator, error) {
+// New creates a new Generator with the provided core.Action and options.
+// The action should be an LLM action (e.g., created via adapters/ai.NewGenkitAction).
+// The action may be wrapped in a Guard for policy enforcement and tracing.
+func New(llmAction core.Action, opts GeneratorOptions) (*Generator, error) {
 	if opts.RuleHead == "" {
 		opts.RuleHead = "deny(Req)"
 	}
@@ -95,9 +100,9 @@ func New(llm ai.TextGenerator, opts GeneratorOptions) (*Generator, error) {
 	}
 
 	return &Generator{
-		llm:      llm,
-		opts:     opts,
-		template: tmpl,
+		llmAction: llmAction,
+		opts:      opts,
+		template:  tmpl,
 	}, nil
 }
 
@@ -107,11 +112,16 @@ func New(llm ai.TextGenerator, opts GeneratorOptions) (*Generator, error) {
 // This function demonstrates "In-Context Learning" by dynamically teaching the LLM
 // the data schema derived from the Go struct.
 //
+// Dogfooding Note: This implementation uses core.Action as a universal unit of work.
+// The llmAction is executed via the standard core.Action interface, which means it
+// automatically benefits from any wrapping (e.g., Guard for policy checks, tracing).
+//
 // The process:
-//  1. Schema Extraction - Use reflection to inspect schemaSample and build a schema context
+//  1. Schema Extraction - Use engine/reflection (engine.ToFacts) to inspect schemaSample
 //  2. Prompt Construction - Build a detailed system prompt with schema and policy
-//  3. LLM Execution - Call the LLM to generate the Datalog rule
-//  4. Verification - Validate the generated rule syntax using Mangle parser
+//  3. Action Execution - Call g.llmAction.Execute(ctx, envelope) with the prompt
+//  4. Output Processing - Unwrap the Envelope, assert payload is string
+//  5. Verification - Validate the generated rule syntax using Mangle parser
 func (g *Generator) GenerateRule(ctx context.Context, schemaSample any, policyText string) (string, error) {
 	// Step A: Schema Extraction (The Context)
 	schemaContext, err := g.extractSchema(schemaSample)
@@ -125,13 +135,26 @@ func (g *Generator) GenerateRule(ctx context.Context, schemaSample any, policyTe
 		return "", fmt.Errorf("failed to construct prompt: %w", err)
 	}
 
-	// Step C: LLM Execution
-	resp, err := g.llm.Complete(ctx, prompt)
+	// Step C: Action Execution (Dogfooding core.Action)
+	// Create an Envelope with the prompt string.
+	inputEnvelope := core.NewEnvelope(prompt)
+	inputEnvelope.SetMeta("schema_sample_type", fmt.Sprintf("%T", schemaSample))
+	inputEnvelope.SetMeta("policy_text", policyText)
+
+	// Execute via core.Action interface. The action may be guarded for policy/tracing.
+	outputEnvelope, err := g.llmAction.Execute(ctx, inputEnvelope)
 	if err != nil {
-		return "", fmt.Errorf("llm completion failed: %w", err)
+		return "", fmt.Errorf("llm action execution failed: %w", err)
 	}
 
-	// Step D: Sanitize and Verify
+	// Step D: Output Processing
+	// Unwrap the Envelope and assert payload is string.
+	resp, ok := outputEnvelope.Payload.(string)
+	if !ok {
+		return "", fmt.Errorf("llm action returned non-string payload: expected string, got %T", outputEnvelope.Payload)
+	}
+
+	// Step E: Sanitize and Verify
 	// Clean the output to remove common markdown formatting.
 	generatedRule := sanitizeOutput(resp)
 

@@ -10,49 +10,109 @@ import (
 	"github.com/duynguyendang/manglekit/adapters/vector"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/logger"
+	genkit_ai "github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/core/api"
 )
 
 // =============================================================================
-// Mock Implementations (for demonstration purposes)
+// Mock Genkit Implementations (for demonstration purposes without API keys)
 // =============================================================================
 
-// MockTextGenerator implements ai.TextGenerator with fixed responses.
-type MockTextGenerator struct {
+// MockGenkitModel implements a minimal genkit_ai.Model interface
+// for testing the Genkit adapter without actual API calls.
+type MockGenkitModel struct {
 	logger core.Logger
 }
 
-func (m *MockTextGenerator) Complete(ctx context.Context, prompt string) (string, error) {
-	m.logger.Info("MockLLM received prompt", "prompt_length", len(prompt))
-	return fmt.Sprintf("Final Answer: Based on the provided context, the answer is 42."), nil
+func (m *MockGenkitModel) Name() string {
+	return "mock-genkit-model"
 }
 
-// MockDocumentRetriever implements vector.DocumentRetriever with fixed documents.
-type MockDocumentRetriever struct {
-	logger core.Logger
-}
+func (m *MockGenkitModel) Generate(ctx context.Context, req *genkit_ai.ModelRequest, cb genkit_ai.ModelStreamCallback) (*genkit_ai.ModelResponse, error) {
+	if req == nil || len(req.Messages) == 0 {
+		return nil, fmt.Errorf("invalid request: no messages provided")
+	}
 
-func (m *MockDocumentRetriever) Retrieve(ctx context.Context, query string) ([]vector.Document, error) {
-	m.logger.Info("MockRetriever received query", "query", query)
-	return []vector.Document{
-		{
-			Content: "The meaning of life, the universe, and everything is 42.",
-			Source:  "hitchhikers_guide.txt",
-		},
-		{
-			Content: "Douglas Adams wrote The Hitchhiker's Guide to the Galaxy.",
-			Source:  "authors.txt",
+	// Extract prompt from the first message
+	msg := req.Messages[0]
+	prompt := ""
+	if len(msg.Content) > 0 && msg.Content[0].Text != "" {
+		prompt = msg.Content[0].Text
+	}
+
+	m.logger.Info("MockGenkitModel.Generate called", "prompt_length", len(prompt))
+
+	// Return a fixed response
+	responseText := "Final Answer: Based on the provided context, the answer is 42."
+
+	return &genkit_ai.ModelResponse{
+		Message: &genkit_ai.Message{
+			Role: "model",
+			Content: []*genkit_ai.Part{
+				genkit_ai.NewTextPart(responseText),
+			},
 		},
 	}, nil
 }
 
+func (m *MockGenkitModel) Register(r api.Registry) {
+	// No-op for mock
+}
+
+// MockGenkitRetriever implements a minimal genkit_ai.Retriever interface
+// for testing the Genkit adapter without actual vector store connections.
+type MockGenkitRetriever struct {
+	logger core.Logger
+}
+
+func (m *MockGenkitRetriever) Name() string {
+	return "mock-genkit-retriever"
+}
+
+func (m *MockGenkitRetriever) Retrieve(ctx context.Context, req *genkit_ai.RetrieverRequest) (*genkit_ai.RetrieverResponse, error) {
+	if req == nil {
+		return nil, fmt.Errorf("invalid request: no retriever request provided")
+	}
+
+	m.logger.Info("MockGenkitRetriever.Retrieve called")
+
+	// Return fixed documents
+	docs := []*genkit_ai.Document{
+		{
+			Content: []*genkit_ai.Part{
+				genkit_ai.NewTextPart("The meaning of life, the universe, and everything is 42."),
+			},
+			Metadata: map[string]any{
+				"source": "hitchhikers_guide.txt",
+			},
+		},
+		{
+			Content: []*genkit_ai.Part{
+				genkit_ai.NewTextPart("Douglas Adams wrote The Hitchhiker's Guide to the Galaxy."),
+			},
+			Metadata: map[string]any{
+				"source": "authors.txt",
+			},
+		},
+	}
+
+	return &genkit_ai.RetrieverResponse{
+		Documents: docs,
+	}, nil
+}
+
+func (m *MockGenkitRetriever) Register(r api.Registry) {
+	// No-op for mock
+}
+
 // =============================================================================
-// RAG Flow Demonstration
+// RAG Flow Demonstration with Genkit Adapters
 // =============================================================================
 
 func main() {
 	ctx := context.Background()
 
-	fmt.Println("=== Manglekit RAG Flow Demo ===")
+	fmt.Println("=== Manglekit RAG Flow Demo with Genkit Adapters ===")
 	fmt.Println()
 
 	// ---------------------------------------------------------------------------
@@ -68,18 +128,18 @@ func main() {
 	log.Info("Manglekit client initialized")
 
 	// ---------------------------------------------------------------------------
-	// 2. Create Mock Backends (Simulating Genkit/Vector Store)
+	// 2. Create Mock Genkit Implementations
 	// ---------------------------------------------------------------------------
-	mockRetriever := &MockDocumentRetriever{logger: log}
-	mockGenerator := &MockTextGenerator{logger: log}
+	mockGenkitModel := &MockGenkitModel{logger: log}
+	mockGenkitRetriever := &MockGenkitRetriever{logger: log}
 
 	// ---------------------------------------------------------------------------
-	// 3. Wrap Backends into Universal Actions
+	// 3. Wrap Genkit Backends into Universal Actions using Adapters
 	// ---------------------------------------------------------------------------
-	retrieverAction := vector.NewRetrieverAction("rag-retriever", mockRetriever)
-	llmAction := ai.NewLLMAction("rag-llm", mockGenerator)
+	retrieverAction := vector.NewGenkitRetrieverAction("rag-retriever", mockGenkitRetriever, nil)
+	llmAction := ai.NewGenkitAction("rag-llm", mockGenkitModel)
 
-	log.Info("Actions created", "actions", "RetrieverAction, LLMAction")
+	log.Info("Actions created with Genkit adapters", "actions", "GenkitRetrieverAction, GenkitLLMAction")
 
 	// ---------------------------------------------------------------------------
 	// 4. Protect Actions with Governance Guard
@@ -102,14 +162,14 @@ func main() {
 	log.Info("User Query", "query", userQuery)
 	fmt.Println()
 
-	// Step 5b: Execute Retrieval (Guarded)
-	fmt.Println("Step 1: Retrieval Phase")
+	// Step 5b: Execute Retrieval (Guarded) - now via Genkit adapter
+	fmt.Println("Step 1: Retrieval Phase (via Genkit)")
 	retrievedEnvelope, err := safeRetriever.Execute(ctx, queryEnvelope)
 	if err != nil {
 		log.Error("retrieval failed", "error", err)
 		os.Exit(1)
 	}
-	log.Info("Retrieved documents", "doc_count", retrievedEnvelope.GetMeta("doc_count"))
+	log.Info("Retrieved documents via Genkit", "doc_count", retrievedEnvelope.GetMeta("doc_count"))
 
 	// Format retrieved docs as context for LLM
 	docsJSON, ok := retrievedEnvelope.Payload.(string)
@@ -128,11 +188,11 @@ func main() {
 	fmt.Println()
 
 	// Step 5c: Compose prompt with retrieved context
-	fmt.Println("Step 2: Generation Phase")
+	fmt.Println("Step 2: Generation Phase (via Genkit)")
 	prompt := fmt.Sprintf("Context:\n%s\nQuestion: %s\nAnswer:", formattedContext, userQuery)
 	llmInputEnvelope := manglekit.NewEnvelope(prompt)
 
-	// Step 5d: Execute LLM (Guarded)
+	// Step 5d: Execute LLM (Guarded) - now via Genkit adapter
 	generatedEnvelope, err := safeLLM.Execute(ctx, llmInputEnvelope)
 	if err != nil {
 		log.Error("LLM generation failed", "error", err)
@@ -146,11 +206,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	log.Info("LLM generation complete", "output_length", len(generatedText))
+	log.Info("LLM generation complete via Genkit", "output_length", len(generatedText))
 	fmt.Println()
 	fmt.Println("Step 3: Final Answer")
 	fmt.Printf("Question: %s\n", userQuery)
 	fmt.Printf("Answer: %s\n", generatedText)
 	fmt.Println()
-	fmt.Println("=== RAG Flow Completed Successfully ===")
+	fmt.Println("=== RAG Flow with Genkit Adapters Completed Successfully ===")
 }

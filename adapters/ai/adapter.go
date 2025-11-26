@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/firebase/genkit/go/ai"
 )
 
 // TextGenerator defines the interface for a raw LLM/Genkit text generation client.
@@ -54,4 +55,20 @@ func (a *LLMAction) Metadata() core.ActionMetadata {
 		Name: a.name,
 		Type: "llm",
 	}
+}
+
+// NewGenkitAction creates a fully guarded Action from a Genkit Model.
+// It wraps the provided Genkit ai.Model with a GenkitGenerator and returns it as an LLMAction.
+//
+// name is the human-readable name for this action (e.g., "llm-google-gemini").
+// model is the Genkit ai.Model to wrap (e.g., from GoogleAI, OpenAI, Ollama plugins).
+//
+// Example:
+//
+//	model := googleai.New()
+//	action := ai.NewGenkitAction("my-llm", model)
+//	result, err := action.Execute(ctx, input)
+func NewGenkitAction(name string, model ai.Model) core.Action {
+	generator := NewGenkitGenerator(model)
+	return NewLLMAction(name, generator)
 }

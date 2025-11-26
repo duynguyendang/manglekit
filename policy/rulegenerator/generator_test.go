@@ -2,19 +2,38 @@ package rulegenerator
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/duynguyendang/manglekit/core"
 )
 
-// mockLLM implements ai.TextGenerator for testing
-type mockLLM struct {
-	response       string
-	capturedPrompt string
+// mockAction implements core.Action for testing
+type mockAction struct {
+	response      string
+	capturedInput core.Envelope
+	shouldError   bool
+	errorMessage  string
 }
 
-func (m *mockLLM) Complete(ctx context.Context, prompt string) (string, error) {
-	m.capturedPrompt = prompt
-	return m.response, nil
+// Execute captures the input envelope and returns the mock response
+func (m *mockAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
+	m.capturedInput = input
+	if m.shouldError {
+		return core.Envelope{}, fmt.Errorf("mock action error: %s", m.errorMessage)
+	}
+	output := core.NewEnvelope(m.response)
+	output.SetMeta("source", "mock")
+	return output, nil
+}
+
+// Metadata returns mock metadata
+func (m *mockAction) Metadata() core.ActionMetadata {
+	return core.ActionMetadata{
+		Name: "mock-llm",
+		Type: "llm",
+	}
 }
 
 func TestGenerateRule(t *testing.T) {
@@ -146,9 +165,9 @@ func TestGenerateRule(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			llm := &mockLLM{response: tc.mockResponse}
+			action := &mockAction{response: tc.mockResponse}
 
-			generator, err := New(llm, tc.opts)
+			generator, err := New(action, tc.opts)
 			if err != nil {
 				t.Fatalf("Failed to create generator: %v", err)
 			}
@@ -169,8 +188,18 @@ func TestGenerateRule(t *testing.T) {
 				t.Fatalf("Expected no error, but got: %v", err)
 			}
 
-			if tc.expectedInPrompt != "" && !strings.Contains(llm.capturedPrompt, tc.expectedInPrompt) {
-				t.Errorf("Prompt should contain '%s', got: %s", tc.expectedInPrompt, llm.capturedPrompt)
+			// Verify the action was called with an envelope containing the policy
+			if action.capturedInput.Payload == nil {
+				t.Fatal("Action was not called with an envelope")
+			}
+
+			payload, ok := action.capturedInput.Payload.(string)
+			if !ok {
+				t.Fatalf("Expected string payload, got %T", action.capturedInput.Payload)
+			}
+
+			if tc.expectedInPrompt != "" && !strings.Contains(payload, tc.expectedInPrompt) {
+				t.Errorf("Prompt should contain '%s', got: %s", tc.expectedInPrompt, payload)
 			}
 
 			if generatedRule != tc.expectedRule {
@@ -190,8 +219,8 @@ func TestExtractSchema(t *testing.T) {
 		private int     // unexported, should be skipped
 	}
 
-	llm := &mockLLM{response: `deny(Req) :- amount(Req, X), X > 0.`}
-	gen, err := New(llm, GeneratorOptions{})
+	action := &mockAction{response: `deny(Req) :- amount(Req, X), X > 0.`}
+	gen, err := New(action, GeneratorOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create generator: %v", err)
 	}
@@ -222,8 +251,8 @@ func TestExtractSchema(t *testing.T) {
 }
 
 func TestExtractSchema_InvalidInput(t *testing.T) {
-	llm := &mockLLM{response: ""}
-	gen, err := New(llm, GeneratorOptions{})
+	action := &mockAction{response: ""}
+	gen, err := New(action, GeneratorOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create generator: %v", err)
 	}

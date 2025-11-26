@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/firebase/genkit/go/ai"
 )
 
 // Document represents a retrieved document from a vector store.
@@ -89,4 +90,22 @@ func FormatDocsAsContext(docsJSON string) (string, error) {
 	}
 
 	return context, nil
+}
+
+// NewGenkitRetrieverAction creates a fully guarded Action from a Genkit Retriever.
+// It wraps the provided Genkit ai.Retriever with a GenkitRetriever and returns it as a RetrieverAction.
+//
+// name is the human-readable name for this action (e.g., "rag-retriever").
+// retriever is the Genkit ai.Retriever to wrap (e.g., from Pinecone, LocalVec, Weaviate plugins).
+// embedder is an optional Genkit ai.Embedder used for query embedding if needed.
+// If the retriever handles embedding internally, embedder can be nil.
+//
+// Example:
+//
+//	retriever := pinecone.NewRetriever()
+//	action := vector.NewGenkitRetrieverAction("my-retriever", retriever, nil)
+//	result, err := action.Execute(ctx, input)
+func NewGenkitRetrieverAction(name string, retriever ai.Retriever, embedder ai.Embedder) core.Action {
+	genkitRetriever := NewGenkitRetriever(retriever, embedder)
+	return NewRetrieverAction(name, genkitRetriever)
 }

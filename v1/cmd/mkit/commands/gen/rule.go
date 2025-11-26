@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/providers/llm"
+	adapterai "github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/policy/rulegenerator"
-	"github.com/duynguyendang/manglekit/sdk"
+	genkit "github.com/firebase/genkit/go/ai"
 	"github.com/spf13/cobra"
 )
 
@@ -19,51 +18,39 @@ var (
 	schema   string
 	prompt   string
 	out      string
+	ruleHead string
 )
 
 var ruleCmd = &cobra.Command{
 	Use:   "rule",
 	Short: "Generate a Datalog rule from a natural language prompt and a JSON schema.",
-	Long:  `Generates a Mangle Datalog rule based on a natural language policy description and a sample JSON schema. This command leverages an LLM to translate the policy into formal Datalog syntax.`,
+	Long:  `Generates a Mangle Datalog rule based on a natural language policy description and a sample JSON schema. This command leverages an LLM to translate the policy into formal Datalog syntax. Dogfooding core.Action for universal work execution.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		var llmProvider core.LLMClient
-
-		// Use the SDK's programmatic builder to correctly initialize the LLM with all its dependencies.
-		builder, err := sdk.NewBuilder(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to create builder: %w", err)
-		}
-
-		llmName := fmt.Sprintf("mkit-%s-llm", provider)
-
+		// Initialize the LLM model based on the provider
+		var genKitModel genkit.Model
 		switch provider {
 		case "google":
-			if err := builder.WithOptions(llmName, &llm.GoogleOptions{Model: model}); err != nil {
-				return fmt.Errorf("failed to configure google llm: %w", err)
+			// Use genkit's built-in Google AI integration
+			// This requires GOOGLE_GENAI_API_KEY environment variable
+			// For production use, initialize genkit properly with a registry
+			// For now, we'll create a direct reference using the model name
+			genKitModel = genkit.NewModel(model, nil, nil)
+			if genKitModel == nil {
+				return fmt.Errorf("failed to initialize google model '%s'. ensure genkit google plugin is initialized", model)
 			}
-		// NOTE: To add openai, you would add a case here and the corresponding Options struct.
-		// case "openai":
-		// 	if err := builder.WithOptions(llmName, &llm.OpenAIOptions{Model: model}); err != nil {
-		// 		return fmt.Errorf("failed to configure openai llm: %w", err)
-		// 	}
+
 		default:
-			return fmt.Errorf("unsupported LLM provider: %s", provider)
+			return fmt.Errorf("unsupported LLM provider: %s. supported: google", provider)
 		}
 
-		resolved, err := builder.Build(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to build components: %w", err)
-		}
+		// Create a core.Action from the Genkit model using adapters/ai (dogfooding)
+		// This wraps the Genkit model with GenkitGenerator, then LLMAction, providing core.Action interface
+		llmAction := adapterai.NewGenkitAction(fmt.Sprintf("%s-%s", provider, model), genKitModel)
 
-		var ok bool
-		llmProvider, ok = resolved.LLMs[llmName]
-		if !ok {
-			return fmt.Errorf("could not find built llm named '%s'", llmName)
-		}
-
+		// Read schema from file
 		schemaData, err := os.ReadFile(schema)
 		if err != nil {
 			return fmt.Errorf("failed to read schema file: %w", err)
@@ -74,12 +61,23 @@ var ruleCmd = &cobra.Command{
 			return fmt.Errorf("failed to unmarshal schema JSON: %w", err)
 		}
 
-		generator := rulegenerator.New(llmProvider)
-		datalogRule, err := generator.Generate(ctx, prompt, schemaSample)
+		// Create generator with the core.Action
+		opts := rulegenerator.GeneratorOptions{
+			RuleHead: ruleHead,
+		}
+
+		generator, err := rulegenerator.New(llmAction, opts)
+		if err != nil {
+			return fmt.Errorf("failed to create generator: %w", err)
+		}
+
+		// Generate the Datalog rule using the action
+		datalogRule, err := generator.GenerateRule(ctx, schemaSample, prompt)
 		if err != nil {
 			return fmt.Errorf("failed to generate rule: %w", err)
 		}
 
+		// Output the result
 		if out != "" {
 			err = os.WriteFile(out, []byte(datalogRule), 0644)
 			if err != nil {
@@ -95,10 +93,11 @@ var ruleCmd = &cobra.Command{
 }
 
 func init() {
-	ruleCmd.Flags().StringVar(&provider, "provider", "google", "LLM Provider (e.g., google, openai)")
-	ruleCmd.Flags().StringVar(&model, "model", "", "Model name to use for generation")
+	ruleCmd.Flags().StringVar(&provider, "provider", "google", "LLM Provider (e.g., google)")
+	ruleCmd.Flags().StringVar(&model, "model", "", "Model name to use for generation (e.g., gemini-2.0-flash)")
 	ruleCmd.Flags().StringVar(&schema, "schema", "", "Path to a JSON schema sample file")
 	ruleCmd.Flags().StringVar(&prompt, "prompt", "", "The natural language policy description")
+	ruleCmd.Flags().StringVar(&ruleHead, "rule-head", "deny(Req)", "Target rule predicate (e.g., deny(Req), allow(Req), route(Req, Target))")
 	ruleCmd.Flags().StringVar(&out, "out", "", "Output file path (default: stdout)")
 
 	ruleCmd.MarkFlagRequired("model")

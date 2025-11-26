@@ -11,6 +11,7 @@ import (
 	"github.com/duynguyendang/manglekit/engine"
 	"github.com/duynguyendang/manglekit/guard"
 	"github.com/duynguyendang/manglekit/internal/logger"
+	"github.com/duynguyendang/manglekit/internal/telemetry"
 )
 
 const (
@@ -21,9 +22,10 @@ const (
 // Client is the public struct representing the initialized Manglekit system.
 // It provides the core governance capabilities through a simple, unified API.
 type Client struct {
-	engine *engine.PolicyEngine
-	tracer trace.Tracer
-	logger core.Logger
+	engine     *engine.PolicyEngine
+	tracer     core.Tracer
+	otelTracer trace.Tracer
+	logger     core.Logger
 }
 
 type ClientOption func(*Client)
@@ -31,7 +33,9 @@ type ClientOption func(*Client)
 func WithTracerProvider(tp trace.TracerProvider) ClientOption {
 	return func(c *Client) {
 		if tp != nil {
-			c.tracer = tp.Tracer(TracerName)
+			otelTracer := tp.Tracer(TracerName)
+			c.otelTracer = otelTracer
+			c.tracer = telemetry.NewOTelTracer(otelTracer)
 		}
 	}
 }
@@ -55,7 +59,8 @@ func NewClient(ctx context.Context, policyFile string, opts ...ClientOption) (*C
 
 	// SAFETY FIX: Ensure tracer is never nil to prevent nil pointer dereferences
 	if c.tracer == nil {
-		c.tracer = trace.NewNoopTracerProvider().Tracer(TracerName)
+		c.otelTracer = trace.NewNoopTracerProvider().Tracer(TracerName)
+		c.tracer = telemetry.NewOTelTracer(c.otelTracer)
 	}
 
 	// Initialize Engine with observability
@@ -98,7 +103,7 @@ func (c *Client) Engine() *engine.PolicyEngine {
 // Tracer returns the OTel tracer used by this client.
 // This can be used for custom instrumentation in user code.
 func (c *Client) Tracer() trace.Tracer {
-	return c.tracer
+	return c.otelTracer
 }
 
 // Logger returns the Logger used by this client.

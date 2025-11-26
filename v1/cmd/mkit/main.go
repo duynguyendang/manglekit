@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/duynguyendang/manglekit/cmd/mkit/commands/gen"
-	"github.com/duynguyendang/manglekit/cmd/mkit/commands/inspect"
+	"github.com/duynguyendang/manglekit/v1/cmd/mkit/commands/gen"
+	"github.com/duynguyendang/manglekit/v1/cmd/mkit/commands/inspect"
 	"github.com/spf13/cobra"
 )
 
