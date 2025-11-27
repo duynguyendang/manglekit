@@ -3,7 +3,7 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 3.0.0
-last_updated: 2025-11-28T00:00:00Z
+last_updated: 2025-11-29T00:00:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -94,6 +94,7 @@ The core philosophy is **"Wrap, Don't Build"**. Manglekit does not construct you
     }
     ```
 -   **`core.Logger`**: The structured logging interface used throughout the kernel.
+-   **`core.MemoryStore`**: Interface for persisting chat history.
 
 ### Metadata Protocols (Control Plane)
 
@@ -102,6 +103,7 @@ Manglekit uses reserved Metadata keys to manage the flow state:
 -   **`manglekit.decision`**: The governance outcome (ALLOW/DENY/RETRY).
 -   **`manglekit.feedback`**: Feedback for self-correction loops.
 -   **`manglekit.risk_score`**: Numeric risk assessment.
+-   **`manglekit_history`**: Serialized conversation history.
 
 ### Logic Interfaces
 
@@ -149,7 +151,15 @@ Configuration is handled by the `config` package, which loads from YAML.
 *   **Logging**: Structured logging injected into Context.
 *   **Lineage**: (Planned) Automatic tracking of Input ID -> Output ID derivation.
 
-## 8. Known Gaps
+## 8. Memory Architecture (Stateless-by-Default)
+
+The `RunLoop` execution engine supports an opt-in memory subsystem with three modes:
+
+1.  **Stateless (`none`)**: (Default) No history retention. Pure function execution.
+2.  **Transient (`transient`)**: In-Memory retention valid only for the duration of the Loop (e.g., for multi-turn Retry/Correction). Discarded after return.
+3.  **Persistent (`persist`)**: Backed by `core.MemoryStore` (e.g., Redis). Hydrates history at start, writes at end.
+
+## 9. Known Gaps
 
 The codebase is **Stable (v3.0.0)**.
 
@@ -162,8 +172,9 @@ The codebase is **Stable (v3.0.0)**.
 - **Description**: The `LineageTracker` component mentioned in HLD is not yet fully implemented as a standalone subsystem.
 - **Status**: Basic lineage (Trace ID propagation) works via OTel. Explicit data lineage graph is pending.
 
-## 9. Changelog
+## 10. Changelog
 
+-   **2025-11-29**: **Memory Subsystem**. Implemented "Stateless-by-Default" architecture. Added `MemoryMode` to `RunLoop` and `VolatileStore` for transient history.
 -   **2025-11-28**: **Knowledge Integration**. The Engine now supports loading static knowledge from RDF Turtle files as Datalog facts. `ToFacts` reflection updated for standard Datalog predicates.
 -   **2025-11-27**: **Genesis Release (v3.0.0)**. Complete re-architecture. Removed Builder/Registry. Introduced Client/Guard/Engine model.
 -   **2025-11-25**: **Smart Router**: (Legacy v0.x) Implemented dynamic dispatch.

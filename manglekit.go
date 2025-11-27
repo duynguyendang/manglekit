@@ -29,10 +29,19 @@ type Client struct {
 	tracer     core.Tracer
 	otelTracer trace.Tracer
 	logger     core.Logger
+	memory     core.MemoryStore
 	registry   map[string]core.Action
 }
 
 type ClientOption func(*Client)
+
+func WithMemory(store core.MemoryStore) ClientOption {
+	return func(c *Client) {
+		if store != nil {
+			c.memory = store
+		}
+	}
+}
 
 func WithTracerProvider(tp trace.TracerProvider) ClientOption {
 	return func(c *Client) {
@@ -56,6 +65,7 @@ func NewClient(ctx context.Context, policyFile string, opts ...ClientOption) (*C
 	c := &Client{
 		logger:   core.NopLogger{},
 		registry: make(map[string]core.Action),
+		memory:   core.NoOpStore{},
 	}
 
 	for _, opt := range opts {
@@ -90,6 +100,7 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 	c := &Client{
 		logger:   log,
 		registry: make(map[string]core.Action),
+		memory:   core.NoOpStore{},
 	}
 
 	for _, opt := range opts {
