@@ -17,7 +17,6 @@ type PolicyEngine struct {
 	tracer  core.Tracer
 	logger  core.Logger
 	runtime *MangleRuntime
-	lineage *LineageGraph
 }
 
 // New creates a new PolicyEngine without a tracer or logger (for backward compatibility).
@@ -27,7 +26,6 @@ func New() *PolicyEngine {
 		tracer:  &core.NopTracer{},
 		logger:  core.NopLogger{},
 		runtime: NewMangleRuntime(),
-		lineage: NewLineageGraph(),
 	}
 }
 
@@ -41,7 +39,6 @@ func NewWithTracer(tracer core.Tracer) *PolicyEngine {
 		tracer:  tracer,
 		logger:  core.NopLogger{},
 		runtime: NewMangleRuntime(),
-		lineage: NewLineageGraph(),
 	}
 }
 
@@ -57,21 +54,16 @@ func NewWithObservability(tracer core.Tracer, logger core.Logger) *PolicyEngine 
 		tracer:  tracer,
 		logger:  logger,
 		runtime: NewMangleRuntime(),
-		lineage: NewLineageGraph(),
 	}
 }
 
-// RecordLineage records a lineage relationship in the engine's graph and adds observability attributes.
+// RecordLineage records a lineage relationship for observability.
+// It no longer stores relationships in memory.
 func (e *PolicyEngine) RecordLineage(ctx context.Context, childID, parentID string) {
-	if e.lineage == nil {
-		return
+	if e.tracer != nil {
+		// Lineage linking is handled via context propagation in GuardedAction.
+		// If explicit linking span events are needed, they can be added here.
 	}
-
-	// 1. Store in memory graph
-	e.lineage.RecordLineage(ctx, childID, parentID)
-
-	// 2. Observe with OTel (Placeholder)
-	// if e.tracer != nil { ... }
 }
 
 // Logger returns the engine's configured Logger instance.
@@ -81,11 +73,6 @@ func (e *PolicyEngine) Logger() core.Logger {
 		return core.NopLogger{}
 	}
 	return e.logger
-}
-
-// Lineage returns the lineage graph.
-func (e *PolicyEngine) Lineage() *LineageGraph {
-	return e.lineage
 }
 
 // LoadFromPath loads policy rules from a file.
@@ -129,6 +116,11 @@ func (e *PolicyEngine) Authorize(ctx context.Context, actionMeta core.ActionMeta
 	ctx, span := e.tracer.Start(ctx, "Datalog.PreCheck")
 	defer span.End()
 
+	// Log security labels to span attributes for audit
+	if len(input.SecurityLabels) > 0 {
+		span.SetAttr("mangle.labels", input.SecurityLabels)
+	}
+
 	err := e.authorizeInternal(ctx, actionMeta, input)
 	if err != nil {
 		span.Error(err)
@@ -156,16 +148,26 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 		return core.ErrPolicyViolation
 	}
 
-	// Inject lineage facts
-	if e.lineage != nil {
-		lineageFacts, err := e.lineage.ToFacts()
+	// Generate facts for security labels using safe helper
+	labelFacts, err := LabelsToFacts("Req", input.SecurityLabels)
+	if err != nil {
+		if e.logger != nil {
+			e.logger.Error("failed to generate label facts", "error", err)
+		}
+		// Fail-Closed: If we can't process security labels, we must deny.
+		return core.ErrPolicyViolation
+	}
+
+	for _, factStr := range labelFacts {
+		atom, err := parse.Atom(factStr)
 		if err != nil {
 			if e.logger != nil {
-				e.logger.Warn("failed to generate lineage facts", "error", err)
+				e.logger.Error("failed to parse label fact", "fact", factStr, "error", err)
 			}
-		} else {
-			facts = append(facts, lineageFacts...)
+			// Fail-Closed
+			return core.ErrPolicyViolation
 		}
+		facts = append(facts, atom)
 	}
 
 	// Execute the deny(Req) query
@@ -198,6 +200,11 @@ func (e *PolicyEngine) Validate(ctx context.Context, actionMeta core.ActionMetad
 	ctx, span := e.tracer.Start(ctx, "Datalog.PostCheck")
 	defer span.End()
 
+	// Log security labels to span attributes for audit
+	if len(output.SecurityLabels) > 0 {
+		span.SetAttr("mangle.labels", output.SecurityLabels)
+	}
+
 	result, err := e.validateInternal(ctx, actionMeta, output)
 	if err != nil {
 		span.Error(err)
@@ -224,16 +231,26 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 		return output, nil
 	}
 
-	// Inject lineage facts
-	if e.lineage != nil {
-		lineageFacts, err := e.lineage.ToFacts()
+	// Generate facts for security labels using safe helper
+	labelFacts, err := LabelsToFacts("Output", output.SecurityLabels)
+	if err != nil {
+		if e.logger != nil {
+			e.logger.Error("failed to generate label facts", "error", err)
+		}
+		// Fail-Closed
+		return core.Envelope{}, core.ErrPolicyViolation
+	}
+
+	for _, factStr := range labelFacts {
+		atom, err := parse.Atom(factStr)
 		if err != nil {
 			if e.logger != nil {
-				e.logger.Warn("failed to generate lineage facts", "error", err)
+				e.logger.Error("failed to parse label fact", "fact", factStr, "error", err)
 			}
-		} else {
-			facts = append(facts, lineageFacts...)
+			// Fail-Closed
+			return core.Envelope{}, core.ErrPolicyViolation
 		}
+		facts = append(facts, atom)
 	}
 
 	// Execute the deny(Output) query for post-check validation

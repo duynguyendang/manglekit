@@ -83,7 +83,7 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 		"envelope.id", input.ID.String(),
 	)
 
-	// 1. Ingestion: Link Input to Parent
+	// 1. Ingestion: Link Input to Parent (Tracing only)
 	if parentID, ok := core.GetParentID(ctx); ok {
 		g.engine.RecordLineage(ctx, input.ID.String(), parentID)
 	}
@@ -97,7 +97,7 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 		return core.Envelope{}, fmt.Errorf("authorization failed: %w", err)
 	}
 
-	// 3. Propagation: Pass the Gene
+	// 3. Context Propagation: Pass the Gene
 	// Propagate the current input ID as the new parent for the inner action
 	childCtx := core.WithParentID(ctx, input.ID.String())
 
@@ -111,14 +111,19 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 		return core.Envelope{}, fmt.Errorf("action execution failed: %w", err)
 	}
 
-	// 5. Linking: Link Output to Input
+	// 5. Propagation: Output inherits Input's security labels
+	if len(input.SecurityLabels) > 0 {
+		result.MergeLabels(input.SecurityLabels)
+	}
+
+	// 6. Linking: Link Output to Input (Tracing only)
 	g.engine.RecordLineage(ctx, result.ID.String(), input.ID.String())
 	if result.Metadata == nil {
 		result.Metadata = make(map[string]string)
 	}
 	result.Metadata["derived_from"] = input.ID.String()
 
-	// 6. Post-Check: Validation
+	// 7. Post-Check: Validation
 	validatedResult, err := g.engine.Validate(ctx, g.inner.Metadata(), result)
 	if err != nil {
 		logger.Warn("validation failed",
