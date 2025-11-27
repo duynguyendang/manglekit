@@ -1,1 +1,0 @@
-deny("contains-secret") :- query_token("secret").

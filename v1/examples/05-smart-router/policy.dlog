@@ -1,9 +1,0 @@
-Decl target_action(ActionName).
-Decl is_secret(Req, IsSecret).
-Decl token_count(Req, Count).
-
-target_action("local") :- is_secret(Req, "true").
-target_action("gpt4")  :- token_count(Req, N), :lt(1000, N), is_secret(Req, "false").
-
-Decl add_meta(Key, Value).
-add_meta("target_action", Action) :- target_action(Action).

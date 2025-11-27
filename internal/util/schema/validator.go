@@ -9,6 +9,7 @@ import (
 )
 
 // ValidateJSON validates a JSON string against a given schema string.
+// It uses santhosh-tekuri/jsonschema/v5 for robust validation.
 func ValidateJSON(schemaStr string, jsonStr string) error {
 	compiler := jsonschema.NewCompiler()
 	if err := compiler.AddResource("schema.json", strings.NewReader(schemaStr)); err != nil {
