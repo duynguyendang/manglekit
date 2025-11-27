@@ -305,12 +305,12 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 // 1. Correction (Retry) - Highest Priority
 // 2. Routing (Route)
 // 3. Allow (Proceed) - Default
-func (e *PolicyEngine) EvaluateSteering(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) (string, map[string]string) {
+func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope) (string, map[string]string, error) {
 	decision := core.DecisionAllow
 	metadata := make(map[string]string)
 
 	if e.runtime == nil || e.runtime.programInfo == nil {
-		return decision, metadata
+		return decision, metadata, nil
 	}
 
 	// Convert the input payload to Mangle facts
@@ -320,29 +320,28 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, actionMeta core.Act
 		if e.logger != nil {
 			e.logger.Debug("failed to convert input to facts for steering", "error", err)
 		}
-		return decision, metadata
+		return decision, metadata, fmt.Errorf("failed to convert input to facts: %w", err)
 	}
 
 	// 1. Check Correction (Retry)
 	// Query: correction("Req", Hint)
-	err = e.runtime.QueryWithSolutions(facts, `correction("Req", Hint)`, func(solution map[string]any) error {
+	_ = e.runtime.QueryWithSolutions(facts, `correction("Req", Hint)`, func(solution map[string]any) error {
 		if hint, ok := solution["Hint"].(string); ok {
 			decision = core.DecisionRetry
 			metadata[core.KeyFeedback] = hint
-			// Stop searching after first match? Datalog might return multiple.
-			// We take the first one.
+			// Stop searching after first match
 			return fmt.Errorf("found") // Use error to break early
 		}
 		return nil
 	})
 
 	if decision == core.DecisionRetry {
-		return decision, metadata
+		return decision, metadata, nil
 	}
 
 	// 2. Check Routing
 	// Query: next_step("Req", Target)
-	err = e.runtime.QueryWithSolutions(facts, `next_step("Req", Target)`, func(solution map[string]any) error {
+	_ = e.runtime.QueryWithSolutions(facts, `next_step("Req", Target)`, func(solution map[string]any) error {
 		if target, ok := solution["Target"].(string); ok {
 			decision = core.DecisionRoute
 			metadata[core.KeyNextStep] = target
@@ -351,7 +350,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, actionMeta core.Act
 		return nil
 	})
 
-	return decision, metadata
+	return decision, metadata, nil
 }
 
 // toMangleFacts converts a Go data structure into a slice of Mangle atoms.

@@ -3,89 +3,110 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 )
 
-// MockAction is a simple action that returns its input as output.
-type MockAction struct {
-	name string
+// Input struct for routing
+type Input struct {
+	Tier string `mangle:"payload.tier"`
+	User string `mangle:"payload.user"`
 }
 
-func (a *MockAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	fmt.Printf("[Action: %s] Executing with payload: %v\n", a.name, input.Payload)
-	// For testing, just return the input payload as output
-	return core.NewEnvelope(input.Payload), nil
-}
-
-func (a *MockAction) Metadata() core.ActionMetadata {
-	return core.ActionMetadata{Name: a.name}
-}
-
-// SQLGenAction simulates generating SQL.
-type SQLGenAction struct {
-	name string
-}
-
-func (a *SQLGenAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	fmt.Printf("[Action: %s] Generating SQL...\n", a.name)
-
-	// Check for feedback
-	if fb, ok := input.Metadata["prev_feedback"]; ok {
-		fmt.Printf("[Action: %s] Received feedback: %s\n", a.name, fb)
-		// If feedback says "Do not use DROP", fix it.
-		if strings.Contains(fb, "Do not use DROP") {
-			return core.NewEnvelope(map[string]string{"sql": "DELETE FROM users"}), nil
-		}
-	}
-
-	// Default behavior: Generate dangerous SQL
-	return core.NewEnvelope(map[string]string{"sql": "DROP TABLE users"}), nil
-}
-
-func (a *SQLGenAction) Metadata() core.ActionMetadata {
-	return core.ActionMetadata{Name: a.name}
+// SQLOutput struct for generation
+type SQLOutput struct {
+	SQL string `mangle:"payload.sql"`
 }
 
 func main() {
 	ctx := context.Background()
 
-	// 1. Initialize Client with Steering Policy
+	// 1. Initialize Client
 	client, err := manglekit.NewClient(ctx, "examples/steering/policy.dl")
 	if err != nil {
-		log.Fatalf("Failed to create client: %v", err)
+		panic(err)
 	}
 
 	// 2. Register Actions
-	// Standard SQL Generator
-	client.RegisterAction("sql_gen", &SQLGenAction{name: "sql_gen"})
 
-	// VIP Agent
-	client.RegisterAction("vip_agent", &MockAction{name: "vip_agent"})
+	// Action 1: SQL Generator (demonstrates RETRY)
+	gen := &SQLGenerator{}
+	client.RegisterAction("generate_sql", client.Protect(gen))
 
-	// Router Entry Point
-	client.RegisterAction("router", &MockAction{name: "router"})
+	// Action 2: Router (demonstrates ROUTE)
+	client.RegisterAction("classify", client.Protect(&RouterAction{}))
 
-	// 3. Test Case 1: Retry Logic (Self-Correction)
-	fmt.Println("\n--- Test Case 1: Retry (Self-Correction) ---")
-	// Input doesn't matter much for this mock, but let's start with sql_gen
-	res, err := client.RunLoop(ctx, "sql_gen", map[string]string{"instruction": "delete users"})
+	// Action 3: VIP Agent
+	client.RegisterAction("vip_agent", client.Protect(&VIPAction{}))
+
+	// 3. RunLoop - Scenario 1: Retry
+	fmt.Println("--- Scenario 1: Retry (Bad SQL) ---")
+	res, err := client.RunLoop(ctx, "generate_sql", nil)
 	if err != nil {
-		log.Fatalf("RunLoop failed: %v", err)
+		fmt.Printf("RunLoop failed: %v\n", err)
+	} else {
+		// Extract SQL from payload
+		if out, ok := res.Payload.(SQLOutput); ok {
+			fmt.Printf("Result: %s\n", out.SQL)
+		} else {
+			fmt.Printf("Result: %+v\n", res.Payload)
+		}
 	}
-	fmt.Printf("Final Result: %v\n", res.Payload)
 
-	// 4. Test Case 2: Routing Logic (Dynamic Dispatch)
-	fmt.Println("\n--- Test Case 2: Route (VIP) ---")
-	// Start with "router". Input has tier="gold".
-	// The policy says: next_step("Req", "vip_agent") :- payload.tier("Req", "gold").
-
-	res, err = client.RunLoop(ctx, "router", map[string]string{"tier": "gold"})
+	// 3. RunLoop - Scenario 2: Route
+	fmt.Println("\n--- Scenario 2: Route (Gold Tier) ---")
+	// Note: We use Input struct which maps to payload.tier
+	res, err = client.RunLoop(ctx, "classify", Input{Tier: "gold"})
 	if err != nil {
-		log.Fatalf("RunLoop failed: %v", err)
+		fmt.Printf("RunLoop failed: %v\n", err)
+	} else {
+		if val, ok := res.Payload.(string); ok {
+			fmt.Printf("Result: %s\n", val)
+		} else {
+			fmt.Printf("Result: %+v\n", res.Payload)
+		}
 	}
-	fmt.Printf("Final Result: %v\n", res.Payload)
+}
+
+// SQLGenerator implementation
+type SQLGenerator struct{}
+
+func (a *SQLGenerator) Execute(ctx context.Context, env core.Envelope) (core.Envelope, error) {
+	// Check previous feedback
+	feedback := env.Metadata[core.KeyPrevFeedback]
+
+	sql := "SELECT * FROM users; DROP TABLE users;" // Default bad
+	if strings.Contains(feedback, "Do not use DROP") {
+		sql = "SELECT * FROM users; DELETE FROM users;" // Fixed
+	}
+
+	// Create output envelope with SQLOutput payload
+	return core.NewEnvelope(SQLOutput{SQL: sql}), nil
+}
+
+func (a *SQLGenerator) Metadata() core.ActionMetadata {
+	return core.ActionMetadata{Name: "generate_sql", Type: "generator"}
+}
+
+// RouterAction implementation
+type RouterAction struct{}
+
+func (a *RouterAction) Execute(ctx context.Context, env core.Envelope) (core.Envelope, error) {
+	// Pass through the input as output
+	return env, nil
+}
+func (a *RouterAction) Metadata() core.ActionMetadata {
+	return core.ActionMetadata{Name: "classify", Type: "router"}
+}
+
+// VIPAction implementation
+type VIPAction struct{}
+
+func (a *VIPAction) Execute(ctx context.Context, env core.Envelope) (core.Envelope, error) {
+	return core.NewEnvelope("VIP Service Executed"), nil
+}
+func (a *VIPAction) Metadata() core.ActionMetadata {
+	return core.ActionMetadata{Name: "vip_agent", Type: "agent"}
 }
