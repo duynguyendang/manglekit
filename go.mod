@@ -8,11 +8,13 @@ require (
 	github.com/go-nlp/tfidf v1.1.0
 	github.com/google/mangle v0.3.0
 	github.com/google/uuid v1.6.0
+	github.com/invopop/jsonschema v0.13.0
 	github.com/joho/godotenv v1.5.1
 	github.com/knakk/rdf v0.0.0-20190304171630-8521bf4c5042
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/openai/openai-go v1.8.2
 	github.com/redis/go-redis/v9 v9.14.0
+	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	github.com/stretchr/testify v1.11.1
 	github.com/yuin/goldmark v1.7.13
 	go.uber.org/zap v1.27.0
@@ -43,7 +45,6 @@ require (
 	github.com/googleapis/gax-go/v2 v2.14.2 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mbleigh/raymond v0.0.0-20250414171441-6b3a58ab9e0a // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
