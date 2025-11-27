@@ -9,7 +9,6 @@ import (
 	"github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/adapters/vector"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/logger"
 	genkit_ai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
 )
@@ -118,13 +117,12 @@ func main() {
 	// ---------------------------------------------------------------------------
 	// 1. Initialize Logger and Manglekit Client
 	// ---------------------------------------------------------------------------
-	log := logger.NewStdLogger()
-
-	client, err := manglekit.NewClient(ctx, "", manglekit.WithLogger(log))
+	client, err := manglekit.NewDefault()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize manglekit client: %v\n", err)
 		os.Exit(1)
 	}
+	log := client.Logger()
 	log.Info("Manglekit client initialized")
 
 	// ---------------------------------------------------------------------------

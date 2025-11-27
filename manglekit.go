@@ -13,6 +13,7 @@ import (
 	"github.com/duynguyendang/manglekit/guard"
 	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/telemetry"
+	"go.uber.org/zap"
 )
 
 const (
@@ -80,7 +81,7 @@ func NewClient(ctx context.Context, policyFile string, opts ...ClientOption) (*C
 // NewClientWithConfig creates a new Manglekit Client from a pre-loaded configuration object.
 func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error) {
 	// Initialize logger (use default for now)
-	log := logger.NewStdLogger()
+	log := newDefaultLogger()
 
 	// Create client with loaded configuration
 	c := &Client{
@@ -203,14 +204,22 @@ func Must(c *Client, err error) *Client {
 	return c
 }
 
-// NewDefault creates a Client with default settings (StdLogger, empty policy).
+// NewDefault creates a Client with default settings (Zap logger, empty policy).
 // This is the simplest way to get started with Manglekit.
 //
 // Example:
 //
 //	client, err := manglekit.NewDefault()
 func NewDefault() (*Client, error) {
-	return NewClient(context.Background(), "", WithLogger(logger.NewStdLogger()))
+	return NewClient(context.Background(), "", WithLogger(newDefaultLogger()))
+}
+
+func newDefaultLogger() core.Logger {
+	z, err := zap.NewProduction()
+	if err != nil {
+		return logger.NewStdLogger()
+	}
+	return logger.NewZapAdapter(z.Sugar())
 }
 
 // Call is a generic helper to execute an action with strongly typed input/output.

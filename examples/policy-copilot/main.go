@@ -22,10 +22,10 @@ import (
 	"strings"
 
 	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/logger"
-	"github.com/duynguyendang/manglekit/policy/rulegenerator"
 	funcAdapter "github.com/duynguyendang/manglekit/adapters/func"
+	"github.com/duynguyendang/manglekit/core"
+
+	"github.com/duynguyendang/manglekit/policy/rulegenerator"
 )
 
 // =============================================================================
@@ -79,18 +79,14 @@ func main() {
 	fmt.Println()
 
 	// ---------------------------------------------------------------------------
-	// 1. Initialize Logger (using standard logger for demo)
+	// 2. Initialize the Manglekit Client (uses default Zap logger)
 	// ---------------------------------------------------------------------------
-	log := logger.NewStdLogger()
-
-	// ---------------------------------------------------------------------------
-	// 2. Initialize the Manglekit Client with Logger
-	// ---------------------------------------------------------------------------
-	client, err := manglekit.NewClient(ctx, "", manglekit.WithLogger(log))
+	client, err := manglekit.NewDefault()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize manglekit client: %v\n", err)
 		os.Exit(1)
 	}
+	log := client.Logger()
 	log.Info("Manglekit client initialized", "logging", true)
 
 	// ---------------------------------------------------------------------------

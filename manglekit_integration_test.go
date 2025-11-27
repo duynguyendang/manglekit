@@ -36,7 +36,7 @@ observability:
 
 	// Verify client was initialized
 	if client == nil {
-		t.Error("Expected non-nil client")
+		t.Fatal("Expected non-nil client")
 	}
 
 	if client.engine == nil {
@@ -89,7 +89,7 @@ observability:
 
 	// Verify client was initialized
 	if client == nil {
-		t.Error("Expected non-nil client")
+		t.Fatal("Expected non-nil client")
 	}
 }
 
