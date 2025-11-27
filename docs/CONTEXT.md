@@ -93,6 +93,14 @@ The core philosophy is **"Wrap, Don't Build"**. Manglekit does not construct you
     ```
 -   **`core.Logger`**: The structured logging interface used throughout the kernel.
 
+### Metadata Protocols (Control Plane)
+
+Manglekit uses reserved Metadata keys to manage the flow state:
+
+-   **`manglekit.decision`**: The governance outcome (ALLOW/DENY/RETRY).
+-   **`manglekit.feedback`**: Feedback for self-correction loops.
+-   **`manglekit.risk_score`**: Numeric risk assessment.
+
 ### Logic Interfaces
 
 -   **`engine.PolicyEngine`**: The high-level coordinator for governance checks.
