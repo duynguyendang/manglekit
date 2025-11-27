@@ -10,6 +10,7 @@ import (
 
 // Load reads a YAML configuration file from the given path and returns a Config object.
 // It also expands environment variables in the YAML content.
+// This function ports the legacy loading logic to the new architecture.
 //
 // Environment variable expansion supports the standard ${VAR_NAME} syntax.
 // Example: ${API_KEY} will be replaced with the value of the API_KEY environment variable.

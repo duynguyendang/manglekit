@@ -3,6 +3,7 @@ package config
 // Config is the top-level configuration structure for Manglekit.
 // It defines all the settings needed to initialize a Manglekit Client,
 // including policies, observability, and pre-defined actions.
+// This struct replaces the legacy configuration from v1.
 type Config struct {
 	// Policy configuration
 	Policy PolicyConfig `yaml:"policy" mapstructure:"policy"`

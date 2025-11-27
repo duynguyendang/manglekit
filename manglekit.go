@@ -77,26 +77,8 @@ func NewClient(ctx context.Context, policyFile string, opts ...ClientOption) (*C
 	return c, nil
 }
 
-// NewClientFromConfig creates a new Manglekit Client from a configuration file.
-// The config file is expected to be in YAML format and can use environment variable
-// expansion (e.g., ${API_KEY}).
-//
-// This is the recommended way to initialize Manglekit in production environments,
-// as it allows configuration to be managed externally via files and environment variables.
-//
-// Example:
-//
-//	client, err := manglekit.NewClientFromConfig(ctx, "mangle.yaml")
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientOption) (*Client, error) {
-	// Load configuration from file
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load configuration: %w", err)
-	}
-
+// NewClientWithConfig creates a new Manglekit Client from a pre-loaded configuration object.
+func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error) {
 	// Initialize logger (use default for now)
 	log := logger.NewStdLogger()
 
@@ -119,19 +101,43 @@ func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientO
 	c.engine = engine.NewWithObservability(c.tracer, c.logger)
 
 	// Load policy from the configured path
-	if cfg.Policy.Path != "" {
+	if cfg != nil && cfg.Policy.Path != "" {
 		if err := c.engine.LoadFromPath(cfg.Policy.Path); err != nil {
 			return nil, fmt.Errorf("failed to load policy from %q: %w", cfg.Policy.Path, err)
 		}
 	}
 
 	// Log configuration loaded successfully
-	c.logger.Info("Manglekit client initialized from config",
-		"config_path", configPath,
-		"service_name", cfg.Observability.ServiceName,
-		"observability_enabled", cfg.Observability.Enabled)
+	if cfg != nil {
+		c.logger.Info("Manglekit client initialized with config",
+			"service_name", cfg.Observability.ServiceName,
+			"observability_enabled", cfg.Observability.Enabled)
+	}
 
 	return c, nil
+}
+
+// NewClientFromConfig creates a new Manglekit Client from a configuration file.
+// The config file is expected to be in YAML format and can use environment variable
+// expansion (e.g., ${API_KEY}).
+//
+// This is the recommended way to initialize Manglekit in production environments,
+// as it allows configuration to be managed externally via files and environment variables.
+//
+// Example:
+//
+//	client, err := manglekit.NewClientFromConfig(ctx, "mangle.yaml")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientOption) (*Client, error) {
+	// Load configuration from file
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	return NewClientWithConfig(ctx, cfg, opts...)
 }
 
 // Protect is the final, public API method.

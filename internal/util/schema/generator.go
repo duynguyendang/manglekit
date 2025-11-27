@@ -8,6 +8,7 @@ import (
 )
 
 // Generate generates a JSON Schema definition from a Go Struct.
+// It uses invopop/jsonschema for generation, useful for CLI tools.
 func Generate(v any) (string, error) {
 	r := new(jsonschema.Reflector)
 	schema := r.Reflect(v)
