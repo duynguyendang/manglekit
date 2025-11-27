@@ -1,6 +1,6 @@
 # Conceptual Solution Design (CSD) — Manglekit
 
-**Version:** 2.0
+**Version:** 3.0
 **Status:** Stable
 **Context:** Operational Neuro-Symbolic AI Framework
 
