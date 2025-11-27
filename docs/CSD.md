@@ -98,11 +98,12 @@ The framework provides two orchestration strategies depending on control flow re
 
 ## 5. Capabilities & Modules
 
-### 5.1 Logic Engine (Mangle)
+### 5.1 Logic Engine (The Brain)
 
-  * **Engine:** Google Mangle (Datalog).
-  * **Storage:** In-memory execution (Microsecond latency).
-  * **Policy Loading:** Supports Hot-Reload via file watchers (`.dl`, YAML) or GitOps pipelines.
+  * **Deep Reflector (Reflector 2.0):** A specialized module that recursively traverses Go types (including Pointers, Maps, and Slices) to generate a complete Fact Base without manual configuration.
+  * **In-Memory Datalog:** Powered by Google Mangle.
+    * **Performance:** Queries run with microsecond latency as no network calls are involved.
+    * **Immutable Loading:** Policies are pre-loaded and validated strictly at startup. This guarantees that if the application starts, the policy is valid. Updates are handled via standard rolling deployments (GitOps), ensuring zero runtime configuration drift.
 
 ### 5.2 Universal Adapters
 

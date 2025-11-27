@@ -150,7 +150,7 @@ Manglekit abandons hard-coded `if/else` orchestration.
 
   * **Mechanism:** The **Router** component evaluates the current state against the RuleSet.
   * **Query:** `next_step(ActionName) :- intent("buy"), user_tier("gold").`
-  * **Result:** The logic engine dictates the next step dynamically, enabling **Hot-Reloadable Agent Behaviors**.
+  * **Result:** The logic engine dictates the next step dynamically based on data, enabling Decoupled Agent Behaviors (flow control is defined in Datalog, not hard-coded in Go).
 
 -----
 
