@@ -25,6 +25,7 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/policy/rulegenerator"
+	fn "github.com/duynguyendang/manglekit/v2/adapters/func"
 )
 
 // =============================================================================
@@ -66,62 +67,6 @@ func (m *MockLLM) Complete(ctx context.Context, prompt string) (string, error) {
 }
 
 // =============================================================================
-// Rule Generator Action (Wraps rulegenerator in a core.Action)
-// =============================================================================
-
-// RuleGeneratorAction wraps the rulegenerator package as a core.Action.
-// This allows LLM-based rule generation to be governed by the Manglekit guard.
-type RuleGeneratorAction struct {
-	name      string
-	generator *rulegenerator.Generator
-	schema    any // The sample struct for schema extraction
-}
-
-// NewRuleGeneratorAction creates a new action for generating Datalog rules.
-func NewRuleGeneratorAction(name string, generator *rulegenerator.Generator, schema any) *RuleGeneratorAction {
-	return &RuleGeneratorAction{
-		name:      name,
-		generator: generator,
-		schema:    schema,
-	}
-}
-
-// Execute takes a natural language policy (string payload) and returns the generated Datalog rule.
-func (r *RuleGeneratorAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	// Retrieve logger from context (auto-injected by guard)
-	log := core.LoggerFromContext(ctx)
-	log.Debug("executing rule generator action", "action", r.name)
-
-	policyText, ok := input.Payload.(string)
-	if !ok {
-		return core.Envelope{}, fmt.Errorf("invalid input type, expected string but got %T", input.Payload)
-	}
-
-	// Generate the Datalog rule from natural language
-	generatedRule, err := r.generator.GenerateRule(ctx, r.schema, policyText)
-	if err != nil {
-		log.Error("rule generation failed", "error", err)
-		return core.Envelope{}, fmt.Errorf("rule generation failed: %w", err)
-	}
-
-	log.Info("rule generated successfully", "rule", generatedRule)
-
-	output := manglekit.NewEnvelope(generatedRule)
-	output.SetMeta("action_name", r.name)
-	output.SetMeta("policy_text", policyText)
-
-	return output, nil
-}
-
-// Metadata returns the metadata for this rule generator action.
-func (r *RuleGeneratorAction) Metadata() core.ActionMetadata {
-	return core.ActionMetadata{
-		Name: r.name,
-		Type: "rule-generator",
-	}
-}
-
-// =============================================================================
 // Main Demo
 // =============================================================================
 
@@ -152,7 +97,8 @@ func main() {
 	// 3. Create the Rule Generator with Mock LLM
 	// ---------------------------------------------------------------------------
 	llm := &MockLLM{logger: log}
-	generator, err := rulegenerator.New(llm, rulegenerator.GeneratorOptions{
+	llmAction := fn.New("mockLLM", llm.Complete)
+	generator, err := rulegenerator.New(llmAction, rulegenerator.GeneratorOptions{
 		RuleHead: "deny(Req)", // The target predicate for our policy
 	})
 	if err != nil {
@@ -164,20 +110,18 @@ func main() {
 	sampleTransaction := Transaction{}
 
 	// ---------------------------------------------------------------------------
-	// 4. Wrap the Rule Generator in a core.Action
+	// 4. Define Logic as a Closure and Protect it
 	// ---------------------------------------------------------------------------
-	rawAction := NewRuleGeneratorAction("policy-copilot", generator, sampleTransaction)
-	log.Info("RuleGeneratorAction created")
+	genLogic := func(ctx context.Context, policy string) (string, error) {
+		return generator.GenerateRule(ctx, sampleTransaction, policy)
+	}
 
-	// ---------------------------------------------------------------------------
-	// 5. Protect the Action with Governance Guard
-	// ---------------------------------------------------------------------------
-	safeRuleGenerator := client.Protect(rawAction)
-	log.Info("Action protected with governance guard")
+	safeAction := manglekit.ProtectFunc(client, "policy-copilot", genLogic)
+	log.Info("Rule generation logic protected with governance guard")
 	fmt.Println()
 
 	// ---------------------------------------------------------------------------
-	// 6. Execute Rule Generation (Governed)
+	// 5. Execute Rule Generation (Governed)
 	// ---------------------------------------------------------------------------
 	policyText := "Block transactions over 1000 in the UK"
 
@@ -185,24 +129,14 @@ func main() {
 	fmt.Println("🔄 Generating Datalog rule from natural language (governed)...")
 	fmt.Println()
 
-	// Create input envelope with the policy text
-	input := manglekit.NewEnvelope(policyText)
-
-	// Execute the governed action
-	output, err := safeRuleGenerator.Execute(ctx, input)
+	// Use the generic Call helper for a clean, type-safe execution
+	generatedRule, err := manglekit.Call[string](ctx, safeAction, policyText)
 	if err != nil {
 		log.Error("Error generating rule", "error", err)
 		os.Exit(1)
 	}
 
-	generatedRule, ok := output.Payload.(string)
-	if !ok {
-		log.Error("Invalid output type", "type", fmt.Sprintf("%T", output.Payload))
-		os.Exit(1)
-	}
-
 	fmt.Printf("✅ Generated Datalog Rule:\n   %s\n\n", generatedRule)
-	fmt.Printf("   Action: %s\n", output.GetMeta("action_name"))
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println()
 
