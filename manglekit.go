@@ -7,6 +7,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	funcAdapter "github.com/duynguyendang/manglekit/adapters/func"
+	mcpAdapter "github.com/duynguyendang/manglekit/adapters/mcp"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/engine"
@@ -141,7 +142,27 @@ func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientO
 		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	return NewClientWithConfig(ctx, cfg, opts...)
+	c, err := NewClientWithConfig(ctx, cfg, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load MCP Actions
+	if len(cfg.MCP) > 0 {
+		mcpActions, err := mcpAdapter.Load(ctx, cfg.MCP, c.logger)
+		if err != nil {
+			c.logger.Error("failed to load MCP actions", "error", err)
+		}
+
+		for _, action := range mcpActions {
+			// Protect It
+			safeAction := c.Protect(action)
+			// Register It
+			c.RegisterAction(safeAction.Metadata().Name, safeAction)
+		}
+	}
+
+	return c, nil
 }
 
 // Protect is the final, public API method.
