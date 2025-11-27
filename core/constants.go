@@ -12,6 +12,9 @@ const (
 	// Useful for LLM Self-Correction loops.
 	KeyFeedback = "manglekit.feedback"
 
+	// KeyNextStep provides the name of the next action to route to.
+	KeyNextStep = "manglekit.next_step"
+
 	// KeyRiskScore indicates the calculated risk level (0-100).
 	// Populated by Risk Engines or Pre-Check rules.
 	KeyRiskScore = "manglekit.risk_score"
@@ -31,4 +34,5 @@ const (
 	DecisionAllow = "ALLOW"
 	DecisionDeny  = "DENY"
 	DecisionRetry = "RETRY"
+	DecisionRoute = "ROUTE"
 )

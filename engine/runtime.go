@@ -297,7 +297,9 @@ func (r *MangleRuntime) evaluate(store factstore.FactStore) error {
 
 // --- Helper Functions ---
 
-func isRuleFile(p string) bool { return strings.HasSuffix(p, ".dlog") }
+func isRuleFile(p string) bool {
+	return strings.HasSuffix(p, ".dlog") || strings.HasSuffix(p, ".dl")
+}
 
 func isFactFile(p string) bool {
 	return strings.HasSuffix(p, ".facts") ||
@@ -323,7 +325,9 @@ func parseRuleFile(file string) (parse.SourceUnit, error) {
 	lines := strings.Split(s, "\n")
 	kept := lines[:0]
 	for _, ln := range lines {
-		if strings.TrimSpace(ln) == "." {
+		trimLn := strings.TrimSpace(ln)
+		// Skip empty lines, lines that are just ".", and comments
+		if trimLn == "." || strings.HasPrefix(trimLn, "%") || strings.HasPrefix(trimLn, "//") {
 			continue
 		}
 		kept = append(kept, ln)

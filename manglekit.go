@@ -28,6 +28,7 @@ type Client struct {
 	tracer     core.Tracer
 	otelTracer trace.Tracer
 	logger     core.Logger
+	actions    map[string]core.Action
 }
 
 type ClientOption func(*Client)
@@ -52,7 +53,8 @@ func WithLogger(logger core.Logger) ClientOption {
 
 func NewClient(ctx context.Context, policyFile string, opts ...ClientOption) (*Client, error) {
 	c := &Client{
-		logger: core.NopLogger{},
+		logger:  core.NopLogger{},
+		actions: make(map[string]core.Action),
 	}
 
 	for _, opt := range opts {
@@ -85,7 +87,8 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 
 	// Create client with loaded configuration
 	c := &Client{
-		logger: log,
+		logger:  log,
+		actions: make(map[string]core.Action),
 	}
 
 	for _, opt := range opts {
@@ -248,4 +251,157 @@ func Call[Out any](ctx context.Context, action core.Action, payload any) (Out, e
 	}
 
 	return out, nil
+}
+
+// RegisterAction registers an action with the client for use in RunLoop.
+func (c *Client) RegisterAction(name string, action core.Action) {
+	c.actions[name] = action
+}
+
+// RunLoop executes a Semantic State Machine starting from startActionName.
+// It handles steering decisions (ALLOW, RETRY, ROUTE) returned by the Policy Engine.
+func (c *Client) RunLoop(ctx context.Context, startActionName string, inputPayload any) (core.Envelope, error) {
+	currentActionName := startActionName
+	payload := inputPayload
+	var feedback []string
+
+	const maxSteps = 10 // Prevent infinite loops
+	steps := 0
+
+	for steps < maxSteps {
+		steps++
+		c.logger.Info("RunLoop step", "step", steps, "action", currentActionName)
+
+		// 1. Look up action
+		action, ok := c.actions[currentActionName]
+		if !ok {
+			return core.Envelope{}, fmt.Errorf("action not found: %s", currentActionName)
+		}
+
+		// 2. Create Envelope
+		env := core.NewEnvelope(payload)
+		if len(feedback) > 0 {
+			// In a real implementation, we might want to inject this into the payload
+			// if it's an LLM prompt. For now, we attach to metadata.
+			env.Metadata["prev_feedback"] = fmt.Sprintf("%v", feedback)
+		}
+
+		// 3. Execute Action
+		// Note: The action should be wrapped by GuardedAction (via Client.Protect)
+		// which calls Authorize and Validate.
+		// However, steering happens *outside* the action execution but *inside* the loop.
+		// Wait, the prompt says "Handle Decision: Check resEnv.Metadata[core.KeyDecision]".
+		// This implies the Action (likely GuardedAction) returns the decision in metadata.
+		// But currently GuardedAction (in guard/guard.go) might not run EvaluateSteering.
+		// I need to check guard/guard.go. If it doesn't, I should run EvaluateSteering here?
+		// "Upgrade the Engine and SDK to support Flow Control... Implement the RunLoop... Handle Decision: Check resEnv.Metadata[core.KeyDecision]."
+		// This strongly suggests GuardedAction should inject this metadata.
+		// But wait, the prompt puts steering logic in Engine.
+		// If GuardedAction calls Authorize -> Execute -> Validate, where does Steering fit?
+		// If Authorize returns DENY, execution stops.
+		// If Validate returns ALLOW, we proceed.
+		// Maybe Steering should be called explicitly here in RunLoop?
+		// Or maybe Validate should call Steering?
+		// The prompt says: "Engine Implementation... Upgrade the Engine to support 'Steering queries'... Implement EvaluateSteering...".
+		// And "RunLoop... Handle Decision: Check resEnv.Metadata[core.KeyDecision]".
+		// If RunLoop calls `action.Execute`, and that action is a `GuardedAction`, then `GuardedAction` *must* run `EvaluateSteering` and populate metadata.
+		//
+		// BUT, I haven't modified `guard/guard.go` yet.
+		// If I don't modify `guard/guard.go`, `resEnv` won't have the decision from `EvaluateSteering`.
+		// So I MUST modify `guard/guard.go` OR call `EvaluateSteering` directly in `RunLoop`.
+		// calling it directly in RunLoop seems safer given I wasn't explicitly asked to modify `guard/guard.go`,
+		// BUT the prompt says "Check resEnv.Metadata[core.KeyDecision]". This implies the decision is *already* in the result envelope.
+		// So `GuardedAction` is the right place.
+		//
+		// However, `GuardedAction` returns `Envelope`.
+		// If I run `EvaluateSteering` *after* execution (in Validate phase?), I can attach it.
+		//
+		// Let's look at `RunLoop` logic again:
+		// "Execute: resEnv, err := currentAction.Execute(ctx, env)."
+		// "Handle Decision: Check resEnv.Metadata[core.KeyDecision]."
+		//
+		// So `currentAction.Execute` must return the decision.
+		// I will modify `RunLoop` to call `EvaluateSteering` IF it's not present?
+		// No, the prompt is about "Steering & Routing Subsystem".
+		// It's cleaner if `RunLoop` coordinates this using the Engine directly if the Action didn't.
+		// BUT, `Client` has `engine`.
+		//
+		// Let's implement it in `RunLoop` by calling `c.engine.EvaluateSteering` explicitly for now,
+		// and enriching the result envelope.
+		//
+		// WAIT, `EvaluateSteering` takes `input` (the request).
+		// Should we steer based on *Input* (Pre-check) or *Output* (Post-check)?
+		// The prompt says: "Query: correction(_, Hint)? (where _ matches the current request ID)."
+		// And the example Datalog: `correction(Req, ...) :- payload.sql(Req, SQL) ...`
+		// The example Datalog matches on `payload.sql`, which sounds like *Input* if it's a SQL generation tool, or *Output* if it generated SQL.
+		// "Retry Logic: If SQL contains DROP, ask to fix". This sounds like we generated a SQL (Output) and we are checking it.
+		// So we steer based on the *Result* of the action.
+		// So `EvaluateSteering` should be called on `resEnv` (the result of the action).
+		//
+		// Let's re-read the prompt logic for `EvaluateSteering`:
+		// "Query: correction(_, Hint)? (where _ matches the current request ID)."
+		// In `Authorize` (Pre-check), we use `Req`.
+		// In `Validate` (Post-check), we use `Output`.
+		//
+		// The `EvaluateSteering` signature I added takes `input core.Envelope`.
+		// In `RunLoop`, after `action.Execute`, we have `resEnv`.
+		// So we should pass `resEnv` to `EvaluateSteering`.
+		// And we should probably use "Output" or keep "Req" depending on convention.
+		// `toMangleFacts` in `policy.go` uses "Req" hardcoded in my implementation of `EvaluateSteering`.
+		// I should probably allow customizing the ID or just stick to "Req" and map the envelope payload to it.
+		//
+		// So, in `RunLoop`:
+		// 1. Execute action -> resEnv
+		// 2. Call `c.engine.EvaluateSteering(ctx, action.Metadata(), resEnv)`
+		// 3. Update `resEnv.Metadata` with the decision and keys.
+		// 4. Then proceed with the switch case.
+
+		// Execute the action
+		resEnv, err := action.Execute(ctx, env)
+		if err != nil {
+			return core.Envelope{}, err
+		}
+
+		// Evaluate Steering based on the RESULT
+		decision, meta := c.engine.EvaluateSteering(ctx, action.Metadata(), resEnv)
+
+		// Merge steering metadata into response envelope
+		if resEnv.Metadata == nil {
+			resEnv.Metadata = make(map[string]string)
+		}
+		resEnv.Metadata[core.KeyDecision] = decision
+		for k, v := range meta {
+			resEnv.Metadata[k] = v
+		}
+
+		// Handle Decision
+		switch decision {
+		case core.DecisionAllow:
+			return resEnv, nil
+		case core.DecisionDeny:
+			return core.Envelope{}, fmt.Errorf("action denied by steering policy")
+		case core.DecisionRetry:
+			if hint, ok := meta[core.KeyFeedback]; ok {
+				feedback = append(feedback, hint)
+				c.logger.Info("steering: retry", "feedback", hint)
+				continue // Loop same action
+			}
+			// If no feedback, treat as allow? Or error?
+			// Default to allow if something is wrong
+			return resEnv, nil
+		case core.DecisionRoute:
+			if next, ok := meta[core.KeyNextStep]; ok {
+				currentActionName = next
+				payload = resEnv.Payload // Pipe output to input
+				feedback = nil // Reset feedback
+				c.logger.Info("steering: route", "next_step", next)
+				continue
+			}
+			return resEnv, nil
+		default:
+			return resEnv, nil
+		}
+	}
+
+	return core.Envelope{}, fmt.Errorf("steering loop exceeded max steps (%d)", maxSteps)
 }

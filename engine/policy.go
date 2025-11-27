@@ -273,6 +273,62 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 	return output, nil
 }
 
+// EvaluateSteering determines the next course of action based on steering policies.
+// It checks for correction hints (Retry) and routing instructions (Route).
+//
+// Logic Priority:
+// 1. Correction (Retry) - Highest Priority
+// 2. Routing (Route)
+// 3. Allow (Proceed) - Default
+func (e *PolicyEngine) EvaluateSteering(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) (string, map[string]string) {
+	decision := core.DecisionAllow
+	metadata := make(map[string]string)
+
+	if e.runtime == nil || e.runtime.programInfo == nil {
+		return decision, metadata
+	}
+
+	// Convert the input payload to Mangle facts
+	// We use "Req" as the entity ID, consistent with Authorize
+	facts, err := toMangleFacts("Req", input.Payload)
+	if err != nil {
+		if e.logger != nil {
+			e.logger.Debug("failed to convert input to facts for steering", "error", err)
+		}
+		return decision, metadata
+	}
+
+	// 1. Check Correction (Retry)
+	// Query: correction("Req", Hint)
+	err = e.runtime.QueryWithSolutions(facts, `correction("Req", Hint)`, func(solution map[string]any) error {
+		if hint, ok := solution["Hint"].(string); ok {
+			decision = core.DecisionRetry
+			metadata[core.KeyFeedback] = hint
+			// Stop searching after first match? Datalog might return multiple.
+			// We take the first one.
+			return fmt.Errorf("found") // Use error to break early
+		}
+		return nil
+	})
+
+	if decision == core.DecisionRetry {
+		return decision, metadata
+	}
+
+	// 2. Check Routing
+	// Query: next_step("Req", Target)
+	err = e.runtime.QueryWithSolutions(facts, `next_step("Req", Target)`, func(solution map[string]any) error {
+		if target, ok := solution["Target"].(string); ok {
+			decision = core.DecisionRoute
+			metadata[core.KeyNextStep] = target
+			return fmt.Errorf("found") // Use error to break early
+		}
+		return nil
+	})
+
+	return decision, metadata
+}
+
 // toMangleFacts converts a Go data structure into a slice of Mangle atoms.
 // It uses reflection to traverse the structure and create facts.
 // Each field becomes a fact with the format: predicate(entityID, value)
