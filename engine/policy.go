@@ -17,6 +17,7 @@ type PolicyEngine struct {
 	tracer  core.Tracer
 	logger  core.Logger
 	runtime *MangleRuntime
+	lineage *LineageGraph
 }
 
 // New creates a new PolicyEngine without a tracer or logger (for backward compatibility).
@@ -26,6 +27,7 @@ func New() *PolicyEngine {
 		tracer:  &core.NopTracer{},
 		logger:  core.NopLogger{},
 		runtime: NewMangleRuntime(),
+		lineage: NewLineageGraph(),
 	}
 }
 
@@ -39,6 +41,7 @@ func NewWithTracer(tracer core.Tracer) *PolicyEngine {
 		tracer:  tracer,
 		logger:  core.NopLogger{},
 		runtime: NewMangleRuntime(),
+		lineage: NewLineageGraph(),
 	}
 }
 
@@ -54,7 +57,21 @@ func NewWithObservability(tracer core.Tracer, logger core.Logger) *PolicyEngine 
 		tracer:  tracer,
 		logger:  logger,
 		runtime: NewMangleRuntime(),
+		lineage: NewLineageGraph(),
 	}
+}
+
+// RecordLineage records a lineage relationship in the engine's graph and adds observability attributes.
+func (e *PolicyEngine) RecordLineage(ctx context.Context, childID, parentID string) {
+	if e.lineage == nil {
+		return
+	}
+
+	// 1. Store in memory graph
+	e.lineage.RecordLineage(ctx, childID, parentID)
+
+	// 2. Observe with OTel (Placeholder)
+	// if e.tracer != nil { ... }
 }
 
 // Logger returns the engine's configured Logger instance.
@@ -64,6 +81,11 @@ func (e *PolicyEngine) Logger() core.Logger {
 		return core.NopLogger{}
 	}
 	return e.logger
+}
+
+// Lineage returns the lineage graph.
+func (e *PolicyEngine) Lineage() *LineageGraph {
+	return e.lineage
 }
 
 // LoadFromPath loads policy rules from a file.
@@ -134,6 +156,18 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 		return core.ErrPolicyViolation
 	}
 
+	// Inject lineage facts
+	if e.lineage != nil {
+		lineageFacts, err := e.lineage.ToFacts()
+		if err != nil {
+			if e.logger != nil {
+				e.logger.Warn("failed to generate lineage facts", "error", err)
+			}
+		} else {
+			facts = append(facts, lineageFacts...)
+		}
+	}
+
 	// Execute the deny(Req) query
 	denied, err := e.runtime.ExecuteQuery(facts, `deny("Req")`)
 	if err != nil {
@@ -188,6 +222,18 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 		}
 		// If conversion fails, pass through for safety
 		return output, nil
+	}
+
+	// Inject lineage facts
+	if e.lineage != nil {
+		lineageFacts, err := e.lineage.ToFacts()
+		if err != nil {
+			if e.logger != nil {
+				e.logger.Warn("failed to generate lineage facts", "error", err)
+			}
+		} else {
+			facts = append(facts, lineageFacts...)
+		}
 	}
 
 	// Execute the deny(Output) query for post-check validation
