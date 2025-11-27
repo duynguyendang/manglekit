@@ -1,9 +1,9 @@
 package orchestrators
 
 import (
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/pipeline/declarative"
-	"github.com/duynguyendang/manglekit/pipeline/sandwich"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/pipeline/declarative"
+	"github.com/duynguyendang/manglekit/v1/pipeline/sandwich"
 )
 
 // Handlers returns a slice of orchestrator handlers

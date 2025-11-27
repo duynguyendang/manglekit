@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/duynguyendang/manglekit/core/reflection"
+	"github.com/duynguyendang/manglekit/v1/core/reflection"
 )
 
 // User represents a user in the system.

@@ -10,9 +10,9 @@ import (
 	"reflect"
 
 	"github.com/duynguyendang/manglekit/config"
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/retrieve"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/core/diapi"
+	"github.com/duynguyendang/manglekit/v1/retrieve"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/mitchellh/mapstructure"

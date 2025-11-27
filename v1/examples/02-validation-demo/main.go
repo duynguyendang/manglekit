@@ -6,9 +6,9 @@ import (
 	"io/ioutil"
 	"log"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/registry"
-	_ "github.com/duynguyendang/manglekit/providers/all" // Auto-registers all standard providers
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/internal/registry"
+	_ "github.com/duynguyendang/manglekit/v1/providers/all" // Auto-registers all standard providers
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/joho/godotenv"
 )

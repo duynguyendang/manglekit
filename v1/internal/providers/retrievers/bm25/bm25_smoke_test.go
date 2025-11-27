@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/internal/providers/retrievers/bm25"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/core/diapi"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/retrievers/bm25"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

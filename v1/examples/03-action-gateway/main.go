@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/diapi"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/logger"
-	"github.com/duynguyendang/manglekit/internal/providers/rules/mangle"
-	"github.com/duynguyendang/manglekit/pipeline/sandwich"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/rules/mangle"
+	"github.com/duynguyendang/manglekit/v1/pipeline/sandwich"
 )
 
 // A. The State (Data Model)

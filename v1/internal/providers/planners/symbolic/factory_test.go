@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/internal/providers/planners/symbolic"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/core/diapi"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/planners/symbolic"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -1,6 +1,6 @@
 package state
 
-import "github.com/duynguyendang/manglekit/core"
+import "github.com/duynguyendang/manglekit/v1/core"
 
 // InMemoryOptions configures the in-memory state provider. It is currently empty but
 // is included for future extensibility and consistency with other providers.

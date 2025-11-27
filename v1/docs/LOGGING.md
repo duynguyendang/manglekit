@@ -10,7 +10,7 @@ The standard usage pattern is to use the logger provided by the `core.Observabil
 package mypackage
 
 import (
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/v1/core"
 )
 
 type MyComponent struct {
@@ -45,8 +45,8 @@ You can inject a custom logger by implementing the `core.Logger` interface and p
 package main
 
 import (
-	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/v1"
+	"github.com/duynguyendang/manglekit/v1/core"
 )
 
 type MyLogger struct{}

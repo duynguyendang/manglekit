@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/v1/core"
 )
 
 // SymbolicPlanner implements core.Planner using a symbolic reasoner.

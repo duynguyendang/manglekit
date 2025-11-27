@@ -3,7 +3,7 @@ package converters
 import (
 	"fmt"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/v1/core"
 	"github.com/google/mangle/ast"
 )
 

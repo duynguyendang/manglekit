@@ -106,7 +106,7 @@ To create a new example:
 <!-- end list -->
 
 ```go
-import _ "github.com/duynguyendang/manglekit/providers/all"
+import _ "github.com/duynguyendang/manglekit/v1/providers/all"
 ```
 
 -----

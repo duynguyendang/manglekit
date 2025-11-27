@@ -3,7 +3,7 @@ package retrieve
 import (
 	"context"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/v1/core"
 )
 
 // NoopRetriever is a retriever that does nothing.

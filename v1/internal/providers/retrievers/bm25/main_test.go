@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/internal/registry"
+	"github.com/duynguyendang/manglekit/v1/internal/registry"
 )
 
 func TestMain(m *testing.M) {

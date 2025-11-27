@@ -1,8 +1,8 @@
 package llm
 
 import (
-	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/internal/providers/llm/genkit"
+	"github.com/duynguyendang/manglekit/v1"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/llm/genkit"
 )
 
 // Register registers all LLM providers with the MangleKit registry.

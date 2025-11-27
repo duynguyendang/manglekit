@@ -1,7 +1,7 @@
 // File: pipeline/sandwich/options.go
 package sandwich
 
-import "github.com/duynguyendang/manglekit/core"
+import "github.com/duynguyendang/manglekit/v1/core"
 
 // Options defines the YAML configuration for the Sandwich orchestrator.
 type Options struct {

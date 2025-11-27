@@ -7,12 +7,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/internal/providers/retrievers"
-	"github.com/duynguyendang/manglekit/internal/providers/state"
-	"github.com/duynguyendang/manglekit/pipeline/declarative"
+	"github.com/duynguyendang/manglekit/v1"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/core/diapi"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/retrievers"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/state"
+	"github.com/duynguyendang/manglekit/v1/pipeline/declarative"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/stretchr/testify/require"
 )

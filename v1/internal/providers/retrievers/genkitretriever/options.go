@@ -1,6 +1,6 @@
 package genkitretriever
 
-import "github.com/duynguyendang/manglekit/core"
+import "github.com/duynguyendang/manglekit/v1/core"
 
 // GenkitRetrieverOptions provides universal configuration for ANY Genkit retriever provider.
 // This single options struct allows users to specify the provider in configuration

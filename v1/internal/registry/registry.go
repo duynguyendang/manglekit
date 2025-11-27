@@ -3,7 +3,7 @@ package registry
 import (
 	"sync"
 
-	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/v1"
 )
 
 var (

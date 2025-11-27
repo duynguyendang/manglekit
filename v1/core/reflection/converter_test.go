@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/core/reflection"
+	"github.com/duynguyendang/manglekit/v1/core/reflection"
 	"github.com/google/mangle/ast"
 )
 

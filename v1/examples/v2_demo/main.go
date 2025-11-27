@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/duynguyendang/manglekit/v2/adapters/func"
-	"github.com/duynguyendang/manglekit/v2/core"
-	"github.com/duynguyendang/manglekit/v2/engine"
-	"github.com/duynguyendang/manglekit/v2/guard"
+	"github.com/duynguyendang/manglekit/adapters/func"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/engine"
+	"github.com/duynguyendang/manglekit/guard"
 )
 
 // 1. Define Domain

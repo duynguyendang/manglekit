@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/pipeline"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/pipeline"
 )
 
 // LLMStage is responsible for synthesizing a final answer by calling a large

@@ -3,16 +3,16 @@
 package all
 
 import (
-	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/internal/providers/llm"
-	"github.com/duynguyendang/manglekit/internal/providers/rerank/cosine"
-	"github.com/duynguyendang/manglekit/internal/providers/retrievers/bm25"
-	"github.com/duynguyendang/manglekit/internal/providers/retrievers/hybrid"
-	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/jsonschema"
-	"github.com/duynguyendang/manglekit/internal/providers/schemaparsers/rdf"
-	"github.com/duynguyendang/manglekit/internal/providers/state/inmemory"
-	"github.com/duynguyendang/manglekit/pipeline/declarative"
-	"github.com/duynguyendang/manglekit/pipeline/sandwich"
+	"github.com/duynguyendang/manglekit/v1"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/llm"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/rerank/cosine"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/retrievers/bm25"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/retrievers/hybrid"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/schemaparsers/jsonschema"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/schemaparsers/rdf"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/state/inmemory"
+	"github.com/duynguyendang/manglekit/v1/pipeline/declarative"
+	"github.com/duynguyendang/manglekit/v1/pipeline/sandwich"
 )
 
 func Register(r *manglekit.Registry) {

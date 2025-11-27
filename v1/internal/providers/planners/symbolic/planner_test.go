@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/v1/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

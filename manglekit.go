@@ -6,7 +6,7 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	funcAdapter "github.com/duynguyendang/manglekit/v2/adapters/func"
+	funcAdapter "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/engine"
