@@ -14,6 +14,9 @@ type Config struct {
 	// Pre-defined Actions (LLMs, Retrievers) that can be loaded by name.
 	// These are optional and reserved for future use.
 	Actions map[string]ActionConfig `yaml:"actions" mapstructure:"actions"`
+
+	// MCP Configuration
+	MCP []MCPServerConfig `yaml:"mcp" mapstructure:"mcp"`
 }
 
 // PolicyConfig defines settings for the Policy Engine.
@@ -50,4 +53,13 @@ type ActionConfig struct {
 
 	// Options are provider-specific configuration options
 	Options map[string]interface{} `yaml:"options" mapstructure:"options"`
+}
+
+// MCPServerConfig defines configuration for an MCP Server.
+type MCPServerConfig struct {
+	Name      string   `yaml:"name" mapstructure:"name"`
+	Transport string   `yaml:"transport" mapstructure:"transport"` // "stdio" or "sse"
+	Command   string   `yaml:"command" mapstructure:"command"`
+	Args      []string `yaml:"args" mapstructure:"args"`
+	Env       []string `yaml:"env" mapstructure:"env"` // e.g. ["KEY=VALUE"]
 }
