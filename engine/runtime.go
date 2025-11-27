@@ -131,6 +131,26 @@ func (r *MangleRuntime) Load(path string) error {
 	return nil
 }
 
+// LoadFacts adds a list of Datalog fact strings to the base fact store.
+// These facts become part of the static knowledge base.
+func (r *MangleRuntime) LoadFacts(facts []string) error {
+	for _, factStr := range facts {
+		atom, err := parse.Atom(factStr)
+		if err != nil {
+			return fmt.Errorf("failed to parse fact '%s': %w", factStr, err)
+		}
+		r.baseFactStore.Add(atom)
+	}
+
+	// If a program is already loaded, re-evaluate to update derived facts
+	if r.programInfo != nil {
+		if err := r.evaluate(r.baseFactStore); err != nil {
+			return fmt.Errorf("failed to evaluate program with new facts: %w", err)
+		}
+	}
+	return nil
+}
+
 // LoadFromString loads a Datalog rule from a string.
 // The rule should be a complete Datalog clause (e.g., "deny(Req) :- amount(Req, X), fn:gt(X, 100).").
 func (r *MangleRuntime) LoadFromString(rule string) error {

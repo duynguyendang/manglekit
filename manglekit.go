@@ -112,6 +112,13 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 		}
 	}
 
+	// Load knowledge from the configured path
+	if cfg != nil && cfg.Knowledge.Path != "" {
+		if err := c.engine.LoadKnowledge(cfg.Knowledge.Path); err != nil {
+			return nil, fmt.Errorf("failed to load knowledge from %q: %w", cfg.Knowledge.Path, err)
+		}
+	}
+
 	// Log configuration loaded successfully
 	if cfg != nil {
 		c.logger.Info("Manglekit client initialized with config",

@@ -3,7 +3,7 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 3.0.0
-last_updated: 2025-11-27T14:50:00Z
+last_updated: 2025-11-28T00:00:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -41,10 +41,12 @@ graph TD
         PE[PolicyEngine]
         Runtime[MangleRuntime]
         Reflect[Reflector]
-        
+        KB[KnowledgeStore]
+
         Lifecycle <--> PE
         PE --> Runtime
         PE --> Reflect
+        PE --> KB
     end
 
     subgraph "Universal Adapters"
@@ -103,8 +105,9 @@ Manglekit uses reserved Metadata keys to manage the flow state:
 
 ### Logic Interfaces
 
--   **`engine.PolicyEngine`**: The high-level coordinator for governance checks.
+-   **`engine.PolicyEngine`**: The high-level coordinator for governance checks. It now manages a **Static Knowledge Base**.
 -   **`engine.Reflector`**: The system that converts Go structs into Datalog facts.
+-   **`engine/knowledge`**: Subsystem for loading and managing static RDF knowledge.
 
 ## 4. The "Guarded Action" Lifecycle
 
@@ -136,6 +139,7 @@ Instead of "Providers" and "Factories", Manglekit v3 uses **Adapters**.
 Configuration is handled by the `config` package, which loads from YAML.
 
 *   **Policy Path**: Location of `.dl` files.
+*   **Knowledge Base**: Location of static knowledge (`.ttl`) files.
 *   **Observability**: OTel endpoint, service name.
 *   **Env Vars**: Supported via `${VAR}` syntax in YAML.
 
@@ -160,6 +164,7 @@ The codebase is **Stable (v3.0.0)**.
 
 ## 9. Changelog
 
+-   **2025-11-28**: **Knowledge Integration**. The Engine now supports loading static knowledge from RDF Turtle files as Datalog facts. `ToFacts` reflection updated for standard Datalog predicates.
 -   **2025-11-27**: **Genesis Release (v3.0.0)**. Complete re-architecture. Removed Builder/Registry. Introduced Client/Guard/Engine model.
 -   **2025-11-25**: **Smart Router**: (Legacy v0.x) Implemented dynamic dispatch.
 -   **2025-11-20**: **Reflection**: Added `core/reflection`.
