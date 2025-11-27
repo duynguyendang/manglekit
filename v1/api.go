@@ -3,8 +3,8 @@ package manglekit
 import (
 	"context"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/retrieve"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/retrieve"
 )
 
 // ProgrammaticBuilder defines the fluent interface for programmatically constructing

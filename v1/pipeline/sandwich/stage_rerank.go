@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/pipeline"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/pipeline"
 )
 
 // RerankStage is responsible for re-scoring and re-ordering the documents

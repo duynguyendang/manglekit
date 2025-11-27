@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/reflection"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/core/reflection"
 	"github.com/duynguyendang/manglekit/policy/rulegenerator"
 	"github.com/google/mangle/analysis"
 	"github.com/google/mangle/ast"

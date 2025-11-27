@@ -1,6 +1,6 @@
 package http
 
-import "github.com/duynguyendang/manglekit/core"
+import "github.com/duynguyendang/manglekit/v1/core"
 
 const (
 	ProviderName = "http"

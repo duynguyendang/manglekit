@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/internal/embedders/google"
-	"github.com/duynguyendang/manglekit/internal/embedders/openai"
+	"github.com/duynguyendang/manglekit/v1"
+	"github.com/duynguyendang/manglekit/v1/internal/embedders/google"
+	"github.com/duynguyendang/manglekit/v1/internal/embedders/openai"
 )
 
 // Register registers all embedder providers with the MangleKit registry.

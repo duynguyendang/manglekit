@@ -1,6 +1,6 @@
 package embed
 
-import "github.com/duynguyendang/manglekit/core"
+import "github.com/duynguyendang/manglekit/v1/core"
 
 // GoogleEmbedderOptions provides typed configuration for Google embedding models,
 // such as those available through the `generative-ai-go` library.

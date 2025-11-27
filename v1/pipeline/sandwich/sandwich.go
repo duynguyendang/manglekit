@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/statehelper"
-	"github.com/duynguyendang/manglekit/pipeline"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/internal/statehelper"
+	"github.com/duynguyendang/manglekit/v1/pipeline"
 	"github.com/google/uuid"
 )
 

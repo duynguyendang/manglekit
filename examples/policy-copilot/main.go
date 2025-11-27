@@ -25,7 +25,7 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/policy/rulegenerator"
-	fn "github.com/duynguyendang/manglekit/v2/adapters/func"
+	funcAdapter "github.com/duynguyendang/manglekit/adapters/func"
 )
 
 // =============================================================================
@@ -97,7 +97,7 @@ func main() {
 	// 3. Create the Rule Generator with Mock LLM
 	// ---------------------------------------------------------------------------
 	llm := &MockLLM{logger: log}
-	llmAction := fn.New("mockLLM", llm.Complete)
+	llmAction := funcAdapter.New("mockLLM", llm.Complete)
 	generator, err := rulegenerator.New(llmAction, rulegenerator.GeneratorOptions{
 		RuleHead: "deny(Req)", // The target predicate for our policy
 	})

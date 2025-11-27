@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/v1/core"
 )
 
 // StdLogger is a lightweight fallback that writes structured records to stdout.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/v1/core"
 )
 
 // PipelineContext is a typed, mutable data carrier that flows through the stages

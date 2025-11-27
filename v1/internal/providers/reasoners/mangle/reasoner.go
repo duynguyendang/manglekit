@@ -5,10 +5,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/internal/providers/rules/mangle"
+	"github.com/duynguyendang/manglekit/v1"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/core/diapi"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/rules/mangle"
 	"github.com/google/mangle/ast"
 )
 

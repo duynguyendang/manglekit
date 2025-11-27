@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/duynguyendang/manglekit/core/diapi"
-	"github.com/duynguyendang/manglekit/internal/providers/state/inmemory"
+	"github.com/duynguyendang/manglekit/v1/core/diapi"
+	"github.com/duynguyendang/manglekit/v1/internal/providers/state/inmemory"
 	"github.com/stretchr/testify/require"
 )
 

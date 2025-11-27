@@ -1,6 +1,6 @@
 package declarative
 
-import "github.com/duynguyendang/manglekit/core"
+import "github.com/duynguyendang/manglekit/v1/core"
 
 // ToolStepConfig defines a single tool to be executed.
 // The "Name" must match the name of a component defined elsewhere in the config.

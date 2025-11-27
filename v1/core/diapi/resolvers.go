@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/v1/core"
 )
 
 // ResolverRegistry manages component-specific dependency resolvers.

@@ -1,6 +1,6 @@
 package config
 
-import "github.com/duynguyendang/manglekit/core"
+import "github.com/duynguyendang/manglekit/v1/core"
 
 // Config is the root of the Manglekit configuration. It defines the components
 // that make up a pipeline and their settings.

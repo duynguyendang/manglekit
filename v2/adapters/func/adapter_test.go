@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit/core"
-	fn "github.com/duynguyendang/manglekit/v2/adapters/func"
+	funcAdapter "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -34,7 +34,7 @@ func TestActionFunc(t *testing.T) {
 		}
 
 		// Create the adapter
-		action := fn.New("addOne", addOne)
+		action := funcAdapter.New("addOne", addOne)
 
 		// Create input envelope
 		input := core.NewEnvelope(10)
@@ -61,7 +61,7 @@ func TestActionFunc(t *testing.T) {
 			return "", errors.New("something went wrong")
 		}
 
-		action := fn.New("failFunc", failFunc)
+		action := funcAdapter.New("failFunc", failFunc)
 		input := core.NewEnvelope("test")
 
 		output, err := action.Execute(ctx, input)
@@ -75,14 +75,14 @@ func TestActionFunc(t *testing.T) {
 			return i + 1, nil
 		}
 
-		action := fn.New("addOne", addOne)
+		action := funcAdapter.New("addOne", addOne)
 
 		// Pass a string instead of an int
 		input := core.NewEnvelope("not-an-integer")
 
 		output, err := action.Execute(ctx, input)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "unexpected input type")
+		assert.Contains(t, err.Error(), "invalid input type")
 		assert.Equal(t, core.Envelope{}, output) // Expect a zero-value envelope on error
 	})
 }

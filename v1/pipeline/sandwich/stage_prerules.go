@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/reflection"
-	"github.com/duynguyendang/manglekit/pipeline"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/core/reflection"
+	"github.com/duynguyendang/manglekit/v1/pipeline"
 )
 
 // PreRulesStage evaluates the set of rules configured to run at the "pre" stage.

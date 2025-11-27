@@ -1,7 +1,7 @@
 package inmemory_vector
 
 import (
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/v1/core"
 )
 
 // InMemoryVectorOptions configures the in-memory vector retriever.

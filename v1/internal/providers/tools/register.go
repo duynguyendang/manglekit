@@ -1,7 +1,7 @@
 package tools
 
 import (
-	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/v1"
 )
 
 // Register registers the component handler for the tool kind.

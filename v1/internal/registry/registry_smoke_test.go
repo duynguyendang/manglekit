@@ -6,9 +6,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/registry"
+	"github.com/duynguyendang/manglekit/v1"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/internal/registry"
 	"github.com/duynguyendang/manglekit/internal/testproviders/noop"
 )
 

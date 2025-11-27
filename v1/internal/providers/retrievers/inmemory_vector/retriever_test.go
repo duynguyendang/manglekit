@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/v1/core"
 )
 
 func TestMarkdownLoader_LoadMarkdownFiles(t *testing.T) {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/core/diapi"
+	"github.com/duynguyendang/manglekit/v1/core"
+	"github.com/duynguyendang/manglekit/v1/core/diapi"
 	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/testproviders/mock"
 	"github.com/google/mangle/ast"

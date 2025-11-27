@@ -1,7 +1,7 @@
 package http
 
 import (
-	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/v1"
 )
 
 func Register(r *manglekit.Registry) {
