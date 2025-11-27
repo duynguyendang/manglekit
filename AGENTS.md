@@ -9,6 +9,8 @@
 This document defines how coding agents interact with the **Manglekit v3.0.0 (Genesis)** codebase.
 It specifies conventions, automated tasks, and safety rules to ensure that all AI-driven modifications stay consistent with the system design and context documentation.
 
+Agents use this file as an **operational manual** to perform reasoning, refactoring, documentation updates, and observability instrumentation within the Go SDK.
+
 Agents must treat the documentation set (`CONTEXT.md`, `HLD.md`, `LLD.md`, `ADR.md`) as the synchronized **architecture source of truth**.
 `CONTEXT.md` is the **live baseline** — always validate and update it whenever architecture or dependency injection logic changes.
 
@@ -49,10 +51,23 @@ Before performing any modification, the agent must:
 
 1. **Load the full content** of `docs/CONTEXT.md`.
 2. **Verify freshness:** compare the `last_updated:` field to the most recent code commit.
-   - If the context is **older than 3 days**, treat it as *potentially stale*.
+   - If the context is **older than 3 days**, treat it as *potentially stale* and rely on the code diff as the authoritative source.
    - If up-to-date, use it directly as the architectural baseline.
 
-### 3.2 Reflecting Code Changes
+### 3.2 How to Use the Context for Reasoning
+
+Use the document’s internal structure as a guide:
+
+| Section | Purpose |
+|----------|----------|
+| **Implementation Snapshot** | Understand the Client/Guard/Engine relationship. |
+| **Dependency Rules** | Validate layering — ensure `guard` doesn't depend on `adapters`. |
+| **Core Contracts** | Retrieve `Action` and `Envelope` definitions. |
+| **Guarded Action Lifecycle** | Understand the Trace -> AuthZ -> Exec -> Validate flow. |
+| **Known Gaps** | Identify open architectural issues (e.g., Lineage). |
+| **Changelog** | Understand recent architectural shifts (e.g., v3.0.0 Genesis). |
+
+### 3.3 Reflecting Code Changes
 
 When code changes affect architecture, interfaces, or runtime behavior, the agent must **edit `docs/CONTEXT.md` directly** —
 updating sections, known gaps, and timestamps. This guarantees that the documentation always mirrors the true, current state of the system.
@@ -107,7 +122,23 @@ Trigger the **auto-sync process** whenever any of the following occur:
 
 ---
 
-## 7. Observability and Logging Rules
+## 7. Hooks & Optional Automation
+
+> No CLI commands are required. The agent must self-update documentation as described in §6.
+> This section only defines optional automation policies for CI enforcement.
+
+- **Pre-commit (recommended):**
+  If a patch modifies files in §6.1 but does not include doc updates (`docs/CONTEXT.md`, `LLD.md`, `HLD.md`), the agent should **automatically append** a commit:
+```
+chore(context): auto-sync CONTEXT.md (+LLD/HLD)
+```
+
+- **CI lint (recommended):**
+- Ensure `docs/CONTEXT.md`'s `last_updated` is within ±3 days of the latest commit touching core/guard/engine.
+
+---
+
+## 8. Observability and Logging Rules
 
 * Never print directly to stdout in production paths.
 * Use `core.Logger` injected via Context (`core.LoggerFromContext(ctx)`).
@@ -116,7 +147,7 @@ Trigger the **auto-sync process** whenever any of the following occur:
 
 ---
 
-## 8. Testing Enforcement
+## 9. Testing Enforcement
 
 Agents must maintain or extend test coverage when altering code in these areas:
 
@@ -128,7 +159,7 @@ Use naming pattern `Test<Component>_<Behavior>`.
 
 ---
 
-## 9. Architecture Rules (Enforced)
+## 10. Architecture Rules (Enforced)
 
 - **Wrap, Don't Build**: The framework does not construct objects; it wraps them.
 - **Layered dependencies**:
@@ -140,7 +171,7 @@ Use naming pattern `Test<Component>_<Behavior>`.
 
 ---
 
-## 10. Implementation Checklists
+## 11. Implementation Checklists
 
 ### New Adapter
 
@@ -157,7 +188,80 @@ Use naming pattern `Test<Component>_<Behavior>`.
 
 ---
 
-## 11. Agent Diagnostic Checklist
+## 12. Architectural Patterns (Reference)
+
+This section documents key architectural patterns for v3.0.0.
+
+### 12.1 The "Guarded Action" Pattern
+
+**Context:** We need to enforce policy and observability on *any* operation without modifying the operation itself.
+
+**Implementation:**
+- Use the Decorator pattern.
+- `GuardedAction` implements `core.Action`.
+- It wraps an inner `core.Action`.
+- It executes `Trace -> Authorize -> Inner.Execute -> Validate`.
+
+**When Implementing:** Always use `client.Protect()` to apply this pattern. Never manually construct `guard.GuardedAction` in user code.
+
+### 12.2 The "Universal Adapter" Pattern
+
+**Context:** We want to support many external libraries (Genkit, LangChain) without tight coupling.
+
+**Implementation:**
+- Define a thin adapter struct that holds the external client.
+- Implement `core.Action` on the adapter.
+- Map `core.Envelope` (Payload) to the external client's input format.
+- Map the external client's output back to `core.Envelope`.
+
+**When Implementing:** Create new packages in `adapters/` for new external libraries. Keep them thin.
+
+### 12.3 Zero-Config Reflection
+
+**Context:** We need to validate arbitrary Go structs in Datalog without writing manual mappers.
+
+**Implementation:**
+- Use `core/reflection` to walk the struct.
+- Generate facts: `field(ID, "FieldName", Value)`.
+- Use `engine.Reflector` in the Policy Engine.
+
+**When Implementing:** Rely on `engine.Authorize/Validate` to handle conversion. Do not write custom `ToFacts` methods unless absolutely necessary for performance.
+
+---
+
+## 13. Provider Test Architecture
+
+### 13.1 Strategy 1: Unit Test (Adapter Logic)
+
+*   **Use Case:** Testing that an adapter correctly marshals data to/from the external driver.
+*   **Method:** Mock the external driver (e.g., use a mock Genkit model or HTTP client).
+*   **Goal:** Verify `core.Envelope` conversion.
+
+### 13.2 Strategy 2: Integration Test (Policy Enforcement)
+
+*   **Use Case:** Testing that `client.Protect()` correctly enforces rules.
+*   **Method:**
+    1.  Create a real `manglekit.Client` with a test policy file.
+    2.  Wrap a mock Action.
+    3.  Execute and assert that `PolicyViolationError` occurs when expected.
+*   **Goal:** Verify the Guard/Engine interaction.
+
+---
+
+## 14. Documentation Cross-References
+
+| Document | Purpose | When to Use |
+|-----------|---------|------------|
+| `docs/CONTEXT.md` | Live architecture snapshot | Reasoning about current system state |
+| `docs/HLD.md` | High-level design & layering | Understanding system boundaries |
+| `docs/LLD.md` | Low-level implementation details | Implementing new adapters or engine logic |
+| `docs/ADR.md` | Architecture decisions | Understanding *why* (e.g., why Builder was removed) |
+| `docs/LOGGING.md` | Observability conventions | Implementing logging |
+| `docs/TRACING.md` | OTel span hierarchy | Debugging trace issues |
+
+---
+
+## 15. Agent Diagnostic Checklist
 
 Before committing any code changes, verify:
 
@@ -174,11 +278,17 @@ Before committing any code changes, verify:
 ### Documentation Checks
 - [ ] `docs/CONTEXT.md` updated
 - [ ] `docs/LLD.md` updated if logic changed
-- [ ] `last_updated` timestamp bumped
+- [ ] `last_updated` timestamp bumped in all modified docs
+
+### Safety Checks
+- [ ] No hallucinated code — all changes based on diff evidence
+- [ ] YAML metadata preserved in all docs
+- [ ] No removal of documented sections or warnings
+- [ ] Commit is atomic and logically coherent
 
 ---
 
-## 12. Summary & Core Principles
+## 16. Summary & Core Principles
 
 **The Manglekit SDK embodies these core principles:**
 
