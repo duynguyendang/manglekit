@@ -30,6 +30,9 @@ const (
 
 	// KeyModel stores the name of the model used (if applicable).
 	KeyModel = "manglekit.model"
+
+	// KeyHistory stores serialized chat history.
+	KeyHistory = "manglekit_history"
 )
 
 // Standard Decision Values

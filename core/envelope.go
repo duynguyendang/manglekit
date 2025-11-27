@@ -1,6 +1,8 @@
 package core
 
 import (
+	"encoding/json"
+
 	"github.com/google/uuid"
 )
 
@@ -53,5 +55,13 @@ func (e *Envelope) HasLabel(label string) bool {
 func (e *Envelope) MergeLabels(other []string) {
 	for _, l := range other {
 		e.AddLabel(l)
+	}
+}
+
+// SetHistory serializes history into Metadata.
+func (e *Envelope) SetHistory(msgs []ChatMessage) {
+	b, err := json.Marshal(msgs)
+	if err == nil {
+		e.SetMeta(KeyHistory, string(b))
 	}
 }

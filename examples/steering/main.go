@@ -43,7 +43,7 @@ func main() {
 
 	// 3. RunLoop - Scenario 1: Retry
 	fmt.Println("--- Scenario 1: Retry (Bad SQL) ---")
-	res, err := client.RunLoop(ctx, "generate_sql", nil)
+	res, err := client.RunLoop(ctx, "generate_sql", nil, manglekit.RunLoopOptions{MemoryMode: core.MemoryModeNone})
 	if err != nil {
 		fmt.Printf("RunLoop failed: %v\n", err)
 	} else {
@@ -58,7 +58,7 @@ func main() {
 	// 3. RunLoop - Scenario 2: Route
 	fmt.Println("\n--- Scenario 2: Route (Gold Tier) ---")
 	// Note: We use Input struct which maps to payload.tier
-	res, err = client.RunLoop(ctx, "classify", Input{Tier: "gold"})
+	res, err = client.RunLoop(ctx, "classify", Input{Tier: "gold"}, manglekit.RunLoopOptions{MemoryMode: core.MemoryModeNone})
 	if err != nil {
 		fmt.Printf("RunLoop failed: %v\n", err)
 	} else {

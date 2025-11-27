@@ -6,11 +6,40 @@ import (
 	"strings"
 
 	"github.com/duynguyendang/manglekit/core"
+	engine_memory "github.com/duynguyendang/manglekit/engine/memory"
 )
+
+type RunLoopOptions struct {
+	SessionID  string
+	MemoryMode core.MemoryMode
+}
 
 // RunLoop executes a Semantic State Machine starting from startActionName.
 // It handles steering decisions (ALLOW, RETRY, ROUTE) returned by the Policy Engine.
-func (c *Client) RunLoop(ctx context.Context, startAction string, payload any) (core.Envelope, error) {
+func (c *Client) RunLoop(ctx context.Context, startAction string, payload any, opts RunLoopOptions) (core.Envelope, error) {
+	// 1. Determine Store Strategy
+	var currentHistory []core.ChatMessage
+	var store core.MemoryStore
+
+	switch opts.MemoryMode {
+	case core.MemoryModePersist:
+		store = c.memory
+		// Hydrate immediately
+		if opts.SessionID != "" {
+			var err error
+			currentHistory, err = store.Read(ctx, opts.SessionID)
+			if err != nil {
+				if c.logger != nil {
+					c.logger.Warn("RunLoop failed to hydrate history", "error", err)
+				}
+			}
+		}
+	case core.MemoryModeTransient:
+		store = &engine_memory.VolatileStore{} // Ephemeral map
+	default: // None
+		store = &core.NoOpStore{}
+	}
+
 	currentAction := startAction
 	currentPayload := payload
 	var feedbackHistory []string
@@ -28,21 +57,42 @@ func (c *Client) RunLoop(ctx context.Context, startAction string, payload any) (
 
 		// 2. Prepare Envelope
 		env := core.NewEnvelope(currentPayload)
-		// CRITICAL: Pass feedback to the action (as seen in the example)
+		// CRITICAL: Pass feedback to the action
 		if len(feedbackHistory) > 0 {
 			env.Metadata[core.KeyPrevFeedback] = strings.Join(feedbackHistory, "; ")
 		}
 
+		// Inject History
+		if len(currentHistory) > 0 && opts.MemoryMode != core.MemoryModeNone {
+			env.SetHistory(currentHistory)
+		}
+
 		// 3. Execute (Guard -> Engine -> Steering)
-		// The action (GuardedAction) is responsible for running EvaluateSteering and
-		// populating Metadata[KeyDecision], KeyFeedback, KeyNextStep.
 		result, err := action.Execute(ctx, env)
-		// Note: If Engine blocks (DENY), Guard returns error.
 		if err != nil {
 			return core.Envelope{}, err
 		}
 
-		// 4. Handle Decision
+		// 4. Update History (Append User Input + Assistant Response)
+		if opts.MemoryMode != core.MemoryModeNone {
+			// Note: This assumes simplified text-in/text-out for the prompt.
+			newExchange := []core.ChatMessage{
+				{Role: "user", Content: fmt.Sprintf("%v", currentPayload)},
+				{Role: "assistant", Content: fmt.Sprintf("%v", result.Payload)},
+			}
+			currentHistory = append(currentHistory, newExchange...)
+		}
+
+		// 5. Persist (Async or Sync based on requirements)
+		if opts.SessionID != "" && opts.MemoryMode == core.MemoryModePersist {
+			if err := store.Write(ctx, opts.SessionID, currentHistory); err != nil {
+				if c.logger != nil {
+					c.logger.Warn("RunLoop failed to persist history", "error", err)
+				}
+			}
+		}
+
+		// 6. Handle Decision
 		decision := result.Metadata[core.KeyDecision]
 
 		if c.logger != nil {
@@ -75,8 +125,6 @@ func (c *Client) RunLoop(ctx context.Context, startAction string, payload any) (
 			return result, nil
 
 		case core.DecisionDeny:
-			// Should have been caught by err != nil check if Guard returned error,
-			// but if Guard returned success with DENY metadata (unlikely), we handle it.
 			return core.Envelope{}, fmt.Errorf("action denied")
 		}
 	}
