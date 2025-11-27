@@ -17,6 +17,15 @@ type Config struct {
 
 	// MCP Configuration
 	MCP []MCPServerConfig `yaml:"mcp" mapstructure:"mcp"`
+
+	// Knowledge Base Configuration
+	Knowledge KnowledgeConfig `yaml:"knowledge" mapstructure:"knowledge"`
+}
+
+// KnowledgeConfig defines settings for the Knowledge Graph integration.
+type KnowledgeConfig struct {
+	// Path to the RDF Turtle file (.ttl) containing static facts
+	Path string `yaml:"path" mapstructure:"path"`
 }
 
 // PolicyConfig defines settings for the Policy Engine.

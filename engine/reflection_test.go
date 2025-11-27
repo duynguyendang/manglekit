@@ -35,13 +35,13 @@ func TestToFacts(t *testing.T) {
 	}
 
 	expectedFacts := []string{
-		`test.username("John Doe")`,
-		`test.location.street("123 Main St")`,
-		`test.location.city("Anytown")`,
-		`test.tags("alpha")`,
-		`test.tags("beta")`,
-		`test.data.id("123")`,
-		`test.data.isAdmin("true")`,
+		`username("test", "John Doe")`,
+		`location_street("test", "123 Main St")`,
+		`location_city("test", "Anytown")`,
+		`tags("test", "alpha")`,
+		`tags("test", "beta")`,
+		`data_id("test", "123")`,
+		`data_isAdmin("test", "true")`,
 	}
 
 	facts, err := ToFacts("test", user)
