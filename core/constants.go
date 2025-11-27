@@ -12,6 +12,9 @@ const (
 	// Useful for LLM Self-Correction loops.
 	KeyFeedback = "manglekit.feedback"
 
+	// KeyPrevFeedback is used to inject feedback into the next input.
+	KeyPrevFeedback = "prev_feedback"
+
 	// KeyNextStep provides the name of the next action to route to.
 	KeyNextStep = "manglekit.next_step"
 

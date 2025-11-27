@@ -133,9 +133,29 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 		return core.Envelope{}, fmt.Errorf("validation failed: %w", err)
 	}
 
+	// 8. Steering: Evaluate next steps (Correction/Routing)
+	decision, steeringMeta, err := g.engine.EvaluateSteering(ctx, validatedResult)
+	if err != nil {
+		logger.Warn("steering evaluation failed",
+			"action.name", meta.Name,
+			"error", err.Error(),
+		)
+		return core.Envelope{}, fmt.Errorf("steering evaluation failed: %w", err)
+	}
+
+	// Stamp metadata
+	if validatedResult.Metadata == nil {
+		validatedResult.Metadata = make(map[string]string)
+	}
+	validatedResult.Metadata[core.KeyDecision] = decision
+	for k, v := range steeringMeta {
+		validatedResult.Metadata[k] = v
+	}
+
 	logger.Debug("action execution completed successfully",
 		"action.name", meta.Name,
 		"action.type", meta.Type,
+		"decision", decision,
 	)
 
 	return validatedResult, nil
