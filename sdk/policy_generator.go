@@ -1,8 +1,6 @@
-// Package rulegenerator provides a Natural Language to Datalog compiler.
-// It uses a core.Action (typically an LLM) to translate human-readable policies into executable
-// Mangle Datalog rules, leveraging schema context from Go structs.
-// This is a dogfooding example that demonstrates using core.Action as a universal unit of work.
-package rulegenerator
+// Package sdk provides the Manglekit SDK.
+// This file contains the Policy Copilot logic (formerly rulegenerator).
+package sdk
 
 import (
 	"bytes"
@@ -13,7 +11,7 @@ import (
 	"text/template"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/google/mangle/parse"
+	mangleparse "github.com/google/mangle/parse"
 )
 
 // GeneratorOptions defines configuration for the rule generator.
@@ -80,10 +78,10 @@ type Generator struct {
 	template  *template.Template
 }
 
-// New creates a new Generator with the provided core.Action and options.
+// NewPolicyGenerator creates a new Generator with the provided core.Action and options.
 // The action should be an LLM action (e.g., created via adapters/ai.NewGenkitAction).
 // The action may be wrapped in a Guard for policy enforcement and tracing.
-func New(llmAction core.Action, opts GeneratorOptions) (*Generator, error) {
+func NewPolicyGenerator(llmAction core.Action, opts GeneratorOptions) (*Generator, error) {
 	if opts.RuleHead == "" {
 		opts.RuleHead = "deny(Req)"
 	}
@@ -94,7 +92,7 @@ func New(llmAction core.Action, opts GeneratorOptions) (*Generator, error) {
 		opts.Examples = DefaultExamples
 	}
 
-	tmpl, err := template.New("rulegenerator").Parse(opts.PromptTemplate)
+	tmpl, err := template.New("policy_generator").Parse(opts.PromptTemplate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse prompt template: %w", err)
 	}
@@ -119,7 +117,7 @@ func New(llmAction core.Action, opts GeneratorOptions) (*Generator, error) {
 // The process:
 //  1. Schema Extraction - Use engine/reflection (engine.ToFacts) to inspect schemaSample
 //  2. Prompt Construction - Build a detailed system prompt with schema and policy
-//  3. Action Execution - Call g.llmAction.Execute(ctx, envelope) with the prompt
+//  3. Action Execution - Call g.llmAction.Execute(ctx, inputEnvelope) with the prompt
 //  4. Output Processing - Unwrap the Envelope, assert payload is string
 //  5. Verification - Validate the generated rule syntax using Mangle parser
 func (g *Generator) GenerateRule(ctx context.Context, schemaSample any, policyText string) (string, error) {
@@ -260,7 +258,7 @@ func (g *Generator) verifyRuleSyntax(rule string) error {
 	}
 
 	// Parse the rule using Mangle's parser
-	_, err := parse.Clause(rule)
+	_, err := mangleparse.Clause(rule)
 	if err != nil {
 		return fmt.Errorf("parsing clause failed: %w", err)
 	}

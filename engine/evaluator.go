@@ -1,15 +1,15 @@
-package rulegenerator
+package engine
 
 import (
 	"fmt"
 	"reflect"
 	"strings"
 
-	"github.com/google/mangle/analysis"
-	"github.com/google/mangle/ast"
-	"github.com/google/mangle/engine"
-	"github.com/google/mangle/factstore"
-	"github.com/google/mangle/parse"
+	mangleanalysis "github.com/google/mangle/analysis"
+	mangleast "github.com/google/mangle/ast"
+	mangleengine "github.com/google/mangle/engine"
+	manglefactstore "github.com/google/mangle/factstore"
+	mangleparse "github.com/google/mangle/parse"
 )
 
 // Evaluator provides rule evaluation capabilities for generated Datalog rules.
@@ -17,7 +17,7 @@ import (
 // executing rules against Go structs.
 type Evaluator struct {
 	rule     string
-	clause   ast.Clause
+	clause   mangleast.Clause
 	ruleHead string // e.g., "deny", "allow", "route"
 }
 
@@ -28,7 +28,7 @@ func NewEvaluator(rule string) (*Evaluator, error) {
 		return nil, fmt.Errorf("rule cannot be empty")
 	}
 
-	clause, err := parse.Clause(rule)
+	clause, err := mangleparse.Clause(rule)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse rule: %w", err)
 	}
@@ -74,31 +74,31 @@ func (e *Evaluator) Evaluate(entityID string, entity any) (EvaluateResult, error
 	}
 
 	// Set up the fact store and add initial facts
-	store := factstore.NewSimpleInMemoryStore()
-	knownPredicates := make(map[ast.PredicateSym]ast.Decl)
+	store := manglefactstore.NewSimpleInMemoryStore()
+	knownPredicates := make(map[mangleast.PredicateSym]mangleast.Decl)
 
 	for _, atom := range facts {
 		store.Add(atom)
 		if _, ok := knownPredicates[atom.Predicate]; !ok {
-			knownPredicates[atom.Predicate] = ast.NewSyntheticDeclFromSym(atom.Predicate)
+			knownPredicates[atom.Predicate] = mangleast.NewSyntheticDeclFromSym(atom.Predicate)
 		}
 	}
 
 	// Analyze the program
-	program := []ast.Clause{e.clause}
-	programInfo, err := analysis.AnalyzeOneUnit(parse.SourceUnit{Clauses: program}, knownPredicates)
+	program := []mangleast.Clause{e.clause}
+	programInfo, err := mangleanalysis.AnalyzeOneUnit(mangleparse.SourceUnit{Clauses: program}, knownPredicates)
 	if err != nil {
 		return result, fmt.Errorf("failed to analyze program: %w", err)
 	}
 
 	// Evaluate - this materializes all consequences into the store
-	if err := engine.EvalProgram(programInfo, store); err != nil {
+	if err := mangleengine.EvalProgram(programInfo, store); err != nil {
 		return result, fmt.Errorf("failed to evaluate program: %w", err)
 	}
 
 	// Check if the rule head was derived for this entity
 	queryStr := fmt.Sprintf(`%s("%s")`, e.ruleHead, entityID)
-	queryAtom, err := parse.Atom(queryStr)
+	queryAtom, err := mangleparse.Atom(queryStr)
 	if err != nil {
 		return result, fmt.Errorf("failed to parse query: %w", err)
 	}
@@ -112,7 +112,7 @@ func (e *Evaluator) Evaluate(entityID string, entity any) (EvaluateResult, error
 //
 // It uses the `mangle` struct tag to determine predicate names.
 // If no tag is present, the lowercase field name is used.
-func structToFacts(entityID string, entity any) ([]ast.Atom, error) {
+func structToFacts(entityID string, entity any) ([]mangleast.Atom, error) {
 	val := reflect.ValueOf(entity)
 	if val.Kind() == reflect.Ptr {
 		if val.IsNil() {
@@ -125,7 +125,7 @@ func structToFacts(entityID string, entity any) ([]ast.Atom, error) {
 	}
 
 	typ := val.Type()
-	var atoms []ast.Atom
+	var atoms []mangleast.Atom
 
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
@@ -146,23 +146,23 @@ func structToFacts(entityID string, entity any) ([]ast.Atom, error) {
 		}
 
 		// Create the atom based on field type
-		var atom ast.Atom
+		var atom mangleast.Atom
 		switch fieldVal.Kind() {
 		case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
-			atom = ast.NewAtom(tag, ast.String(entityID), ast.Number(fieldVal.Int()))
+			atom = mangleast.NewAtom(tag, mangleast.String(entityID), mangleast.Number(fieldVal.Int()))
 		case reflect.Uint, reflect.Uint64, reflect.Uint32, reflect.Uint16, reflect.Uint8:
-			atom = ast.NewAtom(tag, ast.String(entityID), ast.Number(int64(fieldVal.Uint())))
+			atom = mangleast.NewAtom(tag, mangleast.String(entityID), mangleast.Number(int64(fieldVal.Uint())))
 		case reflect.Float32, reflect.Float64:
 			// Mangle doesn't have float, convert to string
-			atom = ast.NewAtom(tag, ast.String(entityID), ast.String(fmt.Sprintf("%f", fieldVal.Float())))
+			atom = mangleast.NewAtom(tag, mangleast.String(entityID), mangleast.String(fmt.Sprintf("%f", fieldVal.Float())))
 		case reflect.String:
-			atom = ast.NewAtom(tag, ast.String(entityID), ast.String(fieldVal.String()))
+			atom = mangleast.NewAtom(tag, mangleast.String(entityID), mangleast.String(fieldVal.String()))
 		case reflect.Bool:
 			boolStr := "false"
 			if fieldVal.Bool() {
 				boolStr = "true"
 			}
-			atom = ast.NewAtom(tag, ast.String(entityID), ast.String(boolStr))
+			atom = mangleast.NewAtom(tag, mangleast.String(entityID), mangleast.String(boolStr))
 		default:
 			// Skip unsupported types
 			continue

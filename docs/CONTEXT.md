@@ -174,6 +174,7 @@ The codebase is **Stable (v3.0.0)**.
 
 ## 10. Changelog
 
+-   **2025-11-29**: **Architecture Cleanup**. Refactored `policy/` directory. Moved `evaluator` to `engine/` and `generator` to `sdk/`. `policy/` now strictly contains static assets.
 -   **2025-11-29**: **Memory Subsystem**. Implemented "Stateless-by-Default" architecture. Added `MemoryMode` to `RunLoop` and `VolatileStore` for transient history.
 -   **2025-11-28**: **Knowledge Integration**. The Engine now supports loading static knowledge from RDF Turtle files as Datalog facts. `ToFacts` reflection updated for standard Datalog predicates.
 -   **2025-11-27**: **Genesis Release (v3.0.0)**. Complete re-architecture. Removed Builder/Registry. Introduced Client/Guard/Engine model.

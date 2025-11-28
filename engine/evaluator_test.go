@@ -1,4 +1,4 @@
-package rulegenerator
+package engine
 
 import (
 	"testing"

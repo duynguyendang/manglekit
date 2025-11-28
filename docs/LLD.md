@@ -166,13 +166,15 @@ manglekit/
 ├── docs/              # Documentation (CSD, HLD, LLD)
 ├── engine/            # Logic Engine (Mangle wrapper, Policy)
 ├── guard/             # GuardedAction implementation
-├── internal/          # Internal utilities (Logger, Telemetry)
+├── internal/          # Internal utilities (Logger, Telemetry, Tools)
 ├── manglekit.go       # Main Entry Point (Client, Protect)
-└── sdk/               # [Deprecated] Old SDK bridge
+├── policy/            # Static Policy Assets (.dl)
+└── sdk/               # SDK Tooling (Policy Copilot)
 ```
 
 # 9. Changelog
 
+*   **2025-11-29**: Architecture Cleanup. Logic moved from `policy/` to `engine/` and `sdk/`.
 *   **2025-11-27**: Major rewrite for v3.0.0 "Genesis". Replaced Builder/Registry architecture with Client/Guard/Engine composition.
 *   **2025-11-25**: Implemented Smart Router in Sandwich (now legacy).
 *   **2025-11-20**: Added `core/reflection`.
