@@ -115,6 +115,24 @@ graph LR
     Guard -->|4. Validate| Engine
 ```
 
+## 📂 Project Structure
+
+```text
+.
+├── adapters/       # Universal Adapters (Genkit AI, Vector, Native Funcs)
+├── cmd/            # CLI tools and executables
+├── config/         # Configuration loading
+├── core/           # Core interfaces (Action, Envelope, Logger, Tracer)
+├── docs/           # Architecture and design documentation
+├── engine/         # Datalog Policy Engine implementation
+├── examples/       # Runnable examples
+├── guard/          # The Guard logic (Trace -> AuthZ -> Exec -> Validate)
+├── internal/       # Internal utilities (not for public import)
+├── policy/         # Policy file management
+├── sdk/            # SDK helper functions
+└── manglekit.go    # Main library entry point
+```
+
 ## 📚 Documentation
 
 -   **[AGENTS.md](AGENTS.md)**: Guide for AI agents working on this repo.
