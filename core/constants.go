@@ -42,3 +42,33 @@ const (
 	DecisionRetry = "RETRY"
 	DecisionRoute = "ROUTE"
 )
+
+// Datalog System Constants
+const (
+	// Entity IDs used during Reflection/Querying
+	EntityInput  = "Req"    // The ID representing the Input Envelope
+	EntityOutput = "Output" // The ID representing the Output Envelope
+)
+
+// Observability & Trace Attributes
+const (
+	// Span Names
+	SpanPreCheck  = "Datalog.PreCheck"
+	SpanPostCheck = "Datalog.PostCheck"
+
+	// Attribute Keys
+	AttrPolicyName   = "policy.name"
+	AttrPolicyType   = "policy.type"
+	AttrDecisionType = "decision.type"
+	AttrOutcome      = "outcome"       // "ALLOWED", "DENIED"
+	AttrLabels       = "mangle.labels" // For Taint Propagation
+	AttrActionName   = "action.name"
+	AttrActionType   = "action.type"
+)
+
+// Outcome Values (for Tracing)
+const (
+	OutcomeAllowed = "ALLOWED"
+	OutcomeDenied  = "DENIED"
+	OutcomeSuccess = "success"
+)

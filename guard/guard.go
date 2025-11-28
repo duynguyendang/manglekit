@@ -54,8 +54,8 @@ func (g *GuardedAction) Execute(ctx context.Context, input core.Envelope) (core.
 	defer span.End()
 
 	// Set attributes on the span
-	span.SetAttr("action.name", meta.Name)
-	span.SetAttr("action.type", meta.Type)
+	span.SetAttr(core.AttrActionName, meta.Name)
+	span.SetAttr(core.AttrActionType, meta.Type)
 
 	result, err := g.executeInternal(ctx, input)
 	if err != nil {
@@ -63,7 +63,7 @@ func (g *GuardedAction) Execute(ctx context.Context, input core.Envelope) (core.
 		return core.Envelope{}, err
 	}
 
-	span.SetAttr("outcome", "success")
+	span.SetAttr(core.AttrOutcome, core.OutcomeSuccess)
 	return result, nil
 }
 
@@ -78,8 +78,8 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 	logger := core.LoggerFromContext(ctx)
 	meta := g.inner.Metadata()
 	logger.Debug("starting action execution",
-		"action.name", meta.Name,
-		"action.type", meta.Type,
+		core.AttrActionName, meta.Name,
+		core.AttrActionType, meta.Type,
 		"envelope.id", input.ID.String(),
 	)
 
@@ -91,7 +91,7 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 	// 2. Pre-Check: Authorization
 	if err := g.engine.Authorize(ctx, g.inner.Metadata(), input); err != nil {
 		logger.Warn("authorization failed",
-			"action.name", meta.Name,
+			core.AttrActionName, meta.Name,
 			"error", err.Error(),
 		)
 		return core.Envelope{}, fmt.Errorf("authorization failed: %w", err)
@@ -105,7 +105,7 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 	result, err := g.inner.Execute(childCtx, input)
 	if err != nil {
 		logger.Error("action execution failed",
-			"action.name", meta.Name,
+			core.AttrActionName, meta.Name,
 			"error", err.Error(),
 		)
 		return core.Envelope{}, fmt.Errorf("action execution failed: %w", err)
@@ -127,7 +127,7 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 	validatedResult, err := g.engine.Validate(ctx, g.inner.Metadata(), result)
 	if err != nil {
 		logger.Warn("validation failed",
-			"action.name", meta.Name,
+			core.AttrActionName, meta.Name,
 			"error", err.Error(),
 		)
 		return core.Envelope{}, fmt.Errorf("validation failed: %w", err)
@@ -137,7 +137,7 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 	decision, steeringMeta, err := g.engine.EvaluateSteering(ctx, validatedResult)
 	if err != nil {
 		logger.Warn("steering evaluation failed",
-			"action.name", meta.Name,
+			core.AttrActionName, meta.Name,
 			"error", err.Error(),
 		)
 		return core.Envelope{}, fmt.Errorf("steering evaluation failed: %w", err)
@@ -153,8 +153,8 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 	}
 
 	logger.Debug("action execution completed successfully",
-		"action.name", meta.Name,
-		"action.type", meta.Type,
+		core.AttrActionName, meta.Name,
+		core.AttrActionType, meta.Type,
 		"decision", decision,
 	)
 
