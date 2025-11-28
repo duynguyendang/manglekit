@@ -23,6 +23,9 @@ type LLMAction struct {
 
 // NewLLMAction creates a new LLMAction wrapping the given TextGenerator.
 func NewLLMAction(name string, generator TextGenerator) *LLMAction {
+	if generator == nil {
+		panic(fmt.Sprintf("NewLLMAction(%s): generator cannot be nil", name))
+	}
 	return &LLMAction{
 		name:      name,
 		generator: generator,
