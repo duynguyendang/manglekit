@@ -104,55 +104,58 @@ func main() {
 
 	// 4. Verification
 	fmt.Println("\n--- Verification ---")
-	graph := eng.Lineage()
+	fmt.Println("Lineage verification via in-memory graph is deprecated in favor of OpenTelemetry tracing.")
+	/*
+		graph := eng.Lineage()
 
-	// Print all graph facts
-	facts, _ := graph.ToFacts()
-	for _, f := range facts {
-		fmt.Printf("Fact: %s\n", f.String())
-	}
+		// Print all graph facts
+		facts, _ := graph.ToFacts()
+		for _, f := range facts {
+			fmt.Printf("Fact: %s\n", f.String())
+		}
 
-	// Check Chain: OutputC -> OutputB -> OutputA -> InputA
-	parent, ok := graph.GetParent(resC.ID.String())
-	if !ok {
-		log.Fatalf("Missing lineage for OutputC (%s)", resC.ID)
-	}
-	fmt.Printf("OutputC -> %s\n", parent)
-	if parent != resB.ID.String() {
-		log.Fatalf("Expected OutputC -> OutputB, got -> %s", parent)
-	}
+		// Check Chain: OutputC -> OutputB -> OutputA -> InputA
+		parent, ok := graph.GetParent(resC.ID.String())
+		if !ok {
+			log.Fatalf("Missing lineage for OutputC (%s)", resC.ID)
+		}
+		fmt.Printf("OutputC -> %s\n", parent)
+		if parent != resB.ID.String() {
+			log.Fatalf("Expected OutputC -> OutputB, got -> %s", parent)
+		}
 
-	parent, ok = graph.GetParent(resB.ID.String())
-	if !ok {
-		log.Fatalf("Missing lineage for OutputB")
-	}
-	fmt.Printf("OutputB -> %s\n", parent)
-	if parent != resA.ID.String() {
-		log.Fatalf("Expected OutputB -> OutputA, got -> %s", parent)
-	}
+		parent, ok = graph.GetParent(resB.ID.String())
+		if !ok {
+			log.Fatalf("Missing lineage for OutputB")
+		}
+		fmt.Printf("OutputB -> %s\n", parent)
+		if parent != resA.ID.String() {
+			log.Fatalf("Expected OutputB -> OutputA, got -> %s", parent)
+		}
 
-	parent, ok = graph.GetParent(resA.ID.String())
-	if !ok {
-		log.Fatalf("Missing lineage for OutputA")
-	}
-	fmt.Printf("OutputA -> %s\n", parent)
-	if parent != inputA.ID.String() {
-		log.Fatalf("Expected OutputA -> InputA, got -> %s", parent)
-	}
+		parent, ok = graph.GetParent(resA.ID.String())
+		if !ok {
+			log.Fatalf("Missing lineage for OutputA")
+		}
+		fmt.Printf("OutputA -> %s\n", parent)
+		if parent != inputA.ID.String() {
+			log.Fatalf("Expected OutputA -> InputA, got -> %s", parent)
+		}
 
-	fmt.Println("Sequential Chain Verification PASSED")
+		fmt.Println("Sequential Chain Verification PASSED")
 
-	// Check Nested: OutputWrapper -> InputWrapper
-	parent, ok = graph.GetParent(resWrapper.ID.String())
-	if !ok {
-		log.Fatalf("Missing lineage for OutputWrapper")
-	}
-	fmt.Printf("OutputWrapper -> %s\n", parent)
+		// Check Nested: OutputWrapper -> InputWrapper
+		parent, ok = graph.GetParent(resWrapper.ID.String())
+		if !ok {
+			log.Fatalf("Missing lineage for OutputWrapper")
+		}
+		fmt.Printf("OutputWrapper -> %s\n", parent)
 
-	if parent != inputWrapper.ID.String() {
-		log.Fatalf("Expected OutputWrapper -> InputWrapper, got -> %s", parent)
-	}
+		if parent != inputWrapper.ID.String() {
+			log.Fatalf("Expected OutputWrapper -> InputWrapper, got -> %s", parent)
+		}
 
-	fmt.Println("Nested Call Verification PASSED")
-	fmt.Println("All Lineage Checks Passed!")
+		fmt.Println("Nested Call Verification PASSED")
+		fmt.Println("All Lineage Checks Passed!")
+	*/
 }

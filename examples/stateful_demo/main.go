@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/duynguyendang/manglekit/core"
 )
 
@@ -44,7 +44,7 @@ func (a *HistoryCheckAction) Metadata() core.ActionMetadata {
 
 func main() {
 	ctx := context.Background()
-	client, err := manglekit.NewDefault()
+	client, err := sdk.NewDefault()
 	if err != nil {
 		fmt.Printf("Error initializing client: %v\n", err)
 		os.Exit(1)
@@ -55,7 +55,7 @@ func main() {
 	action1 := &HistoryCheckAction{}
 	client.RegisterAction("check_history", action1)
 
-	res1, err := client.RunLoop(ctx, "check_history", "hello", manglekit.RunLoopOptions{MemoryMode: core.MemoryModeNone})
+	res1, err := client.RunLoop(ctx, "check_history", "hello", sdk.RunLoopOptions{MemoryMode: core.MemoryModeNone})
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 	} else {
@@ -67,7 +67,7 @@ func main() {
 	action2 := &HistoryCheckAction{}
 	client.RegisterAction("check_history_transient", action2)
 
-	res2, err := client.RunLoop(ctx, "check_history_transient", "hello", manglekit.RunLoopOptions{MemoryMode: core.MemoryModeTransient})
+	res2, err := client.RunLoop(ctx, "check_history_transient", "hello", sdk.RunLoopOptions{MemoryMode: core.MemoryModeTransient})
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 	} else {

@@ -1,4 +1,4 @@
-package knowledge
+package resources
 
 import (
 	"os"

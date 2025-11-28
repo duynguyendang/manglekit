@@ -68,7 +68,7 @@ The core philosophy is **"Wrap, Don't Build"**. Manglekit does not construct you
 
 ## 2. Dependency Rules (Non-Negotiable)
 
-1.  **`manglekit` (root) is the entry point.** It orchestrates `guard`, `engine`, and `core`.
+1.  **`sdk` is the entry point.** It orchestrates `guard`, `engine`, and `core`.
 2.  **`guard` depends on `engine` and `core`.** It must NOT depend on concrete adapters.
 3.  **`engine` depends on `core` and `google/mangle`.** It is the pure logic layer.
 4.  **`adapters` depend on `core` and external drivers (Genkit).** They bridge the gap between the world and the kernel.
@@ -109,7 +109,7 @@ Manglekit uses reserved Metadata keys to manage the flow state:
 
 -   **`engine.PolicyEngine`**: The high-level coordinator for governance checks. It now manages a **Static Knowledge Base**.
 -   **`engine.Reflector`**: The system that converts Go structs into Datalog facts.
--   **`engine/knowledge`**: Subsystem for loading and managing static RDF knowledge.
+-   **`engine/resources`**: Subsystem for loading and managing static RDF knowledge.
 
 ## 4. The "Guarded Action" Lifecycle
 
@@ -174,6 +174,7 @@ The codebase is **Stable (v3.0.0)**.
 
 ## 10. Changelog
 
+-   **2025-11-29**: **Final Architecture Migration**. Moved root files (`manglekit.go`, `run_loop.go`) to `sdk/`. Renamed `engine/policy.go` to `engine/solver.go`. Consolidated `policies/` directory. `sdk` is now the primary entry point.
 -   **2025-11-29**: **Architecture Cleanup**. Refactored `policy/` directory. Moved `evaluator` to `engine/` and `generator` to `sdk/`. `policy/` now strictly contains static assets.
 -   **2025-11-29**: **Memory Subsystem**. Implemented "Stateless-by-Default" architecture. Added `MemoryMode` to `RunLoop` and `VolatileStore` for transient history.
 -   **2025-11-28**: **Knowledge Integration**. The Engine now supports loading static knowledge from RDF Turtle files as Datalog facts. `ToFacts` reflection updated for standard Datalog predicates.

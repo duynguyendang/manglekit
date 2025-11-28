@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/duynguyendang/manglekit/config"
 )
 
@@ -41,7 +41,7 @@ deny(Req) :- user(Req, U), status(U, "banned").
 	}
 
 	ctx := context.Background()
-	client, err := manglekit.NewClientWithConfig(ctx, cfg)
+	client, err := sdk.NewClientWithConfig(ctx, cfg)
 	if err != nil {
 		panic(err)
 	}
@@ -51,13 +51,13 @@ deny(Req) :- user(Req, U), status(U, "banned").
 		User string
 	}
 
-	action := manglekit.ProtectFunc(client, "test_action", func(ctx context.Context, req Request) (string, error) {
+	action := sdk.ProtectFunc(client, "test_action", func(ctx context.Context, req Request) (string, error) {
 		return "success", nil
 	})
 
 	// 4. Test Banned User
 	fmt.Println("Testing banned user...")
-	_, err = manglekit.Call[string](ctx, action, Request{User: "User1"})
+	_, err = sdk.Call[string](ctx, action, Request{User: "User1"})
 	if err == nil {
 		fmt.Println("ERROR: Expected blocked request, but it was allowed.")
 		os.Exit(1)
@@ -66,7 +66,7 @@ deny(Req) :- user(Req, U), status(U, "banned").
 
 	// 5. Test Allowed User
 	fmt.Println("Testing allowed user...")
-	_, err = manglekit.Call[string](ctx, action, Request{User: "User2"})
+	_, err = sdk.Call[string](ctx, action, Request{User: "User2"})
 	if err != nil {
 		fmt.Printf("ERROR: Expected allowed request, but it was blocked: %v\n", err)
 		os.Exit(1)
