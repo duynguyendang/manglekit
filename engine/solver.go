@@ -138,19 +138,19 @@ func (e *PolicyEngine) Authorize(ctx context.Context, actionMeta core.ActionMeta
 		return e.authorizeInternal(ctx, actionMeta, input)
 	}
 
-	ctx, span := e.tracer.Start(ctx, "Datalog.PreCheck")
+	ctx, span := e.tracer.Start(ctx, core.SpanPreCheck)
 	defer span.End()
 
 	// Log security labels to span attributes for audit
 	if len(input.SecurityLabels) > 0 {
-		span.SetAttr("mangle.labels", input.SecurityLabels)
+		span.SetAttr(core.AttrLabels, input.SecurityLabels)
 	}
 
 	err := e.authorizeInternal(ctx, actionMeta, input)
 	if err != nil {
 		span.Error(err)
 	} else {
-		span.SetAttr("outcome", "ALLOWED")
+		span.SetAttr(core.AttrOutcome, core.OutcomeAllowed)
 	}
 	return err
 }
@@ -164,7 +164,7 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 	}
 
 	// Convert the input payload to Mangle facts
-	facts, err := toMangleFacts("Req", input.Payload)
+	facts, err := toMangleFacts(core.EntityInput, input.Payload)
 	if err != nil {
 		if e.logger != nil {
 			e.logger.Debug("failed to convert input to facts", "error", err)
@@ -174,7 +174,7 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 	}
 
 	// Generate facts for security labels using safe helper
-	labelFacts, err := LabelsToFacts("Req", input.SecurityLabels)
+	labelFacts, err := LabelsToFacts(core.EntityInput, input.SecurityLabels)
 	if err != nil {
 		if e.logger != nil {
 			e.logger.Error("failed to generate label facts", "error", err)
@@ -196,7 +196,7 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 	}
 
 	// Execute the deny(Req) query
-	denied, err := e.runtime.ExecuteQuery(facts, `deny("Req")`)
+	denied, err := e.runtime.ExecuteQuery(facts, fmt.Sprintf(`deny("%s")`, core.EntityInput))
 	if err != nil {
 		if e.logger != nil {
 			e.logger.Debug("policy evaluation failed", "error", err)
@@ -222,12 +222,12 @@ func (e *PolicyEngine) Validate(ctx context.Context, actionMeta core.ActionMetad
 		return e.validateInternal(ctx, actionMeta, output)
 	}
 
-	ctx, span := e.tracer.Start(ctx, "Datalog.PostCheck")
+	ctx, span := e.tracer.Start(ctx, core.SpanPostCheck)
 	defer span.End()
 
 	// Log security labels to span attributes for audit
 	if len(output.SecurityLabels) > 0 {
-		span.SetAttr("mangle.labels", output.SecurityLabels)
+		span.SetAttr(core.AttrLabels, output.SecurityLabels)
 	}
 
 	result, err := e.validateInternal(ctx, actionMeta, output)
@@ -235,7 +235,7 @@ func (e *PolicyEngine) Validate(ctx context.Context, actionMeta core.ActionMetad
 		span.Error(err)
 		return core.Envelope{}, err
 	}
-	span.SetAttr("outcome", "ALLOWED")
+	span.SetAttr(core.AttrOutcome, core.OutcomeAllowed)
 	return result, nil
 }
 
@@ -247,7 +247,7 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 	}
 
 	// Convert the output payload to Mangle facts
-	facts, err := toMangleFacts("Output", output.Payload)
+	facts, err := toMangleFacts(core.EntityOutput, output.Payload)
 	if err != nil {
 		if e.logger != nil {
 			e.logger.Debug("failed to convert output to facts", "error", err)
@@ -257,7 +257,7 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 	}
 
 	// Generate facts for security labels using safe helper
-	labelFacts, err := LabelsToFacts("Output", output.SecurityLabels)
+	labelFacts, err := LabelsToFacts(core.EntityOutput, output.SecurityLabels)
 	if err != nil {
 		if e.logger != nil {
 			e.logger.Error("failed to generate label facts", "error", err)
@@ -279,7 +279,7 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 	}
 
 	// Execute the deny(Output) query for post-check validation
-	denied, err := e.runtime.ExecuteQuery(facts, `deny("Output")`)
+	denied, err := e.runtime.ExecuteQuery(facts, fmt.Sprintf(`deny("%s")`, core.EntityOutput))
 	if err != nil {
 		if e.logger != nil {
 			e.logger.Debug("post-check validation failed", "error", err)
@@ -315,7 +315,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 
 	// Convert the input payload to Mangle facts
 	// We use "Req" as the entity ID, consistent with Authorize
-	facts, err := toMangleFacts("Req", input.Payload)
+	facts, err := toMangleFacts(core.EntityInput, input.Payload)
 	if err != nil {
 		if e.logger != nil {
 			e.logger.Debug("failed to convert input to facts for steering", "error", err)
@@ -325,7 +325,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 
 	// 1. Check Correction (Retry)
 	// Query: correction("Req", Hint)
-	_ = e.runtime.QueryWithSolutions(facts, `correction("Req", Hint)`, func(solution map[string]any) error {
+	_ = e.runtime.QueryWithSolutions(facts, fmt.Sprintf(`correction("%s", Hint)`, core.EntityInput), func(solution map[string]any) error {
 		if hint, ok := solution["Hint"].(string); ok {
 			decision = core.DecisionRetry
 			metadata[core.KeyFeedback] = hint
@@ -341,7 +341,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 
 	// 2. Check Routing
 	// Query: next_step("Req", Target)
-	_ = e.runtime.QueryWithSolutions(facts, `next_step("Req", Target)`, func(solution map[string]any) error {
+	_ = e.runtime.QueryWithSolutions(facts, fmt.Sprintf(`next_step("%s", Target)`, core.EntityInput), func(solution map[string]any) error {
 		if target, ok := solution["Target"].(string); ok {
 			decision = core.DecisionRoute
 			metadata[core.KeyNextStep] = target
