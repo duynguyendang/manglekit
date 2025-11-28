@@ -429,5 +429,8 @@ func constantToString(c ast.Constant) (string, error) {
 	if v, err := c.NameValue(); err == nil {
 		return v, nil
 	}
+	if v, err := c.NumberValue(); err == nil {
+		return fmt.Sprintf("%d", v), nil
+	}
 	return "", fmt.Errorf("unsupported constant type: %v", c.Type)
 }

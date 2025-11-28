@@ -91,3 +91,34 @@ func TestMangleRuntime_ExecuteQueryWithFacts(t *testing.T) {
 		t.Errorf("expected user_is_admin(bob) to be false, got true")
 	}
 }
+
+func TestMangleRuntime_QueryWithSolutions_Number(t *testing.T) {
+	runtime := NewMangleRuntime()
+
+	// Load a rule that produces a number
+	rule := `score("req", 100).`
+	if err := runtime.LoadFromString(rule); err != nil {
+		t.Fatalf("failed to load rule: %v", err)
+	}
+
+	// Query for solutions
+	found := false
+	err := runtime.QueryWithSolutions(nil, `score("req", X)`, func(sol map[string]any) error {
+		val, ok := sol["X"]
+		if !ok {
+			t.Errorf("expected variable X in solution")
+		}
+		// Numbers are converted to string by constantToString
+		if val != "100" {
+			t.Errorf("expected value '100', got '%v'", val)
+		}
+		found = true
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("query execution failed: %v", err)
+	}
+	if !found {
+		t.Errorf("expected to find a solution")
+	}
+}
