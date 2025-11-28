@@ -21,7 +21,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/duynguyendang/manglekit"
 	funcAdapter "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/engine"
@@ -81,7 +80,7 @@ func main() {
 	// ---------------------------------------------------------------------------
 	// 2. Initialize the Manglekit Client (uses default Zap logger)
 	// ---------------------------------------------------------------------------
-	client, err := manglekit.NewDefault()
+	client, err := sdk.NewDefault()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize manglekit client: %v\n", err)
 		os.Exit(1)
@@ -112,7 +111,7 @@ func main() {
 		return generator.GenerateRule(ctx, sampleTransaction, policy)
 	}
 
-	safeAction := manglekit.ProtectFunc(client, "policy-copilot", genLogic)
+	safeAction := sdk.ProtectFunc(client, "policy-copilot", genLogic)
 	log.Info("Rule generation logic protected with governance guard")
 	fmt.Println()
 
@@ -126,7 +125,7 @@ func main() {
 	fmt.Println()
 
 	// Use the generic Call helper for a clean, type-safe execution
-	generatedRule, err := manglekit.Call[string](ctx, safeAction, policyText)
+	generatedRule, err := sdk.Call[string](ctx, safeAction, policyText)
 	if err != nil {
 		log.Error("Error generating rule", "error", err)
 		os.Exit(1)

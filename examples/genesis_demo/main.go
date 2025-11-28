@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/duynguyendang/manglekit/core"
 )
 
@@ -41,20 +41,20 @@ func main() {
 	ctx := context.Background()
 
 	// 1. Initialize Manglekit with default settings (StdLogger, empty policy)
-	client := manglekit.Must(manglekit.NewDefault())
+	client := sdk.Must(sdk.NewDefault())
 
 	client.Logger().Info("Manglekit client initialized")
 
 	// 2. Create a protected action in one line using ProtectFunc
 	// This wraps the Go function and applies governance automatically
-	protectedAction := manglekit.ProtectFunc(client, "checkStock", CheckStock)
+	protectedAction := sdk.ProtectFunc(client, "checkStock", CheckStock)
 
 	// 3. Execute the protected action with type-safe I/O using Call
 	// No envelope packing/unpacking, no type assertions needed
 	input := StockRequest{SKU: "IPHONE"}
 	client.Logger().Info("Executing protected action", "sku", input.SKU)
 
-	result, err := manglekit.Call[StockResponse](ctx, protectedAction, input)
+	result, err := sdk.Call[StockResponse](ctx, protectedAction, input)
 	if err != nil {
 		client.Logger().Error("protected action execution failed", "error", err)
 		os.Exit(1)

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/adapters/vector"
 	"github.com/duynguyendang/manglekit/core"
@@ -117,7 +117,7 @@ func main() {
 	// ---------------------------------------------------------------------------
 	// 1. Initialize Logger and Manglekit Client
 	// ---------------------------------------------------------------------------
-	client, err := manglekit.NewDefault()
+	client, err := sdk.NewDefault()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize manglekit client: %v\n", err)
 		os.Exit(1)
@@ -156,7 +156,7 @@ func main() {
 
 	// Step 5a: Create the initial query envelope
 	userQuery := "What is the meaning of life?"
-	queryEnvelope := manglekit.NewEnvelope(userQuery)
+	queryEnvelope := sdk.NewEnvelope(userQuery)
 	log.Info("User Query", "query", userQuery)
 	fmt.Println()
 
@@ -188,7 +188,7 @@ func main() {
 	// Step 5c: Compose prompt with retrieved context
 	fmt.Println("Step 2: Generation Phase (via Genkit)")
 	prompt := fmt.Sprintf("Context:\n%s\nQuestion: %s\nAnswer:", formattedContext, userQuery)
-	llmInputEnvelope := manglekit.NewEnvelope(prompt)
+	llmInputEnvelope := sdk.NewEnvelope(prompt)
 
 	// Step 5d: Execute LLM (Guarded) - now via Genkit adapter
 	generatedEnvelope, err := safeLLM.Execute(ctx, llmInputEnvelope)

@@ -27,7 +27,7 @@ func (n *NoopTool) Execute(ctx context.Context, execCtx *core.ExecutionContext) 
 var _ core.Tool = &NoopTool{}
 
 // NoopOptions implements the ProviderOptions interface, allowing the NoopTool
-// to be registered with the manglekit.Register function.
+// to be registered with the sdk.Register function.
 type NoopOptions struct{}
 
 func (o *NoopOptions) ProviderName() string { return "noop" }

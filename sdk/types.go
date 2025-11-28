@@ -1,14 +1,4 @@
-package manglekit
-
-// This file re-exports the core Manglekit types and functions for convenience.
-// The main Client API is defined in manglekit.go.
-//
-// Usage:
-//
-//	import "github.com/duynguyendang/manglekit"
-//
-//	client, err := manglekit.NewClient(ctx, "policy.dlog")
-//	protectedAction := client.Protect(myAction)
+package sdk
 
 import (
 	"github.com/duynguyendang/manglekit/core"

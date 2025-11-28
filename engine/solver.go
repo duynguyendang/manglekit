@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/engine/knowledge"
+	"github.com/duynguyendang/manglekit/engine/resources"
 	"github.com/google/mangle/ast"
 	"github.com/google/mangle/parse"
 )
@@ -84,7 +84,7 @@ func (e *PolicyEngine) LoadKnowledge(path string) error {
 	}
 
 	// Load facts from knowledge store
-	facts, err := knowledge.LoadFromPath(path)
+	facts, err := resources.LoadFromPath(path)
 	if err != nil {
 		return fmt.Errorf("failed to load knowledge from %s: %w", path, err)
 	}
