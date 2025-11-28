@@ -25,15 +25,22 @@ const (
 // Client is the public struct representing the initialized Manglekit system.
 // It provides the core governance capabilities through a simple, unified API.
 type Client struct {
-	engine     *engine.PolicyEngine
-	tracer     core.Tracer
-	otelTracer trace.Tracer
-	logger     core.Logger
-	memory     core.MemoryStore
-	registry   map[string]core.Action
+	engine      *engine.PolicyEngine
+	tracer      core.Tracer
+	otelTracer  trace.Tracer
+	logger      core.Logger
+	memory      core.MemoryStore
+	registry    map[string]core.Action
+	failureMode string
 }
 
 type ClientOption func(*Client)
+
+func WithFailureMode(mode string) ClientOption {
+	return func(c *Client) {
+		c.failureMode = mode
+	}
+}
 
 func WithMemory(store core.MemoryStore) ClientOption {
 	return func(c *Client) {
@@ -130,11 +137,17 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 		}
 	}
 
+	// Set failure mode from config
+	if cfg != nil && cfg.FailureMode != "" {
+		c.failureMode = cfg.FailureMode
+	}
+
 	// Log configuration loaded successfully
 	if cfg != nil {
 		c.logger.Info("Manglekit client initialized with config",
 			"service_name", cfg.Observability.ServiceName,
-			"observability_enabled", cfg.Observability.Enabled)
+			"observability_enabled", cfg.Observability.Enabled,
+			"failure_mode", c.failureMode)
 	}
 
 	return c, nil
@@ -196,9 +209,9 @@ func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientO
 //	result, err := protectedAction.Execute(ctx, input)
 func (c *Client) Protect(action core.Action) core.Action {
 	if c.tracer != nil {
-		return guard.NewWithTracer(action, c.engine, c.tracer)
+		return guard.NewWithTracer(action, c.engine, c.tracer, c.failureMode)
 	}
-	return guard.New(action, c.engine)
+	return guard.New(action, c.engine, c.failureMode)
 }
 
 // Engine returns the underlying PolicyEngine for advanced use cases.

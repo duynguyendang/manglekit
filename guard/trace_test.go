@@ -38,7 +38,7 @@ func TestTraceHierarchy(t *testing.T) {
 	innerAction := &MockAction{}
 
 	// Wrap it with the guard
-	guardedAction := NewWithTracer(innerAction, eng, coreTracer)
+	guardedAction := NewWithTracer(innerAction, eng, coreTracer, "closed")
 
 	// Execute the action
 	ctx := context.Background()
@@ -99,7 +99,7 @@ func TestTraceHierarchyWithoutTracer(t *testing.T) {
 	// Create a guard without a tracer
 	eng := engine.New()
 	innerAction := &MockAction{}
-	guardedAction := New(innerAction, eng)
+	guardedAction := New(innerAction, eng, "closed")
 
 	// Execute the action
 	ctx := context.Background()
@@ -133,7 +133,7 @@ func TestTraceErrorHandling(t *testing.T) {
 	innerAction := &FailingAction{err: core.ErrPolicyViolation}
 
 	// Wrap it with the guard
-	guardedAction := NewWithTracer(innerAction, eng, coreTracer)
+	guardedAction := NewWithTracer(innerAction, eng, coreTracer, "closed")
 
 	// Execute the action
 	ctx := context.Background()

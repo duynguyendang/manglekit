@@ -51,7 +51,7 @@ func main() {
 
 	// 3. Create Guarded Action
 	echo := &EchoAction{}
-	guardedEcho := guard.New(echo, eng)
+	guardedEcho := guard.New(echo, eng, "closed")
 
 	// 4. Test Case 1: Input has "secret" label. Output should inherit it and be blocked.
 	fmt.Println("Test Case 1: Input with 'secret' label")

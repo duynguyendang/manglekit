@@ -2,6 +2,7 @@ package guard
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -11,29 +12,32 @@ import (
 // GuardedAction wraps a core.Action to enforce policies.
 // It provides the main transaction span for tracing the entire execution flow.
 type GuardedAction struct {
-	inner  core.Action
-	engine *engine.PolicyEngine
-	tracer core.Tracer
+	inner       core.Action
+	engine      *engine.PolicyEngine
+	tracer      core.Tracer
+	failureMode string
 }
 
 // New creates a new GuardedAction without tracing (for backward compatibility).
-func New(action core.Action, eng *engine.PolicyEngine) *GuardedAction {
+func New(action core.Action, eng *engine.PolicyEngine, failureMode string) *GuardedAction {
 	return &GuardedAction{
-		inner:  action,
-		engine: eng,
-		tracer: &core.NopTracer{},
+		inner:       action,
+		engine:      eng,
+		tracer:      &core.NopTracer{},
+		failureMode: failureMode,
 	}
 }
 
 // NewWithTracer creates a new GuardedAction with tracing enabled.
-func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer core.Tracer) *GuardedAction {
+func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer core.Tracer, failureMode string) *GuardedAction {
 	if tracer == nil {
 		tracer = &core.NopTracer{}
 	}
 	return &GuardedAction{
-		inner:  action,
-		engine: eng,
-		tracer: tracer,
+		inner:       action,
+		engine:      eng,
+		tracer:      tracer,
+		failureMode: failureMode,
 	}
 }
 
@@ -67,6 +71,23 @@ func (g *GuardedAction) Execute(ctx context.Context, input core.Envelope) (core.
 	return result, nil
 }
 
+// shouldBlock determines if the action should be blocked based on the error and failure mode.
+func (g *GuardedAction) shouldBlock(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Always block on explicit policy violations
+	if errors.Is(err, core.ErrPolicyViolation) {
+		return true
+	}
+	// If mode is "open" (Fail-Open), allow execution (return false)
+	// Otherwise (default/closed), block execution (return true)
+	if g.failureMode == "open" {
+		return false
+	}
+	return true
+}
+
 // executeInternal contains the actual execution logic.
 // It receives the context with the active span so child spans can be created.
 // The logger is injected into the context here, ensuring all downstream code
@@ -90,11 +111,15 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 
 	// 2. Pre-Check: Authorization
 	if err := g.engine.Authorize(ctx, g.inner.Metadata(), input); err != nil {
-		logger.Warn("authorization failed",
-			core.AttrActionName, meta.Name,
-			"error", err.Error(),
-		)
-		return core.Envelope{}, fmt.Errorf("authorization failed: %w", err)
+		if g.shouldBlock(err) {
+			logger.Warn("authorization failed",
+				core.AttrActionName, meta.Name,
+				"error", err.Error(),
+			)
+			return core.Envelope{}, fmt.Errorf("authorization failed: %w", err)
+		}
+		// Fail-Open
+		logger.Warn("engine failed but Fail-Open active. Proceeding.", "error", err)
 	}
 
 	// 3. Context Propagation: Pass the Gene
@@ -126,11 +151,16 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 	// 7. Post-Check: Validation
 	validatedResult, err := g.engine.Validate(ctx, g.inner.Metadata(), result)
 	if err != nil {
-		logger.Warn("validation failed",
-			core.AttrActionName, meta.Name,
-			"error", err.Error(),
-		)
-		return core.Envelope{}, fmt.Errorf("validation failed: %w", err)
+		if g.shouldBlock(err) {
+			logger.Warn("validation failed",
+				core.AttrActionName, meta.Name,
+				"error", err.Error(),
+			)
+			return core.Envelope{}, fmt.Errorf("validation failed: %w", err)
+		}
+		// Fail-Open: use result as validatedResult
+		logger.Warn("engine validation failed but Fail-Open active. Proceeding.", "error", err)
+		validatedResult = result
 	}
 
 	// 8. Steering: Evaluate next steps (Correction/Routing)
