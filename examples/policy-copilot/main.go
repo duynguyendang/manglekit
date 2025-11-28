@@ -24,8 +24,8 @@ import (
 	"github.com/duynguyendang/manglekit"
 	funcAdapter "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/core"
-
-	"github.com/duynguyendang/manglekit/policy/rulegenerator"
+	"github.com/duynguyendang/manglekit/engine"
+	"github.com/duynguyendang/manglekit/sdk"
 )
 
 // =============================================================================
@@ -94,7 +94,7 @@ func main() {
 	// ---------------------------------------------------------------------------
 	llm := &MockLLM{logger: log}
 	llmAction := funcAdapter.New("mockLLM", llm.Complete)
-	generator, err := rulegenerator.New(llmAction, rulegenerator.GeneratorOptions{
+	generator, err := sdk.NewPolicyGenerator(llmAction, sdk.GeneratorOptions{
 		RuleHead: "deny(Req)", // The target predicate for our policy
 	})
 	if err != nil {
@@ -139,7 +139,7 @@ func main() {
 	// ---------------------------------------------------------------------------
 	// 7. Create Evaluator and Test the Generated Rule
 	// ---------------------------------------------------------------------------
-	evaluator, err := rulegenerator.NewEvaluator(generatedRule)
+	evaluator, err := engine.NewEvaluator(generatedRule)
 	if err != nil {
 		log.Error("Error creating evaluator", "error", err)
 		os.Exit(1)

@@ -7,7 +7,7 @@ import (
 	"os"
 
 	adapterai "github.com/duynguyendang/manglekit/adapters/ai"
-	"github.com/duynguyendang/manglekit/policy/rulegenerator"
+	"github.com/duynguyendang/manglekit/sdk"
 	genkit "github.com/firebase/genkit/go/ai"
 	"github.com/spf13/cobra"
 )
@@ -62,11 +62,11 @@ var ruleCmd = &cobra.Command{
 		}
 
 		// Create generator with the core.Action
-		opts := rulegenerator.GeneratorOptions{
+		opts := sdk.GeneratorOptions{
 			RuleHead: ruleHead,
 		}
 
-		generator, err := rulegenerator.New(llmAction, opts)
+		generator, err := sdk.NewPolicyGenerator(llmAction, opts)
 		if err != nil {
 			return fmt.Errorf("failed to create generator: %w", err)
 		}

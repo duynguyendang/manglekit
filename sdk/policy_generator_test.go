@@ -1,4 +1,4 @@
-package rulegenerator
+package sdk
 
 import (
 	"context"
@@ -167,7 +167,7 @@ func TestGenerateRule(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			action := &mockAction{response: tc.mockResponse}
 
-			generator, err := New(action, tc.opts)
+			generator, err := NewPolicyGenerator(action, tc.opts)
 			if err != nil {
 				t.Fatalf("Failed to create generator: %v", err)
 			}
@@ -220,7 +220,7 @@ func TestExtractSchema(t *testing.T) {
 	}
 
 	action := &mockAction{response: `deny(Req) :- amount(Req, X), X > 0.`}
-	gen, err := New(action, GeneratorOptions{})
+	gen, err := NewPolicyGenerator(action, GeneratorOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create generator: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestExtractSchema(t *testing.T) {
 
 func TestExtractSchema_InvalidInput(t *testing.T) {
 	action := &mockAction{response: ""}
-	gen, err := New(action, GeneratorOptions{})
+	gen, err := NewPolicyGenerator(action, GeneratorOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create generator: %v", err)
 	}

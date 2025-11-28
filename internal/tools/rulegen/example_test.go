@@ -1,4 +1,4 @@
-package rulegenerator_test
+package rulegen_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/policy/rulegenerator"
+	"github.com/duynguyendang/manglekit/sdk"
 )
 
 // ExampleAction demonstrates how to use the Generator with a simple core.Action.
@@ -52,7 +52,7 @@ func TestDogfoodingExample(t *testing.T) {
 	llmAction := &ExampleAction{name: "example-llm"}
 
 	// Create the generator with this action
-	generator, err := rulegenerator.New(llmAction, rulegenerator.GeneratorOptions{
+	generator, err := sdk.NewPolicyGenerator(llmAction, sdk.GeneratorOptions{
 		RuleHead: "deny(Req)",
 	})
 	if err != nil {
@@ -110,7 +110,7 @@ func TestGuardedDogfoodingExample(t *testing.T) {
 	}
 
 	// Use the guarded action with the generator
-	generator, err := rulegenerator.New(guardedAction, rulegenerator.GeneratorOptions{
+	generator, err := sdk.NewPolicyGenerator(guardedAction, sdk.GeneratorOptions{
 		RuleHead: "deny(Req)",
 	})
 	if err != nil {
