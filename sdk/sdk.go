@@ -25,50 +25,17 @@ const (
 // Client is the public struct representing the initialized Manglekit system.
 // It provides the core governance capabilities through a simple, unified API.
 type Client struct {
-	engine      *engine.PolicyEngine
-	tracer      core.Tracer
-	otelTracer  trace.Tracer
-	logger      core.Logger
-	memory      core.MemoryStore
-	registry    map[string]core.Action
-	failureMode string
+	engine            *engine.PolicyEngine
+	tracer            core.Tracer
+	otelTracer        trace.Tracer
+	logger            core.Logger
+	memory            core.MemoryStore
+	registry          map[string]core.Action
+	failureMode       string
+	initialPolicyPath string
 }
 
-type ClientOption func(*Client)
-
-func WithFailureMode(mode string) ClientOption {
-	return func(c *Client) {
-		c.failureMode = mode
-	}
-}
-
-func WithMemory(store core.MemoryStore) ClientOption {
-	return func(c *Client) {
-		if store != nil {
-			c.memory = store
-		}
-	}
-}
-
-func WithTracerProvider(tp trace.TracerProvider) ClientOption {
-	return func(c *Client) {
-		if tp != nil {
-			otelTracer := tp.Tracer(TracerName)
-			c.otelTracer = otelTracer
-			c.tracer = telemetry.NewOTelTracer(otelTracer)
-		}
-	}
-}
-
-func WithLogger(logger core.Logger) ClientOption {
-	return func(c *Client) {
-		if logger != nil {
-			c.logger = logger
-		}
-	}
-}
-
-func NewClient(ctx context.Context, policyFile string, opts ...ClientOption) (*Client, error) {
+func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		logger:   core.NopLogger{},
 		registry: make(map[string]core.Action),
@@ -89,8 +56,8 @@ func NewClient(ctx context.Context, policyFile string, opts ...ClientOption) (*C
 	c.engine = engine.NewWithObservability(c.tracer, c.logger)
 
 	// Load policy from file if provided
-	if policyFile != "" {
-		if err := c.engine.LoadFromPath(policyFile); err != nil {
+	if c.initialPolicyPath != "" {
+		if err := c.engine.LoadFromPath(c.initialPolicyPath); err != nil {
 			return nil, err
 		}
 	}
@@ -266,7 +233,7 @@ func Must(c *Client, err error) *Client {
 //
 //	client, err := sdk.NewDefault()
 func NewDefault() (*Client, error) {
-	return NewClient(context.Background(), "", WithLogger(newDefaultLogger()))
+	return NewClient(context.Background(), WithLogger(newDefaultLogger()))
 }
 
 func newDefaultLogger() core.Logger {

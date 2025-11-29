@@ -1,0 +1,3 @@
+% Simple allow-all policy
+input("init").
+allow(Req) :- input(Req).

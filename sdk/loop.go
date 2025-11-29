@@ -9,25 +9,33 @@ import (
 	engine_memory "github.com/duynguyendang/manglekit/engine/memory"
 )
 
-type RunLoopOptions struct {
-	SessionID  string
-	MemoryMode core.MemoryMode
+// ExecuteByName executes a named action with the provided options.
+// It acts as the entry point for the Semantic State Machine.
+func (c *Client) ExecuteByName(ctx context.Context, actionName string, input any, opts ...ExecuteOption) (core.Envelope, error) {
+	params := ExecutionParams{
+		MemoryMode: core.MemoryModeNone, // Default to stateless
+	}
+	for _, opt := range opts {
+		opt(&params)
+	}
+
+	return c.runLoopInternal(ctx, actionName, input, params)
 }
 
-// RunLoop executes a Semantic State Machine starting from startActionName.
+// runLoopInternal executes a Semantic State Machine starting from startActionName.
 // It handles steering decisions (ALLOW, RETRY, ROUTE) returned by the Policy Engine.
-func (c *Client) RunLoop(ctx context.Context, startAction string, payload any, opts RunLoopOptions) (core.Envelope, error) {
+func (c *Client) runLoopInternal(ctx context.Context, startAction string, payload any, params ExecutionParams) (core.Envelope, error) {
 	// 1. Determine Store Strategy
 	var currentHistory []core.ChatMessage
 	var store core.MemoryStore
 
-	switch opts.MemoryMode {
+	switch params.MemoryMode {
 	case core.MemoryModePersist:
 		store = c.memory
 		// Hydrate immediately
-		if opts.SessionID != "" {
+		if params.SessionID != "" {
 			var err error
-			currentHistory, err = store.Read(ctx, opts.SessionID)
+			currentHistory, err = store.Read(ctx, params.SessionID)
 			if err != nil {
 				if c.logger != nil {
 					c.logger.Warn("RunLoop failed to hydrate history", "error", err)
@@ -63,8 +71,15 @@ func (c *Client) RunLoop(ctx context.Context, startAction string, payload any, o
 		}
 
 		// Inject History
-		if len(currentHistory) > 0 && opts.MemoryMode != core.MemoryModeNone {
+		if len(currentHistory) > 0 && params.MemoryMode != core.MemoryModeNone {
 			env.SetHistory(currentHistory)
+		}
+
+		// Inject Metadata (e.g. source, user_tier)
+		if params.Metadata != nil {
+			for k, v := range params.Metadata {
+				env.Metadata[k] = v
+			}
 		}
 
 		// 3. Execute (Guard -> Engine -> Steering)
@@ -74,7 +89,7 @@ func (c *Client) RunLoop(ctx context.Context, startAction string, payload any, o
 		}
 
 		// 4. Update History (Append User Input + Assistant Response)
-		if opts.MemoryMode != core.MemoryModeNone {
+		if params.MemoryMode != core.MemoryModeNone {
 			// Note: This assumes simplified text-in/text-out for the prompt.
 			newExchange := []core.ChatMessage{
 				{Role: "user", Content: fmt.Sprintf("%v", currentPayload)},
@@ -84,8 +99,8 @@ func (c *Client) RunLoop(ctx context.Context, startAction string, payload any, o
 		}
 
 		// 5. Persist (Async or Sync based on requirements)
-		if opts.SessionID != "" && opts.MemoryMode == core.MemoryModePersist {
-			if err := store.Write(ctx, opts.SessionID, currentHistory); err != nil {
+		if params.SessionID != "" && params.MemoryMode == core.MemoryModePersist {
+			if err := store.Write(ctx, params.SessionID, currentHistory); err != nil {
 				if c.logger != nil {
 					c.logger.Warn("RunLoop failed to persist history", "error", err)
 				}
