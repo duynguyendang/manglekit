@@ -24,7 +24,7 @@ func main() {
 	ctx := context.Background()
 
 	// 1. Initialize Client
-	client, err := sdk.NewClient(ctx, "examples/steering/policy.dl")
+	client, err := sdk.NewClient(ctx, sdk.WithPolicyPath("examples/steering/policy.dl"))
 	if err != nil {
 		panic(err)
 	}
@@ -43,7 +43,7 @@ func main() {
 
 	// 3. RunLoop - Scenario 1: Retry
 	fmt.Println("--- Scenario 1: Retry (Bad SQL) ---")
-	res, err := client.RunLoop(ctx, "generate_sql", nil, sdk.RunLoopOptions{MemoryMode: core.MemoryModeNone})
+	res, err := client.ExecuteByName(ctx, "generate_sql", nil)
 	if err != nil {
 		fmt.Printf("RunLoop failed: %v\n", err)
 	} else {
@@ -58,7 +58,7 @@ func main() {
 	// 3. RunLoop - Scenario 2: Route
 	fmt.Println("\n--- Scenario 2: Route (Gold Tier) ---")
 	// Note: We use Input struct which maps to payload.tier
-	res, err = client.RunLoop(ctx, "classify", Input{Tier: "gold"}, sdk.RunLoopOptions{MemoryMode: core.MemoryModeNone})
+	res, err = client.ExecuteByName(ctx, "classify", Input{Tier: "gold"})
 	if err != nil {
 		fmt.Printf("RunLoop failed: %v\n", err)
 	} else {

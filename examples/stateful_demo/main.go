@@ -55,7 +55,7 @@ func main() {
 	action1 := &HistoryCheckAction{}
 	client.RegisterAction("check_history", action1)
 
-	res1, err := client.RunLoop(ctx, "check_history", "hello", sdk.RunLoopOptions{MemoryMode: core.MemoryModeNone})
+	res1, err := client.ExecuteByName(ctx, "check_history", "hello")
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 	} else {
@@ -67,7 +67,7 @@ func main() {
 	action2 := &HistoryCheckAction{}
 	client.RegisterAction("check_history_transient", action2)
 
-	res2, err := client.RunLoop(ctx, "check_history_transient", "hello", sdk.RunLoopOptions{MemoryMode: core.MemoryModeTransient})
+	res2, err := client.ExecuteByName(ctx, "check_history_transient", "hello", sdk.WithTransientMemory())
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 	} else {
