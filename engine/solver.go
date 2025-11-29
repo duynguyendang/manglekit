@@ -169,8 +169,8 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 		if e.logger != nil {
 			e.logger.Debug("failed to convert input to facts", "error", err)
 		}
-		// If conversion fails, deny for safety
-		return core.ErrPolicyViolation
+		// Return actual error to allow Fail-Open handling
+		return fmt.Errorf("fact conversion error: %w", err)
 	}
 
 	// Generate facts for security labels using safe helper
@@ -179,8 +179,8 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 		if e.logger != nil {
 			e.logger.Error("failed to generate label facts", "error", err)
 		}
-		// Fail-Closed: If we can't process security labels, we must deny.
-		return core.ErrPolicyViolation
+		// Return actual error to allow Fail-Open handling
+		return fmt.Errorf("label conversion error: %w", err)
 	}
 
 	for _, factStr := range labelFacts {
@@ -189,8 +189,8 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 			if e.logger != nil {
 				e.logger.Error("failed to parse label fact", "fact", factStr, "error", err)
 			}
-			// Fail-Closed
-			return core.ErrPolicyViolation
+			// Return actual error
+			return fmt.Errorf("label parsing error: %w", err)
 		}
 		facts = append(facts, atom)
 	}
@@ -201,8 +201,8 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 		if e.logger != nil {
 			e.logger.Debug("policy evaluation failed", "error", err)
 		}
-		// If evaluation fails, deny for safety
-		return core.ErrPolicyViolation
+		// Return actual error to allow Fail-Open handling
+		return fmt.Errorf("policy evaluation error: %w", err)
 	}
 
 	if denied {
@@ -252,8 +252,8 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 		if e.logger != nil {
 			e.logger.Debug("failed to convert output to facts", "error", err)
 		}
-		// If conversion fails, pass through for safety
-		return output, nil
+		// Return actual error to allow Fail-Open handling
+		return core.Envelope{}, fmt.Errorf("fact conversion error: %w", err)
 	}
 
 	// Generate facts for security labels using safe helper
@@ -262,8 +262,8 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 		if e.logger != nil {
 			e.logger.Error("failed to generate label facts", "error", err)
 		}
-		// Fail-Closed
-		return core.Envelope{}, core.ErrPolicyViolation
+		// Return actual error
+		return core.Envelope{}, fmt.Errorf("label conversion error: %w", err)
 	}
 
 	for _, factStr := range labelFacts {
@@ -272,8 +272,8 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 			if e.logger != nil {
 				e.logger.Error("failed to parse label fact", "fact", factStr, "error", err)
 			}
-			// Fail-Closed
-			return core.Envelope{}, core.ErrPolicyViolation
+			// Return actual error
+			return core.Envelope{}, fmt.Errorf("label parsing error: %w", err)
 		}
 		facts = append(facts, atom)
 	}
@@ -284,8 +284,8 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 		if e.logger != nil {
 			e.logger.Debug("post-check validation failed", "error", err)
 		}
-		// If evaluation fails, pass through for safety
-		return output, nil
+		// Return actual error to allow Fail-Open handling
+		return core.Envelope{}, fmt.Errorf("policy evaluation error: %w", err)
 	}
 
 	if denied {

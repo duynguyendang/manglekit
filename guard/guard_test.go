@@ -102,7 +102,7 @@ func TestGuardedAction_Execute(t *testing.T) {
 	// 1. Setup
 	eng := engine.New()
 	mock := &MockAction{}
-	guardedAction := New(mock, eng)
+	guardedAction := New(mock, eng, "closed")
 
 	// 2. Create input
 	inputPayload := "hello world"
@@ -134,7 +134,7 @@ func TestGuardedAction_LoggerContextInjection(t *testing.T) {
 	testLogger := &TestLogger{}
 	eng := engine.NewWithObservability(nil, testLogger)
 	capturingAction := &LoggerCapturingAction{}
-	guardedAction := New(capturingAction, eng)
+	guardedAction := New(capturingAction, eng, "closed")
 
 	// 2. Create input
 	input := core.NewEnvelope("test payload")

@@ -8,6 +8,12 @@ type Config struct {
 	// Policy configuration
 	Policy PolicyConfig `yaml:"policy" mapstructure:"policy"`
 
+	// FailureMode determines how the system behaves when the policy engine fails
+	// (e.g. timeout, crash).
+	// "closed" (default) -> Block execution.
+	// "open" -> Allow execution with warning.
+	FailureMode string `yaml:"failure_mode" mapstructure:"failure_mode"`
+
 	// Observability settings
 	Observability ObservabilityConfig `yaml:"observability" mapstructure:"observability"`
 
@@ -21,6 +27,11 @@ type Config struct {
 	// Knowledge Base Configuration
 	Knowledge KnowledgeConfig `yaml:"knowledge" mapstructure:"knowledge"`
 }
+
+const (
+	FailureModeClosed = "closed"
+	FailureModeOpen   = "open"
+)
 
 // KnowledgeConfig defines settings for the Knowledge Graph integration.
 type KnowledgeConfig struct {

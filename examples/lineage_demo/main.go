@@ -54,9 +54,9 @@ func main() {
 	actionC := &MockAction{Name: "ActionC"}
 
 	// Wrap them in Guards
-	guardedA := guard.New(actionA, eng)
-	guardedB := guard.New(actionB, eng)
-	guardedC := guard.New(actionC, eng)
+	guardedA := guard.New(actionA, eng, "closed")
+	guardedB := guard.New(actionB, eng, "closed")
+	guardedC := guard.New(actionC, eng, "closed")
 
 	// 2. Scenario 1: Sequential Chain (A -> B -> C)
 	// We simulate a pipeline where A output is passed to B, etc.
@@ -91,7 +91,7 @@ func main() {
 
 	// Create a wrapper that calls C
 	wrapper := &WrapperAction{Name: "Wrapper", Inner: guardedC}
-	guardedWrapper := guard.New(wrapper, eng)
+	guardedWrapper := guard.New(wrapper, eng, "closed")
 
 	inputWrapper := core.NewEnvelope("Nested Data")
 	fmt.Printf("InputWrapper ID: %s\n", inputWrapper.ID)
