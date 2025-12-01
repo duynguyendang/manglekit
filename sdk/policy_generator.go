@@ -16,20 +16,24 @@ import (
 
 // GeneratorOptions defines configuration for the rule generator.
 type GeneratorOptions struct {
-	// RuleHead defines the target predicate (e.g., "deny(Req)", "allow(Req)", "route(Req, Target)").
+	// RuleHead defines the target predicate signature (e.g., "deny(Req)", "allow(Req)", "route(Req, Target)").
+	// It guides the LLM to produce a rule that matches this head.
 	// Default: "deny(Req)"
 	RuleHead string
 
-	// PromptTemplate is a custom Go template string.
-	// If empty, use the internal DefaultPromptTemplate.
+	// PromptTemplate is a custom Go template string used to instruct the LLM.
+	// It must contain placeholders for {{.SchemaContext}}, {{.Examples}}, and {{.UserPolicy}}.
+	// If empty, the internal DefaultPromptTemplate is used.
 	PromptTemplate string
 
-	// Examples are the few-shot examples inserted into the template.
-	// If empty, use the internal DefaultExamples.
+	// Examples provides few-shot learning examples inserted into the prompt template.
+	// This helps the LLM understand the expected Datalog syntax and logic patterns.
+	// If empty, the internal DefaultExamples is used.
 	Examples string
 }
 
-// DefaultPromptTemplate is the default prompt used to instruct the LLM.
+// DefaultPromptTemplate is the default system prompt used to instruct the LLM.
+// It sets constraints on syntax, predicate usage, and output format.
 const DefaultPromptTemplate = `System: You are an expert Mangle Datalog Compiler. Your task is to translate a natural language policy into a single, valid Mangle Datalog rule.
 
 Constraints:
@@ -52,7 +56,8 @@ User Policy: "{{.UserPolicy}}"
 Your Output:
 `
 
-// DefaultExamples provides few-shot examples for the LLM.
+// DefaultExamples provides standard few-shot examples for the LLM.
+// These examples cover common patterns like numerical comparison and string matching.
 const DefaultExamples = `
 Example 1:
 - User Policy: "Block if amount > 1000"
@@ -69,18 +74,22 @@ Example 3:
 - Your Output:
 deny(Req) :- region(Req, "US"), amount(Req, Amount), Amount < 50.`
 
-// Generator uses a core.Action to translate natural language into Mangle rules.
-// The action is typically an LLM (via adapters/ai.NewGenkitAction) but can be any
-// core.Action that takes a string prompt and returns a string response.
+// Generator facilitates the translation of natural language policies into Mangle Datalog rules.
+// It leverages an underlying LLM (wrapped as a core.Action) to perform the translation.
 type Generator struct {
 	llmAction core.Action
 	opts      GeneratorOptions
 	template  *template.Template
 }
 
-// NewPolicyGenerator creates a new Generator with the provided core.Action and options.
-// The action should be an LLM action (e.g., created via adapters/ai.NewGenkitAction).
-// The action may be wrapped in a Guard for policy enforcement and tracing.
+// NewPolicyGenerator creates a new Generator instance.
+//
+// Parameters:
+//   - llmAction: A core.Action that wraps an LLM (e.g., via adapters/ai). It must accept a string prompt and return a string response.
+//   - opts: Configuration options for the generator.
+//
+// Returns:
+//   - A pointer to the Generator, or an error if initialization fails.
 func NewPolicyGenerator(llmAction core.Action, opts GeneratorOptions) (*Generator, error) {
 	if opts.RuleHead == "" {
 		opts.RuleHead = "deny(Req)"
@@ -104,22 +113,22 @@ func NewPolicyGenerator(llmAction core.Action, opts GeneratorOptions) (*Generato
 	}, nil
 }
 
-// GenerateRule takes a sample struct (to learn the schema) and a text policy.
-// It returns the raw Datalog string.
+// GenerateRule translates a natural language policy into a Datalog rule using In-Context Learning.
+// It dynamically extracts the schema from the provided sample struct to teach the LLM available predicates.
 //
-// This function demonstrates "In-Context Learning" by dynamically teaching the LLM
-// the data schema derived from the Go struct.
+// Workflow:
+//  1. Extract schema predicates from `schemaSample`.
+//  2. Construct a prompt containing the schema, examples, and user policy.
+//  3. Invoke the LLM action.
+//  4. Parse and verify the generated Datalog rule.
 //
-// Dogfooding Note: This implementation uses core.Action as a universal unit of work.
-// The llmAction is executed via the standard core.Action interface, which means it
-// automatically benefits from any wrapping (e.g., Guard for policy checks, tracing).
+// Parameters:
+//   - ctx: The context.
+//   - schemaSample: A Go struct instance representing the data model (used to generate available predicates).
+//   - policyText: The natural language policy to translate (e.g., "Block transactions over $1000").
 //
-// The process:
-//  1. Schema Extraction - Use engine/reflection (engine.ToFacts) to inspect schemaSample
-//  2. Prompt Construction - Build a detailed system prompt with schema and policy
-//  3. Action Execution - Call g.llmAction.Execute(ctx, inputEnvelope) with the prompt
-//  4. Output Processing - Unwrap the Envelope, assert payload is string
-//  5. Verification - Validate the generated rule syntax using Mangle parser
+// Returns:
+//   - The generated Datalog rule string, or an error.
 func (g *Generator) GenerateRule(ctx context.Context, schemaSample any, policyText string) (string, error) {
 	// Step A: Schema Extraction (The Context)
 	schemaContext, err := g.extractSchema(schemaSample)

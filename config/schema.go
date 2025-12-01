@@ -1,85 +1,89 @@
 package config
 
-// Config is the top-level configuration structure for Manglekit.
-// It defines all the settings needed to initialize a Manglekit Client,
-// including policies, observability, and pre-defined actions.
-// This struct replaces the legacy configuration from v1.
+// Config is the root configuration structure for Manglekit.
+// It maps to the YAML configuration file and defines all settings for the system.
 type Config struct {
-	// Policy configuration
+	// Policy configuration for the Datalog engine.
 	Policy PolicyConfig `yaml:"policy" mapstructure:"policy"`
 
-	// FailureMode determines how the system behaves when the policy engine fails
-	// (e.g. timeout, crash).
-	// "closed" (default) -> Block execution.
-	// "open" -> Allow execution with warning.
+	// FailureMode determines how the system behaves when the policy engine or guard fails.
+	// - "closed" (Default): Blocks the action (returns error).
+	// - "open": Allows the action to proceed (logs warning).
 	FailureMode string `yaml:"failure_mode" mapstructure:"failure_mode"`
 
-	// Observability settings
+	// Observability configuration (Logging and Tracing).
 	Observability ObservabilityConfig `yaml:"observability" mapstructure:"observability"`
 
-	// Pre-defined Actions (LLMs, Retrievers) that can be loaded by name.
-	// These are optional and reserved for future use.
+	// Actions defines pre-configured actions that can be referenced by name.
+	// This maps action names to their configuration.
 	Actions map[string]ActionConfig `yaml:"actions" mapstructure:"actions"`
 
-	// MCP Configuration
+	// MCP defines a list of Model Context Protocol servers to connect to.
 	MCP []MCPServerConfig `yaml:"mcp" mapstructure:"mcp"`
 
-	// Knowledge Base Configuration
+	// Knowledge configuration for static RDF facts.
 	Knowledge KnowledgeConfig `yaml:"knowledge" mapstructure:"knowledge"`
 }
 
 const (
+	// FailureModeClosed ensures the system blocks on governance errors.
 	FailureModeClosed = "closed"
-	FailureModeOpen   = "open"
+	// FailureModeOpen allows the system to proceed (fail-open) on governance errors.
+	FailureModeOpen = "open"
 )
 
-// KnowledgeConfig defines settings for the Knowledge Graph integration.
+// KnowledgeConfig settings for loading static knowledge bases.
 type KnowledgeConfig struct {
-	// Path to the RDF Turtle file (.ttl) containing static facts
+	// Path to the RDF Turtle (.ttl) file containing static facts.
 	Path string `yaml:"path" mapstructure:"path"`
 }
 
-// PolicyConfig defines settings for the Policy Engine.
+// PolicyConfig settings for the Datalog Policy Engine.
 type PolicyConfig struct {
-	// Path to the Datalog policy file (.dl)
+	// Path to the Datalog policy source file (.dl or .dlog) or directory.
 	Path string `yaml:"path" mapstructure:"path"`
 
-	// Timeout for policy evaluation (in seconds)
+	// EvaluationTimeout is the max duration (in seconds) for rule evaluation.
 	EvaluationTimeout int `yaml:"evaluation_timeout,omitempty" mapstructure:"evaluation_timeout"`
 }
 
-// ObservabilityConfig defines settings for logging and tracing.
+// ObservabilityConfig settings for telemetry.
 type ObservabilityConfig struct {
-	// Enabled indicates whether observability is active
+	// Enabled toggles all observability features.
 	Enabled bool `yaml:"enabled" mapstructure:"enabled"`
 
-	// ServiceName is the name of the service for observability reporting
+	// ServiceName is the application name used in traces and logs.
 	ServiceName string `yaml:"service_name,omitempty" mapstructure:"service_name"`
 
-	// LogLevel sets the logging level (e.g., "debug", "info", "warn", "error")
+	// LogLevel sets the minimum log severity ("debug", "info", "warn", "error").
 	LogLevel string `yaml:"log_level,omitempty" mapstructure:"log_level"`
 
-	// OTLPEndpoint is the OpenTelemetry Protocol endpoint for traces and metrics
+	// OTLPEndpoint is the URL of the OpenTelemetry collector (gRPC/HTTP).
 	OTLPEndpoint string `yaml:"otlp_endpoint,omitempty" mapstructure:"otlp_endpoint"`
 }
 
-// ActionConfig represents a pre-defined action (LLM, Retriever, etc.)
+// ActionConfig defines a static action configuration.
 type ActionConfig struct {
-	// Type indicates the action type (e.g., "llm", "retriever")
+	// Type identifies the kind of action (e.g., "llm", "retriever").
 	Type string `yaml:"type" mapstructure:"type"`
 
-	// Provider specifies the provider (e.g., "google", "openai")
+	// Provider specifies the implementation provider (e.g., "google", "openai").
 	Provider string `yaml:"provider" mapstructure:"provider"`
 
-	// Options are provider-specific configuration options
+	// Options contains arbitrary provider-specific settings.
 	Options map[string]interface{} `yaml:"options" mapstructure:"options"`
 }
 
-// MCPServerConfig defines configuration for an MCP Server.
+// MCPServerConfig defines how to connect to an MCP server.
 type MCPServerConfig struct {
-	Name      string   `yaml:"name" mapstructure:"name"`
-	Transport string   `yaml:"transport" mapstructure:"transport"` // "stdio" or "sse"
-	Command   string   `yaml:"command" mapstructure:"command"`
-	Args      []string `yaml:"args" mapstructure:"args"`
-	Env       []string `yaml:"env" mapstructure:"env"` // e.g. ["KEY=VALUE"]
+	// Name is a unique identifier for this MCP server connection.
+	Name string `yaml:"name" mapstructure:"name"`
+	// Transport specifies the connection method: "stdio" or "sse".
+	Transport string `yaml:"transport" mapstructure:"transport"`
+	// Command is the executable command (for stdio) or URL (for sse).
+	Command string `yaml:"command" mapstructure:"command"`
+	// Args are command-line arguments (for stdio).
+	Args []string `yaml:"args" mapstructure:"args"`
+	// Env specifies environment variables for the process (for stdio).
+	Env []string `yaml:"env" mapstructure:"env"`
 }

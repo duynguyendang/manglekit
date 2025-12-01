@@ -10,26 +10,43 @@ import (
 	"github.com/firebase/genkit/go/ai"
 )
 
-// Document represents a retrieved document from a vector store.
+// Document represents a single unit of retrieved knowledge.
 type Document struct {
+	// Content is the textual body of the document.
 	Content string `json:"content"`
-	Source  string `json:"source"`
+	// Source indicates the origin of the document (e.g., filename, URL).
+	Source string `json:"source"`
 }
 
 // DocumentRetriever defines the interface for a vector search backend.
-// This represents the retrieval "Muscle" layer that performs similarity search.
+// It abstracts the underlying storage mechanism (Pinecone, Weaviate, Local).
 type DocumentRetriever interface {
+	// Retrieve finds semantically similar documents for a given query.
+	//
+	// Parameters:
+	//   - ctx: The execution context.
+	//   - query: The search string.
+	//
+	// Returns:
+	//   - A slice of Document matches, or an error.
 	Retrieve(ctx context.Context, query string) ([]Document, error)
 }
 
-// RetrieverAction wraps a DocumentRetriever and implements core.Action.
-// It treats vector search as a universal action (Query-in, Documents-out).
+// RetrieverAction wraps a DocumentRetriever into a core.Action.
+// This allows retrieval operations to be governed by policies and traced.
 type RetrieverAction struct {
 	name      string
 	retriever DocumentRetriever
 }
 
-// NewRetrieverAction creates a new RetrieverAction wrapping the given DocumentRetriever.
+// NewRetrieverAction creates a new RetrieverAction.
+//
+// Parameters:
+//   - name: The unique name for this action.
+//   - retriever: The retrieval backend implementation.
+//
+// Returns:
+//   - A pointer to the initialized RetrieverAction.
 func NewRetrieverAction(name string, retriever DocumentRetriever) *RetrieverAction {
 	return &RetrieverAction{
 		name:      name,
@@ -37,9 +54,15 @@ func NewRetrieverAction(name string, retriever DocumentRetriever) *RetrieverActi
 	}
 }
 
-// Execute expects a string payload (the search query), calls the retriever,
-// and returns the retrieved documents as a JSON string wrapped in an Envelope.
-// The output is formatted for downstream consumption (e.g., by an LLM action).
+// Execute performs the vector search.
+// It expects a string payload (query) and returns a JSON string payload (list of documents).
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - input: The input Envelope (Payload must be string).
+//
+// Returns:
+//   - A result Envelope containing a JSON string of retrieved documents.
 func (r *RetrieverAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	query, ok := input.Payload.(string)
 	if !ok {
@@ -64,7 +87,7 @@ func (r *RetrieverAction) Execute(ctx context.Context, input core.Envelope) (cor
 	return output, nil
 }
 
-// Metadata returns the metadata for this retriever action.
+// Metadata returns the action's metadata.
 func (r *RetrieverAction) Metadata() core.ActionMetadata {
 	return core.ActionMetadata{
 		Name: r.name,
@@ -72,8 +95,14 @@ func (r *RetrieverAction) Metadata() core.ActionMetadata {
 	}
 }
 
-// FormatDocsAsContext is a helper function that formats retrieved documents
-// as a context string suitable for LLM prompts.
+// FormatDocsAsContext is a utility to format a JSON list of documents into a readable context string.
+// This is typically used to inject retrieved knowledge into an LLM prompt.
+//
+// Parameters:
+//   - docsJSON: The JSON string returned by RetrieverAction.Execute.
+//
+// Returns:
+//   - A formatted string (e.g., "Document 1...\nDocument 2...").
 func FormatDocsAsContext(docsJSON string) (string, error) {
 	var docs []Document
 	if err := json.Unmarshal([]byte(docsJSON), &docs); err != nil {
@@ -92,19 +121,15 @@ func FormatDocsAsContext(docsJSON string) (string, error) {
 	return context, nil
 }
 
-// NewGenkitRetrieverAction creates a fully guarded Action from a Genkit Retriever.
-// It wraps the provided Genkit ai.Retriever with a GenkitRetriever and returns it as a RetrieverAction.
+// NewGenkitRetrieverAction creates a protected core.Action from a Genkit ai.Retriever.
 //
-// name is the human-readable name for this action (e.g., "rag-retriever").
-// retriever is the Genkit ai.Retriever to wrap (e.g., from Pinecone, LocalVec, Weaviate plugins).
-// embedder is an optional Genkit ai.Embedder used for query embedding if needed.
-// If the retriever handles embedding internally, embedder can be nil.
+// Parameters:
+//   - name: The unique name for this action.
+//   - retriever: The Genkit retriever instance.
+//   - embedder: Optional embedder (if required by the retriever).
 //
-// Example:
-//
-//	retriever := pinecone.NewRetriever()
-//	action := vector.NewGenkitRetrieverAction("my-retriever", retriever, nil)
-//	result, err := action.Execute(ctx, input)
+// Returns:
+//   - A core.Action that can be used with `client.Protect()`.
 func NewGenkitRetrieverAction(name string, retriever ai.Retriever, embedder ai.Embedder) core.Action {
 	genkitRetriever := NewGenkitRetriever(retriever, embedder)
 	return NewRetrieverAction(name, genkitRetriever)

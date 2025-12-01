@@ -9,8 +9,15 @@ import (
 	"github.com/duynguyendang/manglekit/engine"
 )
 
-// GuardedAction wraps a core.Action to enforce policies.
-// It provides the main transaction span for tracing the entire execution flow.
+// GuardedAction is a decorator that wraps any `core.Action` to enforce governance policies.
+// It implements the standard "Trace -> Authorize -> Execute -> Validate" lifecycle.
+//
+// Lifecycle:
+//  1. Trace: Starts an OpenTelemetry span for the operation.
+//  2. Authorize: Checks Pre-Check policies (e.g., "deny(Req)").
+//  3. Execute: Runs the inner action (e.g., calls the LLM).
+//  4. Validate: Checks Post-Check policies (e.g., "deny(Output)").
+//  5. Steering: Evaluates steering policies for routing or correction.
 type GuardedAction struct {
 	inner       core.Action
 	engine      *engine.PolicyEngine
@@ -18,7 +25,15 @@ type GuardedAction struct {
 	failureMode string
 }
 
-// New creates a new GuardedAction without tracing (for backward compatibility).
+// New creates a new GuardedAction with default settings (no tracing).
+//
+// Parameters:
+//   - action: The inner action to protect.
+//   - eng: The policy engine to use for governance.
+//   - failureMode: The resilience strategy ("open" or "closed").
+//
+// Returns:
+//   - A new GuardedAction instance.
 func New(action core.Action, eng *engine.PolicyEngine, failureMode string) *GuardedAction {
 	return &GuardedAction{
 		inner:       action,
@@ -29,6 +44,15 @@ func New(action core.Action, eng *engine.PolicyEngine, failureMode string) *Guar
 }
 
 // NewWithTracer creates a new GuardedAction with tracing enabled.
+//
+// Parameters:
+//   - action: The inner action to protect.
+//   - eng: The policy engine.
+//   - tracer: The tracer implementation.
+//   - failureMode: "open" (log only on system error) or "closed" (block on system error).
+//
+// Returns:
+//   - A new GuardedAction instance.
 func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer core.Tracer, failureMode string) *GuardedAction {
 	if tracer == nil {
 		tracer = &core.NopTracer{}
@@ -41,9 +65,23 @@ func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer core.Tra
 	}
 }
 
-// Execute runs the action through the policy engine's checks.
-// The entire execution flow (Authorize → Inner Action → Validate) is wrapped
-// in a top-level span for full observability.
+// Execute runs the guarded action, orchestrating the full governance lifecycle.
+//
+// It performs the following steps:
+//  1. Starts a span.
+//  2. Injects the logger into the context.
+//  3. Runs Authorize(). If it fails, execution halts (unless Fail-Open).
+//  4. Runs the inner Action.Execute().
+//  5. Propagates taint labels from input to output.
+//  6. Runs Validate(). If it fails, the result is blocked.
+//  7. Runs EvaluateSteering() to determine next steps (Retry/Route).
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - input: The data envelope.
+//
+// Returns:
+//   - The result envelope (possibly modified by policy), or an error.
 func (g *GuardedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	// If no tracer is configured, execute without tracing
 	if g.tracer == nil {
@@ -69,6 +107,12 @@ func (g *GuardedAction) Execute(ctx context.Context, input core.Envelope) (core.
 
 	span.SetAttr(core.AttrOutcome, core.OutcomeSuccess)
 	return result, nil
+}
+
+// Metadata delegates to the inner action's Metadata method.
+// This allows the GuardedAction to transparently represent the underlying capability.
+func (g *GuardedAction) Metadata() core.ActionMetadata {
+	return g.inner.Metadata()
 }
 
 // shouldBlock determines if the action should be blocked based on the error and failure mode.
@@ -189,9 +233,4 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 	)
 
 	return validatedResult, nil
-}
-
-// Metadata returns the metadata of the inner action.
-func (g *GuardedAction) Metadata() core.ActionMetadata {
-	return g.inner.Metadata()
 }

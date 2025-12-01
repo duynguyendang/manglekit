@@ -16,8 +16,9 @@ import (
 	"github.com/google/mangle/parse"
 )
 
-// MangleRuntime encapsulates the Google Mangle Datalog engine and provides
-// high-level operations for loading rules and executing queries.
+// MangleRuntime encapsulates the Google Mangle Datalog engine.
+// It manages the lifecycle of Datalog programs, including loading rules from files,
+// parsing, analysis, stratification, and evaluation.
 type MangleRuntime struct {
 	// programInfo contains the analyzed and stratified Datalog program
 	programInfo *analysis.ProgramInfo
@@ -29,7 +30,10 @@ type MangleRuntime struct {
 	baseFactStore factstore.SimpleInMemoryStore
 }
 
-// NewMangleRuntime creates a new MangleRuntime with an empty program and fact store.
+// NewMangleRuntime initializes a new, empty MangleRuntime.
+//
+// Returns:
+//   - A pointer to a new MangleRuntime instance.
 func NewMangleRuntime() *MangleRuntime {
 	return &MangleRuntime{
 		predToStratum: make(map[ast.PredicateSym]int),
@@ -37,14 +41,20 @@ func NewMangleRuntime() *MangleRuntime {
 	}
 }
 
-// Load loads Datalog rules from the given file path or directory.
-// It supports:
-// - Single .dlog rule files
-// - Single .facts/.edb/.data fact files
-// - Directories (recursively)
-// - Glob patterns (e.g., "rules/*.dlog")
+// Load loads Datalog rules and facts from the specified path.
 //
-// After loading, the program is analyzed and stratified for evaluation.
+// Supported inputs:
+//   - A single file path (e.g., "policy.dl").
+//   - A directory path (recursively loads all .dl, .dlog, .facts, .edb files).
+//   - A glob pattern (e.g., "policies/*.dl").
+//
+// It parses, analyzes, and stratifies the resulting program.
+//
+// Parameters:
+//   - path: The file system path or glob pattern.
+//
+// Returns:
+//   - An error if loading, parsing, or analysis fails.
 func (r *MangleRuntime) Load(path string) error {
 	if path == "" {
 		return fmt.Errorf("path cannot be empty")
@@ -131,8 +141,14 @@ func (r *MangleRuntime) Load(path string) error {
 	return nil
 }
 
-// LoadFacts adds a list of Datalog fact strings to the base fact store.
-// These facts become part of the static knowledge base.
+// LoadFacts injects a list of raw Datalog fact strings into the runtime's base knowledge.
+// This is useful for loading dynamic knowledge or facts from external sources.
+//
+// Parameters:
+//   - facts: A slice of Datalog fact strings (e.g., 'user_role("alice", "admin")').
+//
+// Returns:
+//   - An error if parsing or evaluation fails.
 func (r *MangleRuntime) LoadFacts(facts []string) error {
 	for _, factStr := range facts {
 		atom, err := parse.Atom(factStr)
@@ -151,8 +167,14 @@ func (r *MangleRuntime) LoadFacts(facts []string) error {
 	return nil
 }
 
-// LoadFromString loads a Datalog rule from a string.
-// The rule should be a complete Datalog clause (e.g., "deny(Req) :- amount(Req, X), fn:gt(X, 100).").
+// LoadFromString parses and loads a single Datalog rule provided as a string.
+// This is typically used for dynamic rule injection or testing.
+//
+// Parameters:
+//   - rule: A valid Datalog rule string.
+//
+// Returns:
+//   - An error if parsing, analysis, or evaluation fails.
 func (r *MangleRuntime) LoadFromString(rule string) error {
 	if rule == "" {
 		return fmt.Errorf("rule cannot be empty")
@@ -196,11 +218,16 @@ func (r *MangleRuntime) LoadFromString(rule string) error {
 	return nil
 }
 
-// ExecuteQuery executes a Datalog query against the given facts.
-// It returns true if the query is satisfied, false otherwise.
+// ExecuteQuery runs a boolean Datalog query against the current program state + additional temporary facts.
+// It returns true if the query atom can be derived.
 //
-// The query is expected to be an atom (e.g., "deny(Req)").
-// For more complex queries, use QueryWithSolutions.
+// Parameters:
+//   - facts: Temporary facts to include in this specific query execution (e.g., request data).
+//   - queryStr: The Datalog query atom (e.g., 'deny("req-123")').
+//
+// Returns:
+//   - true if derived, false otherwise.
+//   - error if the runtime is not initialized or execution fails.
 func (r *MangleRuntime) ExecuteQuery(facts []ast.Atom, queryStr string) (bool, error) {
 	if r.programInfo == nil {
 		return false, fmt.Errorf("runtime not initialized; call Load or LoadFromString first")
@@ -231,9 +258,16 @@ func (r *MangleRuntime) ExecuteQuery(facts []ast.Atom, queryStr string) (bool, e
 	return found, nil
 }
 
-// QueryWithSolutions executes a query and returns all matching solutions.
-// The callback is invoked for each solution found.
-// Solutions are represented as maps of variable names to values.
+// QueryWithSolutions executes a Datalog query and invokes a callback for each solution found.
+// This allows extracting values from the query (e.g., 'next_step(Req, Target)').
+//
+// Parameters:
+//   - facts: Temporary facts to include.
+//   - queryStr: The Datalog query with variables (e.g., 'correction(Req, Hint)').
+//   - onSolution: A callback function executed for each matching solution map.
+//
+// Returns:
+//   - An error if execution fails.
 func (r *MangleRuntime) QueryWithSolutions(facts []ast.Atom, queryStr string, onSolution func(map[string]any) error) error {
 	if r.programInfo == nil {
 		return fmt.Errorf("runtime not initialized; call Load or LoadFromString first")

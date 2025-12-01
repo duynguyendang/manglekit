@@ -22,19 +22,37 @@ const (
 	TracerName = "github.com/duynguyendang/manglekit/sdk"
 )
 
-// Client is the public struct representing the initialized Manglekit system.
-// It provides the core governance capabilities through a simple, unified API.
+// Client is the primary entry point for the Manglekit system.
+// It acts as the governance kernel, managing policies, observability, and action execution.
+// Applications should create a single Client instance and reuse it.
 type Client struct {
-	engine            *engine.PolicyEngine
-	tracer            core.Tracer
-	otelTracer        trace.Tracer
-	logger            core.Logger
-	memory            core.MemoryStore
-	registry          map[string]core.Action
-	failureMode       string
+	// engine is the internal Policy Engine responsible for Datalog evaluation.
+	engine *engine.PolicyEngine
+	// tracer is the Manglekit core.Tracer wrapper.
+	tracer core.Tracer
+	// otelTracer is the raw OpenTelemetry tracer instance.
+	otelTracer trace.Tracer
+	// logger is the structured logger used by the client and its components.
+	logger core.Logger
+	// memory is the persistence layer for chat history (optional).
+	memory core.MemoryStore
+	// registry holds registered actions for dynamic routing.
+	registry map[string]core.Action
+	// failureMode determines the system's resilience strategy ("open" or "closed").
+	failureMode string
+	// initialPolicyPath stores the path loaded at startup (for debugging/reloading).
 	initialPolicyPath string
 }
 
+// NewClient initializes a new Manglekit Client with the provided options.
+// It sets up the Policy Engine, Observability (Logging/Tracing), and default configurations.
+//
+// Parameters:
+//   - ctx: The initialization context.
+//   - opts: A variadic list of ClientOption configuration functions.
+//
+// Returns:
+//   - A pointer to the initialized Client, or an error if initialization fails.
 func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		logger:   core.NopLogger{},
@@ -65,7 +83,16 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	return c, nil
 }
 
-// NewClientWithConfig creates a new Manglekit Client from a pre-loaded configuration object.
+// NewClientWithConfig initializes a Client using a loaded Config object.
+// This is useful when configuration is deserialized from a file or external source.
+//
+// Parameters:
+//   - ctx: The context.
+//   - cfg: The loaded configuration struct.
+//   - opts: Additional functional options (override config settings).
+//
+// Returns:
+//   - A pointer to the Client, or an error.
 func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error) {
 	// Initialize logger (use default for now)
 	log := newDefaultLogger()
@@ -120,19 +147,16 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 	return c, nil
 }
 
-// NewClientFromConfig creates a new Manglekit Client from a configuration file.
-// The config file is expected to be in YAML format and can use environment variable
-// expansion (e.g., ${API_KEY}).
+// NewClientFromConfig initializes a Client by loading configuration from a YAML file.
+// It supports environment variable expansion in the config file.
 //
-// This is the recommended way to initialize Manglekit in production environments,
-// as it allows configuration to be managed externally via files and environment variables.
+// Parameters:
+//   - ctx: The context.
+//   - configPath: Path to the YAML configuration file.
+//   - opts: Additional functional options.
 //
-// Example:
-//
-//	client, err := sdk.NewClientFromConfig(ctx, "mangle.yaml")
-//	if err != nil {
-//		log.Fatal(err)
-//	}
+// Returns:
+//   - A pointer to the Client, or an error.
 func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientOption) (*Client, error) {
 	// Load configuration from file
 	cfg, err := config.Load(configPath)
@@ -163,17 +187,15 @@ func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientO
 	return c, nil
 }
 
-// Protect is the final, public API method.
-// It takes any raw Action and wraps it with the governance Guard.
+// Protect wraps a raw core.Action in a GuardedAction.
+// This applies the "Trace -> Authorize -> Execute -> Validate" governance lifecycle.
+// This is the core function of the Manglekit framework.
 //
-// This is the single-line value proposition of Manglekit:
-// any Action becomes governed by policies with zero code changes.
+// Parameters:
+//   - action: The action to protect.
 //
-// Example:
-//
-//	rawAction := myservice.NewDatabaseAction()
-//	protectedAction := client.Protect(rawAction)
-//	result, err := protectedAction.Execute(ctx, input)
+// Returns:
+//   - A new core.Action that enforces policies.
 func (c *Client) Protect(action core.Action) core.Action {
 	if c.tracer != nil {
 		return guard.NewWithTracer(action, c.engine, c.tracer, c.failureMode)
@@ -181,44 +203,47 @@ func (c *Client) Protect(action core.Action) core.Action {
 	return guard.New(action, c.engine, c.failureMode)
 }
 
-// Engine returns the underlying PolicyEngine for advanced use cases.
-// Most users should use Protect() instead.
+// Engine returns the underlying PolicyEngine instance.
+// This provides access to low-level engine methods like RecordLineage or explicit evaluation.
 func (c *Client) Engine() *engine.PolicyEngine {
 	return c.engine
 }
 
-// Tracer returns the OTel tracer used by this client.
-// This can be used for custom instrumentation in user code.
+// Tracer returns the OpenTelemetry Tracer used by the client.
+// This allows users to start their own spans that are linked to the Manglekit trace context.
 func (c *Client) Tracer() trace.Tracer {
 	return c.otelTracer
 }
 
-// Logger returns the Logger used by this client.
-// This can be used for custom logging in user code.
+// Logger returns the configured Logger instance.
 func (c *Client) Logger() core.Logger {
 	return c.logger
 }
 
-// ProtectFunc is a generic helper that wraps a Go function into an Action
-// and then protects it with the Guard.
-// It uses generics to ensure type safety of the function adapter.
+// ProtectFunc is a generic helper that wraps a Go function into a protected Action.
+// It combines the functional adapter with the governance guard in one step.
 //
-// Example:
+// Parameters:
+//   - c: The Manglekit Client.
+//   - name: The name for the action (used in policy and tracing).
+//   - fn: The function to wrap. It must accept Context and Input, and return Output and error.
 //
-//	protectedAction := sdk.ProtectFunc(client, "checkStock", CheckStock)
-//	result, err := sdk.Call(ctx, protectedAction, input)
+// Returns:
+//   - A protected core.Action.
 func ProtectFunc[In any, Out any](c *Client, name string, fn func(context.Context, In) (Out, error)) core.Action {
 	adapter := funcAdapter.New(name, fn)
 	return c.Protect(adapter)
 }
 
-// Must is a helper that panics if the error is not nil.
-// Useful for initializing the client in main() or init() when you want
-// to fail-fast on startup errors.
+// Must ensures that the client initialization succeeded.
+// If err is not nil, it panics. This is useful for concise initialization in main() functions.
 //
-// Example:
+// Parameters:
+//   - c: The client instance.
+//   - err: The error returned by the constructor.
 //
-//	client := sdk.Must(sdk.NewClient(ctx, "policy.dl", sdk.WithLogger(log)))
+// Returns:
+//   - The valid Client instance.
 func Must(c *Client, err error) *Client {
 	if err != nil {
 		panic(err)
@@ -226,12 +251,13 @@ func Must(c *Client, err error) *Client {
 	return c
 }
 
-// NewDefault creates a Client with default settings (Zap logger, empty policy).
-// This is the simplest way to get started with Manglekit.
+// NewDefault initializes a Client with sensible default settings:
+//   - Zap production logger (or standard output if Zap fails).
+//   - No-op tracer.
+//   - No policy loaded (allow-all default).
 //
-// Example:
-//
-//	client, err := sdk.NewDefault()
+// Returns:
+//   - A pointer to the Client, or an error.
 func NewDefault() (*Client, error) {
 	return NewClient(context.Background(), WithLogger(newDefaultLogger()))
 }
@@ -244,13 +270,16 @@ func newDefaultLogger() core.Logger {
 	return logger.NewZapAdapter(z.Sugar())
 }
 
-// Call is a generic helper to execute an action with strongly typed input/output.
-// It handles Envelope packing and unpacking automatically, eliminating the need
-// for manual type assertions.
+// Call is a generic helper to execute a protected action with type-safe input and output.
+// It handles packing the input into an Envelope and unpacking the output.
 //
-// Example:
+// Parameters:
+//   - ctx: The execution context.
+//   - action: The protected action to execute.
+//   - payload: The strongly-typed input payload.
 //
-//	result, err := sdk.Call[StockResponse](ctx, protectedAction, StockRequest{SKU: "IPHONE"})
+// Returns:
+//   - The strongly-typed output payload, or an error.
 func Call[Out any](ctx context.Context, action core.Action, payload any) (Out, error) {
 	// 1. Pack payload into Envelope
 	req := core.NewEnvelope(payload)
@@ -272,7 +301,12 @@ func Call[Out any](ctx context.Context, action core.Action, payload any) (Out, e
 	return out, nil
 }
 
-// RegisterAction registers an action with the client for use in RunLoop.
+// RegisterAction adds an action to the client's internal registry.
+// Registered actions can be invoked by name using ExecuteByName, enabling dynamic routing.
+//
+// Parameters:
+//   - name: The unique name for the action.
+//   - action: The action instance.
 func (c *Client) RegisterAction(name string, action core.Action) {
 	c.registry[name] = action
 }

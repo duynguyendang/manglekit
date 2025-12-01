@@ -9,24 +9,33 @@ import (
 	"github.com/duynguyendang/manglekit/internal/telemetry"
 )
 
-// ClientOption configures the Client.
+// ClientOption configures the Manglekit Client during initialization.
 type ClientOption func(*Client)
 
-// WithPolicyPath loads Datalog rules from a file path.
+// WithPolicyPath specifies the file path to load Datalog rules from.
+//
+// Parameters:
+//   - path: A file path, directory path, or glob pattern containing policy files.
 func WithPolicyPath(path string) ClientOption {
 	return func(c *Client) {
 		c.initialPolicyPath = path
 	}
 }
 
-// WithFailMode sets the failure strategy ("open" or "closed").
+// WithFailMode sets the resilience strategy for the client.
+//
+// Parameters:
+//   - mode: "open" (allow execution on error) or "closed" (block execution on error).
 func WithFailMode(mode string) ClientOption {
 	return func(c *Client) {
 		c.failureMode = mode
 	}
 }
 
-// WithLogger sets a custom logger.
+// WithLogger sets a custom logger for the client.
+//
+// Parameters:
+//   - l: A core.Logger implementation.
 func WithLogger(l core.Logger) ClientOption {
 	return func(c *Client) {
 		if l != nil {
@@ -35,7 +44,11 @@ func WithLogger(l core.Logger) ClientOption {
 	}
 }
 
-// WithTracerProvider sets the OTel provider.
+// WithTracerProvider configures the OpenTelemetry tracer provider.
+// This enables Manglekit to emit spans to your existing tracing infrastructure.
+//
+// Parameters:
+//   - tp: The OpenTelemetry TracerProvider.
 func WithTracerProvider(tp trace.TracerProvider) ClientOption {
 	return func(c *Client) {
 		if tp != nil {
@@ -46,7 +59,10 @@ func WithTracerProvider(tp trace.TracerProvider) ClientOption {
 	}
 }
 
-// WithMemory sets a custom memory store.
+// WithMemory configures a custom persistence store for chat history.
+//
+// Parameters:
+//   - store: A core.MemoryStore implementation (e.g., Redis backed).
 func WithMemory(store core.MemoryStore) ClientOption {
 	return func(c *Client) {
 		if store != nil {
@@ -55,17 +71,26 @@ func WithMemory(store core.MemoryStore) ClientOption {
 	}
 }
 
-// ExecutionParams holds the runtime configuration.
+// ExecutionParams holds the configuration for a specific execution run.
 type ExecutionParams struct {
-	SessionID  string
+	// SessionID is the unique identifier for a conversation/session.
+	SessionID string
+	// MemoryMode determines how chat history is handled (None, Transient, Persist).
 	MemoryMode core.MemoryMode
-	Metadata   map[string]string
-	Timeout    time.Duration
+	// Metadata contains additional context to be injected into the execution envelope.
+	Metadata map[string]string
+	// Timeout (unused currently) specifies the max duration for the execution.
+	Timeout time.Duration
 }
 
+// ExecuteOption configures a single execution call (e.g., ExecuteByName).
 type ExecuteOption func(*ExecutionParams)
 
-// WithSessionID activates Stateful mode (Persistent).
+// WithSessionID activates persistent stateful mode for the execution.
+// It links the execution to a specific session history.
+//
+// Parameters:
+//   - id: The session identifier.
 func WithSessionID(id string) ExecuteOption {
 	return func(p *ExecutionParams) {
 		p.SessionID = id
@@ -73,14 +98,20 @@ func WithSessionID(id string) ExecuteOption {
 	}
 }
 
-// WithTransientMemory activates In-Memory mode without persistence.
+// WithTransientMemory activates in-memory stateful mode.
+// History is tracked for the duration of the loop/process but not persisted.
 func WithTransientMemory() ExecuteOption {
 	return func(p *ExecutionParams) {
 		p.MemoryMode = core.MemoryModeTransient
 	}
 }
 
-// WithMetadata injects custom context (e.g., source, user_tier).
+// WithMetadata injects custom key-value pairs into the execution envelope's metadata.
+// This is useful for passing context like "user_id" or "source" to the policy engine.
+//
+// Parameters:
+//   - key: The metadata key.
+//   - value: The metadata value.
 func WithMetadata(key, value string) ExecuteOption {
 	return func(p *ExecutionParams) {
 		if p.Metadata == nil {

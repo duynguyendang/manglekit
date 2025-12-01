@@ -6,9 +6,21 @@ import (
 	"strings"
 )
 
-// ToFacts converts a Go data structure into a slice of string-represented Datalog facts.
-// It generates facts in the format: predicate(entityID, value).
-// For nested structures, field names are flattened with underscores.
+// ToFacts converts a Go data structure into a slice of string-represented Mangle Datalog facts.
+// It recursively traverses structs, maps, slices, and arrays.
+//
+// Format:
+//   predicate(entityID, value)
+//
+// Nested fields are flattened using underscore delimiters (e.g., "address_city").
+//
+// Parameters:
+//   - id: The unique identifier for the entity (e.g., "Req", "Output").
+//   - input: The Go value to convert.
+//
+// Returns:
+//   - A slice of strings, where each string is a Datalog fact (e.g., 'name("Req", "Alice")').
+//   - An error if conversion fails.
 func ToFacts(id string, input any) ([]string, error) {
 	if input == nil {
 		return nil, nil
@@ -23,8 +35,19 @@ func ToFacts(id string, input any) ([]string, error) {
 	return facts, nil
 }
 
-// LabelsToFacts converts a slice of security labels into Mangle facts.
-// It handles escaping to prevent Datalog injection and ensure valid parsing.
+// LabelsToFacts converts a slice of security label strings into Mangle Datalog facts.
+// This is used for propagating taint information (e.g., "secret", "pii") into the policy engine.
+//
+// Format:
+//   has_label("entityID", "label_value")
+//
+// Parameters:
+//   - entityID: The unique identifier for the entity.
+//   - labels: A slice of security label strings.
+//
+// Returns:
+//   - A slice of Datalog fact strings.
+//   - An error if conversion fails (unlikely, mostly wrapper around string formatting).
 func LabelsToFacts(entityID string, labels []string) ([]string, error) {
 	var facts []string
 	for _, label := range labels {
@@ -37,14 +60,15 @@ func LabelsToFacts(entityID string, labels []string) ([]string, error) {
 	return facts, nil
 }
 
-// escapeString escapes special characters for Mangle string constants.
+// escapeString escapes special characters (backslashes and double quotes)
+// to ensure the resulting string is a valid Mangle string constant.
 func escapeString(s string) string {
 	s = strings.ReplaceAll(s, "\\", "\\\\")
 	s = strings.ReplaceAll(s, "\"", "\\\"")
 	return s
 }
 
-// toFactsRecursive is the recursive helper that traverses the data structure.
+// toFactsRecursive traverses the reflection value tree and appends facts to the slice.
 func toFactsRecursive(id, path string, v reflect.Value, facts *[]string) error {
 	// Dereference pointers, skipping if nil.
 	if v.Kind() == reflect.Ptr {
