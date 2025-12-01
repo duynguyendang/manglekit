@@ -11,17 +11,21 @@ import (
 	"github.com/google/mangle/parse"
 )
 
-// PolicyEngine handles policy-based authorization and validation.
-// It wraps the Datalog execution layer and provides observability through tracing
-// and structured logging.
+// PolicyEngine is the core decision-making component of Manglekit.
+// It orchestrates the loading of policies, maintaining the Datalog runtime,
+// and executing authorization (Pre-Check) and validation (Post-Check) logic.
+// It also integrates with observability (Tracing/Logging) to provide transparent governance.
 type PolicyEngine struct {
 	tracer  core.Tracer
 	logger  core.Logger
 	runtime *MangleRuntime
 }
 
-// New creates a new PolicyEngine without a tracer or logger (for backward compatibility).
-// Prefer NewWithObservability for full observability.
+// New creates a new PolicyEngine with default no-op observability.
+// This is suitable for basic usage where tracing and structured logging are not required.
+//
+// Returns:
+//   - A pointer to a new PolicyEngine instance.
 func New() *PolicyEngine {
 	return &PolicyEngine{
 		tracer:  &core.NopTracer{},
@@ -31,7 +35,14 @@ func New() *PolicyEngine {
 }
 
 // NewWithTracer creates a new PolicyEngine with tracing enabled.
-// Deprecated: Use NewWithObservability for full observability support.
+//
+// Deprecated: Use NewWithObservability instead.
+//
+// Parameters:
+//   - tracer: The tracer implementation to use.
+//
+// Returns:
+//   - A pointer to a new PolicyEngine instance.
 func NewWithTracer(tracer core.Tracer) *PolicyEngine {
 	if tracer == nil {
 		tracer = &core.NopTracer{}
@@ -44,6 +55,14 @@ func NewWithTracer(tracer core.Tracer) *PolicyEngine {
 }
 
 // NewWithObservability creates a new PolicyEngine with both tracing and logging enabled.
+// This is the recommended constructor for production use.
+//
+// Parameters:
+//   - tracer: The tracer implementation (e.g., OpenTelemetry).
+//   - logger: The logger implementation.
+//
+// Returns:
+//   - A pointer to a new PolicyEngine instance.
 func NewWithObservability(tracer core.Tracer, logger core.Logger) *PolicyEngine {
 	if tracer == nil {
 		tracer = &core.NopTracer{}
@@ -58,8 +77,14 @@ func NewWithObservability(tracer core.Tracer, logger core.Logger) *PolicyEngine 
 	}
 }
 
-// RecordLineage records a lineage relationship for observability.
-// It no longer stores relationships in memory.
+// RecordLineage records a data lineage relationship between a child and a parent.
+// Note: In the current architecture, lineage is primarily handled via context propagation
+// and tracing spans rather than explicit in-memory storage.
+//
+// Parameters:
+//   - ctx: The context.
+//   - childID: The ID of the derived data.
+//   - parentID: The ID of the source data.
 func (e *PolicyEngine) RecordLineage(ctx context.Context, childID, parentID string) {
 	if e.tracer != nil {
 		// Lineage linking is handled via context propagation in GuardedAction.
@@ -68,7 +93,10 @@ func (e *PolicyEngine) RecordLineage(ctx context.Context, childID, parentID stri
 }
 
 // Logger returns the engine's configured Logger instance.
-// This is used by the guard layer to inject the logger into the context.
+// This allows other components (like GuardedAction) to reuse the engine's logger.
+//
+// Returns:
+//   - The configured Logger, or a NopLogger if none was set.
 func (e *PolicyEngine) Logger() core.Logger {
 	if e.logger == nil {
 		return core.NopLogger{}
@@ -77,7 +105,13 @@ func (e *PolicyEngine) Logger() core.Logger {
 }
 
 // LoadKnowledge loads static knowledge (facts) from a Turtle (.ttl) file.
-// The facts are loaded into the runtime and are available for all subsequent evaluations.
+// These facts are persisted in the runtime and available for all subsequent evaluations.
+//
+// Parameters:
+//   - path: The file path to the .ttl file.
+//
+// Returns:
+//   - An error if loading or parsing fails.
 func (e *PolicyEngine) LoadKnowledge(path string) error {
 	if path == "" {
 		return nil
@@ -100,13 +134,14 @@ func (e *PolicyEngine) LoadKnowledge(path string) error {
 	return nil
 }
 
-// LoadFromPath loads policy rules from a file.
-// It parses the Datalog rules and prepares them for evaluation.
-// Supports:
-// - Single .dlog rule files
-// - Single .facts/.edb/.data fact files
-// - Directories (recursively)
-// - Glob patterns (e.g., "policies/*.dlog")
+// LoadFromPath loads policy rules and facts from the specified file system path.
+// It delegates to the underlying MangleRuntime to parse and compile the rules.
+//
+// Parameters:
+//   - path: File path, directory, or glob pattern.
+//
+// Returns:
+//   - An error if the policy files cannot be read or are invalid.
 func (e *PolicyEngine) LoadFromPath(path string) error {
 	if path == "" {
 		return nil
@@ -131,8 +166,19 @@ func (e *PolicyEngine) LoadFromPath(path string) error {
 	return nil
 }
 
-// Authorize performs pre-execution policy checks (Pre-Check).
-// It evaluates the Datalog rules to determine if the action is allowed to proceed.
+// Authorize performs the Pre-Check phase of governance.
+// It checks if the input is allowed to proceed based on the loaded policies.
+// If the `deny(Req)` predicate is derived, it returns `core.ErrPolicyViolation`.
+//
+// It automatically starts a tracing span (`Datalog.PreCheck`) and logs attributes.
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - actionMeta: Metadata about the action being authorized.
+//   - input: The input envelope containing the payload and security labels.
+//
+// Returns:
+//   - core.ErrPolicyViolation if blocked, or nil if allowed.
 func (e *PolicyEngine) Authorize(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
 	if e.tracer == nil {
 		return e.authorizeInternal(ctx, actionMeta, input)
@@ -155,9 +201,7 @@ func (e *PolicyEngine) Authorize(ctx context.Context, actionMeta core.ActionMeta
 	return err
 }
 
-// authorizeInternal contains the actual authorization logic.
-// It converts the input envelope to facts and evaluates the deny(Req) predicate.
-// If deny(Req) is derived, it returns ErrPolicyViolation.
+// authorizeInternal executes the core authorization logic.
 func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
 	if e.runtime == nil || e.runtime.programInfo == nil {
 		return nil // No runtime or program loaded, allow by default
@@ -215,8 +259,19 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 	return nil
 }
 
-// Validate performs post-execution policy checks (Post-Check).
-// It evaluates the Datalog rules to validate and potentially transform the output.
+// Validate performs the Post-Check phase of governance.
+// It checks if the output is allowed to be returned to the caller.
+// If the `deny(Output)` predicate is derived, it returns `core.ErrPolicyViolation`.
+//
+// It automatically starts a tracing span (`Datalog.PostCheck`) and logs attributes.
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - actionMeta: Metadata about the action being validated.
+//   - output: The output envelope containing the result.
+//
+// Returns:
+//   - The validated envelope (potentially modified, though currently pass-through), or an error.
 func (e *PolicyEngine) Validate(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
 	if e.tracer == nil {
 		return e.validateInternal(ctx, actionMeta, output)
@@ -239,8 +294,7 @@ func (e *PolicyEngine) Validate(ctx context.Context, actionMeta core.ActionMetad
 	return result, nil
 }
 
-// validateInternal contains the actual validation logic.
-// It converts the output envelope to facts and performs post-check validation.
+// validateInternal executes the core validation logic.
 func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
 	if e.runtime == nil || e.runtime.programInfo == nil {
 		return output, nil // No runtime or program loaded, allow by default
@@ -298,13 +352,22 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 	return output, nil
 }
 
-// EvaluateSteering determines the next course of action based on steering policies.
-// It checks for correction hints (Retry) and routing instructions (Route).
+// EvaluateSteering executes "Steering Policies" which determine what to do next.
+// Unlike Authorize/Validate (which are binary Allow/Deny), Steering returns decisions like "Retry" or "Route".
 //
 // Logic Priority:
-// 1. Correction (Retry) - Highest Priority
-// 2. Routing (Route)
-// 3. Allow (Proceed) - Default
+//  1. Correction (Retry): If `correction(Req, Hint)` is derived, we return `RETRY` with the hint.
+//  2. Routing (Route): If `next_step(Req, Target)` is derived, we return `ROUTE` with the target.
+//  3. Default: `ALLOW` (Proceed as normal).
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - input: The input envelope.
+//
+// Returns:
+//   - decision: The decision string (e.g., "RETRY", "ROUTE", "ALLOW").
+//   - metadata: A map containing steering details (e.g., {"feedback": "hint"}).
+//   - error: An error if evaluation fails.
 func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope) (string, map[string]string, error) {
 	decision := core.DecisionAllow
 	metadata := make(map[string]string)
@@ -353,9 +416,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 	return decision, metadata, nil
 }
 
-// toMangleFacts converts a Go data structure into a slice of Mangle atoms.
-// It uses reflection to traverse the structure and create facts.
-// Each field becomes a fact with the format: predicate(entityID, value)
+// toMangleFacts helper converts a Go struct to Mangle atoms via the Reflection API.
 func toMangleFacts(entityID string, input any) ([]ast.Atom, error) {
 	if input == nil {
 		return nil, nil

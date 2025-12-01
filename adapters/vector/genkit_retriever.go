@@ -7,23 +7,21 @@ import (
 	"github.com/firebase/genkit/go/ai"
 )
 
-// GenkitRetriever wraps a Genkit ai.Retriever and implements the DocumentRetriever interface.
-// This adapter translates between Manglekit's simple DocumentRetriever interface and Genkit's
-// more feature-rich ai.Retriever API, enabling any Genkit-registered retriever to be used
-// with Manglekit's vector search actions.
-//
-// This adapter works with any Genkit retriever plugin (Pinecone, LocalVec, Weaviate, etc.)
-// and eliminates the need for provider-specific implementations.
+// GenkitRetriever adapts the Genkit ai.Retriever interface to the Manglekit DocumentRetriever interface.
+// It acts as a bridge, allowing Manglekit to use any retriever plugin compatible with Genkit (e.g., Pinecone, Chroma).
 type GenkitRetriever struct {
 	retriever ai.Retriever
 	embedder  ai.Embedder
 }
 
-// NewGenkitRetriever creates a new GenkitRetriever wrapping the provided Genkit retriever.
+// NewGenkitRetriever initializes a new adapter for a Genkit retriever.
 //
-// retriever is the Genkit ai.Retriever to wrap (e.g., from Pinecone, LocalVec plugins).
-// embedder is an optional Genkit ai.Embedder used for query embedding if needed.
-// If the retriever handles embedding internally, embedder can be nil.
+// Parameters:
+//   - retriever: The Genkit retriever instance.
+//   - embedder: An optional embedder. If the retriever handles embeddings internally, this can be nil.
+//
+// Returns:
+//   - A pointer to the initialized GenkitRetriever.
 func NewGenkitRetriever(retriever ai.Retriever, embedder ai.Embedder) *GenkitRetriever {
 	return &GenkitRetriever{
 		retriever: retriever,
@@ -31,13 +29,15 @@ func NewGenkitRetriever(retriever ai.Retriever, embedder ai.Embedder) *GenkitRet
 	}
 }
 
-// Retrieve implements the DocumentRetriever interface.
-// It takes a query string and returns semantically similar documents from the Genkit retriever.
+// Retrieve executes a search query against the underlying Genkit retriever.
+// It converts the results into Manglekit's standard Document format.
 //
-// ctx is the request context.
-// query is the search query (typically a user question or prompt).
+// Parameters:
+//   - ctx: The execution context.
+//   - query: The search query string.
 //
-// It returns a slice of Document structs, or an error if retrieval fails.
+// Returns:
+//   - A slice of Document structs found by the retriever.
 func (gr *GenkitRetriever) Retrieve(ctx context.Context, query string) ([]Document, error) {
 	if gr.retriever == nil {
 		return nil, fmt.Errorf("genkit retriever: underlying retriever is nil")

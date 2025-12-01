@@ -8,20 +8,37 @@ import (
 	"github.com/firebase/genkit/go/ai"
 )
 
-// TextGenerator defines the interface for a raw LLM/Genkit text generation client.
-// This represents the "Muscle" layer that performs actual text generation.
+// TextGenerator defines the interface for a raw text generation capability.
+// It abstracts away the specific provider (e.g., Genkit, OpenAI, custom logic),
+// allowing the AI layer to be swappable.
 type TextGenerator interface {
+	// Complete generates a text completion for the given prompt.
+	//
+	// Parameters:
+	//   - ctx: The execution context.
+	//   - prompt: The input text prompt.
+	//
+	// Returns:
+	//   - The generated text, or an error.
 	Complete(ctx context.Context, prompt string) (string, error)
 }
 
-// LLMAction wraps a TextGenerator and implements core.Action.
-// It treats LLM generation as a universal action (Text-in, Text-out).
+// LLMAction is a concrete implementation of core.Action that wraps a TextGenerator.
+// It adapts the specific TextGenerator interface to the universal core.Action envelope interface.
 type LLMAction struct {
 	name      string
 	generator TextGenerator
 }
 
-// NewLLMAction creates a new LLMAction wrapping the given TextGenerator.
+// NewLLMAction creates a new LLMAction instance.
+//
+// Parameters:
+//   - name: A unique name for this action (used in observability and policies).
+//   - generator: The TextGenerator implementation to wrap.
+//
+// Returns:
+//   - A pointer to the initialized LLMAction.
+//   - Panics if generator is nil.
 func NewLLMAction(name string, generator TextGenerator) *LLMAction {
 	if generator == nil {
 		panic(fmt.Sprintf("NewLLMAction(%s): generator cannot be nil", name))
@@ -32,8 +49,16 @@ func NewLLMAction(name string, generator TextGenerator) *LLMAction {
 	}
 }
 
-// Execute expects a string payload (the prompt/context), calls the generator,
-// and returns the generated text wrapped in an Envelope.
+// Execute performs the text generation.
+// It expects the input Envelope's Payload to be a string (the prompt).
+// It returns a new Envelope containing the generated text as the Payload.
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - input: The input envelope containing the prompt string.
+//
+// Returns:
+//   - A result envelope with the generated text, or an error.
 func (a *LLMAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	prompt, ok := input.Payload.(string)
 	if !ok {
@@ -52,7 +77,7 @@ func (a *LLMAction) Execute(ctx context.Context, input core.Envelope) (core.Enve
 	return output, nil
 }
 
-// Metadata returns the metadata for this LLM action.
+// Metadata returns the static metadata for this action.
 func (a *LLMAction) Metadata() core.ActionMetadata {
 	return core.ActionMetadata{
 		Name: a.name,
@@ -60,17 +85,15 @@ func (a *LLMAction) Metadata() core.ActionMetadata {
 	}
 }
 
-// NewGenkitAction creates a fully guarded Action from a Genkit Model.
-// It wraps the provided Genkit ai.Model with a GenkitGenerator and returns it as an LLMAction.
+// NewGenkitAction creates a ready-to-use core.Action from a Google Genkit ai.Model.
+// This is a convenience factory that combines the Genkit adapter with the Action wrapper.
 //
-// name is the human-readable name for this action (e.g., "llm-google-gemini").
-// model is the Genkit ai.Model to wrap (e.g., from GoogleAI, OpenAI, Ollama plugins).
+// Parameters:
+//   - name: The human-readable name for this action.
+//   - model: The Genkit model instance (e.g., from googleai.Model("gemini-1.5-pro")).
 //
-// Example:
-//
-//	model := googleai.New()
-//	action := ai.NewGenkitAction("my-llm", model)
-//	result, err := action.Execute(ctx, input)
+// Returns:
+//   - A core.Action that can be protected and executed by Manglekit.
 func NewGenkitAction(name string, model ai.Model) core.Action {
 	generator := NewGenkitGenerator(model)
 	return NewLLMAction(name, generator)

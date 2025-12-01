@@ -9,8 +9,17 @@ import (
 	engine_memory "github.com/duynguyendang/manglekit/engine/memory"
 )
 
-// ExecuteByName executes a named action with the provided options.
-// It acts as the entry point for the Semantic State Machine.
+// ExecuteByName executes a registered action by its name, handling the Semantic State Machine loop.
+// It supports steering decisions (RETRY, ROUTE) allowing for self-correction and multi-step flows.
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - actionName: The name of the initial action to execute (must be registered via RegisterAction).
+//   - input: The initial input payload.
+//   - opts: Execution options (SessionID, Metadata, etc.).
+//
+// Returns:
+//   - The final result Envelope, or an error if the flow fails or exceeds max steps.
 func (c *Client) ExecuteByName(ctx context.Context, actionName string, input any, opts ...ExecuteOption) (core.Envelope, error) {
 	params := ExecutionParams{
 		MemoryMode: core.MemoryModeNone, // Default to stateless
@@ -22,8 +31,19 @@ func (c *Client) ExecuteByName(ctx context.Context, actionName string, input any
 	return c.runLoopInternal(ctx, actionName, input, params)
 }
 
-// runLoopInternal executes a Semantic State Machine starting from startActionName.
-// It handles steering decisions (ALLOW, RETRY, ROUTE) returned by the Policy Engine.
+// runLoopInternal implements the core loop of the Semantic State Machine.
+// It iterates up to a maximum depth (10) to prevent infinite loops.
+//
+// Lifecycle:
+//  1. Resolve Action: Find the action in the registry.
+//  2. Prepare Envelope: Inject payload, history, and feedback from previous steps.
+//  3. Execute: Run the protected action (Guard -> Engine -> Inner Action).
+//  4. Update History: Append the interaction to the conversation history.
+//  5. Handle Decision:
+//     - RETRY: Re-run the same action with feedback (self-correction).
+//     - ROUTE: Execute a different action (chaining).
+//     - ALLOW: Return the result (success).
+//     - DENY: Return an error.
 func (c *Client) runLoopInternal(ctx context.Context, startAction string, payload any, params ExecutionParams) (core.Envelope, error) {
 	// 1. Determine Store Strategy
 	var currentHistory []core.ChatMessage

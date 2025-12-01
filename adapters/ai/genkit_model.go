@@ -7,30 +7,32 @@ import (
 	"github.com/firebase/genkit/go/ai"
 )
 
-// GenkitGenerator wraps a Genkit ai.Model and implements the TextGenerator interface.
-// This adapter translates between Manglekit's simple TextGenerator interface and Genkit's
-// more feature-rich ai.Model API, enabling any Genkit-registered model to be used
-// with Manglekit's actions.
+// GenkitGenerator is an adapter that makes a Genkit ai.Model compatible with the TextGenerator interface.
 type GenkitGenerator struct {
 	model ai.Model
 }
 
-// NewGenkitGenerator creates a new GenkitGenerator wrapping the provided Genkit model.
+// NewGenkitGenerator creates a new adapter for a Genkit model.
 //
-// model is the Genkit ai.Model to wrap (e.g., from GoogleAI, OpenAI, Ollama plugins).
+// Parameters:
+//   - model: The initialized Genkit model.
+//
+// Returns:
+//   - A configured GenkitGenerator.
 func NewGenkitGenerator(model ai.Model) *GenkitGenerator {
 	return &GenkitGenerator{
 		model: model,
 	}
 }
 
-// Complete implements the TextGenerator interface.
-// It takes a prompt and returns generated text by delegating to the underlying Genkit model.
+// Complete executes a text generation request using the underlying Genkit model.
 //
-// ctx is the request context.
-// prompt is the input prompt/query for the model.
+// Parameters:
+//   - ctx: The context.
+//   - prompt: The text prompt.
 //
-// It returns the generated text as a string, or an error if generation fails.
+// Returns:
+//   - The generated response string, or an error.
 func (g *GenkitGenerator) Complete(ctx context.Context, prompt string) (string, error) {
 	if g.model == nil {
 		return "", fmt.Errorf("genkit generator: model not initialized")

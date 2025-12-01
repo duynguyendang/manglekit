@@ -7,16 +7,25 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 )
 
-// ToolFunc is a generic function signature for tools.
+// ToolFunc defines the signature for a generic Go function that can be wrapped as a tool.
+// It accepts a context and a strongly-typed input, and returns a strongly-typed output and an error.
 type ToolFunc[In any, Out any] func(context.Context, In) (Out, error)
 
-// Wrapper is a generic struct that wraps a ToolFunc to implement the core.Action interface.
+// Wrapper adapts a generic ToolFunc into the universal core.Action interface.
+// This allows any regular Go function to be managed, guarded, and traced by Manglekit.
 type Wrapper[In any, Out any] struct {
 	name string
 	fn   ToolFunc[In, Out]
 }
 
-// New creates a new Wrapper for the given function.
+// New creates a new Action wrapper for the provided function.
+//
+// Parameters:
+//   - name: The unique name of the action.
+//   - fn: The function to wrap.
+//
+// Returns:
+//   - A pointer to the initialized Wrapper.
 func New[In any, Out any](name string, fn ToolFunc[In, Out]) *Wrapper[In, Out] {
 	return &Wrapper[In, Out]{
 		name: name,
@@ -24,7 +33,16 @@ func New[In any, Out any](name string, fn ToolFunc[In, Out]) *Wrapper[In, Out] {
 	}
 }
 
-// Execute unpacks the input, calls the wrapped function, and packs the output.
+// Execute performs the action logic.
+// It automatically handles type assertion from the generic Envelope payload to the function's input type,
+// and wraps the function's output back into an Envelope.
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - input: The input Envelope.
+//
+// Returns:
+//   - The result Envelope, or an error if type assertion or execution fails.
 func (w *Wrapper[In, Out]) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	in, ok := input.Payload.(In)
 	if !ok {
@@ -39,7 +57,7 @@ func (w *Wrapper[In, Out]) Execute(ctx context.Context, input core.Envelope) (co
 	return core.NewEnvelope(out), nil
 }
 
-// Metadata returns the metadata for the action.
+// Metadata returns the action's metadata (name and type "function").
 func (w *Wrapper[In, Out]) Metadata() core.ActionMetadata {
 	return core.ActionMetadata{
 		Name: w.name,
