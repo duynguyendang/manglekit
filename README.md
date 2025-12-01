@@ -42,7 +42,6 @@ import (
     "github.com/duynguyendang/manglekit"
     "github.com/duynguyendang/manglekit/adapters/ai"
     "github.com/duynguyendang/manglekit/core"
-    "github.com/firebase/genkit/go/ai"
     "github.com/firebase/genkit/go/plugins/googleai"
 )
 
@@ -51,7 +50,7 @@ func main() {
 
     // 1. Initialize Manglekit Client (The Kernel)
     // Loads policy rules from "policy.dl"
-    client, err := manglekit.NewClient(ctx, "policy.dl")
+    client, err := manglekit.NewClient(ctx, manglekit.WithPolicyPath("policy.dl"))
     if err != nil {
         log.Fatal(err)
     }
@@ -67,7 +66,7 @@ func main() {
     llmAction := ai.NewLLMAction("generate-content", model)
 
     // 4. Protect the Action
-    // Wraps the adapter in a GuardedAction (Trace -> AuthZ -> Exec -> Validate)
+    // Wraps the adapter in a GuardedAction (Trace → AuthZ → Exec → Validate)
     safeAction := client.Protect(llmAction)
 
     // 5. Execute

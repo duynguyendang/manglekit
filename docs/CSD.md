@@ -1,113 +1,113 @@
 # Conceptual Solution Design (CSD) — Manglekit
 
-**Edition:** v1.0
-**Context:** The AI Control Plane for Reliable Go Applications
+**Edition:** 1.0
+**Concept:** The AI Control Plane for Go
+**Core Tech:** Go, Google Genkit, Google Mangle.
 
-## 1. The Core Problem We Solve (The Pain Point)
+## 1. The Problem: The "Control Crisis" in AI
 
-Building modern AI applications is fragile. When you chain multiple LLMs and tools, the system suffers from **"Garbage In, Garbage Out"** and **"Unpredictable Black Boxes."**
+As organizations move from AI demos to production systems, they face three fundamental gaps:
 
-1.  **Code Fragility:** Writing explicit checks for safety and business logic directly in application code is messy, error-prone, and hard to maintain.
-2.  **The Black Box Problem:** Controlling AI behavior via **Prompt Engineering** is fragile and non-testable. It’s impossible to guarantee compliance when the AI operates on **stochastic probabilities**.
-3.  **The Integration Chaos:** Cloud-Native apps use Go, but AI logic is often Python-based, creating a slow, heavy, and complex stack.
+1.  **The Reliability Gap:** Business logic requires **100% certainty**, but LLMs operate on **probability**. You cannot "prompt" an LLM into strict compliance.
+2.  **The Visibility Gap:** Autonomous Agents are often "Black Boxes." Developers lack the mechanisms to understand *why* an agent made a decision or to intervene safely.
+3.  **The Integration Gap:** Integrating Python-based AI logic with Go-based infrastructure creates a fragmented "Spaghetti Stack" that is hard to test and scale.
 
----
-
-## 2. The Core Philosophy: Control & Simplicity
-
-Manglekit solves these problems by establishing an **AI Kernel**. We create a hard separation between **Policy (The Brain)** and **Execution (The Muscle)**.
-
-### 2.1 The Core Concept: Kernel & Drivers
-
-* **The Kernel (Manglekit):** Acts as the **Control Unit**. It handles Policy, Routing, and Audit. It is deterministic (logic-based).
-* **The Drivers (Adapters):** Act as the **I/O mechanism**. Genkit and other libraries are drivers for the underlying models or tools.
-
-### 2.2 Engineering Principles
-
-* **Action-Centric:** Every operation (LLM call, DB query, API request) is a uniform **`Action`**. The Kernel treats them all equally.
-* **Smart Guardrails (Logic + AI):** We combine **AI (Neuro)** for semantic understanding with **Datalog (Symbolic)** for enforcing math-based rules.
-* **Safety by Default:** A default-deny architecture ensures no action executes without passing a logic gate.
+**The Need:** We need a way to enforce **deterministic rules** over **probabilistic AI**, leveraging the speed and type-safety of Go.
 
 ---
 
-## 3. The Architecture: The Safety Wrapper
+## 2. The Solution: A Native AI Control Plane
 
-Manglekit introduces the **Guarded Action** primitive (replacing ad-hoc chains). This is a transparent layer that wraps your business logic.
+Manglekit solves this by establishing an **AI Control Plane** that unifies three powerful technologies into a single **"Guarded Action"** architecture.
 
-### 3.1 The Guarded Action Lifecycle
-The Guard enforces a standard governance loop around every operation:
+### 2.1 The "Power Trio" Architecture
 
-1.  **Reflection Layer:** Automatically projects your Go Struct state into Datalog Facts.
-2.  **Pre-Check (Authorize):** The logic gate checks Authorization (RBAC), Input Validation (Schema), and Symbolic Routing (selects provider).
-    * *Outcome:* Deny (zero cost) or Proceed.
-3.  **Execution:** The inner Action runs (RAG, Tool, or Local function).
-4.  **Post-Check (Validate & Audit):** The logic gate performs Data Masking, Consistency Checks, and records the Audit Log.
+We do not reinvent the wheel. We orchestrate the best-in-class tools:
 
-### 3.2 Native Go Struct Mapping
-* **Zero Boilerplate:** The engine uses advanced reflection to traverse complex Go types (Pointers, Maps, Slices) and converts them into Datalog predicates automatically.
-* **Benefit:** Developers define their data structures once, and Manglekit handles the messy **Struct-to-Fact translation** without requiring any manual mapping code.
+* **The Runtime (Go):** The foundation. Manglekit leverages Go's concurrency and static typing to create a single, high-performance binary with zero Python dependencies.
+* **The Execution Layer (Google Genkit):** We use **Genkit** as the standardized driver for LLMs, Prompts, and Flows. It handles the "doing" (The Muscle).
+* **The Governance Layer (Google Mangle):** We embed **Mangle**, a high-performance Datalog engine, directly into the Go binary. It handles the "thinking" (The Brain).
 
----
+### 2.2 How They Work Together (Kernel vs. Driver)
 
-## 4. Orchestration Modes
-
-### 4.1 Auto-Pilot Routing (Agent Mode)
-* **Pattern:** Dynamic Dispatch.
-* **Use Case:** Complex problem solving requiring multi-step execution.
-* **Mechanism:** The **Logic Router** evaluates symbolic rules to dynamically select the next tool.
-    * *Example:* The Datalog rule `next_step(tool_B) :- result(tool_A, "incomplete")` automatically dictates the flow.
-
-### 4.2 Pipeline Mode
-* **Pattern:** Linear Chain.
-* **Use Case:** High-throughput, low-latency tasks (e.g., simple filtering or processing).
-* **Mechanism:** A pre-compiled sequence of checks and actions, providing high speed with zero reasoning overhead.
+| Layer | Technology | Role | Responsibility |
+| :--- | :--- | :--- | :--- |
+| **Control Plane** | **Google Mangle** | **The Manager** | Holds Policy, Context, and State. It makes deterministic decisions (Allow, Deny, Route) based on logic rules. |
+| **Data Plane** | **Google Genkit** | **The Worker** | Wraps the LLMs and Tools. It executes the prompts and returns raw data, but *never* makes governance decisions. |
+| **Host** | **Go (Golang)** | **The Container** | Provides the Type System (Reflection), Concurrency, and compilation target. |
 
 ---
 
-## 5. Key Capabilities (What Manglekit Gives You)
+## 3. Core Architecture: The "Guarded Action"
 
-### 5.1 The Logic Kernel (The Brain)
-* **Deep Reflector:** Specialized module for converting complex Go types into a queryable Fact Base.
-* **In-Memory Datalog:** Runs Google Mangle locally. Policies are **pre-loaded and validated at startup** (Immutable Policies). This ensures decisions are fast (microsecond latency) and stable.
+The fundamental building block is the **Guarded Action**. It wraps a **Genkit Flow** (or any Go function) inside a **Mangle Policy** shell.
 
-### 5.2 Universal Adapters
-* **LLM/Embedder:** Wraps Genkit Models.
-* **Semantic Extraction:** Dedicated agents for converting messy text (Docs, Logs) into structured Facts for the logic engine.
-* **Action:** Generic interface for wrapping native Go functions (`func(ctx, input) output`).
+**The Conceptual Flow:**
+
+1.  **Intercept (Go):** The SDK intercepts the request. Using Go reflection, it converts the input struct into **Mangle Facts**.
+2.  **Authorize (Mangle):** The **Mangle Engine** evaluates the facts against `.dl` policies.
+    * *Rule:* `deny(Req) :- input(Req), contains_pii(Req).`
+    * *Result:* If denied, execution stops immediately (Zero Cost).
+3.  **Execute (Genkit):** If allowed, the request is passed to the **Genkit Adapter**. Genkit calls the LLM or Tool.
+4.  **Validate (Go + Mangle):** The output is inspected. Mangle checks the result against safety constraints (Schema, Lineage).
+
+---
+
+## 4. System Building Blocks
+
+| Component | Tech Stack | Role |
+| :--- | :--- | :--- |
+| **The SDK** | **Go Standard Lib** | The user-facing API. It allows developers to "Protect" native Go functions or Genkit Actions with a single line of code. |
+| **The Guard** | **Go Middleware** | The interceptor that enforces the lifecycle. It ensures no Genkit action runs without a Mangle policy check. |
+| **The Logic Engine** | **Google Mangle** | The embedded solver. It runs locally in-memory (no network calls), ensuring microsecond latency for policy checks. |
+| **The Drivers** | **Genkit / MCP** | The I/O layer. Pre-built adapters allow Manglekit to control any Genkit-compatible model or MCP tool. |
+
+---
+
+## 5. Key Capabilities
+
+### 5.1 Logic-Driven Routing (Neuro-Symbolic)
+Instead of hard-coding flow logic in Go, we use **Mangle** to steer **Genkit**.
+* *Mechanism:* The Mangle engine returns a `next_step` signal based on the current state.
+* *Application:* The Go runtime reads this signal and invokes the corresponding Genkit tool.
+* *Result:* **Software-Defined Agents** where behavior is defined in Datalog, not compiled code.
+
+### 5.2 Zero-Config Reflection
+* *Feature:* Manglekit automatically maps your existing Go structs (used by Genkit) into Mangle predicates.
+* *Benefit:* You don't need to write manual conversion code. Your Go types *are* your policy schema.
+
+### 5.3 Deep Observability (Logical Spans)
+We trace not just the Genkit execution, but the Mangle reasoning.
+* *Output:* OpenTelemetry traces show the exact **Mangle Rule ID** that triggered a decision, alongside the **Genkit Latency**.
 
 ---
 
 ## 6. Strategic Use Cases
 
 ### Pattern A: The Semantic Firewall
+* **Goal:** Protect Genkit Flows from malicious inputs.
+* **Approach:** Before invoking `genkit.Generate()`, Manglekit runs a `deny` check on the prompt. Malicious inputs are blocked at the logic layer, saving token costs.
 
-**Goal:** Ensure every input and output adheres to business logic and safety rules.
-**Solution:**
-1.  **Extract:** Use Semantic Extraction to convert prompts into logical facts (e.g., `intent="attack"`).
-2.  **Filter:** Execute Datalog rules on the facts to guarantee safety.
-    **Outcome:** Deterministic blocking of malicious inputs based on *meaning*, not just keywords.
-
-### Pattern B: The Reliable Agent Chain
-
-**Goal:** Build multi-step workflows that are robust and self-correcting.
-**Solution:**
-1.  **Guarded Action:** Ensures every step is validated before passing data forward.
-2.  **Data Ancestry:** Tracks data origin across the entire chain.
-    **Outcome:** Enables complex workflows like **Architectural Linting** (checking generated code against structural rules) or **Self-Correction** when facing validation errors.
-
-### Pattern C: Edge AI Control
-
-**Goal:** Enable secure, low-latency AI governance in constrained environments.
-**Solution:**
-1.  **Local Runtime:** Run Manglekit as a static Go binary on Edge Gateways (IoT).
-2.  **Local Logic:** Enforce safety and execution rules locally (e.g., "Do not open door if risk is high") without relying on cloud connectivity.
+### Pattern B: The Self-Correcting Agent
+* **Goal:** Reliable Code Generation.
+* **Approach:** If Genkit generates invalid code, the Mangle validator fails. The Go runtime catches this, triggers a `RETRY`, and feeds the error back to Genkit to fix the code automatically.
 
 ---
 
-## 7. Summary
+## 7. Developer Experience Goals
 
-Manglekit is the **Infrastructure Layer** for your AI. It moves the complexity of AI governance from "Prompt Engineering" (Fragile) to **"Systems Engineering"** (Robust).
+1.  **Go-Native:** No Python, no sidecars. Just `go get` and build a single binary.
+2.  **Genkit-Compatible:** If you know Genkit, you already know how to use Manglekit. Just wrap your flows.
+3.  **Policy-as-Code:** Define your business logic in `.dl` files, separate from your Go application code.
 
-* **Language:** Go.
-* **Paradigm:** Neuro-Symbolic.
-* **Deliverable:** Single Static Binary / Library.
+---
+
+## 8. Summary
+
+Manglekit is the **AI Control Plane** for Go.
+
+It combines the execution power of **Google Genkit** with the governance precision of **Google Mangle**, creating a unified stack for building safe, reliable, and observable AI systems.
+
+* **Runtime:** Go (Fast, Static).
+* **Execution:** Genkit (The Muscle).
+* **Governance:** Mangle (The Brain).

@@ -1,213 +1,184 @@
-# Manglekit — High‑Level Design (HLD)
+Bạn rất đúng. HLD (High-Level Design) cần nằm ở tầng **Logic** và **System Component**, không phải là tầng **Physical File** hay **Package**.
 
-**Revision:** 1.0
-**Scope:** Core Kernel Architecture, Universal Governance & Subsystems
-**Audience:** Framework Architects, Enterprise Integrators, Platform Engineers
-**Mission:** To provide a **Universal AI Governance Kernel** that transforms any atomic operation (LLM, Function, Tool) into a managed, observable, and policy-compliant unit of execution.
+Nhiệm vụ của HLD là trả lời câu hỏi: *"Hệ thống bao gồm những khối (Block) nào và chúng nói chuyện với nhau bằng giao thức gì?"*. Nó định hướng cho LLD (nơi sẽ quyết định `package`, `struct`, `interface`), và Code (nơi hiện thực hóa LLD).
 
------
-
-## 1. Executive Summary
-
-As AI systems evolve from simple chatbots to complex Agentic workflows, the primary challenge shifts from **connectivity** to **control**. Enterprises struggle to maintain visibility and safety when LLMs act autonomously or process sensitive data through multiple steps.
-
-**Manglekit** addresses this by functioning as an **AI Operating System**.
-
-Unlike traditional frameworks that act as simple wrappers, Manglekit separates **Management (Kernel)** from **Execution (Drivers)**. It treats the underlying execution engines—whether it's Google Genkit for AI, Vector DBs for memory, or native Go functions for business logic—as interchangeable **Drivers**.
-
-Manglekit wraps these drivers in a strictly enforced **"Guarded Action"** lifecycle. This ensures that every operation, regardless of its nature, is automatically subject to authorization, deep observability, and deterministic policy enforcement before it ever executes.
+Dưới đây là bản **HLD chuẩn mực** cho Manglekit v3. Nó trừu tượng hóa các chi tiết implementation (như tên file, folder) thành các **Component** và **Layer**.
 
 -----
 
-## 2. Goals & Non‑Goals
+# High-Level Design (HLD) — Manglekit
 
-### 2.1 Goals
-
-  * **Action-Centric Architecture:** Treat every operation (LLM generation, DB query, API call) as a uniform `core.Action` interface, eliminating the bias towards "RAG-only" pipelines.
-  * **Neuro-Symbolic Native:** Implement a strict **"Perception Pipeline"** that converts unstructured AI outputs into structured Go types, and then into Datalog facts for deterministic reasoning.
-  * **Zero-Config Reflection:** Provide a **Reflector 2.0** engine that automatically maps complex Go structs (nested maps, pointers, slices) to logic facts without manual boilerplate.
-  * **Deep Observability:** Treat **Logic** as a first-class citizen in traces (Logical Spans) and automatically track data provenance (Lineage) across execution steps.
-  * **Single Static Binary:** Compile the entire kernel, logic engine, and adapters into a single, dependency-free Go binary for easy deployment.
-
-### 2.2 Non‑Goals
-
-  * **Reinventing Drivers:** Manglekit does not build low-level clients for OpenAI or Anthropic. It relies on **Genkit** and other libraries as adapters to handle the raw I/O.
-  * **UI Frameworks:** Manglekit is a backend kernel. It does not provide UI components or chat widgets.
+**Project:** Manglekit (Genesis v3)
+**Type:** Architecture Document
+**Scope:** System Components, Logical Layers, & Data Flow
+**Status:** Approved
 
 -----
 
-## 3. Architectural Principles
+## 1. Introduction
 
-  * **Kernel & Driver Separation:** The **Kernel** (Manglekit) handles policy, routing, and state. The **Drivers** (Adapters) handle execution. The Kernel controls the Drivers; the Drivers never control the Kernel.
-  * **The Guarded Action:** The atomic unit of the system is not a "Chain" or a "Flow", but a **Guarded Action**. This is a decorated operation that enforces the lifecycle of `Authorize -> Execute -> Validate`.
-  * **Structure First:** Unstructured text is never fed directly into the Logic Engine. It must first be extracted into a **Go Struct** (Schema) to ensure type safety before reasoning.
-  * **Compliance by Default:** The architecture is "Secure by Design". An Action cannot run unless it is explicitly wrapped and authorized by the Kernel.
+Manglekit is an **Embedded AI Control Plane**. Its primary purpose is to provide deterministic governance (Security, Compliance, Observability) over probabilistic AI components (LLMs, Agents).
 
------
-
-## 4. Component Taxonomy
-
-Manglekit organizes the system into three distinct layers based on the Hexagonal Architecture.
-
-### 4.1 The Kernel (The Brain)
-
-  * **Engine:** The core runtime that manages the lifecycle of policies. It wraps the Google Mangle Datalog engine for high-performance in-memory reasoning.
-  * **Reflector:** The translation layer that converts arbitrary Go memory states (Structs, Maps) into Datalog Atoms.
-  * **LineageTracker:** A subsystem that automatically links Output IDs to Input IDs to construct a provenance graph.
-  * **Router:** A logic-driven dispatcher that queries the Engine to determine the `NextAction` based on current facts.
-
-### 4.2 The Guard (The Control Plane)
-
-  * **GuardedAction:** The universal decorator. It intercepts the execution flow to inject Context, enforce Policy, and record Trace data.
-  * **PolicyChecker:** The component responsible for executing `Authorize (Pre)` and `Validate (Post)` queries.
-
-### 4.3 The Adapters (The Muscle)
-
-  * **AI Adapter:** Wraps **Genkit** models (LLMs, Embedders) into the `core.Action` interface.
-  * **Vector Adapter:** Wraps Vector Stores for retrieval operations.
-  * **Func Adapter:** Wraps standard Go functions (Business Logic, Tools) using Go Generics for type safety.
+It functions as a **Kernel**, enforcing a strict separation between **Decision Making** (Logic) and **Task Execution** (Drivers).
 
 -----
 
-## 5. Architecture Overview
+## 2. Architectural Style: Hexagonal Architecture
 
-### 5.1 Hexagonal Design
+The system adopts the **Ports and Adapters** (Hexagonal) pattern to ensure the core logic remains isolated from external technologies.
 
-Manglekit enforces a concentric design where the Logic Engine sits at the center, protected by the Guard, interacting with the world via Adapters.
+  * **The Core (Center):** The Logic Kernel. Pure, stateless, and deterministic.
+  * **The Ports (Interface):** The Guard and Action Contracts.
+  * **The Adapters (Outer Ring):** Integrations with Genkit, MCP, Vector DBs, and Native Functions.
+
+<!-- end list -->
 
 ```mermaid
 graph TD
-    subgraph "Application Layer"
-        Config[YAML Config]
-        UserCode[User Go Code]
+    subgraph "External World"
+        App[Host Application]
+        LLM[LLM Provider]
+        Tool[External Tool]
     end
 
-    subgraph "The Kernel (Center)"
-        Logic[Logic Engine]
-        Reflect[Reflector]
-        Lineage[Lineage Tracker]
+    subgraph "Manglekit System"
+        subgraph "Orchestration Layer"
+            SDK[SDK Client]
+        end
+
+        subgraph "Governance Layer"
+            Guard[The Guard]
+        end
+
+        subgraph "Core Kernel"
+            Engine[Policy Engine]
+            Runtime[Datalog Runtime]
+            Reflector[Type Reflector]
+        end
+
+        subgraph "Integration Layer"
+            DriverAI[AI Driver]
+            DriverTool[Tool Driver]
+        end
     end
 
-    subgraph "The Guard (Middleware)"
-        Guard[GuardedAction Decorator]
-        Guard <--> Logic
-    end
-
-    subgraph "The Adapters (Ports)"
-        AI[AI Adapter (Genkit)]
-        Func[Func Adapter]
-        Store[Vector Adapter]
-        
-        Guard --> AI
-        Guard --> Func
-        Guard --> Store
-    end
-    
-    UserCode -->|Protect()| Guard
+    App -->|Uses| SDK
+    SDK -->|Delegates| Guard
+    Guard <-->|Authorizes| Engine
+    Engine <-->|Consults| Runtime
+    Engine <-->|Maps| Reflector
+    Guard -->|Executes| DriverAI
+    Guard -->|Executes| DriverTool
+    DriverAI -->|Calls| LLM
+    DriverTool -->|Calls| Tool
 ```
 
-### 5.2 The Universal Action Interface
+-----
 
-To achieve "Action-Centricity", Manglekit standardizes all operations on a single interface.
+## 3. Logical Component View
 
-  * **The Contract:** `Execute(ctx context.Context, input core.Envelope) (core.Envelope, error)`
-  * **The Envelope:** A standardized container holding the `UUID` (for lineage), `Payload` (the actual data), and `Metadata`.
-  * **Benefit:** The Kernel does not need to know if it is governing an LLM or a Database. It simply governs the **Envelope flow**.
+This section decomposes the system into functional blocks (Black Boxes) regardless of their code location.
+
+### 3.1 Orchestration Layer (The Client)
+
+  * **Responsibility:** Provides the public API and manages the "Semantic State Machine".
+  * **Components:**
+      * **Config Loader:** Bootstraps the system from declarative configuration (YAML).
+      * **Loop Manager:** Handles the retry/route logic for autonomous agents based on Kernel signals.
+      * **Volatile Memory:** Manages transient session state during an execution loop.
+
+### 3.2 Governance Layer (The Interceptor)
+
+  * **Responsibility:** Enforces the "Guarded Action" lifecycle. This is the **Policy Enforcement Point (PEP)**.
+  * **Components:**
+      * **The Guard:** A decorator that intercepts execution requests.
+      * **Tracer:** Emits observability data (Spans, Logs) linked to logic execution.
+      * **Fail-Safe Mechanism:** Decides whether to block or allow execution if the Kernel fails (Open/Closed mode).
+
+### 3.3 The Logic Kernel (The Brain)
+
+  * **Responsibility:** The **Policy Decision Point (PDP)**. Pure logic execution.
+  * **Components:**
+      * **Policy Solver:** The coordinator that runs logic queries (`allow?`, `deny?`, `next_step?`).
+      * **Reflector:** A translation engine that converts Domain Objects (Application State) into Logical Facts.
+      * **Knowledge Base:** An in-memory graph store for static facts (RDF/Turtle).
+
+### 3.4 Integration Layer (The Drivers)
+
+  * **Responsibility:** Translates internal commands into external API calls.
+  * **Components:**
+      * **AI Driver:** Adapts the internal protocol to AI Frameworks (e.g., Genkit).
+      * **MCP Driver:** Connects to Model Context Protocol servers.
+      * **Native Driver:** Wraps standard business logic functions.
 
 -----
 
-## 6. Core Subsystems
+## 4. Process View (Data Flow)
 
-### 6.1 The "Guarded Action" Lifecycle
+### 4.1 Flow A: The Guarded Action Lifecycle
 
-This replaces the legacy "Sandwich" pattern. It describes the immutable sequence of events for every protected operation.
+This is the atomic flow for a single operation.
 
-1.  **Trace Start:** A new OpenTelemetry Span is initialized.
-2.  **Context Injection:** Trace IDs and Logger instances are injected into the Go Context.
-3.  **Pre-Computation (Authorize):**
-      * The Input Payload is **Reflected** into Datalog Facts.
-      * The Engine queries `deny(Input)?`.
-      * *Outcome:* If denied, execution halts immediately with a Policy Violation error.
-4.  **Execution:** The inner Adapter (Genkit/Func) is executed.
-5.  **Post-Computation (Validate):**
-      * **Auto-Lineage:** The Kernel records `derived_from(OutputID, InputID)`.
-      * The Output Payload is **Reflected** into Facts.
-      * The Engine queries `violation(Output)?`.
-      * *Outcome:* If violated, the result is discarded or redacted.
-6.  **Trace End:** The Span is closed, and the Audit Log is written.
+1.  **Ingest:** The Guard receives an **Envelope** containing the request payload.
+2.  **Contextualize:** Trace IDs and Lineage Metadata are injected.
+3.  **Reflection (Input):** The Payload is converted into a set of **Input Facts**.
+4.  **Authorization:** The Kernel evaluates `deny(Input)`.
+      * *Deny:* Return `PolicyViolationError`.
+      * *Allow:* Proceed.
+5.  **Execution:** The payload is passed to the selected **Driver**.
+6.  **Reflection (Output):** The Driver's result is converted into **Output Facts**.
+7.  **Validation:** The Kernel evaluates `deny(Output)` and checks for Data Leakage.
+8.  **Return:** The validated Envelope is returned to the caller.
 
-### 6.2 The Perception Pipeline (Neuro-to-Symbolic)
+### 4.2 Flow B: The Semantic Control Loop
 
-Manglekit solves the "Unstructured Data" problem via a rigorous 3-stage pipeline:
+This flow describes how the Orchestrator manages an Agentic workflow.
 
-  * **Stage 1: Extraction (Neuro):** Use an LLM (via Genkit Adapter) to extract data from text into a JSON Schema.
-  * **Stage 2: Structuring (Static):** Unmarshal the JSON into a **Go Struct**. This enforces strict Type Safety (e.g., ensuring an 'Age' field is an Integer, not a String).
-  * **Stage 3: Reasoning (Symbolic):** The **Reflector** converts the Go Struct into Datalog Facts for the Logic Engine.
-
-### 6.3 Logic-Driven Routing
-
-Manglekit abandons hard-coded `if/else` orchestration.
-
-  * **Mechanism:** The **Router** component evaluates the current state against the RuleSet.
-  * **Query:** `next_step(ActionName) :- intent("buy"), user_tier("gold").`
-  * **Result:** The logic engine dictates the next step dynamically based on data, enabling Decoupled Agent Behaviors (flow control is defined in Datalog, not hard-coded in Go).
+1.  **Start:** Orchestrator calls an Action.
+2.  **Evaluate:** After the Action returns, the Orchestrator asks the Kernel for **Steering**.
+3.  **Decision:** The Kernel returns a signal:
+      * **`STOP`**: Task complete. Return result.
+      * **`RETRY`**: A validation error occurred. Inject feedback and re-run the *same* Action.
+      * **`ROUTE(X)`**: Logic dictates the next step is Action X. Switch context and run Action X.
+4.  **Loop:** Repeat until `STOP` or `MaxSteps` exceeded.
 
 -----
 
-## 7. Configuration & Construction
+## 5. Data Model (Logical)
 
-### 7.1 "Protect" API
+### 5.1 The Envelope (Universal Protocol)
 
-The SDK creates a simplified Developer Experience (DX) focused on composition rather than complex builders.
+Components communicate exclusively via Envelopes to remain loosely coupled.
 
-  * **Mechanism:** Developers use a `kernel.Protect(name, rawAction)` factory method.
-  * **Effect:** This method automatically wraps the raw action with the `GuardedAction` decorator and registers it with the Kernel.
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| **ID** | UUID | Unique correlation ID for lineage tracking. |
+| **Payload** | Generic | The actual domain data (Struct, Map, or String). |
+| **Metadata** | Key-Value | Control signals (Latency, Model Params, Audit Tags). |
+| **Labels** | List | Security tags (e.g., `CONFIDENTIAL`, `PII`) propagated through the flow. |
 
-### 7.2 Configuration-Driven Kernel
+### 5.2 The Fact Base (State Representation)
 
-  * **Config Loading:** The Kernel initializes itself fully from a `config.yaml`, loading Policies, setting up Observability exporters, and configuring Adapters.
-  * **Dynamic Registry:** Adapters are registered via a Factory pattern, allowing the Kernel to instantiate only the drivers required by the configuration (avoiding bloat).
+The Kernel views the world as a flat list of Predicates (Datalog Facts).
 
------
-
-## 8. Observability & Audit
-
-Manglekit provides **Deep Observability** that transcends simple logging.
-
-  * **Logical Spans:** The Logic Engine's reasoning process (microsecond-level Datalog evaluation) is recorded as a distinct Span in the Trace timeline. This proves that governance does not introduce latency bottlenecks.
-  * **Lineage Tracking:** By propagating IDs through the `context.Context`, Manglekit constructs a graph of data provenance, allowing audits to trace exactly which input document led to a specific LLM output.
-  * **Evidence Logging:** When a request is blocked, the specific **Rule ID** and **Facts** that caused the denial are attached to the trace for debugging.
+  * **Transient Facts:** Derived from the current Envelope (e.g., `request.amount(100)`).
+  * **Static Facts:** Loaded from Knowledge Base (e.g., `user.role("alice", "admin")`).
+  * **Steering Facts:** Derived signals (e.g., `decision.next_step("approval_tool")`).
 
 -----
 
-## 9. Extensibility
+## 6. Deployment View
 
-### 9.1 Adapter Ecosystem
-
-Developers can extend Manglekit by implementing the `core.Action` interface.
-
-  * **Built-in:** `adapters/ai` (Genkit), `adapters/vector` (Stores), `adapters/func` (Go Native).
-  * **Custom:** Any proprietary logic can be wrapped using `adapters.FromFunc[In, Out](fn)` to become a first-class citizen of the ecosystem.
-
-### 9.2 Rule Extensions
-
-Developers can define custom Datalog predicates and rules in `.dl` files, which are loaded by the Kernel at startup. This allows for domain-specific governance (e.g., Financial Rules, Medical Compliance) without modifying the binary.
+  * **Packaging:** The system is compiled as a standard library.
+  * **Runtime:** Runs within the host Application Process (In-Process).
+  * **Isolation:** Logic execution is CPU-bound and memory-safe (No external sidecars or network calls required for policy checks).
+  * **Configuration:** Behavior is defined by external YAML and `.dl` files, loaded at startup.
 
 -----
 
-## 10. Deployment Model
+## 7. Quality Attributes (Non-Functional Requirements)
 
-  * **Single Static Binary:** Manglekit compiles into a highly efficient, dependency-free Go binary.
-  * **Embeddable:** It can run as a library inside a larger Go application or as a standalone service.
-  * **Air-Gap Ready:** With local Datalog reasoning and local Go functions, Manglekit requires no internet connection for its decision-making logic.
-
------
-
-## 11. Glossary
-
-  * **Kernel:** The core logic and management layer of Manglekit.
-  * **Driver:** An external execution engine (like Genkit) controlled by the Kernel.
-  * **Guarded Action:** The atomic unit of execution; a decorator enforcing policy and observability.
-  * **Reflector:** The engine component that maps Go memory states to Datalog facts.
-  * **Envelope:** The standardized data container (ID + Payload + Metadata) used for internal communication.
-  * **Lineage:** The historical graph of data provenance (Input -\> Output relationships).
+  * **Determinism:** Given the same Input and Policy, the Kernel MUST always produce the same Decision.
+  * **Latency:** The Authorization and Validation overhead MUST be sub-millisecond (excluding Driver execution time).
+  * **Observability:** Every Logic Decision MUST be traceable to a specific Policy Rule ID.
+  * **Fail-Safety:** The system MUST support a configurable "Failure Mode" (Open/Closed) to handle Kernel panics or timeouts gracefully.

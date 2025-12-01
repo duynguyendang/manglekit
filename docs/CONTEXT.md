@@ -3,176 +3,144 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 1.0
-last_updated: 2025-12-01T00:00:00Z
+last_updated: 2025-12-01T12:00:00Z
 stability: stable
 audience: humans_and_agents
 ---
 
-# Manglekit: The Live Architecture Standard
+# Manglekit: Source Code Snapshot
 
-This document is the canonical, single source of truth for the Manglekit SDK's architecture. It defines the non-negotiable rules, contracts, and patterns that govern the framework.
+This document provides a strictly factual, deep-dive technical snapshot of the Manglekit (Genesis v3) codebase. It details where files are, how functions connect, and current implementation details.
 
-## 0. Implementation Snapshot (Current State)
+## 1. The High-Level Directory Map
 
-```mermaid
-graph TD
-    subgraph "User Space"
-        App[User Application]
-        Config[config.yaml]
-    end
-
-    subgraph "Manglekit Kernel"
-        Client[Client]
-        Protect[Protect() API]
-        
-        App -->|NewClient| Client
-        App -->|Protect(Action)| Protect
-    end
-
-    subgraph "The Guard"
-        GA[GuardedAction]
-        Lifecycle[Trace -> AuthZ -> Exec -> Validate]
-        
-        Protect --> GA
-        GA --> Lifecycle
-    end
-
-    subgraph "Logic Engine"
-        PE[PolicyEngine]
-        Runtime[MangleRuntime]
-        Reflect[Reflector]
-        KB[KnowledgeStore]
-
-        Lifecycle <--> PE
-        PE --> Runtime
-        PE --> Reflect
-        PE --> KB
-    end
-
-    subgraph "Universal Adapters"
-        AI[AI Adapter (Genkit)]
-        Func[Func Adapter]
-        Vector[Vector Adapter]
-        
-        Lifecycle -->|Delegate| AI
-        Lifecycle -->|Delegate| Func
-        Lifecycle -->|Delegate| Vector
-    end
+```text
+manglekit/
+├── sdk/                  # [KERNEL] The entry point and orchestration layer
+│   ├── sdk.go            # Client struct, initialization, and Protect() API
+│   └── loop.go           # Semantic State Machine (RunLoop) implementation
+├── guard/                # [GOVERNANCE] The interception layer
+│   └── guard.go          # GuardedAction decorator (Trace -> AuthZ -> Exec -> Validate)
+├── engine/               # [LOGIC] The Datalog reasoning core
+│   ├── solver.go         # PolicyEngine (High-level coordinator)
+│   ├── runtime.go        # MangleRuntime (Low-level Datalog wrapper)
+│   └── reflection.go     # ToFacts (Struct -> Fact conversion)
+├── core/                 # [PUBLIC API] Interfaces and shared types (No dependencies)
+│   ├── action.go         # Action interface
+│   └── envelope.go       # Envelope struct
+├── adapters/             # [DRIVERS] Bridges to external systems
+│   ├── ai/               # Google Genkit AI models
+│   ├── mcp/              # Model Context Protocol tools
+│   ├── vector/           # Vector database retrievers
+│   └── extractor/        # Structured data extraction
+├── config/               # Configuration loading (YAML -> Struct)
+└── cmd/                  # CLI tools (mkit)
 ```
 
-## 1. Architectural Overview
+## 2. Core Component Analysis
 
-Manglekit v1.0 is a **Universal AI Governance Kernel**. It abandons the complex "Builder/Registry" pattern of v0.x in favor of a streamlined **Composition Model**.
+### 2.1 Engine (`engine/`)
+The brain of the system. It translates Go objects into Datalog facts and evaluates policies.
+*   **Key Structs**:
+    *   `PolicyEngine` (`engine/solver.go`): The main facade. Manages `MangleRuntime`, `Tracer`, and `Logger`.
+    *   `MangleRuntime` (`engine/runtime.go`): Wraps `google/mangle`. Handles parsing, stratification (`strata`), and query execution.
+*   **Key Functions**:
+    *   `Authorize(ctx, meta, input)`: Pre-check hook. Evaluates `deny("Req")`.
+    *   `Validate(ctx, meta, output)`: Post-check hook. Evaluates `deny("Output")`.
+    *   `EvaluateSteering(ctx, input)`: Determines next step (`RETRY`, `ROUTE`).
+    *   `ToFacts(id, input)` (`engine/reflection.go`): Reflectively converts structs to `predicate(id, val)` facts.
 
-The core philosophy is **"Wrap, Don't Build"**. Manglekit does not construct your AI components; it *wraps* them. You bring your own execution engine (Genkit, LangChain, native Go code), and Manglekit wraps it in a **Guarded Action** that enforces policy, observability, and safety.
+### 2.2 SDK (`sdk/`)
+The user-facing API and orchestration kernel.
+*   **Key Structs**:
+    *   `Client` (`sdk/sdk.go`): Holds the `PolicyEngine`, `Registry`, and `MemoryStore`.
+*   **Key Functions**:
+    *   `NewClientFromConfig`: Initializes the system from YAML.
+    *   `Protect(Action)`: Wraps an Action with a `GuardedAction`.
+    *   `ExecuteByName`: Entry point for the Semantic State Machine.
+    *   `Call[Out]`: Generic helper for typed execution.
 
-## 2. Dependency Rules (Non-Negotiable)
+### 2.3 Guard (`guard/`)
+The enforcement layer. It ensures no Action runs without policy checks.
+*   **Key Structs**:
+    *   `GuardedAction` (`guard/guard.go`): Implements `core.Action`. Wraps an inner Action.
+*   **Key Logic**:
+    *   `Execute`: Implements the `Trace -> Authorize -> Exec -> Validate -> Steer` lifecycle.
+    *   `shouldBlock(err)`: Determines if execution should halt based on `FailureMode` (Open/Closed).
 
-1.  **`sdk` is the entry point.** It orchestrates `guard`, `engine`, and `core`.
-2.  **`guard` depends on `engine` and `core`.** It must NOT depend on concrete adapters.
-3.  **`engine` depends on `core` and `google/mangle`.** It is the pure logic layer.
-4.  **`adapters` depend on `core` and external drivers (Genkit).** They bridge the gap between the world and the kernel.
-5.  **`core` has NO dependencies.** It defines the interfaces (`Action`, `Envelope`, `Logger`).
+### 2.4 Adapters (`adapters/`)
+Concrete implementations of `core.Action`.
+*   **Key Structs**:
+    *   `MCPAction` (`adapters/mcp/action.go`): Wraps an MCP Tool.
+    *   `ExtractorAction` (`adapters/extractor/adapter.go`): Uses an LLM to extract JSON.
+    *   `FuncAction` (`adapters/func/wrapper.go`): Wraps a native Go function.
+    *   `GenkitModel` (`adapters/ai`): Wraps `ai.Model` (implied).
 
-## 3. Core Contracts
+## 3. The Critical Path: `ExecuteByName`
 
-### Primary Interfaces
+Tracing the execution flow of a request through the system:
 
--   **`core.Action`**: The universal interface for *anything* that does work.
-    ```go
-    type Action interface {
-        Execute(ctx context.Context, input Envelope) (Envelope, error)
-        Metadata() ActionMetadata
-    }
-    ```
--   **`core.Envelope`**: The standardized container for data moving through the kernel.
-    ```go
-    type Envelope struct {
-        ID       uuid.UUID
-        Payload  any
-        Metadata map[string]string
-    }
-    ```
--   **`core.Logger`**: The structured logging interface used throughout the kernel.
--   **`core.MemoryStore`**: Interface for persisting chat history.
+1.  **Entry**: User calls `client.ExecuteByName(ctx, "myAction", input)` in `sdk/sdk.go`.
+2.  **State Machine**: Calls `runLoopInternal` in `sdk/loop.go`.
+3.  **Lookup**: `runLoopInternal` retrieves the `core.Action` from `c.registry["myAction"]`.
+4.  **Guard Interception**: The retrieved Action is a `guard.GuardedAction`. `Execute()` is called (`guard/guard.go`).
+5.  **Tracing**: `GuardedAction` starts an OTel span `Action.myAction`.
+6.  **Authorization**: `GuardedAction` calls `engine.Authorize` (`engine/solver.go`).
+    *   Input is converted to facts via `ToFacts`.
+    *   `runtime.ExecuteQuery` checks for `deny("Req")`.
+7.  **Execution**: If authorized, `GuardedAction` calls `inner.Execute()` (the Adapter).
+    *   e.g., `MCPAction` calls `tool.RunRaw`.
+8.  **Validation**: `GuardedAction` calls `engine.Validate` (`engine/solver.go`).
+    *   Output is converted to facts.
+    *   `runtime.ExecuteQuery` checks for `deny("Output")`.
+9.  **Steering**: `GuardedAction` calls `engine.EvaluateSteering`.
+    *   Checks for `correction` or `next_step` facts.
+10. **Loop**: `runLoopInternal` receives the result.
+    *   If `RETRY`: Loops again with feedback.
+    *   If `ROUTE`: Loops again with new action.
+    *   If `ALLOW`: Returns result to user.
 
-### Metadata Protocols (Control Plane)
+## 4. Data Structures & State
 
-Manglekit uses reserved Metadata keys to manage the flow state:
+### 4.1 The Envelope (`core/envelope.go`)
+The standard container for all data moving through the kernel.
+*   `ID` (uuid.UUID): Unique identifier for the message.
+*   `Payload` (any): The actual data (struct, string, map).
+*   `Metadata` (map[string]string): Control plane signals (`decision`, `latency`, `trace_id`).
+*   `SecurityLabels` ([]string): Taint tags (e.g., "secret", "pii") for information flow control.
 
--   **`manglekit.decision`**: The governance outcome (ALLOW/DENY/RETRY).
--   **`manglekit.feedback`**: Feedback for self-correction loops.
--   **`manglekit.risk_score`**: Numeric risk assessment.
--   **`manglekit_history`**: Serialized conversation history.
+### 4.2 Reflection (`engine/reflection.go`)
+*   **Function**: `ToFacts(id string, input any) ([]string, error)`
+*   **Logic**: Recursively walks Go structs/maps/slices.
+*   **Output**: Generates Datalog facts like `field_name("ID", "Value")`.
+*   **Tagging**: Supports `mangle:"predicate_name"` struct tags.
 
-### Logic Interfaces
+### 4.3 Memory & Context
+*   **Lineage**: `context.Context` carries the Parent ID via `core.WithParentID` / `core.GetParentID`.
+*   **Logging**: `context.Context` carries the Logger via `core.LoggerWithContext`.
+*   **Session History**: Managed by `core.MemoryStore` interface.
+    *   `VolatileStore` (`engine/memory/volatile.go`): In-memory map for transient sessions.
+    *   `NoOpStore`: Default stateless behavior.
 
--   **`engine.PolicyEngine`**: The high-level coordinator for governance checks. It now manages a **Static Knowledge Base**.
--   **`engine.Reflector`**: The system that converts Go structs into Datalog facts.
--   **`engine/resources`**: Subsystem for loading and managing static RDF knowledge.
+## 5. Technical Debt & Gaps
 
-## 4. The "Guarded Action" Lifecycle
+### 5.1 Missing Implementations
+*   **Lineage Tracker**: The `LineageTracker` component is partially implemented via OTel and metadata, but lacks a dedicated graph store or query API.
+*   **Action Configuration**: The `actions` section in `mangle.yaml` is defined in the schema but ignored by the loader. Actions must be registered programmatically.
 
-Every protected operation undergoes a strict, immutable lifecycle managed by `guard.GuardedAction`:
+### 5.2 Hardcoded / Temporary Logic
+*   **Max Steps**: `runLoopInternal` has a hardcoded limit of `10` steps (`sdk/loop.go`).
+*   **Magic Strings**: Predicate names (`deny`, `correction`, `next_step`) are hardcoded in `engine/solver.go`.
 
-1.  **Trace Start**: A new OpenTelemetry span is created.
-2.  **Context Injection**: Logger and Trace ID are injected into `context.Context`.
-3.  **Authorization (Pre-Check)**:
-    *   Input Payload is reflected to Datalog facts.
-    *   `deny(Input)` rule is evaluated.
-    *   **BLOCK**: If denied, execution halts with `PolicyViolationError`.
-4.  **Execution**: The inner `core.Action` (Adapter) is executed.
-5.  **Validation (Post-Check)**:
-    *   Output Payload is reflected to Datalog facts.
-    *   `violation(Output)` rule is evaluated.
-    *   **BLOCK**: If violated, result is discarded.
-6.  **Trace End**: Span is closed, outcome recorded.
+### 5.3 Panics
+*   **`sdk.Must`**: Explicitly designed to panic on initialization errors.
+*   **Examples**: Demo code in `examples/` frequently uses `panic(err)`.
+*   **Safety**: `guard` and `logger` are tested to ensure they do *not* panic, but `adapters` (specifically `ai`) have been flagged in audits for potential nil pointer panics if not initialized correctly.
 
-## 5. Universal Adapters
+### 5.4 TODOs
+*   A scan of the codebase reveals **0** explicit `TODO` or `FIXME` markers.
 
-Instead of "Providers" and "Factories", Manglekit v3 uses **Adapters**.
-
-*   **`adapters/ai`**: Wraps Google Genkit `ai.Model` and `ai.Embedder`.
-*   **`adapters/vector`**: Wraps Genkit Retrievers.
-*   **`adapters/func`**: Wraps any Go function `func(ctx, In) (Out, error)`.
-
-## 6. Configuration
-
-Configuration is handled by the `config` package, which loads from YAML.
-
-*   **Policy Path**: Location of `.dl` files.
-*   **Knowledge Base**: Location of static knowledge (`.ttl`) files.
-*   **Observability**: OTel endpoint, service name.
-*   **Env Vars**: Supported via `${VAR}` syntax in YAML.
-
-## 7. Observability
-
-*   **Tracing**: Native OpenTelemetry integration. Every Action gets a span.
-*   **Logging**: Structured logging injected into Context.
-*   **Lineage**: (Planned) Automatic tracking of Input ID -> Output ID derivation.
-
-## 8. Memory Architecture (Stateless-by-Default)
-
-The `RunLoop` execution engine supports an opt-in memory subsystem with three modes:
-
-1.  **Stateless (`none`)**: (Default) No history retention. Pure function execution.
-2.  **Transient (`transient`)**: In-Memory retention valid only for the duration of the Loop (e.g., for multi-turn Retry/Correction). Discarded after return.
-3.  **Persistent (`persist`)**: Backed by `core.MemoryStore` (e.g., Redis). Hydrates history at start, writes at end.
-
-## 9. Known Gaps
-
-The codebase is **Stable (v1.0)**.
-
-**Status Legend:**
-- **✅ RESOLVED**: Feature works out-of-the-box.
-- **⚠️ PARTIALLY RESOLVED**: Foundation exists, refinement needed.
-- **❌ OPEN**: Blocking issue.
-
-### GAP-001: Lineage Tracking — ⚠️ PARTIALLY RESOLVED
-- **Description**: The `LineageTracker` component mentioned in HLD is not yet fully implemented as a standalone subsystem.
-- **Status**: Basic lineage (Trace ID propagation) works via OTel. Explicit data lineage graph is pending.
-
-## 10. Changelog
+## 6. Changelog
 
 -   **2025-11-29**: **Final Architecture Migration**. Moved root files (`manglekit.go`, `run_loop.go`) to `sdk/`. Renamed `engine/policy.go` to `engine/solver.go`. Consolidated `policies/` directory. `sdk` is now the primary entry point.
 -   **2025-11-29**: **Architecture Cleanup**. Refactored `policy/` directory. Moved `evaluator` to `engine/` and `generator` to `sdk/`. `policy/` now strictly contains static assets.
