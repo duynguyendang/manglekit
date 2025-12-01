@@ -1,11 +1,3 @@
-Bạn rất đúng. HLD (High-Level Design) cần nằm ở tầng **Logic** và **System Component**, không phải là tầng **Physical File** hay **Package**.
-
-Nhiệm vụ của HLD là trả lời câu hỏi: *"Hệ thống bao gồm những khối (Block) nào và chúng nói chuyện với nhau bằng giao thức gì?"*. Nó định hướng cho LLD (nơi sẽ quyết định `package`, `struct`, `interface`), và Code (nơi hiện thực hóa LLD).
-
-Dưới đây là bản **HLD chuẩn mực** cho Manglekit v3. Nó trừu tượng hóa các chi tiết implementation (như tên file, folder) thành các **Component** và **Layer**.
-
------
-
 # High-Level Design (HLD) — Manglekit
 
 **Project:** Manglekit (Genesis v3)
