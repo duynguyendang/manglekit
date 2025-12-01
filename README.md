@@ -2,23 +2,23 @@
 
 # Manglekit
 
-**Manglekit** is a **Universal AI Governance Kernel** for Go. It wraps any AI operation—LLM calls, vector search, or native functions—in a secure, observable, and policy-driven **Guarded Action**.
+**Manglekit** is a **Neuro-Symbolic AI Kernel** for Go. It adds a deterministic control plane to your probabilistic AI agents. 
 
-Unlike traditional frameworks that force you into a specific "chain" or "agent" abstraction, Manglekit adopts a **"Wrap, Don't Build"** philosophy. You bring your own execution engine (Google Genkit, LangChain, or raw API calls), and Manglekit wraps it with a governance layer that enforces:
+Unlike frameworks that force you into rigid abstractions, Manglekit follows a **"Wrap, Don't Build"** philosophy. You bring your own tools (Genkit, LangChain, or raw APIs), and Manglekit wraps them in a Guarded Action—a secure, observable shell that enforces:
 
-1.  **Policy Checks**: Pre- and post-execution validation using the Mangle Datalog engine.
-2.  **Observability**: Automatic OpenTelemetry tracing and structured logging.
-3.  **Safety**: Guaranteed authorization and output validation before data leaves the boundary.
+1. **Deterministic Safety**: Using a Datalog engine to enforce strict logic boundaries over LLM probabilities.
+2. **Deep Observability**: Automatic tracing of why an agent made a decision (Logic Spans).
+3. **Zero-Config Security**: Pre- and post-execution checks without pollution your business code.
 
 > **📖 Architecture:** See [docs/CONTEXT.md](docs/CONTEXT.md) for the live architecture standard.
 
 ## 🚀 Key Features
 
--   **Universal Governance**: Wrap *any* `core.Action` (LLM, Retriever, Tool) with `client.Protect()`.
--   **Policy-as-Code**: Define authorization and validation rules in declarative Datalog (`.dl`).
--   **Zero-Config Reflection**: Automatically convert Go structs to Datalog facts for policy evaluation.
--   **OpenTelemetry Native**: Every Guarded Action emits a standardized trace span (`Action.{Name}`).
--   **Universal Adapters**: Built-in adapters for Google Genkit (`ai`, `vector`) and native Go functions.
+-   🛡️ **Universal Guardrails**: Wrap *any* operation (LLM, Vector DB, Tool) in a secure `client.Protect()` shell.
+-   🧠 **Deterministic Logic**: Enforce strict safety rules using Datalog (`.dl`), curbing the chaotic nature of probabilistic AI.
+-   🪞 **Zero-Config Reflection**: Automatically map Go structs to Datalog facts—no manual glue code required.
+-   🔭 **Deep Observability**: Native OpenTelemetry integration emits "Logical Spans" to trace *why* a decision was made.
+-   🔌 **Plug-and-Play Drivers**: Built-in support for Google Genkit, MCP, and native Go functions via a modular driver system.
 
 ## 🛠️ Getting Started
 
@@ -99,46 +99,164 @@ deny(Req) :-
 
 ## 📦 Architecture
 
-Manglekit v3.0.0 ("Genesis") is built on three pillars:
+Manglekit v1.0 is a **Neuro-Symbolic AI Kernel** built on three core layers:
 
-1.  **The Client (Kernel)**: The entry point that holds configuration, the Policy Engine, and Observability providers.
-2.  **The Guard**: A decorator that enforces the `Trace -> Authorize -> Execute -> Validate` lifecycle.
-3.  **The Engine**: A Datalog runtime that evaluates rules against the current state (Input/Output Envelopes).
+### Layer 1: The Kernel (Client)
+- **Role**: Orchestrates the entire governance flow
+- **Responsibilities**: Holds configuration, manages the Policy Engine, and coordinates observability
+- **Entry Point**: `manglekit.NewClient()` initializes the kernel with policy rules
+
+### Layer 2: The Guard (GuardedAction)
+- **Role**: A transparent execution wrapper that enforces deterministic governance
+- **Lifecycle**: `Trace → Authorize → Execute → Validate`
+  - **Trace**: Emit OpenTelemetry span for observability
+  - **Authorize**: Pre-check using Datalog rules (deny unsafe inputs)
+  - **Execute**: Run the inner Action (LLM, DB query, Tool)
+  - **Validate**: Post-check using Datalog rules (reject unsafe outputs)
+- **Pattern**: Decorator wrapping any `core.Action`
+
+### Layer 3: The Engine (Datalog Runtime)
+- **Role**: The deterministic reasoning layer
+- **Components**:
+  - **Solver**: Evaluates Datalog policies against facts
+  - **Reflector**: Automatically converts Go structs to Datalog facts (zero-config)
+  - **Knowledge Base**: Loads static RDF knowledge for reasoning
+- **Guarantees**: Fast (microsecond latency), deterministic, testable
+
+### Universal Adapters
+Bridge external libraries into the kernel:
+- **`ai` Adapter**: Wraps Google Genkit models and embedders
+- **`vector` Adapter**: Handles semantic search and retrieval
+- **`extractor` Adapter**: Semantic extraction using LLMs
+- **`func` Adapter**: Wraps native Go functions
+- **`mcp` Adapter**: Model Context Protocol integration
+
+### The "Wrap, Don't Build" Philosophy
+Unlike frameworks that construct your AI stack, Manglekit stays **non-intrusive**:
+1. You build your application (with Genkit, LangChain, or raw APIs)
+2. Manglekit wraps it in a `GuardedAction` via `client.Protect()`
+3. Every execution is governed by deterministic Datalog rules
+
+### Data Flow Diagram
 
 ```mermaid
-graph LR
-    User -->|Execute| Guard[Guarded Action]
-    Guard -->|1. Trace| OTel
-    Guard -->|2. Authorize| Engine[Policy Engine]
-    Guard -->|3. Execute| Adapter[Universal Adapter]
-    Adapter -->|Call| Genkit[Genkit / LLM]
-    Guard -->|4. Validate| Engine
+graph TB
+    subgraph "User Space"
+        App[Your Application]
+    end
+
+    subgraph "Manglekit Kernel"
+        Client["Client<br/>(Policy + Observability)"]
+    end
+
+    subgraph "The Guard"
+        GA["GuardedAction<br/>(Decorator)"]
+        Lifecycle["Trace ↓<br/>Authorize ↓<br/>Execute ↓<br/>Validate"]
+    end
+
+    subgraph "Logic Engine"
+        PE["PolicyEngine<br/>(Datalog Runtime)"]
+        Reflect["Reflector<br/>(Struct→Facts)"]
+        KB["Knowledge Base<br/>(Static Facts)"]
+    end
+
+    subgraph "Universal Adapters"
+        AI["AI Adapter"]
+        Vector["Vector Adapter"]
+        Func["Func Adapter"]
+    end
+
+    subgraph "External Systems"
+        LLM["LLM / Genkit"]
+        DB["Vector DB"]
+        Tools["Native Code"]
+    end
+
+    App -->|1. NewClient| Client
+    App -->|2. Protect| GA
+    GA --> Lifecycle
+    Lifecycle <-->|3. Policy Check| PE
+    PE --> Reflect
+    PE --> KB
+    GA -->|4. Execute| AI
+    GA -->|4. Execute| Vector
+    GA -->|4. Execute| Func
+    AI --> LLM
+    Vector --> DB
+    Func --> Tools
 ```
 
-## 📂 Project Structure
+## Core Concepts
+
+| Concept | Purpose | Example |
+|---------|---------|---------|
+| **Action** | Universal interface for any operation | LLM call, DB query, API request |
+| **Envelope** | Standardized data container | `{ID, Payload, Metadata}` |
+| **GuardedAction** | Governance wrapper | `client.Protect(action)` |
+| **Policy** | Datalog rules defining safety | `deny(Input) :- risk_score(Input, Score), Score > 8.` |
+| **Decision** | Governance outcome | `ALLOW`, `DENY`, `RETRY` |
+
+---
 
 ```text
 .
-├── adapters/       # Universal Adapters (Genkit AI, Vector, Native Funcs)
-├── cmd/            # CLI tools and executables
-├── config/         # Configuration loading
-├── core/           # Core interfaces (Action, Envelope, Logger, Tracer)
-├── docs/           # Architecture and design documentation
-├── engine/         # Datalog Policy Engine implementation
-├── examples/       # Runnable examples
-├── guard/          # The Guard logic (Trace -> AuthZ -> Exec -> Validate)
-├── internal/       # Internal utilities (not for public import)
-├── policy/         # Policy file management
-├── sdk/            # SDK helper functions
-└── manglekit.go    # Main library entry point
+├── adapters/           # Universal Adapters for external systems
+│   ├── ai/             # Google Genkit AI models and embedders
+│   ├── extractor/      # Semantic extraction adapter
+│   ├── func/           # Native Go function wrapper
+│   ├── mcp/            # Model Context Protocol adapter
+│   └── vector/         # Vector/retrieval adapters
+├── cmd/                # CLI tools and executables
+│   └── mkit/           # Manglekit CLI command tools
+├── config/             # Configuration loading (YAML, schema validation)
+├── core/               # Core interfaces and contracts
+│   ├── action.go       # Universal Action interface
+│   ├── envelope.go     # Data container for all operations
+│   ├── logger.go       # Structured logging interface
+│   ├── tracer.go       # OpenTelemetry integration
+│   └── ...             # Additional core abstractions
+├── docs/               # Architecture and design documentation
+├── engine/             # Datalog Policy Engine
+│   ├── solver.go       # Policy evaluation runtime
+│   ├── reflection.go   # Go struct to Datalog facts converter
+│   ├── memory/         # Memory store implementations
+│   └── resources/      # Knowledge base management
+├── examples/           # Runnable examples and demos
+├── guard/              # The Guard lifecycle orchestrator
+│   ├── guard.go        # GuardedAction (Trace → AuthZ → Exec → Validate)
+│   └── trace.go        # Tracing utilities
+├── internal/           # Internal utilities (not for public import)
+│   ├── logger/         # Logger implementations (zap, stdout)
+│   ├── telemetry/      # OTel infrastructure
+│   ├── testproviders/  # Test doubles and mocks
+│   └── util/           # Helper utilities
+├── policies/           # Static policy assets
+├── sdk/                # SDK entry points and orchestration
+│   ├── sdk.go          # Main SDK initialization
+│   ├── loop.go         # RunLoop execution engine
+│   └── policy_generator.go  # Policy generation tools
+├── manglekit.go        # Main library entry point
+└── [config files]      # go.mod, mangle.yaml, Makefile, etc.
 ```
 
 ## 📚 Documentation
 
--   **[AGENTS.md](AGENTS.md)**: Guide for AI agents working on this repo.
--   **[docs/CONTEXT.md](docs/CONTEXT.md)**: The architectural source of truth.
--   **[docs/TRACING.md](docs/TRACING.md)**: OpenTelemetry integration details.
--   **[docs/LOGGING.md](docs/LOGGING.md)**: Structured logging guide.
+### Architecture & Design
+-   **[docs/CONTEXT.md](docs/CONTEXT.md)**: Live architecture snapshot and system contracts (source of truth)
+-   **[docs/HLD.md](docs/HLD.md)**: High-level design explaining system boundaries and layering
+-   **[docs/LLD.md](docs/LLD.md)**: Low-level implementation details for developers
+-   **[docs/ADR.md](docs/ADR.md)**: Architecture Decision Records and design rationale
+
+### Configuration & Deployment
+-   **[docs/CONFIG.md](docs/CONFIG.md)**: Configuration guide with YAML setup and environment variables
+-   **[docs/TRACING.md](docs/TRACING.md)**: OpenTelemetry integration and span hierarchy
+-   **[docs/LOGGING.md](docs/LOGGING.md)**: Structured logging configuration and best practices
+
+### Design & Philosophy
+-   **[docs/CSD.md](docs/CSD.md)**: Conceptual Solution Design and core philosophy
+
+### Contributing
+-   **[AGENTS.md](AGENTS.md)**: Guide for AI agents working on this repo
 
 ## 🤝 Contributing
 

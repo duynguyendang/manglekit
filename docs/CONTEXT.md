@@ -2,8 +2,8 @@
 context_type: architecture_standard
 project: manglekit
 language: go
-version: 3.0.0
-last_updated: 2025-11-29T00:00:00Z
+version: 1.0
+last_updated: 2025-12-01T00:00:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -62,7 +62,7 @@ graph TD
 
 ## 1. Architectural Overview
 
-Manglekit v3.0 ("Genesis") is a **Universal AI Governance Kernel**. It abandons the complex "Builder/Registry" pattern of v0.x in favor of a streamlined **Composition Model**.
+Manglekit v1.0 is a **Universal AI Governance Kernel**. It abandons the complex "Builder/Registry" pattern of v0.x in favor of a streamlined **Composition Model**.
 
 The core philosophy is **"Wrap, Don't Build"**. Manglekit does not construct your AI components; it *wraps* them. You bring your own execution engine (Genkit, LangChain, native Go code), and Manglekit wraps it in a **Guarded Action** that enforces policy, observability, and safety.
 
@@ -161,7 +161,7 @@ The `RunLoop` execution engine supports an opt-in memory subsystem with three mo
 
 ## 9. Known Gaps
 
-The codebase is **Stable (v3.0.0)**.
+The codebase is **Stable (v1.0)**.
 
 **Status Legend:**
 - **✅ RESOLVED**: Feature works out-of-the-box.
@@ -178,6 +178,6 @@ The codebase is **Stable (v3.0.0)**.
 -   **2025-11-29**: **Architecture Cleanup**. Refactored `policy/` directory. Moved `evaluator` to `engine/` and `generator` to `sdk/`. `policy/` now strictly contains static assets.
 -   **2025-11-29**: **Memory Subsystem**. Implemented "Stateless-by-Default" architecture. Added `MemoryMode` to `RunLoop` and `VolatileStore` for transient history.
 -   **2025-11-28**: **Knowledge Integration**. The Engine now supports loading static knowledge from RDF Turtle files as Datalog facts. `ToFacts` reflection updated for standard Datalog predicates.
--   **2025-11-27**: **Genesis Release (v3.0.0)**. Complete re-architecture. Removed Builder/Registry. Introduced Client/Guard/Engine model.
+-   **2025-11-27**: Complete re-architecture. Removed Builder/Registry. Introduced Client/Guard/Engine model.
 -   **2025-11-25**: **Smart Router**: (Legacy v0.x) Implemented dynamic dispatch.
 -   **2025-11-20**: **Reflection**: Added `core/reflection`.

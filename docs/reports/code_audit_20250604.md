@@ -3,7 +3,7 @@
 **Date:** 2025-06-04
 **Auditor:** Principal Go Engineer (AI Agent)
 **Scope:** `engine/`, `guard/`, `adapters/`, `sdk/`
-**Version:** Manglekit v3.0.0 (Genesis)
+**Version:** Manglekit v1.0
 
 ## I. Executive Summary
 

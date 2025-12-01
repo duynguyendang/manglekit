@@ -1,4 +1,4 @@
-# AGENTS.md — Manglekit Coding Agent Configuration (Genesis Edition)
+# AGENTS.md — Manglekit Coding Agent Configuration
 
 *Last updated: 2025-11-27*
 
@@ -6,7 +6,7 @@
 
 ## Overview
 
-This document defines how coding agents interact with the **Manglekit v3.0.0 (Genesis)** codebase.
+This document defines how coding agents interact with the **Manglekit v1.0** codebase.
 It specifies conventions, automated tasks, and safety rules to ensure that all AI-driven modifications stay consistent with the system design and context documentation.
 
 Agents use this file as an **operational manual** to perform reasoning, refactoring, documentation updates, and observability instrumentation within the Go SDK.
@@ -65,7 +65,7 @@ Use the document’s internal structure as a guide:
 | **Core Contracts** | Retrieve `Action` and `Envelope` definitions. |
 | **Guarded Action Lifecycle** | Understand the Trace -> AuthZ -> Exec -> Validate flow. |
 | **Known Gaps** | Identify open architectural issues (e.g., Lineage). |
-| **Changelog** | Understand recent architectural shifts (e.g., v3.0.0 Genesis). |
+| **Changelog** | Understand recent architectural shifts (e.g., v1.0). |
 
 ### 3.3 Reflecting Code Changes
 
@@ -190,7 +190,7 @@ Use naming pattern `Test<Component>_<Behavior>`.
 
 ## 12. Architectural Patterns (Reference)
 
-This section documents key architectural patterns for v3.0.0.
+This section documents key architectural patterns for v1.0.
 
 ### 12.1 The "Guarded Action" Pattern
 

@@ -24,13 +24,13 @@
 | 9 | Remediation Plan for Current Gaps | Completed | Verified compliance with ADR R14; marked "Builder Leaking into Handler" as resolved |
 | 10 | Dual-Path Build Architecture | **Superseded** | (Replaced by ADR 12) Support both `sdk.Load()` and `sdk.NewBuilder()` |
 | 11 | DependencyResolver Pattern | **Superseded** | (Replaced by ADR 12) Handlers delegate dependency resolution to resolvers |
-| 12 | **Universal AI Governance Kernel (Genesis)** | **Accepted** | **Complete Re-Architecture**: Replace Builder/Registry with Client/Guard/Engine composition. |
+| 12 | **Universal AI Governance Kernel** | **Accepted** | **Complete Re-Architecture**: Replace Builder/Registry with Client/Guard/Engine composition. |
 
 ---
 
 ## Table of Contents
 
-1. [Genesis Architecture (ADR 12)](#genesis-architecture-adr-12)
+1. [Universal AI Governance Kernel (ADR 12)](#universal-ai-governance-kernel-adr-12)nance-kernel-adr-12)
 2. [Foundation Layer (ADRs 1–3)](#foundation-layer)
 3. [Legacy Architecture (ADRs 4–5, 7, 10-11)](#legacy-architecture-superseded)
 4. [Enforcement & Refinement (ADRs 6–8)](#enforcement--refinement)
@@ -38,12 +38,12 @@
 
 ---
 
-## Genesis Architecture (ADR 12)
+## Universal AI Governance Kernel (ADR 12)
 
-### ADR 12: Universal AI Governance Kernel ("Genesis")
+### ADR 12: Universal AI Governance Kernel
 
 #### Status
-Accepted (v3.0.0)
+Accepted (v1.0)
 
 #### Context
 The v0.x architecture (ADRs 4, 5, 7, 10, 11) relied on a complex "Builder/Registry" pattern. While it provided type safety, it suffered from:
@@ -118,7 +118,7 @@ Make `context.Context` explicit and mandatory.
 
 ## Legacy Architecture (Superseded)
 
-*The following ADRs describe the v0.x "Builder/Registry" architecture. They are kept for historical context but are no longer active in v3.0.0.*
+*The following ADRs describe the v0.x "Builder/Registry" architecture. They are kept for historical context but are no longer active in v1.0.*
 
 ### ADR 4: Generic, Type-Safe Registry & Builder (Superseded)
 **Replaced by ADR 12.** The Registry and Builder have been removed in favor of direct composition.
@@ -161,7 +161,7 @@ Need to keep codebase aligned.
 Codify rules via static checks.
 
 #### Status
-**Retained**, but rules updated to reflect v3.0 architecture (e.g., "No Builder" rule).
+**Retained**, but rules updated to reflect v1.0 architecture (e.g., "No Builder" rule).
 
 ---
 
@@ -177,7 +177,7 @@ Addressed v0.x gaps (Builder leaking, etc.).
 
 ---
 
-## Resulting System (v3.0.0 Snapshot)
+## Resulting System (v1.0 Snapshot)
 
 *   **Kernel**: `manglekit.Client` (Policy + Observability).
 *   **Guard**: `GuardedAction` (The "Sandwich" of governance).

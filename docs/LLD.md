@@ -2,7 +2,7 @@
 context_type: low_level_design
 project: manglekit
 language: go
-version: 3.0.0
+version: 1.0
 last_updated: 2025-11-27T14:45:00Z
 stability: stable
 audience: developers
@@ -10,7 +10,7 @@ audience: developers
 
 # 1. Purpose & Scope
 
-This document provides the Low-Level Design (LLD) for Manglekit v3.0.0 ("Genesis Edition"). It details the implementation of the **Universal AI Governance Kernel**, focusing on the `Client`, `Guard`, `Engine`, and `Adapter` subsystems. This design replaces the previous "Builder/Registry" architecture with a streamlined, composition-based approach.
+This document provides the Low-Level Design (LLD) for Manglekit v1.0. It details the implementation of the **Universal AI Governance Kernel**, focusing on the `Client`, `Guard`, `Engine`, and `Adapter` subsystems. This design replaces the previous "Builder/Registry" architecture with a streamlined, composition-based approach.
 
 # 2. Component Diagram
 
@@ -175,6 +175,6 @@ manglekit/
 # 9. Changelog
 
 *   **2025-11-29**: Architecture Cleanup. Logic moved from `policy/` to `engine/` and `sdk/`.
-*   **2025-11-27**: Major rewrite for v3.0.0 "Genesis". Replaced Builder/Registry architecture with Client/Guard/Engine composition.
+-   **2025-11-27**: Major rewrite for v1.0. Replaced Builder/Registry architecture with Client/Guard/Engine composition.
 *   **2025-11-25**: Implemented Smart Router in Sandwich (now legacy).
 *   **2025-11-20**: Added `core/reflection`.

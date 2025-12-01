@@ -1,6 +1,6 @@
 # Conceptual Solution Design (CSD) — Manglekit
 
-**Edition:** Genesis (v1.0 Reboot)
+**Edition:** v1.0
 **Context:** The AI Control Plane for Reliable Go Applications
 
 ## 1. The Core Problem We Solve (The Pain Point)
@@ -13,7 +13,7 @@ Building modern AI applications is fragile. When you chain multiple LLMs and too
 
 ---
 
-## 2. The Genesis Philosophy: Control & Simplicity
+## 2. The Core Philosophy: Control & Simplicity
 
 Manglekit solves these problems by establishing an **AI Kernel**. We create a hard separation between **Policy (The Brain)** and **Execution (The Muscle)**.
 
@@ -64,7 +64,7 @@ The Guard enforces a standard governance loop around every operation:
 
 ---
 
-## 5. Key Capabilities (What Genesis Gives You)
+## 5. Key Capabilities (What Manglekit Gives You)
 
 ### 5.1 The Logic Kernel (The Brain)
 * **Deep Reflector:** Specialized module for converting complex Go types into a queryable Fact Base.

@@ -1,4 +1,4 @@
-# Configuration Package - Infrastructure-as-Code Support
+# Configuration Guide - Infrastructure-as-Code Support
 
 The `config` package provides lightweight, production-ready configuration management for Manglekit applications. It enables declarative infrastructure-as-code workflows through YAML configuration files with full environment variable expansion.
 

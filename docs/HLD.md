@@ -1,6 +1,6 @@
 # Manglekit — High‑Level Design (HLD)
 
-**Revision:** 3.0.0 (Genesis Edition)
+**Revision:** 1.0
 **Scope:** Core Kernel Architecture, Universal Governance & Subsystems
 **Audience:** Framework Architects, Enterprise Integrators, Platform Engineers
 **Mission:** To provide a **Universal AI Governance Kernel** that transforms any atomic operation (LLM, Function, Tool) into a managed, observable, and policy-compliant unit of execution.
