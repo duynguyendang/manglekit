@@ -3,7 +3,7 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 1.0
-last_updated: 2025-12-04T12:00:00Z
+last_updated: 2025-12-05T12:00:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -18,22 +18,36 @@ This document provides a strictly factual, deep-dive technical snapshot of the M
 manglekit/
 ├── sdk/                  # [KERNEL] The entry point and orchestration layer
 │   ├── sdk.go            # Client struct, initialization, and Protect() API
-│   └── loop.go           # Semantic State Machine (RunLoop) implementation
+│   ├── loop.go           # Semantic State Machine (RunLoop) implementation
+│   ├── options.go        # Functional options for Client and Execution
+│   ├── types.go          # Type aliases and convenience helpers
+│   └── policy_generator.go # Policy Copilot (Natural Language -> Datalog)
 ├── guard/                # [GOVERNANCE] The interception layer
 │   └── guard.go          # GuardedAction decorator (Trace -> AuthZ -> Exec -> Validate)
 ├── engine/               # [LOGIC] The Datalog reasoning core
 │   ├── solver.go         # PolicyEngine (High-level coordinator)
 │   ├── runtime.go        # MangleRuntime (Low-level Datalog wrapper)
-│   └── reflection.go     # ToFacts (Struct -> Fact conversion)
+│   ├── evaluator.go      # Evaluator (Lightweight single-rule checker)
+│   ├── reflection.go     # ToFacts (Struct -> Fact conversion)
+│   └── resources/        # Knowledge Base (RDF/Turtle loading)
 ├── core/                 # [PUBLIC API] Interfaces and shared types (No dependencies)
 │   ├── action.go         # Action interface
-│   └── envelope.go       # Envelope struct
+│   ├── envelope.go       # Envelope struct
+│   ├── logger.go         # Logger interface & context helpers
+│   ├── tracer.go         # Tracer interface
+│   ├── memory.go         # MemoryStore interface (Chat History)
+│   ├── state.go          # StateProvider interface (Generic State)
+│   ├── constants.go      # System constants (Metadata keys, Decisions)
+│   └── types.go          # Shared types (Message, Query, Answer)
 ├── adapters/             # [DRIVERS] Bridges to external systems
 │   ├── ai/               # Google Genkit AI models
+│   ├── func/             # Native Go function wrapper
 │   ├── mcp/              # Model Context Protocol tools
 │   ├── vector/           # Vector database retrievers
 │   └── extractor/        # Structured data extraction
-├── config/               # Configuration loading (YAML -> Struct)
+├── config/               # Configuration loading
+│   ├── schema.go         # Config struct definitions (YAML mapping)
+│   └── loader.go         # Viper-based config loading logic
 └── cmd/                  # CLI tools (mkit)
 ```
 
@@ -49,7 +63,9 @@ The brain of the system. It translates Go objects into Datalog facts and evaluat
     *   `Validate(ctx, meta, output)`: Post-check hook. Evaluates `deny("Output")`.
     *   `EvaluateSteering(ctx, input)`: Determines next step (`RETRY`, `ROUTE`).
     *   `LoadFacts(facts)`: Injects dynamic facts at runtime.
+    *   `LoadKnowledge(path)`: Loads static RDF knowledge from Turtle files.
     *   `ToFacts(id, input)` (`engine/reflection.go`): Reflectively converts structs to `predicate(id, val)` facts. **Reflector 2.0**: Supports deep traversal of Maps (key as argument) and JSON tags.
+    *   `Evaluator` (`engine/evaluator.go`): Standalone helper for ad-hoc rule evaluation against a Go struct.
 
 ### 2.2 SDK (`sdk/`)
 The user-facing API and orchestration kernel.
@@ -60,6 +76,11 @@ The user-facing API and orchestration kernel.
     *   `Protect(Action)`: Wraps an Action with a `GuardedAction`.
     *   `ExecuteByName`: Entry point for the Semantic State Machine.
     *   `Call[Out]`: Generic helper for typed execution.
+    *   `WithStdoutTracer`: ClientOption for enabling console tracing.
+    *   `NewPolicyGenerator`: Creates a `Generator` to translate natural language to Datalog rules.
+*   **Configuration**:
+    *   `ClientOption`: `WithPolicyPath`, `WithFailMode`, `WithLogger`, `WithMemory`.
+    *   `ExecuteOption`: `WithSessionID` (Persist), `WithTransientMemory` (Volatile), `WithMetadata`.
 
 ### 2.3 Guard (`guard/`)
 The enforcement layer. It ensures no Action runs without policy checks.
@@ -74,8 +95,9 @@ Concrete implementations of `core.Action`.
 *   **Key Structs**:
     *   `MCPAction` (`adapters/mcp/action.go`): Wraps an MCP Tool.
     *   `ExtractorAction` (`adapters/extractor/adapter.go`): Uses an LLM to extract JSON.
-    *   `FuncAction` (`adapters/func/wrapper.go`): Wraps a native Go function.
-    *   `GenkitModel` (`adapters/ai`): Wraps `ai.Model` (implied).
+    *   `Wrapper` (`adapters/func/wrapper.go`): Wraps a native Go function (`ToolFunc`).
+    *   `GenkitModel` (`adapters/ai/genkit_model.go`): Wraps `ai.Model`.
+    *   `GenkitRetrieverAdapter` (`adapters/vector/genkit_retriever.go`): Wraps a Genkit retriever.
 
 ## 3. The Critical Path: `ExecuteByName`
 
@@ -115,6 +137,7 @@ The standard container for all data moving through the kernel.
 *   **Logic**: Recursively walks Go structs/maps/slices.
 *   **Output**: Generates Datalog facts like `field_name("ID", "Value")`.
     *   **Maps**: Converted to `field_name("ID", "Key", "Value")` (Key is an argument).
+    *   **Numbers**: Converted to unquoted literals (e.g., `123`, `45.67`) for numeric logic.
 *   **Tagging**: Supports `mangle:"name"` or `json:"name"` tags.
 
 ### 4.3 Memory & Context
@@ -123,6 +146,8 @@ The standard container for all data moving through the kernel.
 *   **Session History**: Managed by `core.MemoryStore` interface.
     *   `VolatileStore` (`engine/memory/volatile.go`): In-memory map for transient sessions.
     *   `NoOpStore`: Default stateless behavior.
+*   **Generic State**: Managed by `core.StateProvider` interface (`core/state.go`).
+    *   Allows storing arbitrary session data beyond chat history.
 
 ## 5. Technical Debt & Gaps
 
@@ -144,7 +169,8 @@ The standard container for all data moving through the kernel.
 
 ## 6. Changelog
 
--   **2025-12-04**: **Reflector 2.0**. Enhanced `engine/reflection.go` to support deep traversal of Go Maps (keys as arguments) and K8s-style JSON tags. Added `LoadFacts` to `PolicyEngine`.
+-   **2025-12-05**: **Validation Suite**. Added comprehensive examples: `dynamic_pricing` (Tracing/Numeric Logic), `fintech_approval` (Recursive/Math), and `sre_guardrail` (K8s/Safety). Validated sub-10ms latency and native predicate support.
+-   **2025-12-04**: **Reflector 2.0**. Enhanced `engine/reflection.go` to support deep traversal of Go Maps (keys as arguments), K8s-style JSON tags, and **native numeric types** (unquoted). Added `LoadFacts` to `PolicyEngine`.
 -   **2025-11-29**: **Final Architecture Migration**. Moved root files (`manglekit.go`, `run_loop.go`) to `sdk/`. Renamed `engine/policy.go` to `engine/solver.go`. Consolidated `policies/` directory. `sdk` is now the primary entry point.
 -   **2025-11-29**: **Architecture Cleanup**. Refactored `policy/` directory. Moved `evaluator` to `engine/` and `generator` to `sdk/`. `policy/` now strictly contains static assets.
 -   **2025-11-29**: **Memory Subsystem**. Implemented "Stateless-by-Default" architecture. Added `MemoryMode` to `RunLoop` and `VolatileStore` for transient history.
