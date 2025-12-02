@@ -134,6 +134,18 @@ func (e *PolicyEngine) LoadKnowledge(path string) error {
 	return nil
 }
 
+// LoadFacts injects a list of raw Datalog fact strings into the runtime's base knowledge.
+// This allows adding dynamic context or configuration at runtime (e.g., feature flags).
+//
+// Parameters:
+//   - facts: A slice of Datalog fact strings.
+//
+// Returns:
+//   - An error if parsing or evaluation fails.
+func (e *PolicyEngine) LoadFacts(facts []string) error {
+	return e.runtime.LoadFacts(facts)
+}
+
 // LoadFromPath loads policy rules and facts from the specified file system path.
 // It delegates to the underlying MangleRuntime to parse and compile the rules.
 //
@@ -215,6 +227,18 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 		}
 		// Return actual error to allow Fail-Open handling
 		return fmt.Errorf("fact conversion error: %w", err)
+	}
+
+	// Inject Action Metadata facts
+	// action_operation("Req", "Name")
+	if actionMeta.Name != "" {
+		safeName := core.EntityInput
+		safeOp := actionMeta.Name
+		opFactStr := fmt.Sprintf("action_operation(\"%s\", \"%s\")", escapeString(safeName), escapeString(safeOp))
+		opAtom, err := parse.Atom(opFactStr)
+		if err == nil {
+			facts = append(facts, opAtom)
+		}
 	}
 
 	// Generate facts for security labels using safe helper

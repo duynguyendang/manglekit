@@ -3,7 +3,7 @@ context_type: architecture_standard
 project: manglekit
 language: go
 version: 1.0
-last_updated: 2025-12-01T12:00:00Z
+last_updated: 2025-12-04T12:00:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -48,7 +48,8 @@ The brain of the system. It translates Go objects into Datalog facts and evaluat
     *   `Authorize(ctx, meta, input)`: Pre-check hook. Evaluates `deny("Req")`.
     *   `Validate(ctx, meta, output)`: Post-check hook. Evaluates `deny("Output")`.
     *   `EvaluateSteering(ctx, input)`: Determines next step (`RETRY`, `ROUTE`).
-    *   `ToFacts(id, input)` (`engine/reflection.go`): Reflectively converts structs to `predicate(id, val)` facts.
+    *   `LoadFacts(facts)`: Injects dynamic facts at runtime.
+    *   `ToFacts(id, input)` (`engine/reflection.go`): Reflectively converts structs to `predicate(id, val)` facts. **Reflector 2.0**: Supports deep traversal of Maps (key as argument) and JSON tags.
 
 ### 2.2 SDK (`sdk/`)
 The user-facing API and orchestration kernel.
@@ -113,7 +114,8 @@ The standard container for all data moving through the kernel.
 *   **Function**: `ToFacts(id string, input any) ([]string, error)`
 *   **Logic**: Recursively walks Go structs/maps/slices.
 *   **Output**: Generates Datalog facts like `field_name("ID", "Value")`.
-*   **Tagging**: Supports `mangle:"predicate_name"` struct tags.
+    *   **Maps**: Converted to `field_name("ID", "Key", "Value")` (Key is an argument).
+*   **Tagging**: Supports `mangle:"name"` or `json:"name"` tags.
 
 ### 4.3 Memory & Context
 *   **Lineage**: `context.Context` carries the Parent ID via `core.WithParentID` / `core.GetParentID`.
@@ -142,6 +144,7 @@ The standard container for all data moving through the kernel.
 
 ## 6. Changelog
 
+-   **2025-12-04**: **Reflector 2.0**. Enhanced `engine/reflection.go` to support deep traversal of Go Maps (keys as arguments) and K8s-style JSON tags. Added `LoadFacts` to `PolicyEngine`.
 -   **2025-11-29**: **Final Architecture Migration**. Moved root files (`manglekit.go`, `run_loop.go`) to `sdk/`. Renamed `engine/policy.go` to `engine/solver.go`. Consolidated `policies/` directory. `sdk` is now the primary entry point.
 -   **2025-11-29**: **Architecture Cleanup**. Refactored `policy/` directory. Moved `evaluator` to `engine/` and `generator` to `sdk/`. `policy/` now strictly contains static assets.
 -   **2025-11-29**: **Memory Subsystem**. Implemented "Stateless-by-Default" architecture. Added `MemoryMode` to `RunLoop` and `VolatileStore` for transient history.

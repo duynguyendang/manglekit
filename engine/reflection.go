@@ -69,7 +69,7 @@ func escapeString(s string) string {
 }
 
 // toFactsRecursive traverses the reflection value tree and appends facts to the slice.
-func toFactsRecursive(id, path string, v reflect.Value, facts *[]string) error {
+func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, args ...string) error {
 	// Dereference pointers, skipping if nil.
 	if v.Kind() == reflect.Ptr {
 		if v.IsNil() {
@@ -91,8 +91,17 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string) error {
 			}
 
 			// Determine the predicate name from the tag or field name.
+			// Priority: mangle tag > json tag > field name
 			tag := structField.Tag.Get("mangle")
 			fieldName := tag
+			if fieldName == "" {
+				jsonTag := structField.Tag.Get("json")
+				if jsonTag != "" && jsonTag != "-" {
+					// json tag often looks like "name,omitempty"
+					parts := strings.Split(jsonTag, ",")
+					fieldName = parts[0]
+				}
+			}
 			if fieldName == "" {
 				fieldName = strings.ToLower(structField.Name)
 			}
@@ -102,33 +111,26 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string) error {
 				newPath = path + "_" + fieldName
 			}
 
-			if err := toFactsRecursive(id, newPath, field, facts); err != nil {
+			if err := toFactsRecursive(id, newPath, field, facts, args...); err != nil {
 				return err
 			}
 		}
 	case reflect.Map:
 		for _, key := range v.MapKeys() {
 			val := v.MapIndex(key)
-			// Assuming keys can be reasonably converted to strings for the predicate.
-			// Flattening map keys: path_key(id, value)
 			keyStr := fmt.Sprintf("%v", key.Interface())
-			// Basic sanitization for keyStr to be part of predicate
-			keyStr = strings.ReplaceAll(keyStr, " ", "_")
-			keyStr = strings.ReplaceAll(keyStr, "-", "_")
 
-			newPath := keyStr
-			if path != "" {
-				newPath = path + "_" + keyStr
-			}
+			// For maps, we treat the key as an additional argument to the predicate.
+			newArgs := append([]string{}, args...)
+			newArgs = append(newArgs, keyStr)
 
-			if err := toFactsRecursive(id, newPath, val, facts); err != nil {
+			if err := toFactsRecursive(id, path, val, facts, newArgs...); err != nil {
 				return err
 			}
 		}
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < v.Len(); i++ {
-			// For slice elements, generate facts using the same predicate.
-			if err := toFactsRecursive(id, path, v.Index(i), facts); err != nil {
+			if err := toFactsRecursive(id, path, v.Index(i), facts, args...); err != nil {
 				return err
 			}
 		}
@@ -145,7 +147,15 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string) error {
 		safeID := escapeString(id)
 		safeVal := escapeString(strVal)
 
-		fact := fmt.Sprintf("%s(\"%s\", \"%s\")", predicate, safeID, safeVal)
+		// Construct fact with args: predicate("id", arg1, ..., "value")
+		var factParts []string
+		factParts = append(factParts, fmt.Sprintf("\"%s\"", safeID))
+		for _, arg := range args {
+			factParts = append(factParts, fmt.Sprintf("\"%s\"", escapeString(arg)))
+		}
+		factParts = append(factParts, fmt.Sprintf("\"%s\"", safeVal))
+
+		fact := fmt.Sprintf("%s(%s)", predicate, strings.Join(factParts, ", "))
 		*facts = append(*facts, fact)
 	}
 	return nil

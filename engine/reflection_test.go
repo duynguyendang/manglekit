@@ -40,8 +40,8 @@ func TestToFacts(t *testing.T) {
 		`location_city("test", "Anytown")`,
 		`tags("test", "alpha")`,
 		`tags("test", "beta")`,
-		`data_id("test", "123")`,
-		`data_isAdmin("test", "true")`,
+		`data("test", "id", "123")`,
+		`data("test", "isAdmin", "true")`,
 	}
 
 	facts, err := ToFacts("test", user)
