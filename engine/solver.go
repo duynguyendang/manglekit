@@ -367,8 +367,24 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 	}
 
 	if denied {
+		// Teacher-Student Protocol: Try to extract a human-readable violation message
+		// Query: violation_msg(Msg)
+		var violationMsg string
+		// We reuse the facts which already contain the Output payload
+		_ = e.runtime.QueryWithSolutions(facts, "violation_msg(Msg)", func(solution map[string]any) error {
+			if msg, ok := solution["Msg"].(string); ok {
+				violationMsg = msg
+				return fmt.Errorf("found") // Stop searching
+			}
+			return nil
+		})
+
 		if e.logger != nil {
-			e.logger.Debug("post-check validation violation detected", "action", actionMeta.Name)
+			e.logger.Debug("post-check validation violation detected", "action", actionMeta.Name, "violation_msg", violationMsg)
+		}
+
+		if violationMsg != "" {
+			return core.Envelope{}, &core.PolicyViolationError{Message: violationMsg}
 		}
 		return core.Envelope{}, core.ErrPolicyViolation
 	}

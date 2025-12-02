@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -71,6 +72,7 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 	currentAction := startAction
 	currentPayload := payload
 	var feedbackHistory []string
+	var lastFeedback string
 
 	for step := 0; step < 10; step++ { // Max depth 10
 		if c.logger != nil {
@@ -90,6 +92,11 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 			env.Metadata[core.KeyPrevFeedback] = strings.Join(feedbackHistory, "; ")
 		}
 
+		// Inject specific Mangle feedback (Teacher-Student Protocol)
+		if lastFeedback != "" {
+			env.Metadata["mangle_feedback"] = lastFeedback
+		}
+
 		// Inject History
 		if len(currentHistory) > 0 && params.MemoryMode != core.MemoryModeNone {
 			env.SetHistory(currentHistory)
@@ -105,8 +112,20 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 		// 3. Execute (Guard -> Engine -> Steering)
 		result, err := action.Execute(ctx, env)
 		if err != nil {
+			// Check for PolicyViolationError (Teacher-Student Protocol)
+			var pve *core.PolicyViolationError
+			if errors.As(err, &pve) {
+				lastFeedback = pve.Message
+				if c.logger != nil {
+					c.logger.Info("RunLoop: Policy Violation detected, triggering retry with feedback", "feedback", lastFeedback)
+				}
+				continue // Trigger retry (Teacher-Student Protocol)
+			}
 			return core.Envelope{}, err
 		}
+
+		// Clear feedback on success
+		lastFeedback = ""
 
 		// 4. Update History (Append User Input + Assistant Response)
 		if params.MemoryMode != core.MemoryModeNone {

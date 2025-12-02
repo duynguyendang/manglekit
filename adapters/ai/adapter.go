@@ -65,6 +65,11 @@ func (a *LLMAction) Execute(ctx context.Context, input core.Envelope) (core.Enve
 		return core.Envelope{}, fmt.Errorf("%w: invalid input type, expected string but got %T", core.ErrSystemError, input.Payload)
 	}
 
+	// Teacher-Student Protocol: Inject feedback if present
+	if feedback, ok := input.Metadata["mangle_feedback"]; ok && feedback != "" {
+		prompt += fmt.Sprintf("\n\n[SYSTEM WARNING]: Your previous attempt failed. Reason: '%s'. Please correct your output to satisfy this rule.", feedback)
+	}
+
 	resp, err := a.generator.Complete(ctx, prompt)
 	if err != nil {
 		return core.Envelope{}, fmt.Errorf("llm generation failed: %w", err)
