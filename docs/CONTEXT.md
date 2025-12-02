@@ -1,9 +1,9 @@
 ---
-context_type: architecture_standard
+context_type: architecture_snapshot
 project: manglekit
 language: go
 version: 1.0
-last_updated: 2025-12-05T12:00:00Z
+last_updated: 2025-12-05T12:50:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -33,21 +33,29 @@ manglekit/
 ├── core/                 # [PUBLIC API] Interfaces and shared types (No dependencies)
 │   ├── action.go         # Action interface
 │   ├── envelope.go       # Envelope struct
-│   ├── logger.go         # Logger interface & context helpers
+│   ├── logger.go         # Logger interface
+│   ├── logger_context.go # Context helpers (LoggerFromContext)
 │   ├── tracer.go         # Tracer interface
 │   ├── memory.go         # MemoryStore interface (Chat History)
 │   ├── state.go          # StateProvider interface (Generic State)
+│   ├── context_lineage.go # Context helpers for Lineage (ParentID)
+│   ├── errors.go         # Standard error definitions (PolicyViolation)
 │   ├── constants.go      # System constants (Metadata keys, Decisions)
 │   └── types.go          # Shared types (Message, Query, Answer)
 ├── adapters/             # [DRIVERS] Bridges to external systems
 │   ├── ai/               # Google Genkit AI models
 │   ├── func/             # Native Go function wrapper
-│   ├── mcp/              # Model Context Protocol tools
+│   ├── mcp/              # Model Context Protocol tools (Action & Loader)
 │   ├── vector/           # Vector database retrievers
 │   └── extractor/        # Structured data extraction
 ├── config/               # Configuration loading
 │   ├── schema.go         # Config struct definitions (YAML mapping)
-│   └── loader.go         # Viper-based config loading logic
+│   └── loader.go         # Viper-based config loading logic with Env Expansion
+├── internal/             # [PRIVATE] Implementation details
+│   ├── logger/           # Logger adapters (Zap, Stdout)
+│   ├── telemetry/        # OTel tracing setup
+│   ├── statehelper/      # State manipulation helpers
+│   └── util/             # Utilities (Schema validation)
 └── cmd/                  # CLI tools (mkit)
 ```
 
@@ -94,10 +102,23 @@ The enforcement layer. It ensures no Action runs without policy checks.
 Concrete implementations of `core.Action`.
 *   **Key Structs**:
     *   `MCPAction` (`adapters/mcp/action.go`): Wraps an MCP Tool.
+    *   `MCPLoader` (`adapters/mcp/loader.go`): Discovers tools from MCP servers (Stdio/SSE) and registers them as Actions.
     *   `ExtractorAction` (`adapters/extractor/adapter.go`): Uses an LLM to extract JSON.
     *   `Wrapper` (`adapters/func/wrapper.go`): Wraps a native Go function (`ToolFunc`).
     *   `GenkitModel` (`adapters/ai/genkit_model.go`): Wraps `ai.Model`.
     *   `GenkitRetrieverAdapter` (`adapters/vector/genkit_retriever.go`): Wraps a Genkit retriever.
+
+### 2.5 Config (`config/`)
+Handles configuration loading and validation.
+*   **Key Functions**:
+    *   `Load(path)`: Reads YAML and expands environment variables (`${VAR}`).
+    *   `applyDefaults`: Sets default values (e.g., ServiceName="manglekit-app").
+
+### 2.6 Internal (`internal/`)
+Private implementation details not exposed in the public API.
+*   **Logger**: `zap_adapter.go` (Zap) and `std_logger.go` (Standard Lib).
+*   **Telemetry**: `otel.go` handles OpenTelemetry provider registration.
+*   **Utils**: `schema/` contains JSON schema generation and validation logic.
 
 ## 3. The Critical Path: `ExecuteByName`
 
@@ -141,7 +162,7 @@ The standard container for all data moving through the kernel.
 *   **Tagging**: Supports `mangle:"name"` or `json:"name"` tags.
 
 ### 4.3 Memory & Context
-*   **Lineage**: `context.Context` carries the Parent ID via `core.WithParentID` / `core.GetParentID`.
+*   **Lineage**: `context.Context` carries the Parent ID via `core.WithParentID` / `core.GetParentID` (`core/context_lineage.go`).
 *   **Logging**: `context.Context` carries the Logger via `core.LoggerWithContext`.
 *   **Session History**: Managed by `core.MemoryStore` interface.
     *   `VolatileStore` (`engine/memory/volatile.go`): In-memory map for transient sessions.
@@ -154,10 +175,12 @@ The standard container for all data moving through the kernel.
 ### 5.1 Missing Implementations
 *   **Lineage Tracker**: The `LineageTracker` component is partially implemented via OTel and metadata, but lacks a dedicated graph store or query API.
 *   **Action Configuration**: The `actions` section in `mangle.yaml` is defined in the schema but ignored by the loader. Actions must be registered programmatically.
+*   **Config Validation**: `config.Load` performs basic YAML parsing. Semantic validation (using `internal/util/schema`) is not yet integrated into the startup flow.
 
 ### 5.2 Hardcoded / Temporary Logic
 *   **Max Steps**: `runLoopInternal` has a hardcoded limit of `10` steps (`sdk/loop.go`).
 *   **Magic Strings**: Predicate names (`deny`, `correction`, `next_step`) are hardcoded in `engine/solver.go`.
+*   **MCP Startup Resilience**: `MCPLoader` swallows connection errors (logs only), which may hide misconfigurations during startup.
 
 ### 5.3 Panics
 *   **`sdk.Must`**: Explicitly designed to panic on initialization errors.
@@ -167,8 +190,48 @@ The standard container for all data moving through the kernel.
 ### 5.4 TODOs
 *   A scan of the codebase reveals **0** explicit `TODO` or `FIXME` markers.
 
-## 6. Changelog
+## 6. Development & Build
 
+### 6.1 Build System (`Makefile`)
+*   `make all`: Runs `fmt`, `lint`, `build`, `test`.
+*   `make test`: Runs unit tests (`go test ./... -v`).
+*   `make lint`: Runs `golangci-lint`.
+*   `make install-cli`: Installs the `mkit` binary.
+
+### 6.2 Key Dependencies (`go.mod`)
+*   **AI Framework**: `github.com/firebase/genkit/go` (v1.2.0)
+*   **Logic Engine**: `github.com/google/mangle` (v0.3.0)
+*   **Observability**: `go.opentelemetry.io/otel` (v1.38.0)
+*   **Validation**: `github.com/santhosh-tekuri/jsonschema/v5`
+*   **Kubernetes**: `k8s.io/api` (v0.34.2)
+
+## 7. CLI Tools (`cmd/mkit`)
+
+The `mkit` CLI facilitates neuro-symbolic AI governance.
+*   **Location**: `cmd/mkit/main.go`
+*   **Commands**:
+    *   `gen`: Generate rules or policies.
+    *   `inspect`: Inspect data schemas or policy states.
+
+## 8. Reference Examples (`examples/`)
+
+| Example | Key Concepts |
+| :--- | :--- |
+| `dynamic_pricing` | **Numeric Logic**, Tracing, Inventory Management |
+| `fintech_approval` | **Recursive Logic**, Math, Credit Scoring |
+| `sre_guardrail` | **Kubernetes**, Safety Policies, Pod Validation |
+| `policy-copilot` | **Natural Language to Datalog**, Policy Generation |
+| `rag_flow` | **RAG**, Vector Retrieval, Knowledge Integration |
+| `steering` | **Control Flow**, `next_step` logic, Routing |
+| `taint_demo` | **Information Flow**, Security Labels, Taint Tracking |
+| `extractor_demo` | **Structured Output**, JSON Extraction |
+
+## 9. Changelog
+
+-   **2025-12-05**: **Dev & Examples**. Added Build System, CLI, and Reference Examples sections to provide a complete operational picture.
+-   **2025-12-05**: **Tech Debt Update**. Added notes on missing Config Validation and MCP startup error handling to Technical Debt section.
+-   **2025-12-05**: **Internal Sync**. Added `internal/` directory structure (Logger, Telemetry, Utils) to map and component analysis.
+-   **2025-12-05**: **Context Sync**. Updated `CONTEXT.md` to reflect `core/context_lineage.go`, `core/errors.go`, and `adapters/mcp/loader.go` details. Added `config` section.
 -   **2025-12-05**: **Validation Suite**. Added comprehensive examples: `dynamic_pricing` (Tracing/Numeric Logic), `fintech_approval` (Recursive/Math), and `sre_guardrail` (K8s/Safety). Validated sub-10ms latency and native predicate support.
 -   **2025-12-04**: **Reflector 2.0**. Enhanced `engine/reflection.go` to support deep traversal of Go Maps (keys as arguments), K8s-style JSON tags, and **native numeric types** (unquoted). Added `LoadFacts` to `PolicyEngine`.
 -   **2025-11-29**: **Final Architecture Migration**. Moved root files (`manglekit.go`, `run_loop.go`) to `sdk/`. Renamed `engine/policy.go` to `engine/solver.go`. Consolidated `policies/` directory. `sdk` is now the primary entry point.
