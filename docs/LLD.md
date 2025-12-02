@@ -3,7 +3,7 @@ context_type: low_level_design
 project: manglekit
 language: go
 version: 1.0
-last_updated: 2025-11-27T14:45:00Z
+last_updated: 2025-12-05T13:00:00Z
 stability: stable
 audience: developers
 ---
@@ -21,7 +21,7 @@ graph TD
         Config[config.yaml]
     end
 
-    subgraph "Manglekit Kernel (manglekit.go)"
+    subgraph "Manglekit Kernel (sdk/)"
         Client[Client]
         Protect[Protect() API]
         Client --> Protect
@@ -59,12 +59,12 @@ graph TD
     UserCode -->|Protect(Action)| Protect
 ```
 
-# 3. Core Kernel (`manglekit`)
+# 3. Core Kernel (`sdk`)
 
-The `manglekit` package provides the main entry point and public API.
+The `sdk` package provides the main entry point and public API.
 
 ### 3.1 Client
-The `Client` struct is the central coordinator. It holds references to the `PolicyEngine`, `Tracer`, and `Logger`.
+The `Client` struct is the central coordinator. It holds references to the `PolicyEngine`, `Registry`, and `MemoryStore`.
 
 *   **Initialization**:
     *   `NewClient(ctx, policyFile, opts...)`: Basic initialization.
@@ -77,8 +77,8 @@ The `Protect(action core.Action) core.Action` method is the primary value propos
 *   **Tracing**: If a tracer is configured, it wraps the action with `guard.NewWithTracer`; otherwise, it uses `guard.New`.
 
 ### 3.3 Helpers
-*   `ProtectFunc[In, Out]`: Generics-based helper to wrap a standard Go function into a protected Action.
 *   `Call[Out]`: Generics-based helper to execute an action, handling `core.Envelope` packing/unpacking automatically.
+*   `ExecuteByName`: Entry point for the Semantic State Machine (RunLoop).
 
 # 4. The Guard (`guard`)
 
@@ -105,7 +105,10 @@ The `Execute` method enforces the following strict sequence:
     *   Reflects output payload to facts.
     *   Queries `violation(Output)?`.
     *   **Halt**: If violated, returns error.
-6.  **Trace End**: Closes span and records outcome.
+6.  **Steering**:
+    *   Calls `engine.EvaluateSteering(ctx, input)`.
+    *   Determines next step (`RETRY`, `ROUTE`, `ALLOW`).
+7.  **Trace End**: Closes span and records outcome.
 
 # 5. Logic Engine (`engine`)
 
@@ -127,6 +130,7 @@ Converts Go structs to Datalog facts.
 *   **Recursion**: Traverses nested structs and maps.
 *   **Type Hooks**: Allows custom handling for types like `time.Time` or `net.IP`.
 *   **Naming**: Converts `Struct.Field` to `struct.field` predicates.
+*   **Reflector 2.0**: Supports deep traversal of Maps (key as argument) and JSON tags.
 
 # 6. Universal Adapters (`adapters`)
 
@@ -146,6 +150,15 @@ Wraps native Go functions.
 Wraps Genkit Retrievers.
 *   **GenkitRetrieverAdapter**: Exposes `Retrieve`, `Index`, etc., as Actions.
 
+### 6.4 MCP Adapter (`adapters/mcp`)
+Wraps Model Context Protocol tools.
+*   **MCPAction**: Wraps an MCP Tool.
+*   **MCPLoader**: Discovers tools from MCP servers (Stdio/SSE) and registers them as Actions.
+
+### 6.5 Extractor Adapter (`adapters/extractor`)
+Uses an LLM to extract structured JSON from unstructured text.
+*   **ExtractorAction**: Implements `core.Action`.
+
 # 7. Configuration (`config`)
 
 The `config` package handles YAML loading.
@@ -159,21 +172,21 @@ The `config` package handles YAML loading.
 
 ```
 manglekit/
-├── adapters/          # Universal Adapters (AI, Func, Vector)
-├── cmd/               # CLI tools
+├── adapters/          # Universal Adapters (AI, Func, Vector, MCP, Extractor)
+├── cmd/               # CLI tools (mkit)
 ├── config/            # Configuration loading
 ├── core/              # Core interfaces (Action, Envelope, Logger)
 ├── docs/              # Documentation (CSD, HLD, LLD)
 ├── engine/            # Logic Engine (Mangle wrapper, Policy)
 ├── guard/             # GuardedAction implementation
 ├── internal/          # Internal utilities (Logger, Telemetry, Tools)
-├── manglekit.go       # Main Entry Point (Client, Protect)
-├── policy/            # Static Policy Assets (.dl)
-└── sdk/               # SDK Tooling (Policy Copilot)
+├── sdk/               # SDK Tooling (Client, Loop, Policy Copilot)
+└── examples/          # Reference implementations
 ```
 
 # 9. Changelog
 
+*   **2025-12-05**: **LLD Sync**. Updated to reflect `sdk/` package, `Steering` lifecycle step, `Reflector 2.0`, and new adapters (MCP, Extractor).
 *   **2025-11-29**: Architecture Cleanup. Logic moved from `policy/` to `engine/` and `sdk/`.
 -   **2025-11-27**: Major rewrite for v1.0. Replaced Builder/Registry architecture with Client/Guard/Engine composition.
 *   **2025-11-25**: Implemented Smart Router in Sandwich (now legacy).
