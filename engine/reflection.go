@@ -10,7 +10,8 @@ import (
 // It recursively traverses structs, maps, slices, and arrays.
 //
 // Format:
-//   predicate(entityID, value)
+//
+//	predicate(entityID, value)
 //
 // Nested fields are flattened using underscore delimiters (e.g., "address_city").
 //
@@ -39,7 +40,8 @@ func ToFacts(id string, input any) ([]string, error) {
 // This is used for propagating taint information (e.g., "secret", "pii") into the policy engine.
 //
 // Format:
-//   has_label("entityID", "label_value")
+//
+//	has_label("entityID", "label_value")
 //
 // Parameters:
 //   - entityID: The unique identifier for the entity.
@@ -136,7 +138,22 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, args ..
 		}
 	default:
 		// Base case for literal values.
-		strVal := fmt.Sprintf("%v", v.Interface())
+		var strVal string
+		var isNumeric bool
+
+		switch v.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			strVal = fmt.Sprintf("%d", v.Int())
+			isNumeric = true
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			strVal = fmt.Sprintf("%d", v.Uint())
+			isNumeric = true
+		case reflect.Float32, reflect.Float64:
+			strVal = fmt.Sprintf("%f", v.Float())
+			isNumeric = true
+		default:
+			strVal = fmt.Sprintf("%v", v.Interface())
+		}
 
 		// If path is empty (top-level primitive), use "value" default
 		predicate := path
@@ -145,15 +162,19 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, args ..
 		}
 
 		safeID := escapeString(id)
-		safeVal := escapeString(strVal)
 
-		// Construct fact with args: predicate("id", arg1, ..., "value")
+		// Construct fact with args: predicate("id", arg1, ..., value)
 		var factParts []string
 		factParts = append(factParts, fmt.Sprintf("\"%s\"", safeID))
 		for _, arg := range args {
 			factParts = append(factParts, fmt.Sprintf("\"%s\"", escapeString(arg)))
 		}
-		factParts = append(factParts, fmt.Sprintf("\"%s\"", safeVal))
+
+		if isNumeric {
+			factParts = append(factParts, strVal)
+		} else {
+			factParts = append(factParts, fmt.Sprintf("\"%s\"", escapeString(strVal)))
+		}
 
 		fact := fmt.Sprintf("%s(%s)", predicate, strings.Join(factParts, ", "))
 		*facts = append(*facts, fact)

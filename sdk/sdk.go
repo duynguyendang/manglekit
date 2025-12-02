@@ -42,6 +42,8 @@ type Client struct {
 	failureMode string
 	// initialPolicyPath stores the path loaded at startup (for debugging/reloading).
 	initialPolicyPath string
+	// shutdownFunc is a cleanup function to stop exporters/tracers.
+	shutdownFunc func(context.Context) error
 }
 
 // NewClient initializes a new Manglekit Client with the provided options.
@@ -309,4 +311,12 @@ func Call[Out any](ctx context.Context, action core.Action, payload any) (Out, e
 //   - action: The action instance.
 func (c *Client) RegisterAction(name string, action core.Action) {
 	c.registry[name] = action
+}
+
+// Shutdown cleans up resources used by the client, such as flushing traces.
+func (c *Client) Shutdown(ctx context.Context) error {
+	if c.shutdownFunc != nil {
+		return c.shutdownFunc(ctx)
+	}
+	return nil
 }

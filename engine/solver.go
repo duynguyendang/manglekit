@@ -440,6 +440,37 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 	return decision, metadata, nil
 }
 
+// ExecuteQuery executes a raw Datalog query against the current program state.
+// It wraps the underlying runtime execution with observability (tracing).
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - facts: Temporary facts to include in this specific query execution.
+//   - queryStr: The Datalog query atom.
+//
+// Returns:
+//   - true if derived, false otherwise.
+//   - error if execution fails.
+func (e *PolicyEngine) ExecuteQuery(ctx context.Context, facts []ast.Atom, queryStr string) (bool, error) {
+	if e.tracer == nil {
+		return e.runtime.ExecuteQuery(facts, queryStr)
+	}
+
+	ctx, span := e.tracer.Start(ctx, "Datalog.ExecuteQuery")
+	defer span.End()
+
+	span.SetAttr("datalog.query", queryStr)
+
+	res, err := e.runtime.ExecuteQuery(facts, queryStr)
+	if err != nil {
+		span.Error(err)
+		return false, err
+	}
+
+	span.SetAttr("datalog.result", res)
+	return res, nil
+}
+
 // toMangleFacts helper converts a Go struct to Mangle atoms via the Reflection API.
 func toMangleFacts(entityID string, input any) ([]ast.Atom, error) {
 	if input == nil {
