@@ -111,7 +111,7 @@ func main() {
 		return generator.GenerateRule(ctx, sampleTransaction, policy)
 	}
 
-	safeAction := sdk.ProtectFunc(client, "policy-copilot", genLogic)
+	action := sdk.Define(client, "policy-copilot", genLogic)
 	log.Info("Rule generation logic protected with governance guard")
 	fmt.Println()
 
@@ -125,7 +125,7 @@ func main() {
 	fmt.Println()
 
 	// Use the generic Call helper for a clean, type-safe execution
-	generatedRule, err := sdk.Call[string](ctx, safeAction, policyText)
+	generatedRule, err := action.Run(ctx, policyText)
 	if err != nil {
 		log.Error("Error generating rule", "error", err)
 		os.Exit(1)

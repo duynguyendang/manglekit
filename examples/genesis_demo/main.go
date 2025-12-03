@@ -45,16 +45,16 @@ func main() {
 
 	client.Logger().Info("Manglekit client initialized")
 
-	// 2. Create a protected action in one line using ProtectFunc
+	// 2. Create a protected action in one line using Define
 	// This wraps the Go function and applies governance automatically
-	protectedAction := sdk.ProtectFunc(client, "checkStock", CheckStock)
+	action := sdk.Define(client, "checkStock", CheckStock)
 
-	// 3. Execute the protected action with type-safe I/O using Call
+	// 3. Execute the protected action with type-safe I/O using Run
 	// No envelope packing/unpacking, no type assertions needed
 	input := StockRequest{SKU: "IPHONE"}
 	client.Logger().Info("Executing protected action", "sku", input.SKU)
 
-	result, err := sdk.Call[StockResponse](ctx, protectedAction, input)
+	result, err := action.Run(ctx, input)
 	if err != nil {
 		client.Logger().Error("protected action execution failed", "error", err)
 		os.Exit(1)

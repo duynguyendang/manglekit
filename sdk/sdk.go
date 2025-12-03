@@ -6,7 +6,6 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	funcAdapter "github.com/duynguyendang/manglekit/adapters/func"
 	mcpAdapter "github.com/duynguyendang/manglekit/adapters/mcp"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
@@ -232,22 +231,6 @@ func (c *Client) Logger() core.Logger {
 	return c.logger
 }
 
-// ProtectFunc is a generic helper that wraps a Go function into a protected Action.
-// It combines the functional adapter with the governance guard in one step.
-//
-// Parameters:
-//   - c: The Manglekit Client.
-//   - name: The name for the action (used in policy and tracing).
-//   - fn: The function to wrap. It must accept Context and Input, and return Output and error.
-//
-// Returns:
-//   - A protected core.Action.
-func ProtectFunc[In any, Out any](c *Client, name string, fn func(context.Context, In) (Out, error)) core.Action {
-	adapter := funcAdapter.New(name, fn)
-	return c.Protect(adapter)
-}
-
-
 // NewDefault initializes a Client with sensible default settings:
 //   - Zap production logger (or standard output if Zap fails).
 //   - No-op tracer.
@@ -267,36 +250,6 @@ func newDefaultLogger() core.Logger {
 	return logger.NewZapAdapter(z.Sugar())
 }
 
-// Call is a generic helper to execute a protected action with type-safe input and output.
-// It handles packing the input into an Envelope and unpacking the output.
-//
-// Parameters:
-//   - ctx: The execution context.
-//   - action: The protected action to execute.
-//   - payload: The strongly-typed input payload.
-//
-// Returns:
-//   - The strongly-typed output payload, or an error.
-func Call[Out any](ctx context.Context, action core.Action, payload any) (Out, error) {
-	// 1. Pack payload into Envelope
-	req := core.NewEnvelope(payload)
-
-	// 2. Execute action
-	res, err := action.Execute(ctx, req)
-	if err != nil {
-		var zero Out
-		return zero, err
-	}
-
-	// 3. Unpack and cast result
-	out, ok := res.Payload.(Out)
-	if !ok {
-		var zero Out
-		return zero, fmt.Errorf("output payload type mismatch: expected %T, got %T", zero, res.Payload)
-	}
-
-	return out, nil
-}
 
 // RegisterAction adds an action to the client's internal registry.
 // Registered actions can be invoked by name using ExecuteByName, enabling dynamic routing.
