@@ -33,7 +33,10 @@ func TestExtractorAction_Execute(t *testing.T) {
 
 	// 2. Init Extractor
 	target := TestStruct{}
-	extractor := New("test_extractor", mockLLM, target)
+	extractor, err := New("test_extractor", mockLLM, target)
+	if err != nil {
+		t.Fatalf("Failed to create extractor: %v", err)
+	}
 
 	// 3. Execute
 	input := core.NewEnvelope("Extract info about test_item with value 42")
@@ -62,11 +65,14 @@ func TestExtractorAction_Execute_InvalidJSON(t *testing.T) {
 	mockLLM := &MockLLM{Response: `invalid json`}
 
 	// 2. Init Extractor
-	extractor := New("test_extractor", mockLLM, TestStruct{})
+	extractor, err := New("test_extractor", mockLLM, TestStruct{})
+	if err != nil {
+		t.Fatalf("Failed to create extractor: %v", err)
+	}
 
 	// 3. Execute
 	input := core.NewEnvelope("some input")
-	_, err := extractor.Execute(context.Background(), input)
+	_, err = extractor.Execute(context.Background(), input)
 
 	// 4. Assert Error
 	if err == nil {
@@ -76,11 +82,14 @@ func TestExtractorAction_Execute_InvalidJSON(t *testing.T) {
 
 func TestExtractorAction_Execute_InvalidInput(t *testing.T) {
 	mockLLM := &MockLLM{Response: `{}`}
-	extractor := New("test_extractor", mockLLM, TestStruct{})
+	extractor, err := New("test_extractor", mockLLM, TestStruct{})
+	if err != nil {
+		t.Fatalf("Failed to create extractor: %v", err)
+	}
 
 	// Pass integer payload instead of string
 	input := core.NewEnvelope(123)
-	_, err := extractor.Execute(context.Background(), input)
+	_, err = extractor.Execute(context.Background(), input)
 
 	if err == nil {
 		t.Fatal("Expected error due to invalid input type, got nil")
@@ -91,7 +100,10 @@ func TestNew_SchemaGeneration(t *testing.T) {
 	mockLLM := &MockLLM{}
 
 	// Test that New generates schema string
-	extractor := New("schema_test", mockLLM, TestStruct{})
+	extractor, err := New("schema_test", mockLLM, TestStruct{})
+	if err != nil {
+		t.Fatalf("Failed to create extractor: %v", err)
+	}
 
 	if extractor.schemaStr == "" {
 		t.Error("Expected schemaStr to be populated, got empty string")

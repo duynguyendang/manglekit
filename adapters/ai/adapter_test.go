@@ -23,7 +23,10 @@ func (m *mockTextGenerator) Complete(ctx context.Context, prompt string) (string
 
 func TestLLMAction_Execute_Success(t *testing.T) {
 	generator := &mockTextGenerator{response: "Generated response"}
-	action := NewLLMAction("test-llm", generator)
+	action, err := NewLLMAction("test-llm", generator)
+	if err != nil {
+		t.Fatalf("unexpected error creating action: %v", err)
+	}
 
 	input := core.NewEnvelope("Test prompt")
 	output, err := action.Execute(context.Background(), input)
@@ -52,11 +55,14 @@ func TestLLMAction_Execute_Success(t *testing.T) {
 
 func TestLLMAction_Execute_InvalidInput(t *testing.T) {
 	generator := &mockTextGenerator{response: "Response"}
-	action := NewLLMAction("test-llm", generator)
+	action, err := NewLLMAction("test-llm", generator)
+	if err != nil {
+		t.Fatalf("unexpected error creating action: %v", err)
+	}
 
 	// Pass non-string payload
 	input := core.NewEnvelope(123)
-	_, err := action.Execute(context.Background(), input)
+	_, err = action.Execute(context.Background(), input)
 
 	if err == nil {
 		t.Fatal("expected error for invalid input type")
@@ -70,10 +76,13 @@ func TestLLMAction_Execute_InvalidInput(t *testing.T) {
 func TestLLMAction_Execute_GeneratorError(t *testing.T) {
 	generatorErr := errors.New("generation failed")
 	generator := &mockTextGenerator{err: generatorErr}
-	action := NewLLMAction("test-llm", generator)
+	action, err := NewLLMAction("test-llm", generator)
+	if err != nil {
+		t.Fatalf("unexpected error creating action: %v", err)
+	}
 
 	input := core.NewEnvelope("Test prompt")
-	_, err := action.Execute(context.Background(), input)
+	_, err = action.Execute(context.Background(), input)
 
 	if err == nil {
 		t.Fatal("expected error from generator")
@@ -86,7 +95,10 @@ func TestLLMAction_Execute_GeneratorError(t *testing.T) {
 
 func TestLLMAction_Metadata(t *testing.T) {
 	generator := &mockTextGenerator{}
-	action := NewLLMAction("my-llm-action", generator)
+	action, err := NewLLMAction("my-llm-action", generator)
+	if err != nil {
+		t.Fatalf("unexpected error creating action: %v", err)
+	}
 
 	meta := action.Metadata()
 

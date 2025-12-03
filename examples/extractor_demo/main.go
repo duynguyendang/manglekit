@@ -33,7 +33,10 @@ func main() {
 
 	// Init extractor
 	// We pass Order{} which means we expect Order struct back.
-	ext := extractor.New("order_parser", llm, Order{})
+	ext, err := extractor.New("order_parser", llm, Order{})
+	if err != nil {
+		log.Fatalf("Failed to create extractor: %v", err)
+	}
 
 	input := core.NewEnvelope("I need a Laptop ASAP, just one.")
 
