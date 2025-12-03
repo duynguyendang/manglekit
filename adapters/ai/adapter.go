@@ -38,15 +38,15 @@ type LLMAction struct {
 //
 // Returns:
 //   - A pointer to the initialized LLMAction.
-//   - Panics if generator is nil.
-func NewLLMAction(name string, generator TextGenerator) *LLMAction {
+//   - An error if the generator is nil.
+func NewLLMAction(name string, generator TextGenerator) (*LLMAction, error) {
 	if generator == nil {
-		panic(fmt.Sprintf("NewLLMAction(%s): generator cannot be nil", name))
+		return nil, fmt.Errorf("NewLLMAction(%s): generator cannot be nil", name)
 	}
 	return &LLMAction{
 		name:      name,
 		generator: generator,
-	}
+	}, nil
 }
 
 // Execute performs the text generation.
@@ -98,8 +98,8 @@ func (a *LLMAction) Metadata() core.ActionMetadata {
 //   - model: The Genkit model instance (e.g., from googleai.Model("gemini-1.5-pro")).
 //
 // Returns:
-//   - A core.Action that can be protected and executed by Manglekit.
-func NewGenkitAction(name string, model ai.Model) core.Action {
+//   - A core.Action that can be protected and executed by Manglekit, or an error.
+func NewGenkitAction(name string, model ai.Model) (core.Action, error) {
 	generator := NewGenkitGenerator(model)
 	return NewLLMAction(name, generator)
 }

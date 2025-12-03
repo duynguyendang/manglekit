@@ -135,7 +135,11 @@ func main() {
 	// 3. Wrap Genkit Backends into Universal Actions using Adapters
 	// ---------------------------------------------------------------------------
 	retrieverAction := vector.NewGenkitRetrieverAction("rag-retriever", mockGenkitRetriever, nil)
-	llmAction := ai.NewGenkitAction("rag-llm", mockGenkitModel)
+	llmAction, err := ai.NewGenkitAction("rag-llm", mockGenkitModel)
+	if err != nil {
+		log.Error("Failed to create Genkit LLM action", "error", err)
+		os.Exit(1)
+	}
 
 	log.Info("Actions created with Genkit adapters", "actions", "GenkitRetrieverAction, GenkitLLMAction")
 

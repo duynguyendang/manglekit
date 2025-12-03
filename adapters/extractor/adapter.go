@@ -32,10 +32,11 @@ USER: {{ .InputText }}`
 // name: The name of this action.
 // llm: The LLM Action to use for extraction.
 // targetStruct: An instance of the struct (or pointer to struct) to extract into.
-func New(name string, llm core.Action, targetStruct any) *ExtractorAction {
+// Returns an error if schema generation fails.
+func New(name string, llm core.Action, targetStruct any) (*ExtractorAction, error) {
 	s, err := schema.Generate(targetStruct)
 	if err != nil {
-		panic(fmt.Errorf("failed to generate schema for target struct: %w", err))
+		return nil, fmt.Errorf("failed to generate schema for target struct: %w", err)
 	}
 
 	return &ExtractorAction{
@@ -43,7 +44,7 @@ func New(name string, llm core.Action, targetStruct any) *ExtractorAction {
 		llm:       llm,
 		target:    reflect.TypeOf(targetStruct),
 		schemaStr: s,
-	}
+	}, nil
 }
 
 // Execute performs the extraction.
