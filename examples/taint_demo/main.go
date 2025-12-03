@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -11,12 +12,37 @@ import (
 	"github.com/duynguyendang/manglekit/guard"
 )
 
+// 1. Explicit Types
+type EchoInput struct {
+	Data string `json:"data"`
+}
+
+type EchoOutput struct {
+	Result string `json:"result"`
+}
+
+// 2. Pure Logic
 // EchoAction is a simple action that returns the input as output.
 type EchoAction struct{}
 
 func (a *EchoAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	// Simple echo: payload remains same, new envelope created
-	output := core.NewEnvelope(input.Payload)
+	// Note: We are using lower-level Action interface here to demonstrate Guard directly.
+	// For high-level standard, we should use sdk.Define, but Taint Demo is about low-level propagation.
+	// However, the rule is "Modernize all Go code".
+	// Let's stick to the structure but clean up the code.
+
+	// Payload handling
+	payload, ok := input.Payload.(string)
+	if !ok {
+		// Try casting if it's a struct (but here we just use string for simplicity as per original demo)
+		// Or modernize it to use typed payload?
+		// The original used string payload.
+		// If I enforce types, I should use them.
+		return core.Envelope{}, fmt.Errorf("invalid payload type")
+	}
+
+	output := core.NewEnvelope(payload)
 	return output, nil
 }
 
@@ -32,21 +58,18 @@ func main() {
 	eng := engine.New()
 
 	// 2. Define Policy: Block output if it has "secret" label
-	// We use has_label("init", "init"). to implicitly declare the predicate.
 	policyContent := `
-	has_label("init", "init").
-	deny("Output") :- has_label("Output", "secret").
+	Decl has_label(Req, Label).
+	deny(Req) :- has_label(Req, "secret").
 	`
 	err := os.WriteFile("taint_policy.dlog", []byte(policyContent), 0644)
 	if err != nil {
-		fmt.Printf("Failed to write policy file: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Failed to write policy file: %v", err)
 	}
 	defer os.Remove("taint_policy.dlog")
 
 	if err := eng.LoadFromPath("taint_policy.dlog"); err != nil {
-		fmt.Printf("Failed to load policy: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Failed to load policy: %v", err)
 	}
 
 	// 3. Create Guarded Action

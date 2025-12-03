@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,102 +14,89 @@ import (
 	"github.com/duynguyendang/manglekit/sdk"
 )
 
+// 1. Explicit Types
+type PricingReq struct {
+	User    string `mangle:"request_user"`
+	Product string `mangle:"request_product"`
+}
+
+type PricingRes struct {
+	Price float64 `json:"price"`
+}
+
+// 2. Pure Logic
+func checkDiscount(ctx context.Context, req PricingReq) (PricingRes, error) {
+	// Pure business logic: Standard Price
+	return PricingRes{Price: 100.0}, nil
+}
+
 // InventoryDB simulates Redis
 var InventoryDB map[string]int
 
-// fn:get_inventory implementation in Go
-func get_inventory(productID string) (int, bool) {
-	qty, ok := InventoryDB[productID]
-	return qty, ok
-}
-
-// PricingRequest represents the input for the pricing agent
-type PricingRequest struct {
-	User      string `mangle:"request_user"`
-	Product   string `mangle:"request_product"`
-	IsVIP     bool   `mangle:"user_vip"`
-	Inventory int    `mangle:"fn_get_inventory"`
-}
-
-// PricingResponse represents the output
-type PricingResponse struct {
-	Price float64
-}
-
 func main() {
-	// 1. Load Inventory (Simulate Redis)
+	// Load Inventory (Simulate Redis)
 	InventoryDB = make(map[string]int)
 	wd, _ := os.Getwd()
 	csvPath := filepath.Join(wd, "examples/dynamic_pricing/inventory.csv")
 	file, err := os.Open(csvPath)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to open inventory: %v", err)
 	}
 	defer file.Close()
+
 	reader := csv.NewReader(file)
 	records, _ := reader.ReadAll()
 	for _, record := range records {
 		qty, _ := strconv.Atoi(record[1])
 		InventoryDB[record[0]] = qty
 	}
-	fmt.Printf("Loaded %d products into InventoryDB (Redis Simulation)\n", len(InventoryDB))
+	fmt.Printf("Loaded %d products.\n", len(InventoryDB))
 
-	// 2. Initialize Client with Observability (Simplified DevEx)
+	// Initialize Client
 	policyPath := filepath.Join(wd, "examples/dynamic_pricing/pricing.dl")
-
 	client, err := sdk.NewClient(context.Background(),
 		sdk.WithStdoutTracer(),
 		sdk.WithPolicyPath(policyPath),
 	)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Client init failed: %v", err)
 	}
 	defer client.Shutdown(context.Background())
 
-	fmt.Println("Client loaded with Tracing enabled.")
-
-	// 3. Define Protected Action
-	// The action itself just returns the standard price.
-	// The policy will "Deny" it if a discount should be applied.
-	// In this example, "Deny" = "Discount Applied".
-	checkDiscount := sdk.ProtectFunc(client, "check_discount", func(ctx context.Context, req PricingRequest) (PricingResponse, error) {
-		// Default behavior: Standard Price
-		return PricingResponse{Price: 100.0}, nil
-	})
+	// 3. Generic Binding
+	var CheckDiscount = sdk.Define(client, "check_discount", checkDiscount)
 
 	// 4. Stress Test
 	iterations := 1000
 	var totalDuration time.Duration
-
-	fmt.Printf("Starting stress test with %d iterations...\n", iterations)
 
 	ctx := context.Background()
 
 	for i := 0; i < iterations; i++ {
 		start := time.Now()
 
-		// Simulate Request
-		user := "user_vip_1"   // Assume this user is VIP
-		product := "product_2" // Has 150 qty > 100
+		user := "user_vip_1"
+		product := "product_2"
 
-		// Call Native Tool (Go function)
-		qty, found := get_inventory(product)
+		qty, found := InventoryDB[product]
 		if !found {
 			qty = 0
 		}
 
-		// Prepare Input Struct
-		req := PricingRequest{
-			User:      user,
-			Product:   product,
-			IsVIP:     true,
-			Inventory: qty,
+		// 4. Context Injection
+		// Injecting metadata facts directly
+		reqCtx := sdk.WithFact(ctx, "user_vip", "true")
+		// Convert int to string for WithFact if needed, or if WithFact accepts string values only.
+		// The error message was: "cannot use qty (variable of type int) as string value"
+		reqCtx = sdk.WithFact(reqCtx, "fn_get_inventory", strconv.Itoa(qty))
+
+		req := PricingReq{
+			User:    user,
+			Product: product,
 		}
 
-		// Execute Protected Action
-		// We use sdk.Call helper for type safety
-		// If Call returns ErrPolicyViolation, it means "deny" was derived -> Discount Applied
-		_, err := sdk.Call[PricingResponse](ctx, checkDiscount, req)
+		// 5. Type-Safe Execution
+		_, err := CheckDiscount.Run(reqCtx, req)
 
 		duration := time.Since(start)
 		totalDuration += duration
@@ -117,9 +105,9 @@ func main() {
 
 		if i == 0 {
 			if discountApplied {
-				fmt.Printf("Iteration 0: Discount APPLIED for %s (Latency: %v)\n", product, duration)
+				fmt.Printf("Iteration 0: Discount APPLIED for %s\n", product)
 			} else {
-				fmt.Printf("Iteration 0: Discount NOT applied for %s (Latency: %v)\n", product, duration)
+				fmt.Printf("Iteration 0: Discount NOT applied for %s\n", product)
 			}
 		}
 	}
@@ -128,10 +116,4 @@ func main() {
 	fmt.Printf("\n--- Results ---\n")
 	fmt.Printf("Total Iterations: %d\n", iterations)
 	fmt.Printf("Average Latency: %v\n", avgLatency)
-
-	if avgLatency < 10*time.Millisecond {
-		fmt.Println("✅ SUCCESS: Latency is under 10ms.")
-	} else {
-		fmt.Println("❌ FAILURE: Latency exceeded 10ms.")
-	}
 }

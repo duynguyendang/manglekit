@@ -3,11 +3,26 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 
-	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/duynguyendang/manglekit/config"
+	"github.com/duynguyendang/manglekit/sdk"
 )
+
+// 1. Explicit Types
+type Request struct {
+	User string `mangle:"request_user"`
+}
+
+type Response struct {
+	Status string
+}
+
+// 2. Pure Logic
+func testAction(ctx context.Context, req Request) (Response, error) {
+	return Response{Status: "success"}, nil
+}
 
 func main() {
 	// 1. Create temporary policy and knowledge files
@@ -21,9 +36,9 @@ ex:User1 ex:status "banned" .
 	defer os.Remove("banned.ttl")
 
 	policyContent := `
-Decl user(Req, User).
+Decl request_user(Req, User).
 Decl status(User, Status).
-deny(Req) :- user(Req, U), status(U, "banned").
+deny(Req) :- request_user(Req, U), status(U, "banned").
 `
 	if err := os.WriteFile("policy.dl", []byte(policyContent), 0644); err != nil {
 		panic(err)
@@ -43,33 +58,30 @@ deny(Req) :- user(Req, U), status(U, "banned").
 	ctx := context.Background()
 	client, err := sdk.NewClientWithConfig(ctx, cfg)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Client init failed: %v", err)
 	}
+	defer client.Shutdown(ctx)
 
-	// 3. Define a protected function
-	type Request struct {
-		User string
-	}
-
-	action := sdk.ProtectFunc(client, "test_action", func(ctx context.Context, req Request) (string, error) {
-		return "success", nil
-	})
+	// 3. Generic Binding
+	var TestAction = sdk.Define(client, "test_action", testAction)
 
 	// 4. Test Banned User
 	fmt.Println("Testing banned user...")
-	_, err = sdk.Call[string](ctx, action, Request{User: "User1"})
+	_, err = TestAction.Run(ctx, Request{User: "User1"})
 	if err == nil {
 		fmt.Println("ERROR: Expected blocked request, but it was allowed.")
 		os.Exit(1)
+	} else {
+		fmt.Printf("Blocked as expected: %v\n", err)
 	}
-	fmt.Printf("Blocked as expected: %v\n", err)
 
 	// 5. Test Allowed User
 	fmt.Println("Testing allowed user...")
-	_, err = sdk.Call[string](ctx, action, Request{User: "User2"})
+	_, err = TestAction.Run(ctx, Request{User: "User2"})
 	if err != nil {
 		fmt.Printf("ERROR: Expected allowed request, but it was blocked: %v\n", err)
 		os.Exit(1)
+	} else {
+		fmt.Println("Allowed as expected.")
 	}
-	fmt.Println("Allowed as expected.")
 }
