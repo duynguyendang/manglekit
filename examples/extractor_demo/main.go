@@ -45,10 +45,7 @@ func main() {
 	input := core.NewEnvelope("I need a Laptop ASAP, just one.")
 
 	// Execute
-	// We could use sdk.Call if we had a wrapped function, but here we use the Action directly.
-	// This fits "Invisible Governance" if we Protect it?
-	// The example demonstrates "Extractor" capability.
-	// I will keep direct Execute but clean up logging.
+	// The example demonstrates "Extractor" capability using the Action directly.
 
 	result, err := ext.Execute(context.Background(), input)
 	if err != nil {

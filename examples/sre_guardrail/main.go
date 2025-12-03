@@ -41,7 +41,7 @@ func main() {
 
 	// 3. Protect the operation
 	// This wraps the function with the policy engine.
-	safeDeletePod := sdk.ProtectFunc(client, "k8s_guardrail", deletePod)
+	action := sdk.Define(client, "k8s_guardrail", deletePod)
 
 	// Get the logger from the client
 	logger := client.Logger()
@@ -58,7 +58,7 @@ func main() {
 			Labels:    map[string]string{"app": "web"},
 		},
 	}
-	if res, err := sdk.Call[string](ctx, safeDeletePod, reqA); err != nil {
+	if res, err := action.Run(ctx, reqA); err != nil {
 		logger.Warn("Blocked", "error", err)
 	} else {
 		logger.Info("Success", "result", res)
@@ -74,7 +74,7 @@ func main() {
 			Labels:    map[string]string{"tier": "critical"},
 		},
 	}
-	if res, err := sdk.Call[string](ctx, safeDeletePod, reqB); err != nil {
+	if res, err := action.Run(ctx, reqB); err != nil {
 		logger.Warn("Blocked", "error", err)
 	} else {
 		logger.Info("Success", "result", res)
@@ -90,7 +90,7 @@ func main() {
 			Labels:    map[string]string{"app": "web"},
 		},
 	}
-	if res, err := sdk.Call[string](ctx, safeDeletePod, reqC); err != nil {
+	if res, err := action.Run(ctx, reqC); err != nil {
 		logger.Warn("Blocked", "error", err)
 	} else {
 		logger.Info("Success", "result", res)

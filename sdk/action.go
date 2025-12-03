@@ -19,8 +19,9 @@ type HandlerFunc[In any, Out any] func(context.Context, In) (Out, error)
 // It uses Go Generics to enforce input/output types while delegating
 // execution to the underlying governance engine.
 type Action[In any, Out any] struct {
-	client *Client
-	name   string
+	name    string
+	client  *Client
+	handler HandlerFunc[In, Out]
 }
 
 // Define registers a new type-safe action with the client.
@@ -46,8 +47,9 @@ func Define[In any, Out any](client *Client, name string, handler HandlerFunc[In
 
 	// 4. Return Typed Handle
 	return &Action[In, Out]{
-		client: client,
-		name:   name,
+		name:    name,
+		client:  client,
+		handler: handler,
 	}
 }
 
