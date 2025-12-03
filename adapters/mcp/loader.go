@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
@@ -47,45 +48,107 @@ func (f *DefaultFactory) CreateClient(ctx context.Context, cfg config.MCPServerC
 	return mcp.NewGenkitMCPClient(opts)
 }
 
-// Load discovers and creates actions from configured MCP servers.
-// It initializes a Genkit instance, connects to servers, and wraps their tools.
-func Load(ctx context.Context, configs []config.MCPServerConfig, logger core.Logger) ([]core.Action, error) {
-	return LoadWithFactory(ctx, configs, &DefaultFactory{}, logger)
+// Loader handles the initialization of an MCP server.
+type Loader struct {
+	config  config.MCPServerConfig
+	factory ClientFactory
 }
 
-// LoadWithFactory allows injection of a custom ClientFactory for testing.
-func LoadWithFactory(ctx context.Context, configs []config.MCPServerConfig, factory ClientFactory, logger core.Logger) ([]core.Action, error) {
+// NewLoader creates a new Loader for the given configuration.
+func NewLoader(cfg config.MCPServerConfig) *Loader {
+	return &Loader{
+		config:  cfg,
+		factory: &DefaultFactory{},
+	}
+}
+
+// WithFactory allows overriding the default ClientFactory (useful for testing).
+func (l *Loader) WithFactory(f ClientFactory) *Loader {
+	l.factory = f
+	return l
+}
+
+// Load connects to the MCP server and returns the discovered actions.
+// It returns an error if the connection or tool discovery fails.
+func (l *Loader) Load(ctx context.Context) ([]core.Action, error) {
+	// Initialize Genkit context
+	g := genkit.Init(ctx)
+
+	client, err := l.factory.CreateClient(ctx, l.config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create MCP client for %s: %w", l.config.Name, err)
+	}
+
+	tools, err := client.GetActiveTools(ctx, g)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tools for MCP server %s: %w", l.config.Name, err)
+	}
+
 	var actions []core.Action
+	for _, tool := range tools {
+		action := NewAction(l.config.Name, tool)
+		actions = append(actions, action)
+	}
+
+	return actions, nil
+}
+
+// Load is a convenience function for backward compatibility or bulk loading.
+// Deprecated: Use NewLoader(cfg).Load(ctx) instead for better error handling.
+func Load(ctx context.Context, configs []config.MCPServerConfig, logger core.Logger) ([]core.Action, error) {
+	var allActions []core.Action
 
 	// Ensure logger is not nil
 	if logger == nil {
 		logger = core.NopLogger{}
 	}
 
-	// Initialize Genkit context
-	g := genkit.Init(ctx)
-
 	for _, cfg := range configs {
-		client, err := factory.CreateClient(ctx, cfg)
+		loader := NewLoader(cfg)
+		// We use the default factory here. If tests needed injection, they should use NewLoader().WithFactory().
+		// However, since LoadWithFactory was public, we should probably keep supporting it via a helper if needed,
+		// but since we are refactoring, we can assume Load is legacy.
+
+		actions, err := loader.Load(ctx)
 		if err != nil {
-			// Log error but continue loading other servers
+			// Legacy behavior: Log error but continue
 			logger.Error("Error connecting to MCP server", "server", cfg.Name, "error", err)
 			continue
 		}
 
-		tools, err := client.GetActiveTools(ctx, g)
-		if err != nil {
-			logger.Error("Error listing tools for MCP server", "server", cfg.Name, "error", err)
-			continue
-		}
-
-		for _, tool := range tools {
-			action := NewAction(cfg.Name, tool)
-			actions = append(actions, action)
-			// Log discovery
+		for _, action := range actions {
+			allActions = append(allActions, action)
 			logger.Info("Discovered MCP Tool", "name", action.Metadata().Name)
 		}
 	}
 
-	return actions, nil
+	return allActions, nil
+}
+
+// LoadWithFactory allows injection of a custom ClientFactory for testing.
+// Deprecated: Use NewLoader(cfg).WithFactory(f).Load(ctx) instead.
+func LoadWithFactory(ctx context.Context, configs []config.MCPServerConfig, factory ClientFactory, logger core.Logger) ([]core.Action, error) {
+	var allActions []core.Action
+
+	// Ensure logger is not nil
+	if logger == nil {
+		logger = core.NopLogger{}
+	}
+
+	for _, cfg := range configs {
+		loader := NewLoader(cfg).WithFactory(factory)
+		actions, err := loader.Load(ctx)
+		if err != nil {
+			// Legacy behavior: Log error but continue
+			logger.Error("Error connecting to MCP server", "server", cfg.Name, "error", err)
+			continue
+		}
+
+		for _, action := range actions {
+			allActions = append(allActions, action)
+			logger.Info("Discovered MCP Tool", "name", action.Metadata().Name)
+		}
+	}
+
+	return allActions, nil
 }

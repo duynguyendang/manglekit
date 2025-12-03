@@ -173,16 +173,26 @@ func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientO
 
 	// Load MCP Actions
 	if len(cfg.MCP) > 0 {
-		mcpActions, err := mcpAdapter.Load(ctx, cfg.MCP, c.logger)
-		if err != nil {
-			c.logger.Error("failed to load MCP actions", "error", err)
-		}
+		for _, mcpCfg := range cfg.MCP {
+			loader := mcpAdapter.NewLoader(mcpCfg)
+			actions, err := loader.Load(ctx)
+			if err != nil {
+				if mcpCfg.FailOnStartup {
+					// Critical failure: Bubble up the error to stop initialization
+					return nil, fmt.Errorf("critical tool '%s' failed to load: %w", mcpCfg.Name, err)
+				}
+				// Soft failure: Log warning and continue (Graceful Degradation)
+				c.logger.Warn("Optional tool failed to load, skipping", "tool", mcpCfg.Name, "err", err)
+				continue
+			}
 
-		for _, action := range mcpActions {
-			// Protect It
-			safeAction := c.Protect(action)
-			// Register It
-			c.RegisterAction(safeAction.Metadata().Name, safeAction)
+			for _, action := range actions {
+				// Protect It
+				safeAction := c.Protect(action)
+				// Register It
+				c.RegisterAction(safeAction.Metadata().Name, safeAction)
+				c.logger.Info("Discovered MCP Tool", "name", safeAction.Metadata().Name)
+			}
 		}
 	}
 
@@ -237,21 +247,6 @@ func ProtectFunc[In any, Out any](c *Client, name string, fn func(context.Contex
 	return c.Protect(adapter)
 }
 
-// Must ensures that the client initialization succeeded.
-// If err is not nil, it panics. This is useful for concise initialization in main() functions.
-//
-// Parameters:
-//   - c: The client instance.
-//   - err: The error returned by the constructor.
-//
-// Returns:
-//   - The valid Client instance.
-func Must(c *Client, err error) *Client {
-	if err != nil {
-		panic(err)
-	}
-	return c
-}
 
 // NewDefault initializes a Client with sensible default settings:
 //   - Zap production logger (or standard output if Zap fails).
