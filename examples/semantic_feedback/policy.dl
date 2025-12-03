@@ -1,0 +1,15 @@
+// Declaration of EDB predicate (workaround for static analysis)
+// This informs the engine that 'value' is an external predicate with (String, String, Number) signature.
+value("init", "init", 0).
+
+// Helper to map raw reflection facts to a domain concept.
+// The reflection engine produces 'value(EntityID, Key, Value)' for maps.
+proposed_amount(Val) :- value(_, "amount", Val).
+
+// Core Rule: Deny any entity (Input or Output) that has a proposed amount > 500.
+// The engine checks for 'deny("Output")' during the validation phase.
+deny(X) :- value(X, "amount", Val), :gt(Val, 500).
+
+// Feedback Logic: Generate the specific instructions for the LLM
+// The engine queries 'violation_msg(Msg)' when a denial occurs.
+violation_msg("Policy Violation: The amount exceeds the limit of 500. You must lower the amount.") :- deny(_).
