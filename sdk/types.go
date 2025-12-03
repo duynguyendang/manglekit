@@ -5,16 +5,12 @@ import (
 )
 
 // Re-export core types for convenience
-type (
-	// Action is the interface for a unit of work that can be protected by policies.
-	Action = core.Action
 
-	// ActionMetadata provides metadata about an action.
-	ActionMetadata = core.ActionMetadata
+// ActionMetadata provides metadata about an action.
+type ActionMetadata = core.ActionMetadata
 
-	// Envelope is the standard communication structure for actions.
-	Envelope = core.Envelope
-)
+// Envelope is the standard communication structure for actions.
+type Envelope = core.Envelope
 
 // NewEnvelope creates a new envelope with the given payload.
 // This is a convenience re-export of core.NewEnvelope.
