@@ -70,6 +70,9 @@ type ActionConfig struct {
 	// Provider specifies the implementation provider (e.g., "google", "openai").
 	Provider string `yaml:"provider" mapstructure:"provider"`
 
+	// FailOnStartup determines if the application should crash if this action fails to load.
+	FailOnStartup bool `yaml:"fail_on_startup" mapstructure:"fail_on_startup"`
+
 	// Options contains arbitrary provider-specific settings.
 	Options map[string]interface{} `yaml:"options" mapstructure:"options"`
 }
@@ -86,4 +89,6 @@ type MCPServerConfig struct {
 	Args []string `yaml:"args" mapstructure:"args"`
 	// Env specifies environment variables for the process (for stdio).
 	Env []string `yaml:"env" mapstructure:"env"`
+	// FailOnStartup determines if the application should crash if this server fails to connect.
+	FailOnStartup bool `yaml:"fail_on_startup" mapstructure:"fail_on_startup"`
 }

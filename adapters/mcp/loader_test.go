@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/duynguyendang/manglekit/config"
@@ -75,4 +76,39 @@ func TestLoad(t *testing.T) {
 
 	mockFactory.AssertExpectations(t)
 	mockClient.AssertExpectations(t)
+}
+
+func TestLoader_Load(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("Valid Server", func(t *testing.T) {
+		mockClient := new(MockClient)
+		mockFactory := new(MockFactory)
+		cfg := config.MCPServerConfig{Name: "valid-server"}
+
+		testTool := ai.NewTool[any, any]("tool", "desc", func(ctx *ai.ToolContext, input any) (any, error) { return nil, nil })
+
+		mockFactory.On("CreateClient", ctx, cfg).Return(mockClient, nil)
+		mockClient.On("GetActiveTools", ctx, mock.Anything).Return([]ai.Tool{testTool}, nil)
+
+		loader := NewLoader(cfg).WithFactory(mockFactory)
+		actions, err := loader.Load(ctx)
+
+		assert.NoError(t, err)
+		assert.Len(t, actions, 1)
+	})
+
+	t.Run("Error Server", func(t *testing.T) {
+		mockFactory := new(MockFactory)
+		cfg := config.MCPServerConfig{Name: "error-server"}
+
+		mockFactory.On("CreateClient", ctx, cfg).Return(nil, fmt.Errorf("connect error"))
+
+		loader := NewLoader(cfg).WithFactory(mockFactory)
+		actions, err := loader.Load(ctx)
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to create MCP client")
+		assert.Nil(t, actions)
+	})
 }
