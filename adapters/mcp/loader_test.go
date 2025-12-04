@@ -20,6 +20,9 @@ type MockClient struct {
 
 func (m *MockClient) GetActiveTools(ctx context.Context, g *genkit.Genkit) ([]ai.Tool, error) {
 	args := m.Called(ctx, g)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]ai.Tool), args.Error(1)
 }
 
@@ -98,9 +101,12 @@ func TestLoader_Load(t *testing.T) {
 		assert.Len(t, actions, 1)
 	})
 
-	t.Run("Error Server", func(t *testing.T) {
+	t.Run("Error Server FailOnStartup True", func(t *testing.T) {
 		mockFactory := new(MockFactory)
-		cfg := config.MCPServerConfig{Name: "error-server"}
+		cfg := config.MCPServerConfig{
+			Name:          "error-server-fatal",
+			FailOnStartup: true,
+		}
 
 		mockFactory.On("CreateClient", ctx, cfg).Return(nil, fmt.Errorf("connect error"))
 
@@ -108,7 +114,53 @@ func TestLoader_Load(t *testing.T) {
 		actions, err := loader.Load(ctx)
 
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to create MCP client")
+		assert.Contains(t, err.Error(), "failed to load MCP server")
 		assert.Nil(t, actions)
+	})
+
+	t.Run("Error Server FailOnStartup False (Default)", func(t *testing.T) {
+		mockFactory := new(MockFactory)
+		cfg := config.MCPServerConfig{
+			Name:          "error-server-soft",
+			FailOnStartup: false,
+			Tools:         []string{"weather"}, // Expected tool
+		}
+
+		mockFactory.On("CreateClient", ctx, cfg).Return(nil, fmt.Errorf("connect error"))
+
+		loader := NewLoader(cfg).WithFactory(mockFactory)
+		actions, err := loader.Load(ctx)
+
+		// Should NOT return error
+		assert.NoError(t, err)
+		// Should return 1 unhealthy action
+		assert.Len(t, actions, 1)
+
+		unhealthyAction := actions[0]
+		assert.Equal(t, "mcp_error-server-soft_weather", unhealthyAction.Metadata().Name)
+
+		// Execute should return unavailable error
+		res, err := unhealthyAction.Execute(ctx, core.NewEnvelope("test"))
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "is unavailable due to startup failure")
+		assert.Contains(t, err.Error(), "connect error")
+		assert.Empty(t, res.Payload)
+	})
+
+	t.Run("Error Server FailOnStartup False No Tools", func(t *testing.T) {
+		mockFactory := new(MockFactory)
+		cfg := config.MCPServerConfig{
+			Name:          "error-server-empty",
+			FailOnStartup: false,
+			// No tools defined
+		}
+
+		mockFactory.On("CreateClient", ctx, cfg).Return(nil, fmt.Errorf("connect error"))
+
+		loader := NewLoader(cfg).WithFactory(mockFactory)
+		actions, err := loader.Load(ctx)
+
+		assert.NoError(t, err)
+		assert.Empty(t, actions)
 	})
 }

@@ -1,5 +1,18 @@
 package core
 
+// ContentType defines the nature of the data payload.
+type ContentType string
+
+const (
+	// TypeStruct indicates the payload is a strong Go struct.
+	// This is the default mode, optimized for internal services.
+	TypeStruct ContentType = "STRUCT"
+
+	// TypeJSON indicates the payload is a flexible map[string]any.
+	// This is used for AI agents and external webhooks.
+	TypeJSON ContentType = "JSON"
+)
+
 // Message represents a single message in a conversation flow.
 // It is used for both input queries and system responses in chat-based interactions.
 type Message struct {

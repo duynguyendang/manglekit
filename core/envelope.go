@@ -18,6 +18,8 @@ type Envelope struct {
 	Metadata map[string]string
 	// SecurityLabels holds taint tags (e.g., "secret", "pii") for information flow control.
 	SecurityLabels []string
+	// ContentType indicates whether the payload is a Struct or JSON.
+	ContentType ContentType
 }
 
 // NewEnvelope creates a new envelope with the provided payload.
@@ -34,6 +36,7 @@ func NewEnvelope(payload any) Envelope {
 		Payload:        payload,
 		Metadata:       make(map[string]string),
 		SecurityLabels: []string{},
+		ContentType:    TypeStruct, // Default to Typed Mode
 	}
 }
 

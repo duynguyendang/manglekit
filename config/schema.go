@@ -91,4 +91,8 @@ type MCPServerConfig struct {
 	Env []string `yaml:"env" mapstructure:"env"`
 	// FailOnStartup determines if the application should crash if this server fails to connect.
 	FailOnStartup bool `yaml:"fail_on_startup" mapstructure:"fail_on_startup"`
+	// Tools lists expected tool names for resilience.
+	// If the server fails to connect, these tools will be registered as "Unhealthy"
+	// so the agent knows they exist but are unavailable.
+	Tools []string `yaml:"tools" mapstructure:"tools"`
 }
