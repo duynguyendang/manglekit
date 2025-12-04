@@ -19,7 +19,15 @@ type ExecuteOption = sdk.ExecuteOption
 
 // NewClient creates a new Manglekit Client.
 func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
-	return sdk.NewClient(ctx, opts...)
+	// 1. Inject Defaults (Logger)
+	defaultOpts := []ClientOption{
+		WithLogger(getDefaultLogger()),
+	}
+
+	// 2. Merge User Options (User overrides default if duplicate keys exist)
+	finalOpts := append(defaultOpts, opts...)
+
+	return sdk.NewClient(ctx, finalOpts...)
 }
 
 // NewDefault creates a Client with default settings.
