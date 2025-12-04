@@ -14,8 +14,9 @@ type ToolFunc[In any, Out any] func(context.Context, In) (Out, error)
 // Wrapper adapts a generic ToolFunc into the universal core.Action interface.
 // This allows any regular Go function to be managed, guarded, and traced by Manglekit.
 type Wrapper[In any, Out any] struct {
-	name string
-	fn   ToolFunc[In, Out]
+	name        string
+	fn          ToolFunc[In, Out]
+	contentType core.ContentType
 }
 
 // New creates a new Action wrapper for the provided function.
@@ -28,9 +29,15 @@ type Wrapper[In any, Out any] struct {
 //   - A pointer to the initialized Wrapper.
 func New[In any, Out any](name string, fn ToolFunc[In, Out]) *Wrapper[In, Out] {
 	return &Wrapper[In, Out]{
-		name: name,
-		fn:   fn,
+		name:        name,
+		fn:          fn,
+		contentType: core.TypeStruct, // Default
 	}
+}
+
+// SetContentType allows configuring the expected input content type (e.g., JSON vs Struct).
+func (w *Wrapper[In, Out]) SetContentType(ct core.ContentType) {
+	w.contentType = ct
 }
 
 // Execute performs the action logic.
@@ -60,7 +67,8 @@ func (w *Wrapper[In, Out]) Execute(ctx context.Context, input core.Envelope) (co
 // Metadata returns the action's metadata (name and type "function").
 func (w *Wrapper[In, Out]) Metadata() core.ActionMetadata {
 	return core.ActionMetadata{
-		Name: w.name,
-		Type: "function",
+		Name:             w.name,
+		Type:             "function",
+		InputContentType: w.contentType,
 	}
 }

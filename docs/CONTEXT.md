@@ -3,7 +3,7 @@ context_type: architecture_snapshot
 project: manglekit
 language: go
 version: 1.0
-last_updated: 2025-12-05T12:50:00Z
+last_updated: 2025-12-05T14:00:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -29,6 +29,7 @@ manglekit/
 │   ├── runtime.go        # MangleRuntime (Low-level Datalog wrapper)
 │   ├── evaluator.go      # Evaluator (Lightweight single-rule checker)
 │   ├── reflection.go     # ToFacts (Struct -> Fact conversion)
+│   ├── flattener.go      # Flatten (JSON -> Graph conversion)
 │   └── resources/        # Knowledge Base (RDF/Turtle loading)
 ├── core/                 # [PUBLIC API] Interfaces and shared types (No dependencies)
 │   ├── action.go         # Action interface
@@ -72,7 +73,8 @@ The brain of the system. It translates Go objects into Datalog facts and evaluat
     *   `EvaluateSteering(ctx, input)`: Determines next step (`RETRY`, `ROUTE`).
     *   `LoadFacts(facts)`: Injects dynamic facts at runtime.
     *   `LoadKnowledge(path)`: Loads static RDF knowledge from Turtle files.
-    *   `ToFacts(id, input)` (`engine/reflection.go`): Reflectively converts structs to `predicate(id, val)` facts. **Reflector 2.0**: Supports deep traversal of Maps (key as argument) and JSON tags.
+    *   `ToFacts(id, input)` (`engine/reflection.go`): Reflectively converts Go Structs to `predicate(id, val)` facts (Typed Mode).
+    *   `Flatten(id, input)` (`engine/flattener.go`): Recursively converts JSON/Maps to graph facts (`json_link`, `json_val`) (Dynamic Mode).
     *   `Evaluator` (`engine/evaluator.go`): Standalone helper for ad-hoc rule evaluation against a Go struct.
 
 ### 2.2 SDK (`sdk/`)
@@ -82,6 +84,8 @@ The user-facing API and orchestration kernel.
 *   **Key Functions**:
     *   `NewClientFromConfig`: Initializes the system from YAML.
     *   `Protect(Action)`: Wraps an Action with a `GuardedAction`.
+    *   `Define[In, Out]`: Registers a typed Action (Typed Mode).
+    *   `DefineDynamic`: Registers a dynamic Action for JSON payloads (Dynamic Mode).
     *   `ExecuteByName`: Entry point for the Semantic State Machine.
     *   `Call[Out]`: Generic helper for typed execution.
     *   `WithStdoutTracer`: ClientOption for enabling console tracing.
@@ -152,14 +156,15 @@ The standard container for all data moving through the kernel.
 *   `Payload` (any): The actual data (struct, string, map).
 *   `Metadata` (map[string]string): Control plane signals (`decision`, `latency`, `trace_id`).
 *   `SecurityLabels` ([]string): Taint tags (e.g., "secret", "pii") for information flow control.
+*   `ContentType` (string): "STRUCT" (Typed) or "JSON" (Dynamic).
 
-### 4.2 Reflection (`engine/reflection.go`)
-*   **Function**: `ToFacts(id string, input any) ([]string, error)`
-*   **Logic**: Recursively walks Go structs/maps/slices.
-*   **Output**: Generates Datalog facts like `field_name("ID", "Value")`.
-    *   **Maps**: Converted to `field_name("ID", "Key", "Value")` (Key is an argument).
-    *   **Numbers**: Converted to unquoted literals (e.g., `123`, `45.67`) for numeric logic.
-*   **Tagging**: Supports `mangle:"name"` or `json:"name"` tags.
+### 4.2 Reflection & Flattening
+*   **Typed Mode**: Uses `engine.Reflector` (`engine/reflection.go`) to flatten structs into `field(ID, Val)` facts.
+    *   **Function**: `ToFacts(id string, input any)`.
+    *   **Output**: `field_name("ID", "Value")`. Optimized for Go structs.
+*   **Dynamic Mode**: Uses `engine.Flattener` (`engine/flattener.go`) to traverse JSON trees.
+    *   **Function**: `Flatten(id string, input any)`.
+    *   **Output**: Graph facts `json_link(Parent, Key, Child)`, `json_str/num/bool`. Optimized for nested JSON.
 
 ### 4.3 Memory & Context
 *   **Lineage**: `context.Context` carries the Parent ID via `core.WithParentID` / `core.GetParentID` (`core/context_lineage.go`).
@@ -228,6 +233,7 @@ The `mkit` CLI facilitates neuro-symbolic AI governance.
 
 ## 9. Changelog
 
+-   **2025-12-05**: **Dual-Mode Input Strategy**. Implemented `ContentType` (STRUCT/JSON) routing in the Engine. Added `engine/flattener.go` for recursive JSON graph fact generation. Updated SDK with `Define` (Typed) and `DefineDynamic` (JSON).
 -   **2025-12-05**: **Dev & Examples**. Added Build System, CLI, and Reference Examples sections to provide a complete operational picture.
 -   **2025-12-05**: **Tech Debt Update**. Added notes on missing Config Validation and MCP startup error handling to Technical Debt section.
 -   **2025-12-05**: **Internal Sync**. Added `internal/` directory structure (Logger, Telemetry, Utils) to map and component analysis.

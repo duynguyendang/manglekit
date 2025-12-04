@@ -9,6 +9,8 @@ type ActionMetadata struct {
 	Name string
 	// Type describes the category of the action (e.g., "llm", "tool", "rag").
 	Type string
+	// InputContentType specifies the expected input format (Struct or JSON).
+	InputContentType ContentType
 }
 
 // Action defines the interface for a unit of work in the Manglekit system.
