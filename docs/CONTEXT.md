@@ -127,8 +127,8 @@ Concrete implementations of `core.Action`.
         *   **FailOnStartup=false**: Logs warning, returns "Unhealthy" actions (Soft Failure).
     *   `ExtractorAction` (`adapters/extractor/adapter.go`): Uses an LLM to extract JSON.
     *   `Wrapper` (`adapters/func/wrapper.go`): Wraps a native Go function (`ToolFunc`).
-    *   `GenkitModel` (`adapters/ai/genkit_model.go`): Wraps `ai.Model`.
-    *   `GenkitRetrieverAdapter` (`adapters/vector/genkit_retriever.go`): Wraps a Genkit retriever.
+    *   `LLMAction` (`adapters/ai/adapter.go`): Wraps a `TextGenerator` (e.g., `GenkitGenerator`).
+    *   `RetrieverAction` (`adapters/vector/retriever_adapter.go`): Wraps a `DocumentRetriever` (e.g., `GenkitRetriever`).
 
 ### 2.5 Config (`config/`)
 Handles configuration loading and validation.
@@ -210,6 +210,7 @@ The standard container for all data moving through the kernel.
 ### 5.2 Hardcoded / Temporary Logic
 *   **Max Steps**: `runLoopInternal` has a hardcoded limit of `10` steps (`sdk/loop.go`).
 *   **Magic Strings**: Predicate names (`deny`, `correction`, `next_step`) are hardcoded in `engine/solver.go`.
+*   **MCP Startup Resilience**: `mcp.Load` swallows connection errors (logs only), which may hide misconfigurations during startup.
 
 ### 5.3 Panics
 *   **`sdk.Must`**: Explicitly designed to panic on initialization errors.
