@@ -7,7 +7,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/adapters/extractor"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/engine"
+	"github.com/duynguyendang/manglekit/internal/engine"
 )
 
 type Order struct {

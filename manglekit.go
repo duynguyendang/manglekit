@@ -2,75 +2,46 @@ package manglekit
 
 import (
 	"context"
-
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
-	"go.opentelemetry.io/otel/trace"
 )
 
-// Client represents the initialized Manglekit system.
+// --- Aliases ---
 type Client = sdk.Client
-
-// ClientOption configures the Client.
 type ClientOption = sdk.ClientOption
-
-// ExecuteOption configures the execution of an Action.
 type ExecuteOption = sdk.ExecuteOption
 
-// NewClient creates a new Manglekit Client.
+// --- Facade Functions ---
+
+// NewClient initializes the client with a default Slog logger
 func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
-	// 1. Inject Defaults (Logger)
 	defaultOpts := []ClientOption{
-		WithLogger(getDefaultLogger()),
+		sdk.WithLogger(getDefaultLogger()),
 	}
-
-	// 2. Merge User Options (User overrides default if duplicate keys exist)
 	finalOpts := append(defaultOpts, opts...)
-
 	return sdk.NewClient(ctx, finalOpts...)
 }
 
-// NewDefault creates a Client with default settings.
-func NewDefault() (*Client, error) {
-	return sdk.NewDefault()
+// Must helper for panic-on-error initialization
+func Must(c *Client, err error) *Client {
+    return sdk.Must(c, err)
 }
 
-// WithPolicyPath loads Datalog rules from a file path.
-func WithPolicyPath(path string) ClientOption {
-	return sdk.WithPolicyPath(path)
+// Define is the public entry point for creating Actions
+func Define[In any, Out any](
+	c *Client,
+	name string,
+	handler func(context.Context, In) (Out, error),
+) *sdk.Runnable[In, Out] {
+	return sdk.Define(c, name, handler)
 }
 
-// WithFailMode sets the failure strategy ("open" or "closed").
-func WithFailMode(mode string) ClientOption {
-	return sdk.WithFailMode(mode)
-}
+// --- Option Wrappers ---
+func WithPolicyPath(path string) ClientOption { return sdk.WithPolicyPath(path) }
+func WithFailMode(mode string) ClientOption { return sdk.WithFailMode(mode) }
+func WithLogger(l core.Logger) ClientOption { return sdk.WithLogger(l) }
+func WithMemory(store core.MemoryStore) ClientOption { return sdk.WithMemory(store) }
 
-// WithLogger sets a custom logger.
-func WithLogger(l core.Logger) ClientOption {
-	return sdk.WithLogger(l)
-}
-
-// WithTracerProvider sets the OTel provider.
-func WithTracerProvider(tp trace.TracerProvider) ClientOption {
-	return sdk.WithTracerProvider(tp)
-}
-
-// WithMemory sets a custom memory store.
-func WithMemory(store core.MemoryStore) ClientOption {
-	return sdk.WithMemory(store)
-}
-
-// WithSessionID activates Stateful mode (Persistent).
-func WithSessionID(id string) ExecuteOption {
-	return sdk.WithSessionID(id)
-}
-
-// WithTransientMemory activates In-Memory mode without persistence.
-func WithTransientMemory() ExecuteOption {
-	return sdk.WithTransientMemory()
-}
-
-// WithMetadata injects custom context (e.g., source, user_tier).
-func WithMetadata(key, value string) ExecuteOption {
-	return sdk.WithMetadata(key, value)
-}
+func WithSessionID(id string) ExecuteOption { return sdk.WithSessionID(id) }
+func WithTransientMemory() ExecuteOption { return sdk.WithTransientMemory() }
+func WithMetadata(key, value string) ExecuteOption { return sdk.WithMetadata(key, value) }

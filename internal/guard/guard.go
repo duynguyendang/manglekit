@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/engine"
+	"github.com/duynguyendang/manglekit/internal/engine"
 )
 
 // GuardedAction is a decorator that wraps any `core.Action` to enforce governance policies.

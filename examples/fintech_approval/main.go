@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/duynguyendang/manglekit/engine"
-	"github.com/duynguyendang/manglekit/engine/resources"
+	"github.com/duynguyendang/manglekit/internal/engine"
+	"github.com/duynguyendang/manglekit/internal/engine/resources"
 )
 
 func main() {

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/engine"
+	"github.com/duynguyendang/manglekit/internal/engine"
 )
 
 // MockAction is a simple action for testing that echoes the input.

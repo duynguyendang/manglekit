@@ -8,8 +8,8 @@ import (
 	"os"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/engine"
-	"github.com/duynguyendang/manglekit/guard"
+	"github.com/duynguyendang/manglekit/internal/engine"
+	"github.com/duynguyendang/manglekit/internal/guard"
 )
 
 // 1. Explicit Types

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/duynguyendang/manglekit/core"
-	engine_memory "github.com/duynguyendang/manglekit/engine/memory"
+	engine_memory "github.com/duynguyendang/manglekit/internal/engine/memory"
 )
 
 // ExecuteByName executes a registered action by its name, handling the Semantic State Machine loop.
