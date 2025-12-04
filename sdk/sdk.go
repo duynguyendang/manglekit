@@ -173,16 +173,12 @@ func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientO
 	// Load MCP Actions
 	if len(cfg.MCP) > 0 {
 		for _, mcpCfg := range cfg.MCP {
-			loader := mcpAdapter.NewLoader(mcpCfg)
+			loader := mcpAdapter.NewLoader(mcpCfg).WithLogger(c.logger)
 			actions, err := loader.Load(ctx)
 			if err != nil {
-				if mcpCfg.FailOnStartup {
-					// Critical failure: Bubble up the error to stop initialization
-					return nil, fmt.Errorf("critical tool '%s' failed to load: %w", mcpCfg.Name, err)
-				}
-				// Soft failure: Log warning and continue (Graceful Degradation)
-				c.logger.Warn("Optional tool failed to load, skipping", "tool", mcpCfg.Name, "err", err)
-				continue
+				// Because loader.Load now handles Soft Failure internally (returning nil error),
+				// any error returned here implies FailOnStartup=true or a critical loader error.
+				return nil, fmt.Errorf("critical tool '%s' failed to load: %w", mcpCfg.Name, err)
 			}
 
 			for _, action := range actions {

@@ -52,6 +52,7 @@ func (f *DefaultFactory) CreateClient(ctx context.Context, cfg config.MCPServerC
 type Loader struct {
 	config  config.MCPServerConfig
 	factory ClientFactory
+	logger  core.Logger
 }
 
 // NewLoader creates a new Loader for the given configuration.
@@ -59,6 +60,7 @@ func NewLoader(cfg config.MCPServerConfig) *Loader {
 	return &Loader{
 		config:  cfg,
 		factory: &DefaultFactory{},
+		logger:  core.NopLogger{},
 	}
 }
 
@@ -68,33 +70,62 @@ func (l *Loader) WithFactory(f ClientFactory) *Loader {
 	return l
 }
 
+// WithLogger allows injecting a logger.
+func (l *Loader) WithLogger(logger core.Logger) *Loader {
+	l.logger = logger
+	return l
+}
+
 // Load connects to the MCP server and returns the discovered actions.
-// It returns an error if the connection or tool discovery fails.
+// It implements the Driver Resilience (Health Check) pattern.
+// If FailOnStartup is true, it returns connection errors.
+// If FailOnStartup is false (default), it logs a warning and returns "Unhealthy" actions
+// for expected tools defined in the config.
 func (l *Loader) Load(ctx context.Context) ([]core.Action, error) {
 	// Initialize Genkit context
 	g := genkit.Init(ctx)
 
 	client, err := l.factory.CreateClient(ctx, l.config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create MCP client for %s: %w", l.config.Name, err)
+	if err == nil {
+		// Try to list tools
+		var tools []ai.Tool
+		tools, err = client.GetActiveTools(ctx, g)
+		if err == nil {
+			var actions []core.Action
+			for _, tool := range tools {
+				// Success case: Create healthy action
+				action := NewAction(l.config.Name, tool, "", nil)
+				actions = append(actions, action)
+			}
+			return actions, nil
+		}
 	}
 
-	tools, err := client.GetActiveTools(ctx, g)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list tools for MCP server %s: %w", l.config.Name, err)
+	// Failure Case Handling
+
+	if l.config.FailOnStartup {
+		// Critical failure: Bubble up the error to stop initialization
+		return nil, fmt.Errorf("failed to load MCP server %s: %w", l.config.Name, err)
 	}
 
+	// Soft failure: Log warning and continue (Graceful Degradation)
+	l.logger.Warn("MCP Tool failed to connect, marking as unhealthy", "tool", l.config.Name, "err", err)
+
+	// Create "Unhealthy" actions for expected tools
 	var actions []core.Action
-	for _, tool := range tools {
-		action := NewAction(l.config.Name, tool)
+	for _, toolName := range l.config.Tools {
+		// Create unhealthy action with initError
+		action := NewAction(l.config.Name, nil, toolName, err)
 		actions = append(actions, action)
 	}
 
+	// If no expected tools are defined, we register nothing but return success (nil error)
+	// so the SDK continues.
 	return actions, nil
 }
 
 // Load is a convenience function for backward compatibility or bulk loading.
-// Deprecated: Use NewLoader(cfg).Load(ctx) instead for better error handling.
+// Deprecated: Use NewLoader(cfg).WithLogger(logger).Load(ctx) instead for better error handling.
 func Load(ctx context.Context, configs []config.MCPServerConfig, logger core.Logger) ([]core.Action, error) {
 	var allActions []core.Action
 
@@ -104,14 +135,14 @@ func Load(ctx context.Context, configs []config.MCPServerConfig, logger core.Log
 	}
 
 	for _, cfg := range configs {
-		loader := NewLoader(cfg)
+		loader := NewLoader(cfg).WithLogger(logger)
 		// We use the default factory here. If tests needed injection, they should use NewLoader().WithFactory().
-		// However, since LoadWithFactory was public, we should probably keep supporting it via a helper if needed,
-		// but since we are refactoring, we can assume Load is legacy.
 
 		actions, err := loader.Load(ctx)
 		if err != nil {
-			// Legacy behavior: Log error but continue
+			// This block only executes if FailOnStartup is true.
+			// Legacy Load function didn't expose FailOnStartup, so if it fails, it returns error.
+			// If FailOnStartup is false (default), Load returns nil error, so we continue.
 			logger.Error("Error connecting to MCP server", "server", cfg.Name, "error", err)
 			continue
 		}
@@ -136,10 +167,9 @@ func LoadWithFactory(ctx context.Context, configs []config.MCPServerConfig, fact
 	}
 
 	for _, cfg := range configs {
-		loader := NewLoader(cfg).WithFactory(factory)
+		loader := NewLoader(cfg).WithFactory(factory).WithLogger(logger)
 		actions, err := loader.Load(ctx)
 		if err != nil {
-			// Legacy behavior: Log error but continue
 			logger.Error("Error connecting to MCP server", "server", cfg.Name, "error", err)
 			continue
 		}
