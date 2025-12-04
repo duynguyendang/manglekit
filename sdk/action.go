@@ -38,6 +38,7 @@ type Action[In any, Out any] struct {
 func Define[In any, Out any](client *Client, name string, handler HandlerFunc[In, Out]) *Action[In, Out] {
 	// 1. Create Adapter (Adapts Typed -> Envelope)
 	adapter := funcAdapter.New(name, funcAdapter.ToolFunc[In, Out](handler))
+	adapter.SetContentType(core.TypeStruct)
 
 	// 2. Protect (Apply Governance)
 	protected := client.Protect(adapter)
@@ -47,6 +48,27 @@ func Define[In any, Out any](client *Client, name string, handler HandlerFunc[In
 
 	// 4. Return Typed Handle
 	return &Action[In, Out]{
+		name:    name,
+		client:  client,
+		handler: handler,
+	}
+}
+
+// DefineDynamic registers a new dynamic action (JSON map input/output).
+// It sets the content type to TypeJSON, enabling recursive graph fact generation.
+func DefineDynamic(client *Client, name string, handler HandlerFunc[map[string]any, map[string]any]) *Action[map[string]any, map[string]any] {
+	// 1. Create Adapter
+	adapter := funcAdapter.New(name, funcAdapter.ToolFunc[map[string]any, map[string]any](handler))
+	adapter.SetContentType(core.TypeJSON)
+
+	// 2. Protect (Apply Governance)
+	protected := client.Protect(adapter)
+
+	// 3. Register (Enable Routing)
+	client.RegisterAction(name, protected)
+
+	// 4. Return Typed Handle
+	return &Action[map[string]any, map[string]any]{
 		name:    name,
 		client:  client,
 		handler: handler,

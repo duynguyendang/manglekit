@@ -87,6 +87,9 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 
 		// 2. Prepare Envelope
 		env := core.NewEnvelope(currentPayload)
+		// Set ContentType from Action Metadata
+		env.ContentType = action.Metadata().InputContentType
+
 		// CRITICAL: Pass feedback to the action
 		if len(feedbackHistory) > 0 {
 			env.Metadata[core.KeyPrevFeedback] = strings.Join(feedbackHistory, "; ")

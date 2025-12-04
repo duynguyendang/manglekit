@@ -220,7 +220,7 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 	}
 
 	// Convert the input payload to Mangle facts
-	facts, err := toMangleFacts(core.EntityInput, input.Payload)
+	facts, err := toMangleFacts(core.EntityInput, input.Payload, input.ContentType)
 	if err != nil {
 		if e.logger != nil {
 			e.logger.Debug("failed to convert input to facts", "error", err)
@@ -325,7 +325,7 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 	}
 
 	// Convert the output payload to Mangle facts
-	facts, err := toMangleFacts(core.EntityOutput, output.Payload)
+	facts, err := toMangleFacts(core.EntityOutput, output.Payload, output.ContentType)
 	if err != nil {
 		if e.logger != nil {
 			e.logger.Debug("failed to convert output to facts", "error", err)
@@ -418,7 +418,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 
 	// Convert the input payload to Mangle facts
 	// We use "Req" as the entity ID, consistent with Authorize
-	facts, err := toMangleFacts(core.EntityInput, input.Payload)
+	facts, err := toMangleFacts(core.EntityInput, input.Payload, input.ContentType)
 	if err != nil {
 		if e.logger != nil {
 			e.logger.Debug("failed to convert input to facts for steering", "error", err)
@@ -488,15 +488,23 @@ func (e *PolicyEngine) ExecuteQuery(ctx context.Context, facts []ast.Atom, query
 }
 
 // toMangleFacts helper converts a Go struct to Mangle atoms via the Reflection API.
-func toMangleFacts(entityID string, input any) ([]ast.Atom, error) {
+func toMangleFacts(entityID string, input any, contentType core.ContentType) ([]ast.Atom, error) {
 	if input == nil {
 		return nil, nil
 	}
 
 	var atoms []ast.Atom
+	var facts []string
+	var err error
 
-	// Use the existing ToFacts helper to get string representations
-	facts, err := ToFacts(entityID, input)
+	// Choose strategy based on ContentType
+	if contentType == core.TypeJSON {
+		facts, err = Flatten(entityID, input)
+	} else {
+		// Default to Reflection (Struct)
+		facts, err = ToFacts(entityID, input)
+	}
+
 	if err != nil {
 		return nil, err
 	}
