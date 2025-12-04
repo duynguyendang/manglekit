@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/duynguyendang/manglekit/engine"
+	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/spf13/cobra"
 )
 

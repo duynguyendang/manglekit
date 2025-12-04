@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/engine"
+	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

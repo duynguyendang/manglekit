@@ -10,7 +10,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/engine"
+	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/duynguyendang/manglekit/internal/telemetry"
 )
 

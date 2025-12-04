@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/engine/resources"
+	"github.com/duynguyendang/manglekit/internal/engine/resources"
 	"github.com/google/mangle/ast"
 	"github.com/google/mangle/parse"
 )

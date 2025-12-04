@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/engine/memory"
+	"github.com/duynguyendang/manglekit/internal/engine/memory"
 )
 
 func TestVolatileStore(t *testing.T) {
