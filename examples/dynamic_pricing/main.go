@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 )
@@ -52,19 +53,17 @@ func main() {
 	}
 	fmt.Printf("Loaded %d products.\n", len(InventoryDB))
 
-	// Initialize Client
+	// Initialize Client (Use Facade)
 	policyPath := filepath.Join(wd, "examples/dynamic_pricing/pricing.dl")
-	client, err := sdk.NewClient(context.Background(),
+
+	client := manglekit.Must(manglekit.NewClient(context.Background(),
 		sdk.WithStdoutTracer(),
-		sdk.WithPolicyPath(policyPath),
-	)
-	if err != nil {
-		log.Fatalf("Client init failed: %v", err)
-	}
+		manglekit.WithPolicyPath(policyPath),
+	))
 	defer client.Shutdown(context.Background())
 
 	// 3. Generic Binding
-	var CheckDiscount = sdk.Define(client, "check_discount", checkDiscount)
+	var CheckDiscount = manglekit.Define(client, "check_discount", checkDiscount)
 
 	// 4. Stress Test
 	iterations := 1000
@@ -84,10 +83,8 @@ func main() {
 		}
 
 		// 4. Context Injection
-		// Injecting metadata facts directly
+		// Injecting metadata facts directly using sdk.WithFact
 		reqCtx := sdk.WithFact(ctx, "user_vip", "true")
-		// Convert int to string for WithFact if needed, or if WithFact accepts string values only.
-		// The error message was: "cannot use qty (variable of type int) as string value"
 		reqCtx = sdk.WithFact(reqCtx, "fn_get_inventory", strconv.Itoa(qty))
 
 		req := PricingReq{

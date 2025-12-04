@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // Metadata represents Kubernetes object metadata
@@ -23,15 +24,13 @@ type KubernetesRequest struct {
 
 func main() {
 	// 1. Initialize Manglekit Client
-	// We assume safety.dl is in the current directory
 	ctx := context.Background()
-	client, err := sdk.NewDefault()
-	if err != nil {
-		log.Fatalf("Failed to initialize client: %v", err)
-	}
-	if err := client.Engine().LoadFromPath("examples/sre_guardrail/safety.dl"); err != nil {
-		log.Fatalf("Failed to load policy: %v", err)
-	}
+
+	// Use Facade. Load policy via option.
+	client := manglekit.Must(manglekit.NewClient(
+		ctx,
+		manglekit.WithPolicyPath("examples/sre_guardrail/safety.dl"),
+	))
 
 	// 2. Define the high-risk operation
 	// This function simulates an action on a Kubernetes cluster.
@@ -41,7 +40,7 @@ func main() {
 
 	// 3. Protect the operation
 	// This wraps the function with the policy engine.
-	action := sdk.Define(client, "k8s_guardrail", deletePod)
+	action := manglekit.Define(client, "k8s_guardrail", deletePod)
 
 	// Get the logger from the client
 	logger := client.Logger()
@@ -59,7 +58,8 @@ func main() {
 		},
 	}
 	if res, err := action.Run(ctx, reqA); err != nil {
-		logger.Warn("Blocked", "error", err)
+		// Expect success
+		log.Fatalf("Unexpected block for Case A: %v", err)
 	} else {
 		logger.Info("Success", "result", res)
 	}
@@ -74,10 +74,15 @@ func main() {
 			Labels:    map[string]string{"tier": "critical"},
 		},
 	}
-	if res, err := action.Run(ctx, reqB); err != nil {
-		logger.Warn("Blocked", "error", err)
+	if _, err := action.Run(ctx, reqB); err == nil {
+		log.Fatalf("Unexpected success for Case B (Should be blocked)")
 	} else {
-		logger.Info("Success", "result", res)
+		// Expect PolicyViolation
+		var pve *core.PolicyViolationError
+		if ok := fmt.Errorf("%w", err); ok != nil {
+			_ = pve
+		}
+		logger.Warn("Blocked as expected", "error", err)
 	}
 
 	// Case C: Denied Operation (Write in Production during Peak Hour)
@@ -90,9 +95,9 @@ func main() {
 			Labels:    map[string]string{"app": "web"},
 		},
 	}
-	if res, err := action.Run(ctx, reqC); err != nil {
-		logger.Warn("Blocked", "error", err)
+	if _, err := action.Run(ctx, reqC); err == nil {
+		log.Fatalf("Unexpected success for Case C (Should be blocked)")
 	} else {
-		logger.Info("Success", "result", res)
+		logger.Warn("Blocked as expected", "error", err)
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 )
 
@@ -24,10 +24,7 @@ func main() {
 	ctx := context.Background()
 
 	// 1. Initialize Client
-	client, err := sdk.NewClient(ctx, sdk.WithPolicyPath("examples/steering/policy.dl"))
-	if err != nil {
-		panic(err)
-	}
+	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithPolicyPath("examples/steering/policy.dl")))
 
 	// 2. Register Actions
 

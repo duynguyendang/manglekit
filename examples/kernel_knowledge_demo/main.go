@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/sdk"
 )
@@ -46,6 +47,8 @@ deny(Req) :- request_user(Req, U), status(U, "banned").
 	defer os.Remove("policy.dl")
 
 	// 2. Configure Client
+	// Note: We use sdk.NewClientWithConfig here because the simplified Facade
+	// does not currently expose configuration for Knowledge Base paths.
 	cfg := &config.Config{
 		Policy: config.PolicyConfig{
 			Path: "policy.dl",
@@ -62,8 +65,8 @@ deny(Req) :- request_user(Req, U), status(U, "banned").
 	}
 	defer client.Shutdown(ctx)
 
-	// 3. Generic Binding
-	var TestAction = sdk.Define(client, "test_action", testAction)
+	// 3. Generic Binding using Facade
+	var TestAction = manglekit.Define(client, "test_action", testAction)
 
 	// 4. Test Banned User
 	fmt.Println("Testing banned user...")

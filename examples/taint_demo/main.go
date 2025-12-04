@@ -7,19 +7,9 @@ import (
 	"log"
 	"os"
 
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/engine"
-	"github.com/duynguyendang/manglekit/internal/guard"
 )
-
-// 1. Explicit Types
-type EchoInput struct {
-	Data string `json:"data"`
-}
-
-type EchoOutput struct {
-	Result string `json:"result"`
-}
 
 // 2. Pure Logic
 // EchoAction is a simple action that returns the input as output.
@@ -27,22 +17,15 @@ type EchoAction struct{}
 
 func (a *EchoAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	// Simple echo: payload remains same, new envelope created
-	// Note: We are using lower-level Action interface here to demonstrate Guard directly.
-	// For high-level standard, we should use sdk.Define, but Taint Demo is about low-level propagation.
-	// However, the rule is "Modernize all Go code".
-	// Let's stick to the structure but clean up the code.
-
 	// Payload handling
 	payload, ok := input.Payload.(string)
 	if !ok {
-		// Try casting if it's a struct (but here we just use string for simplicity as per original demo)
-		// Or modernize it to use typed payload?
-		// The original used string payload.
-		// If I enforce types, I should use them.
 		return core.Envelope{}, fmt.Errorf("invalid payload type")
 	}
 
 	output := core.NewEnvelope(payload)
+	// Note: Taint propagation is handled by the Guard, not the Action.
+	// The Action just does work.
 	return output, nil
 }
 
@@ -54,8 +37,7 @@ func (a *EchoAction) Metadata() core.ActionMetadata {
 }
 
 func main() {
-	// 1. Setup Engine
-	eng := engine.New()
+	ctx := context.Background()
 
 	// 2. Define Policy: Block output if it has "secret" label
 	policyContent := `
@@ -68,28 +50,52 @@ func main() {
 	}
 	defer os.Remove("taint_policy.dlog")
 
-	if err := eng.LoadFromPath("taint_policy.dlog"); err != nil {
-		log.Fatalf("Failed to load policy: %v", err)
-	}
+	// 1. Setup Client with Policy (replaces direct Engine usage)
+	client := manglekit.Must(manglekit.NewClient(
+		ctx,
+		manglekit.WithPolicyPath("taint_policy.dlog"),
+		manglekit.WithFailMode("closed"),
+	))
 
-	// 3. Create Guarded Action
+	// 3. Register Action
 	echo := &EchoAction{}
-	guardedEcho := guard.New(echo, eng, "closed")
+	// Use client.RegisterAction to attach the action to the client (and thus the guard)
+	// Note: client.RegisterAction wraps the action with Protect() automatically.
+	client.RegisterAction("echo", echo)
 
 	// 4. Test Case 1: Input has "secret" label. Output should inherit it and be blocked.
 	fmt.Println("Test Case 1: Input with 'secret' label")
 	input1 := core.NewEnvelope("my secret data")
 	input1.AddLabel("secret")
 
+	// We use client.ExecuteEnvelope directly to pass labels manually (simulating upstream taint)
+	// ExecuteByName takes (ctx, name, payload). It doesn't allow setting labels easily on the *input* envelope
+	// because it creates a NEW envelope from payload.
+	// To test Taint Propagation from *Input Envelope*, we need to bypass `ExecuteByName` or use `sdk.WithEnvelopeOption`?
+	// `manglekit` doesn't expose `ExecuteEnvelope`.
+
+	// However, `client` has `Protect(action)`.
+	// If we use `Protect`, we get a `core.Action` back.
+	// We can run `Execute` on that guarded action with our pre-labeled envelope.
+
+	guardedEcho := client.Protect(echo)
+
 	result1, err := guardedEcho.Execute(context.Background(), input1)
 	if err == nil {
 		fmt.Println("❌ Test Case 1 Failed: Expected policy violation, but got success.")
 		fmt.Printf("   Result ID: %v\n", result1.ID)
 	} else {
-		if errors.Is(err, core.ErrPolicyViolation) {
+		// core.ErrPolicyViolation might be wrapped
+		if errors.Is(err, core.ErrPolicyViolation) || fmt.Sprintf("%s", err) == "policy violation" {
 			fmt.Println("✅ Test Case 1 Passed: Request blocked as expected due to 'secret' label propagation.")
 		} else {
-			fmt.Printf("❌ Test Case 1 Failed: Expected ErrPolicyViolation, got: %v\n", err)
+			// Check for wrapped error
+			var pve *core.PolicyViolationError
+			if errors.As(err, &pve) {
+				fmt.Println("✅ Test Case 1 Passed: Request blocked as expected due to 'secret' label propagation.")
+			} else {
+				fmt.Printf("❌ Test Case 1 Failed: Expected ErrPolicyViolation, got: %v\n", err)
+			}
 		}
 	}
 

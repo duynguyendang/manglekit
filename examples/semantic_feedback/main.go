@@ -61,10 +61,7 @@ func main() {
 	}
 
 	// 1. Initialize Manglekit Client with the policy
-	client, err := manglekit.NewClient(ctx, manglekit.WithPolicyPath(policyPath))
-	if err != nil {
-		log.Fatalf("Failed to create client: %v", err)
-	}
+	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithPolicyPath(policyPath)))
 
 	// 2. Register the Mock AI Action
 	// We wrap it in Protect() so the policy engine runs on its output.
@@ -76,7 +73,6 @@ func main() {
 
 	// 3. Execute the loop
 	// We use ExecuteByName which handles the retry loop when PolicyViolationError occurs.
-	// Note: ExecuteByName has a built-in max depth (10) to prevent infinite loops.
 	result, err := client.ExecuteByName(ctx, "stubborn_ai", map[string]string{"instruction": "submit budget"}, manglekit.WithSessionID("demo-session"))
 	if err != nil {
 		log.Fatalf("❌ Execution failed: %v", err)

@@ -12,14 +12,11 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// 1. Clean Init
-	client, err := manglekit.NewClient(ctx,
+	// 1. Clean Init (using Must)
+	client := manglekit.Must(manglekit.NewClient(ctx,
 		manglekit.WithPolicyPath("examples/options_demo/policy.dl"),
 		manglekit.WithFailMode("open"),
-	)
-	if err != nil {
-		log.Fatalf("Failed to create client: %v", err)
-	}
+	))
 
 	// Register a dummy action for "chat_agent"
 	client.RegisterAction("chat_agent", &dummyAction{})

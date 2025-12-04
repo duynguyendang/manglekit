@@ -1,74 +1,104 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/duynguyendang/manglekit/internal/engine"
-	"github.com/duynguyendang/manglekit/internal/engine/resources"
+	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/config"
+	"github.com/duynguyendang/manglekit/sdk"
 )
 
+type CheckEligibility struct {
+	User string `mangle:"user"`
+}
+
+type CheckLoan struct {
+	ID string `mangle:"loan_id"`
+}
+
 func main() {
-	// 1. Initialize Engine
-	// We use NewMangleRuntime directly to access low-level query capabilities
-	eng := engine.NewMangleRuntime()
-
-	// 2. Load Policy
+	ctx := context.Background()
 	wd, _ := os.Getwd()
-	policyPath := filepath.Join(wd, "examples/fintech_approval/credit.dl")
-	fmt.Printf("Loading policy from: %s\n", policyPath)
-	if err := eng.Load(policyPath); err != nil {
-		fmt.Printf("Failed to load policy: %v\n", err)
-		os.Exit(1)
+
+	// Wrapper policy to enable "Governance Check" via Actions
+	wrapperPolicy := `
+Decl user(Req, User).
+Decl eligible(User).
+Decl loan_id(Req, ID).
+Decl deny(Req).
+
+// Allow only if eligible. Implicitly deny otherwise (in Closed mode).
+allow(Req) :- user(Req, User), eligible(User).
+
+// Bridge for Loan Checks: Deny Req if the Loan ID is denied in knowledge base
+deny(Req) :- loan_id(Req, ID), deny(ID).
+`
+	if err := os.WriteFile("governance.dl", []byte(wrapperPolicy), 0644); err != nil {
+		panic(err)
+	}
+	defer os.Remove("governance.dl")
+
+	// Combine policies
+	creditPath := filepath.Join(wd, "examples/fintech_approval/credit.dl")
+	creditContent, _ := os.ReadFile(creditPath)
+	combined := string(creditContent) + "\n" + wrapperPolicy
+	if err := os.WriteFile("combined.dl", []byte(combined), 0644); err != nil {
+		panic(err)
+	}
+	defer os.Remove("combined.dl")
+
+	cfg := &config.Config{
+		FailureMode: config.FailureModeClosed, // Ensure Fail-Closed to block ineligible
+		Policy: config.PolicyConfig{
+			Path: "combined.dl",
+		},
+		Knowledge: config.KnowledgeConfig{
+			Path: filepath.Join(wd, "examples/fintech_approval/data.ttl"),
+		},
 	}
 
-	// 3. Load Data from RDF
-	dataPath := filepath.Join(wd, "examples/fintech_approval/data.ttl")
-	fmt.Printf("Loading RDF data from: %s\n", dataPath)
-	facts, err := resources.LoadFromPath(dataPath)
+	client, err := sdk.NewClientWithConfig(ctx, cfg)
 	if err != nil {
-		fmt.Printf("Failed to load RDF data: %v\n", err)
+		fmt.Printf("Failed to init client: %v\n", err)
 		os.Exit(1)
 	}
+	defer client.Shutdown(ctx)
 
-	// 4. Inject Facts into Engine
-	if err := eng.LoadFacts(facts); err != nil {
-		fmt.Printf("Failed to load facts into engine: %v\n", err)
-		os.Exit(1)
-	}
-
-	// 5. Query for Eligibility
+	// 5. Query for Eligibility via Action
 	fmt.Println("\n--- Checking Eligibility (Recursive Logic) ---")
+
+	checkAction := manglekit.Define(client, "check_eligibility", func(ctx context.Context, req CheckEligibility) (string, error) {
+		return "eligible", nil
+	})
+
 	users := []string{"Alice", "Bob", "Charlie", "David", "Eve"}
 	for _, user := range users {
-		query := fmt.Sprintf("eligible(\"%s\")", user)
-		eligible, err := eng.ExecuteQuery(nil, query)
-		if err != nil {
-			fmt.Printf("Error querying eligibility for %s: %v\n", user, err)
-			continue
-		}
-		if eligible {
+		// Run Action. If denied, err will be PolicyViolation.
+		_, err := checkAction.Run(ctx, CheckEligibility{User: user})
+		if err == nil {
 			fmt.Printf("✅ %s is eligible.\n", user)
 		} else {
-			fmt.Printf("❌ %s is NOT eligible.\n", user)
+			// In Fail-Closed, any failure (including policy violation) is a denial.
+			fmt.Printf("❌ %s is NOT eligible (Blocked).\n", user)
 		}
 	}
 
-	// 6. Query for Loan Denials
+	// 6. Query for Loan Denials via Action
 	fmt.Println("\n--- Checking Loan Denials ---")
+	checkLoanAction := manglekit.Define(client, "check_loan", func(ctx context.Context, req CheckLoan) (string, error) {
+		return "approved", nil
+	})
+
 	reqs := []string{"Req1", "Req2", "Req3"}
-	for _, req := range reqs {
-		query := fmt.Sprintf("deny(\"%s\")", req)
-		denied, err := eng.ExecuteQuery(nil, query)
+	for _, reqID := range reqs {
+		_, err := checkLoanAction.Run(ctx, CheckLoan{ID: reqID})
 		if err != nil {
-			fmt.Printf("Error querying denial for %s: %v\n", req, err)
-			continue
-		}
-		if denied {
-			fmt.Printf("❌ Loan %s is DENIED.\n", req)
+			fmt.Printf("❌ Loan %s is DENIED.\n", reqID)
 		} else {
-			fmt.Printf("✅ Loan %s is APPROVED (not denied).\n", req)
+			fmt.Printf("✅ Loan %s is APPROVED (not denied).\n", reqID)
 		}
 	}
 }

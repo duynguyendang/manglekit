@@ -17,13 +17,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/duynguyendang/manglekit"
 	funcAdapter "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/duynguyendang/manglekit/sdk"
 )
 
@@ -80,11 +81,7 @@ func main() {
 	// ---------------------------------------------------------------------------
 	// 2. Initialize the Manglekit Client (uses default Zap logger)
 	// ---------------------------------------------------------------------------
-	client, err := sdk.NewDefault()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize manglekit client: %v\n", err)
-		os.Exit(1)
-	}
+	client := manglekit.Must(manglekit.NewClient(ctx))
 	log := client.Logger()
 	log.Info("Manglekit client initialized", "logging", true)
 
@@ -111,7 +108,7 @@ func main() {
 		return generator.GenerateRule(ctx, sampleTransaction, policy)
 	}
 
-	action := sdk.Define(client, "policy-copilot", genLogic)
+	action := manglekit.Define(client, "policy-copilot", genLogic)
 	log.Info("Rule generation logic protected with governance guard")
 	fmt.Println()
 
@@ -136,16 +133,38 @@ func main() {
 	fmt.Println()
 
 	// ---------------------------------------------------------------------------
-	// 7. Create Evaluator and Test the Generated Rule
+	// 7. Verify the Generated Rule (Using Manglekit Facade)
 	// ---------------------------------------------------------------------------
-	evaluator, err := engine.NewEvaluator(generatedRule)
-	if err != nil {
-		log.Error("Error creating evaluator", "error", err)
-		os.Exit(1)
-	}
-
 	fmt.Println("🧪 Testing Generated Rule Against Sample Transactions:")
 	fmt.Println()
+
+	// Write the rule to a temporary file
+	tmpFile, err := os.CreateTemp("", "policy_*.dl")
+	if err != nil {
+		log.Error("Failed to create temp file", "error", err)
+		os.Exit(1)
+	}
+	defer os.Remove(tmpFile.Name())
+	if _, err := tmpFile.Write([]byte(generatedRule)); err != nil {
+		log.Error("Failed to write rule to file", "error", err)
+		os.Exit(1)
+	}
+	tmpFile.Close()
+
+	// Create a new client that uses this generated policy
+	// We use "open" mode so that we only block if the generated policy explicitly denies.
+	// Default is "closed" which blocks everything not explicitly allowed, which would fail valid tests.
+	verifierClient := manglekit.Must(manglekit.NewClient(
+		ctx,
+		manglekit.WithPolicyPath(tmpFile.Name()),
+		manglekit.WithFailMode("open"),
+	))
+
+	// Define a dummy action to test the policy against
+	// We return "allowed" by default. If policy denies, we get an error.
+	verifyAction := manglekit.Define(verifierClient, "verify_tx", func(ctx context.Context, t Transaction) (string, error) {
+		return "allowed", nil
+	})
 
 	testCases := []struct {
 		name        string
@@ -176,22 +195,26 @@ func main() {
 
 	allPassed := true
 	for _, tc := range testCases {
-		// Use the encapsulated evaluator
-		result, err := evaluator.Evaluate(tc.name, tc.transaction)
-		if err != nil {
-			log.Error("Error evaluating test case", "name", tc.name, "error", err)
+		_, err := verifyAction.Run(ctx, tc.transaction)
+
+		isDenied := false
+		var pve *core.PolicyViolationError
+		if errors.As(err, &pve) {
+			isDenied = true
+		} else if err != nil {
+			log.Error("Unexpected error evaluating test case", "name", tc.name, "error", err)
 			allPassed = false
 			continue
 		}
 
-		if result.Matched == tc.expectDeny {
+		if isDenied == tc.expectDeny {
 			fmt.Printf("   ✅ PASS: %s\n", tc.name)
 			fmt.Printf("      Amount: %d, Region: %s → Denied: %v (expected: %v)\n\n",
-				tc.transaction.Amount, tc.transaction.Region, result.Matched, tc.expectDeny)
+				tc.transaction.Amount, tc.transaction.Region, isDenied, tc.expectDeny)
 		} else {
 			fmt.Printf("   ❌ FAIL: %s\n", tc.name)
 			fmt.Printf("      Amount: %d, Region: %s → Denied: %v (expected: %v)\n\n",
-				tc.transaction.Amount, tc.transaction.Region, result.Matched, tc.expectDeny)
+				tc.transaction.Amount, tc.transaction.Region, isDenied, tc.expectDeny)
 			allPassed = false
 		}
 	}

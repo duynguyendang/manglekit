@@ -8,9 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/config"
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk"
 )
 
 // MockAction is a simple action that returns a success message
@@ -44,14 +43,12 @@ func createDummyPolicy(t *testing.T) string {
 func TestFailSafe_FailOpen_SystemError(t *testing.T) {
 	// Setup: Fail-Open mode
 	policyPath := createDummyPolicy(t)
-	cfg := &config.Config{
-		FailureMode: config.FailureModeOpen,
-		Policy: config.PolicyConfig{
-			Path: policyPath,
-		},
-	}
-
-	client, err := sdk.NewClientWithConfig(context.Background(), cfg)
+	// Use Facade
+	client, err := manglekit.NewClient(
+		context.Background(),
+		manglekit.WithPolicyPath(policyPath),
+		manglekit.WithFailMode("open"),
+	)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -77,14 +74,12 @@ func TestFailSafe_FailOpen_SystemError(t *testing.T) {
 func TestFailSafe_FailClosed_SystemError(t *testing.T) {
 	// Setup: Fail-Closed mode (default)
 	policyPath := createDummyPolicy(t)
-	cfg := &config.Config{
-		FailureMode: config.FailureModeClosed,
-		Policy: config.PolicyConfig{
-			Path: policyPath,
-		},
-	}
-
-	client, err := sdk.NewClientWithConfig(context.Background(), cfg)
+	// Use Facade
+	client, err := manglekit.NewClient(
+		context.Background(),
+		manglekit.WithPolicyPath(policyPath),
+		manglekit.WithFailMode("closed"),
+	)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -113,19 +108,8 @@ func TestFailSafe_FailClosed_SystemError(t *testing.T) {
 }
 
 func TestFailSafe_AlwaysBlockPolicyViolation(t *testing.T) {
-	// Setup: Fail-Open mode
-	cfg := &config.Config{
-		FailureMode: config.FailureModeOpen,
-		Policy: config.PolicyConfig{
-			// We need a policy that denies.
-		},
-	}
-
 	tmpDir := t.TempDir()
 	policyPath := filepath.Join(tmpDir, "deny.dl")
-	// Deny if foo matches bar.
-	// We use strict Datalog syntax: deny(Req) :- foo(Req, "bar").
-	// And we MUST declare 'foo' because Mangle's analysis expects it.
 	err := os.WriteFile(policyPath, []byte(`
 Decl foo(Req, Val).
 deny(Req) :- foo(Req, "bar").
@@ -133,9 +117,13 @@ deny(Req) :- foo(Req, "bar").
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.Policy.Path = policyPath
 
-	client, err := sdk.NewClientWithConfig(context.Background(), cfg)
+	// Use Facade
+	client, err := manglekit.NewClient(
+		context.Background(),
+		manglekit.WithPolicyPath(policyPath),
+		manglekit.WithFailMode("open"),
+	)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
