@@ -2,8 +2,8 @@
 context_type: architecture_snapshot
 project: manglekit
 language: go
-version: 1.0
-last_updated: 2025-12-05T14:00:00Z
+version: 1.1
+last_updated: 2025-12-05T15:00:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -17,19 +17,27 @@ This document provides a strictly factual, deep-dive technical snapshot of the M
 ```text
 manglekit/
 ├── sdk/                  # [KERNEL] The entry point and orchestration layer
-│   ├── sdk.go            # Client struct, initialization, and Protect() API
-│   ├── loop.go           # Semantic State Machine (RunLoop) implementation
-│   ├── options.go        # Functional options for Client and Execution
-│   ├── types.go          # Type aliases and convenience helpers
+│   ├── sdk.go            # Client struct, initialization, and RegisterAction
+│   ├── action.go         # Typed Action definitions (Define, DefineDynamic)
+│   ├── loop.go           # Semantic State Machine (ExecuteByName, RunLoop)
+│   ├── context.go        # Context helpers (WithFact, ContextFacts)
+│   ├── helpers.go        # Convenience helpers (Must)
+│   ├── options.go        # Functional options for Client
+│   ├── options_ext.go    # Extended ExecutionOptions (WithMetadataMap)
+│   ├── tracing.go        # Tracing setup (WithStdoutTracer)
+│   ├── types.go          # Type aliases
 │   └── policy_generator.go # Policy Copilot (Natural Language -> Datalog)
 ├── guard/                # [GOVERNANCE] The interception layer
-│   └── guard.go          # GuardedAction decorator (Trace -> AuthZ -> Exec -> Validate)
+│   ├── guard.go          # GuardedAction decorator (Trace -> AuthZ -> Exec -> Validate)
+│   └── guard_test.go     # Governance tests
 ├── engine/               # [LOGIC] The Datalog reasoning core
 │   ├── solver.go         # PolicyEngine (High-level coordinator)
 │   ├── runtime.go        # MangleRuntime (Low-level Datalog wrapper)
 │   ├── evaluator.go      # Evaluator (Lightweight single-rule checker)
 │   ├── reflection.go     # ToFacts (Struct -> Fact conversion)
 │   ├── flattener.go      # Flatten (JSON -> Graph conversion)
+│   ├── memory/           # Memory Store implementations
+│   │   └── volatile.go   # In-Memory VolatileStore
 │   └── resources/        # Knowledge Base (RDF/Turtle loading)
 ├── core/                 # [PUBLIC API] Interfaces and shared types (No dependencies)
 │   ├── action.go         # Action interface
@@ -56,8 +64,11 @@ manglekit/
 │   ├── logger/           # Logger adapters (Zap, Stdout)
 │   ├── telemetry/        # OTel tracing setup
 │   ├── statehelper/      # State manipulation helpers
+│   ├── tools/            # CLI internal tools (RuleGen)
+│   ├── testproviders/    # Test-only providers
 │   └── util/             # Utilities (Schema validation)
 └── cmd/                  # CLI tools (mkit)
+    └── mkit/             # Main entry point
 ```
 
 ## 2. Core Component Analysis
@@ -66,33 +77,38 @@ manglekit/
 The brain of the system. It translates Go objects into Datalog facts and evaluates policies.
 *   **Key Structs**:
     *   `PolicyEngine` (`engine/solver.go`): The main facade. Manages `MangleRuntime`, `Tracer`, and `Logger`.
-    *   `MangleRuntime` (`engine/runtime.go`): Wraps `google/mangle`. Handles parsing, stratification (`strata`), and query execution.
+    *   `MangleRuntime` (`engine/runtime.go`): Wraps `google/mangle`. Handles parsing, stratification (`strata`), and query execution. Also strips comments (`//`, `%`).
+    *   `VolatileStore` (`engine/memory/volatile.go`): In-memory implementation of `core.MemoryStore` for transient sessions.
 *   **Key Functions**:
     *   `Authorize(ctx, meta, input)`: Pre-check hook. Evaluates `deny("Req")`.
-    *   `Validate(ctx, meta, output)`: Post-check hook. Evaluates `deny("Output")`.
-    *   `EvaluateSteering(ctx, input)`: Determines next step (`RETRY`, `ROUTE`).
+    *   `Validate(ctx, meta, output)`: Post-check hook. Evaluates `deny("Output")` and checks for `violation_msg(Msg)`.
+    *   `EvaluateSteering(ctx, input)`: Determines next step (`RETRY` with `correction`, `ROUTE` with `next_step`).
     *   `LoadFacts(facts)`: Injects dynamic facts at runtime.
     *   `LoadKnowledge(path)`: Loads static RDF knowledge from Turtle files.
+    *   `LoadFromString(rule)`: Parses and loads a single Datalog rule from a string.
+    *   `ExecuteQuery(ctx, facts, query)`: Runs a raw Datalog query with tracing.
     *   `ToFacts(id, input)` (`engine/reflection.go`): Reflectively converts Go Structs to `predicate(id, val)` facts (Typed Mode).
     *   `Flatten(id, input)` (`engine/flattener.go`): Recursively converts JSON/Maps to graph facts (`json_link`, `json_val`) (Dynamic Mode).
-    *   `Evaluator` (`engine/evaluator.go`): Standalone helper for ad-hoc rule evaluation against a Go struct.
 
 ### 2.2 SDK (`sdk/`)
 The user-facing API and orchestration kernel.
 *   **Key Structs**:
     *   `Client` (`sdk/sdk.go`): Holds the `PolicyEngine`, `Registry`, and `MemoryStore`.
+    *   `Action[In, Out]` (`sdk/action.go`): Typed wrapper for `core.Action`.
 *   **Key Functions**:
-    *   `NewClientFromConfig`: Initializes the system from YAML.
+    *   `NewClient`: Initializes with functional options.
+    *   `NewClientFromConfig`: Initializes from YAML.
+    *   `Must`: Panics on initialization error.
+    *   `Define[In, Out]`: Registers a typed Action (Typed Mode, `TypeStruct`).
+    *   `DefineDynamic`: Registers a dynamic Action for `map[string]any` (Dynamic Mode, `TypeJSON`).
+    *   `WithFact(ctx, key, val)`: Injects request-scoped facts into the context.
     *   `Protect(Action)`: Wraps an Action with a `GuardedAction`.
-    *   `Define[In, Out]`: Registers a typed Action (Typed Mode).
-    *   `DefineDynamic`: Registers a dynamic Action for JSON payloads (Dynamic Mode).
-    *   `ExecuteByName`: Entry point for the Semantic State Machine.
-    *   `Call[Out]`: Generic helper for typed execution.
-    *   `WithStdoutTracer`: ClientOption for enabling console tracing.
+    *   `ExecuteByName`: Entry point for the Semantic State Machine (`sdk/loop.go`).
+    *   `WithStdoutTracer`: ClientOption for enabling console tracing (`sdk/tracing.go`).
     *   `NewPolicyGenerator`: Creates a `Generator` to translate natural language to Datalog rules.
 *   **Configuration**:
-    *   `ClientOption`: `WithPolicyPath`, `WithFailMode`, `WithLogger`, `WithMemory`.
-    *   `ExecuteOption`: `WithSessionID` (Persist), `WithTransientMemory` (Volatile), `WithMetadata`.
+    *   `ClientOption`: `WithPolicyPath`, `WithFailureMode`, `WithLogger`, `WithMemory`.
+    *   `ExecuteOption`: `WithSessionID` (Persist), `WithTransientMemory` (Volatile), `WithMetadata`, `WithMetadataMap`.
 
 ### 2.3 Guard (`guard/`)
 The enforcement layer. It ensures no Action runs without policy checks.
@@ -105,8 +121,10 @@ The enforcement layer. It ensures no Action runs without policy checks.
 ### 2.4 Adapters (`adapters/`)
 Concrete implementations of `core.Action`.
 *   **Key Structs**:
-    *   `MCPAction` (`adapters/mcp/action.go`): Wraps an MCP Tool.
-    *   `MCPLoader` (`adapters/mcp/loader.go`): Discovers tools from MCP servers (Stdio/SSE) and registers them as Actions.
+    *   `MCPAction` (`adapters/mcp/action.go`): Wraps an MCP Tool. Checks `initError` for availability.
+    *   `MCPLoader` (`adapters/mcp/loader.go`): Discovers tools from MCP servers. Implements **Driver Resilience**:
+        *   **FailOnStartup=true**: Returns error on connection failure.
+        *   **FailOnStartup=false**: Logs warning, returns "Unhealthy" actions (Soft Failure).
     *   `ExtractorAction` (`adapters/extractor/adapter.go`): Uses an LLM to extract JSON.
     *   `Wrapper` (`adapters/func/wrapper.go`): Wraps a native Go function (`ToolFunc`).
     *   `GenkitModel` (`adapters/ai/genkit_model.go`): Wraps `ai.Model`.
@@ -123,28 +141,34 @@ Private implementation details not exposed in the public API.
 *   **Logger**: `zap_adapter.go` (Zap) and `std_logger.go` (Standard Lib).
 *   **Telemetry**: `otel.go` handles OpenTelemetry provider registration.
 *   **Utils**: `schema/` contains JSON schema generation and validation logic.
+*   **Tools**: `rulegen/` for CLI rule generation.
 
 ## 3. The Critical Path: `ExecuteByName`
 
 Tracing the execution flow of a request through the system:
 
-1.  **Entry**: User calls `client.ExecuteByName(ctx, "myAction", input)` in `sdk/sdk.go`.
-2.  **State Machine**: Calls `runLoopInternal` in `sdk/loop.go`.
+1.  **Entry**: User calls `client.ExecuteByName(ctx, "myAction", input)` in `sdk/loop.go`.
+2.  **State Machine**: Calls `runLoopInternal`.
 3.  **Lookup**: `runLoopInternal` retrieves the `core.Action` from `c.registry["myAction"]`.
-4.  **Guard Interception**: The retrieved Action is a `guard.GuardedAction`. `Execute()` is called (`guard/guard.go`).
-5.  **Tracing**: `GuardedAction` starts an OTel span `Action.myAction`.
-6.  **Authorization**: `GuardedAction` calls `engine.Authorize` (`engine/solver.go`).
-    *   Input is converted to facts via `ToFacts`.
+4.  **Feedback Injection**:
+    *   If `RETRY` occurred, injects `prev_feedback` (History).
+    *   If `PolicyViolationError` occurred, injects `mangle_feedback` (Teacher-Student Protocol).
+5.  **Guard Interception**: The retrieved Action is a `guard.GuardedAction`. `Execute()` is called (`guard/guard.go`).
+6.  **Tracing**: `GuardedAction` starts an OTel span `Action.myAction`.
+7.  **Authorization**: `GuardedAction` calls `engine.Authorize` (`engine/solver.go`).
+    *   Input is converted to facts via `ToFacts` (Struct) or `Flatten` (JSON).
     *   `runtime.ExecuteQuery` checks for `deny("Req")`.
-7.  **Execution**: If authorized, `GuardedAction` calls `inner.Execute()` (the Adapter).
+8.  **Execution**: If authorized, `GuardedAction` calls `inner.Execute()` (the Adapter).
     *   e.g., `MCPAction` calls `tool.RunRaw`.
-8.  **Validation**: `GuardedAction` calls `engine.Validate` (`engine/solver.go`).
+9.  **Validation**: `GuardedAction` calls `engine.Validate` (`engine/solver.go`).
     *   Output is converted to facts.
     *   `runtime.ExecuteQuery` checks for `deny("Output")`.
-9.  **Steering**: `GuardedAction` calls `engine.EvaluateSteering`.
-    *   Checks for `correction` or `next_step` facts.
-10. **Loop**: `runLoopInternal` receives the result.
+    *   If denied, queries `violation_msg(Msg)` to return a structured `PolicyViolationError`.
+10. **Steering**: `GuardedAction` calls `engine.EvaluateSteering`.
+    *   Checks for `correction` (RETRY) or `next_step` (ROUTE).
+11. **Loop**: `runLoopInternal` receives the result.
     *   If `RETRY`: Loops again with feedback.
+    *   If `PolicyViolationError`: Catch error, set `mangle_feedback`, and RETRY (Teacher-Student).
     *   If `ROUTE`: Loops again with new action.
     *   If `ALLOW`: Returns result to user.
 
@@ -168,6 +192,7 @@ The standard container for all data moving through the kernel.
 
 ### 4.3 Memory & Context
 *   **Lineage**: `context.Context` carries the Parent ID via `core.WithParentID` / `core.GetParentID` (`core/context_lineage.go`).
+*   **Facts**: `context.Context` carries request-scoped facts via `sdk.WithFact`.
 *   **Logging**: `context.Context` carries the Logger via `core.LoggerWithContext`.
 *   **Session History**: Managed by `core.MemoryStore` interface.
     *   `VolatileStore` (`engine/memory/volatile.go`): In-memory map for transient sessions.
@@ -185,7 +210,6 @@ The standard container for all data moving through the kernel.
 ### 5.2 Hardcoded / Temporary Logic
 *   **Max Steps**: `runLoopInternal` has a hardcoded limit of `10` steps (`sdk/loop.go`).
 *   **Magic Strings**: Predicate names (`deny`, `correction`, `next_step`) are hardcoded in `engine/solver.go`.
-*   **MCP Startup Resilience**: `MCPLoader` swallows connection errors (logs only), which may hide misconfigurations during startup.
 
 ### 5.3 Panics
 *   **`sdk.Must`**: Explicitly designed to panic on initialization errors.
@@ -233,6 +257,10 @@ The `mkit` CLI facilitates neuro-symbolic AI governance.
 
 ## 9. Changelog
 
+-   **2025-12-05**: **Synchronization Audit**. Updated `CONTEXT.md` to match exact file structure and API surface. Added `sdk/action.go` (Define/DefineDynamic), `sdk/tracing.go`, and `engine/memory/volatile.go`. Clarified `ExecuteByName` location (`sdk/loop.go`).
+-   **2025-12-05**: **Resilience Update**. Documented `MCPLoader` Soft Failure (Health Check) pattern and moved it from Technical Debt to Adapters.
+-   **2025-12-05**: **Feature Sync**. Documented `sdk.WithFact` and `sdk.Must`. Added `engine.LoadFromString` and `ExecuteQuery`.
+-   **2025-12-05**: **Teacher-Student Protocol**. Updated "Critical Path" to explicitly document `PolicyViolationError` handling and `mangle_feedback` injection in `runLoopInternal`.
 -   **2025-12-05**: **Dual-Mode Input Strategy**. Implemented `ContentType` (STRUCT/JSON) routing in the Engine. Added `engine/flattener.go` for recursive JSON graph fact generation. Updated SDK with `Define` (Typed) and `DefineDynamic` (JSON).
 -   **2025-12-05**: **Dev & Examples**. Added Build System, CLI, and Reference Examples sections to provide a complete operational picture.
 -   **2025-12-05**: **Tech Debt Update**. Added notes on missing Config Validation and MCP startup error handling to Technical Debt section.
