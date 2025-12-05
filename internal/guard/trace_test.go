@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/sdk/trace"
@@ -25,6 +26,10 @@ func TestTraceHierarchy(t *testing.T) {
 	tp := trace.NewTracerProvider(
 		trace.WithBatcher(exporter),
 	)
+
+	// Set global tracer provider so Guard uses it
+	otel.SetTracerProvider(tp)
+
 	otelTracer := tp.Tracer("test")
 	defer func() { _ = tp.Shutdown(context.Background()) }()
 
@@ -80,11 +85,11 @@ func TestTraceHierarchy(t *testing.T) {
 
 	// Verify attributes on each span
 	if actionSpan, ok := spanNames["Action.mock-action"]; ok {
-		if !hasAttribute(actionSpan, "action.name") {
-			t.Errorf("Action span missing action.name attribute")
+		if !hasAttribute(actionSpan, "mangle.action_name") {
+			t.Errorf("Action span missing mangle.action_name attribute")
 		}
-		if !hasAttribute(actionSpan, "action.type") {
-			t.Errorf("Action span missing action.type attribute")
+		if !hasAttribute(actionSpan, "mangle.action_type") {
+			t.Errorf("Action span missing mangle.action_type attribute")
 		}
 	}
 
@@ -120,6 +125,10 @@ func TestTraceErrorHandling(t *testing.T) {
 	tp := trace.NewTracerProvider(
 		trace.WithBatcher(exporter),
 	)
+
+	// Set global tracer provider
+	otel.SetTracerProvider(tp)
+
 	otelTracer := tp.Tracer("test")
 	defer func() { _ = tp.Shutdown(context.Background()) }()
 

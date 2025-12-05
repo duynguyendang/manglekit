@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/duynguyendang/manglekit/core"
 	engine_memory "github.com/duynguyendang/manglekit/internal/engine/memory"
@@ -78,6 +79,8 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 	currentPayload := payload
 	var feedbackHistory []string
 	var lastFeedback string
+	retryCount := 0
+	const MaxRetries = 3
 
 	for step := 0; step < 10; step++ { // Max depth 10
 		if c.logger != nil {
@@ -102,6 +105,8 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 
 		// Inject specific Mangle feedback (Teacher-Student Protocol)
 		if lastFeedback != "" {
+			env.SetFeedback(lastFeedback)
+			// Backward compatibility for LLMAction which expects "mangle_feedback"
 			env.Metadata["mangle_feedback"] = lastFeedback
 		}
 
@@ -123,10 +128,19 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 			// Check for PolicyViolationError (Teacher-Student Protocol)
 			var pve *core.PolicyViolationError
 			if errors.As(err, &pve) {
+				if retryCount >= MaxRetries {
+					return core.Envelope{}, fmt.Errorf("max retries exceeded: %w", err)
+				}
+				retryCount++
 				lastFeedback = pve.Message
 				if c.logger != nil {
-					c.logger.Info("RunLoop: Policy Violation detected, triggering retry with feedback", "feedback", lastFeedback)
+					c.logger.Warn("RunLoop: Policy Violation detected, triggering retry with feedback",
+						"feedback", lastFeedback,
+						"attempt", retryCount,
+					)
 				}
+				// Exponential Backoff
+				time.Sleep(time.Duration(retryCount) * 100 * time.Millisecond)
 				continue // Trigger retry (Teacher-Student Protocol)
 			}
 			return core.Envelope{}, err
@@ -163,12 +177,23 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 
 		switch decision {
 		case core.DecisionRetry:
+			if retryCount >= MaxRetries {
+				return core.Envelope{}, fmt.Errorf("max retries exceeded for action %s", currentAction)
+			}
+			retryCount++
+
 			// Self-Correction Loop
-			hint := result.Metadata[core.KeyFeedback]
+			hint := result.GetFeedback()
+			lastFeedback = hint
 			feedbackHistory = append(feedbackHistory, hint)
 			if c.logger != nil {
-				c.logger.Info("RunLoop: RETRY triggered", "feedback", hint)
+				c.logger.Warn("RunLoop: RETRY triggered",
+					"feedback", hint,
+					"attempt", retryCount,
+				)
 			}
+			// Exponential Backoff
+			time.Sleep(time.Duration(retryCount) * 100 * time.Millisecond)
 			continue // Loop again with same action, new feedback
 
 		case core.DecisionRoute:
@@ -177,6 +202,7 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 			currentAction = next
 			currentPayload = result.Payload // Pipe output to next input
 			feedbackHistory = nil           // Reset feedback
+			retryCount = 0                  // Reset retry count for new action
 			if c.logger != nil {
 				c.logger.Info("RunLoop: ROUTE triggered", "next", next)
 			}
