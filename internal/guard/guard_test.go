@@ -160,7 +160,8 @@ func TestGuardedAction_LoggerContextInjection(t *testing.T) {
 	foundActionDebug := false
 	foundActionInfo := false
 	for _, log := range logs {
-		if log == "DEBUG: starting action execution" {
+		// Updated to match new INFO level and message
+		if log == "INFO: Action started" {
 			foundActionDebug = true
 		}
 		if log == "INFO: test message from action" {
@@ -169,7 +170,7 @@ func TestGuardedAction_LoggerContextInjection(t *testing.T) {
 	}
 
 	if !foundActionDebug {
-		t.Error("Expected 'starting action execution' debug log, but it was not found")
+		t.Error("Expected 'Action started' info log, but it was not found")
 	}
 	if !foundActionInfo {
 		t.Error("Expected 'test message from action' info log from inner action, but it was not found")
@@ -199,7 +200,7 @@ func TestLoggerWithContext_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	// Store logger in context
-	ctx = core.LoggerWithContext(ctx, testLogger)
+	ctx = core.ContextWithLogger(ctx, testLogger)
 
 	// Retrieve logger from context
 	retrieved := core.LoggerFromContext(ctx)

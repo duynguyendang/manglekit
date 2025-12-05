@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+
 	"github.com/duynguyendang/manglekit/core"
 )
 
@@ -12,21 +13,23 @@ var (
 	once          sync.Once
 )
 
-// getDefaultLogger returns the Singleton Slog instance (Text Handler)
+// getDefaultLogger returns the Singleton Slog instance (Text Handler).
+// It ensures that the logger is initialized only once.
 func getDefaultLogger() core.Logger {
 	once.Do(func() {
+		// Default to TextHandler for human-readable logs as per spec.
 		h := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
 		defaultLogger = &slogAdapter{l: slog.New(h)}
 	})
 	return defaultLogger
 }
 
-// NewStdLogger exposes the default logger for manual use
+// NewStdLogger exposes the default logger for manual use.
 func NewStdLogger() core.Logger {
 	return getDefaultLogger()
 }
 
-// slogAdapter adapts slog to core.Logger
+// slogAdapter adapts slog.Logger to the core.Logger interface.
 type slogAdapter struct {
 	l *slog.Logger
 }

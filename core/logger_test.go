@@ -31,11 +31,11 @@ func TestLoggerFromContext_ReturnsNopLoggerWhenEmpty(t *testing.T) {
 	}
 }
 
-func TestLoggerWithContext_StoresLogger(t *testing.T) {
+func TestContextWithLogger_StoresLogger(t *testing.T) {
 	ctx := context.Background()
 	testLogger := &testingLogger{}
 
-	ctx = LoggerWithContext(ctx, testLogger)
+	ctx = ContextWithLogger(ctx, testLogger)
 	retrieved := LoggerFromContext(ctx)
 
 	if retrieved != testLogger {
@@ -43,11 +43,11 @@ func TestLoggerWithContext_StoresLogger(t *testing.T) {
 	}
 }
 
-func TestLoggerWithContext_NilDefaultsToNop(t *testing.T) {
+func TestContextWithLogger_NilDefaultsToNop(t *testing.T) {
 	ctx := context.Background()
 
-	// Passing nil should store NopLogger
-	ctx = LoggerWithContext(ctx, nil)
+	// Passing nil should result in NopLogger when retrieved
+	ctx = ContextWithLogger(ctx, nil)
 	retrieved := LoggerFromContext(ctx)
 
 	if _, ok := retrieved.(NopLogger); !ok {
@@ -60,7 +60,7 @@ func TestLoggerRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	// Store logger
-	ctx = LoggerWithContext(ctx, testLogger)
+	ctx = ContextWithLogger(ctx, testLogger)
 
 	// Retrieve and use logger
 	logger := LoggerFromContext(ctx)
@@ -72,43 +72,6 @@ func TestLoggerRoundTrip(t *testing.T) {
 	}
 	if testLogger.msgs[0] != "INFO: test message" {
 		t.Errorf("Expected 'INFO: test message', got '%s'", testLogger.msgs[0])
-	}
-}
-
-func TestSetDefaultLogger(t *testing.T) {
-	// Save original default
-	originalDefault := defaultLogger
-	defer func() {
-		defaultLogger = originalDefault
-	}()
-
-	testLogger := &testingLogger{}
-	SetDefaultLogger(testLogger)
-
-	// Now LoggerFromContext should return our test logger when context is empty
-	ctx := context.Background()
-	retrieved := LoggerFromContext(ctx)
-
-	if retrieved != testLogger {
-		t.Errorf("Expected test logger as default, got %T", retrieved)
-	}
-}
-
-func TestSetDefaultLogger_NilResetsToNop(t *testing.T) {
-	// Save original default
-	originalDefault := defaultLogger
-	defer func() {
-		defaultLogger = originalDefault
-	}()
-
-	// Set to nil, should reset to NopLogger
-	SetDefaultLogger(nil)
-
-	ctx := context.Background()
-	retrieved := LoggerFromContext(ctx)
-
-	if _, ok := retrieved.(NopLogger); !ok {
-		t.Errorf("Expected NopLogger after setting nil default, got %T", retrieved)
 	}
 }
 
