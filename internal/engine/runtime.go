@@ -30,6 +30,8 @@ type MangleRuntime struct {
 	predToStratum map[ast.PredicateSym]int
 	// baseFactStore holds the base facts loaded from files
 	baseFactStore factstore.SimpleInMemoryStore
+	// ruleUnits collects all rule source units loaded into the runtime
+	ruleUnits []parse.SourceUnit
 }
 
 // NewMangleRuntime initializes a new, empty MangleRuntime.
@@ -98,6 +100,9 @@ func (r *MangleRuntime) Load(path string) error {
 		units = append(units, unit)
 	}
 
+	// Append newly parsed units to persistent storage
+	r.ruleUnits = append(r.ruleUnits, units...)
+
 	// Parse fact files and collect facts
 	var initialFacts []ast.Atom
 	for _, factFile := range factFiles {
@@ -119,7 +124,8 @@ func (r *MangleRuntime) Load(path string) error {
 	}
 
 	// Analyze the program
-	programInfo, err := analysis.Analyze(units, edbDeclarations)
+	// Use all accumulated rule units
+	programInfo, err := analysis.Analyze(r.ruleUnits, edbDeclarations)
 	if err != nil {
 		return fmt.Errorf("failed to analyze program: %w", err)
 	}
@@ -175,36 +181,55 @@ func (r *MangleRuntime) LoadFacts(facts []string) error {
 	return nil
 }
 
-// LoadFromString parses and loads a single Datalog rule provided as a string.
-// This is typically used for dynamic rule injection or testing.
+// LoadFromSource parses and loads a full Datalog program provided as a string.
+// It supports multiple rules, declarations, and comments.
 //
 // Parameters:
-//   - rule: A valid Datalog rule string.
+//   - source: A valid Datalog program string.
 //
 // Returns:
 //   - An error if parsing, analysis, or evaluation fails.
-func (r *MangleRuntime) LoadFromString(rule string) error {
+func (r *MangleRuntime) LoadFromSource(source string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if rule == "" {
-		return fmt.Errorf("rule cannot be empty")
+	if source == "" {
+		return fmt.Errorf("source cannot be empty")
 	}
 
-	// Parse the rule
-	clause, err := parse.Clause(rule)
+	// Clean the source (strip comments, normalize newlines)
+	// Normalize newlines
+	s := strings.ReplaceAll(source, "\r\n", "\n")
+	lines := strings.Split(s, "\n")
+	kept := lines[:0]
+	for _, ln := range lines {
+		trimLn := strings.TrimSpace(ln)
+		// Skip empty lines and full-line comments
+		if trimLn == "" || strings.HasPrefix(trimLn, "%") || strings.HasPrefix(trimLn, "//") {
+			continue
+		}
+		// Note: We do NOT skip lines that are just "." because in Datalog
+		// a dot can be a valid clause terminator on its own line.
+		kept = append(kept, ln)
+	}
+	cleaned := strings.Join(kept, "\n")
+
+	// Parse source unit
+	unit, err := parse.Unit(strings.NewReader(cleaned))
 	if err != nil {
-		return fmt.Errorf("failed to parse rule: %w", err)
+		return fmt.Errorf("failed to parse source: %w", err)
 	}
 
-	// Create a source unit with the single clause
-	sourceUnit := parse.SourceUnit{Clauses: []ast.Clause{clause}}
+	// Append to persistent storage
+	r.ruleUnits = append(r.ruleUnits, unit)
+
 	edbDeclarations := make(map[ast.PredicateSym]ast.Decl)
 
 	// Analyze the program
-	programInfo, err := analysis.Analyze([]parse.SourceUnit{sourceUnit}, edbDeclarations)
+	// Use all accumulated rule units
+	programInfo, err := analysis.Analyze(r.ruleUnits, edbDeclarations)
 	if err != nil {
-		return fmt.Errorf("failed to analyze rule: %w", err)
+		return fmt.Errorf("failed to analyze program: %w", err)
 	}
 
 	// Stratify the program
@@ -214,19 +239,34 @@ func (r *MangleRuntime) LoadFromString(rule string) error {
 		Rules:         programInfo.Rules,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to stratify rule: %w", err)
+		return fmt.Errorf("failed to stratify program: %w", err)
 	}
 
 	r.programInfo = programInfo
 	r.strata = strata
 	r.predToStratum = predToStratum
 
-	// Perform initial evaluation with base facts (may be empty)
+	// Perform initial evaluation with base facts
 	if err := r.evaluate(r.baseFactStore); err != nil {
-		return fmt.Errorf("failed to evaluate program with rule: %w", err)
+		return fmt.Errorf("failed to evaluate program: %w", err)
 	}
 
 	return nil
+}
+
+// LoadFromString parses and loads a single Datalog rule provided as a string.
+// This is typically used for dynamic rule injection or testing.
+//
+// Parameters:
+//   - rule: A valid Datalog rule string.
+//
+// Returns:
+//   - An error if parsing, analysis, or evaluation fails.
+func (r *MangleRuntime) LoadFromString(rule string) error {
+	// Re-implement using LoadFromSource for consistency,
+	// but LoadFromString implies a single rule/clause without comments logic usually.
+	// For backward compatibility/simplicity, we can just wrap LoadFromSource.
+	return r.LoadFromSource(rule)
 }
 
 // ExecuteQuery runs a boolean Datalog query against the current program state + additional temporary facts.

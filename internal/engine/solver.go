@@ -70,11 +70,24 @@ func NewWithObservability(tracer core.Tracer, logger core.Logger) *PolicyEngine 
 	if logger == nil {
 		logger = core.NopLogger{}
 	}
-	return &PolicyEngine{
+
+	pe := &PolicyEngine{
 		tracer:  tracer,
 		logger:  logger,
 		runtime: NewMangleRuntime(),
 	}
+
+	// Load Planner Core Rules
+	if err := pe.runtime.LoadFromString(resources.GetPlannerRules()); err != nil {
+		// If the core schema fails to load, we should log it as a critical error.
+		// However, NewWithObservability does not return an error, so we log and proceed.
+		// The system will function but planning will fail.
+		if logger != nil {
+			logger.Error("failed to load planner core schema", "error", err)
+		}
+	}
+
+	return pe
 }
 
 // RecordLineage records a data lineage relationship between a child and a parent.
@@ -515,6 +528,62 @@ func (e *PolicyEngine) ExecuteQuery(ctx context.Context, facts []ast.Atom, query
 
 	span.SetAttr("datalog.result", res)
 	return res, nil
+}
+
+// Query executes a Datalog query and returns all matching solutions.
+// Each solution is a map where keys are variable names (e.g., "Action") and values are stringified constants.
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - facts: Temporary facts (strings) to include.
+//   - queryStr: The Datalog query with variables (e.g., 'plan_step(Action, Order)').
+//
+// Returns:
+//   - A list of solution maps.
+//   - An error if execution fails.
+func (e *PolicyEngine) Query(ctx context.Context, facts []string, queryStr string) ([]map[string]string, error) {
+	var results []map[string]string
+
+	if e.runtime == nil {
+		return nil, fmt.Errorf("runtime not initialized")
+	}
+
+	// Parse temporary facts
+	var atomFacts []ast.Atom
+	for _, f := range facts {
+		atom, err := parse.Atom(f)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse fact '%s': %w", f, err)
+		}
+		atomFacts = append(atomFacts, atom)
+	}
+
+	if e.tracer != nil {
+		var span core.Span
+		ctx, span = e.tracer.Start(ctx, "Datalog.Query")
+		defer span.End()
+		span.SetAttr("datalog.query", queryStr)
+	}
+
+	err := e.runtime.QueryWithSolutions(atomFacts, queryStr, func(solution map[string]any) error {
+		// Convert map[string]any to map[string]string
+		strMap := make(map[string]string)
+		for k, v := range solution {
+			if s, ok := v.(string); ok {
+				strMap[k] = s
+			} else {
+				strMap[k] = fmt.Sprintf("%v", v)
+			}
+		}
+		results = append(results, strMap)
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return results, nil
 }
 
 // toMangleFacts helper converts a Go struct to Mangle atoms via the Reflection API.
