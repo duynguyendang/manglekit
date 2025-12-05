@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 )
 
@@ -23,7 +23,9 @@ type StockResponse struct {
 func CheckStock(ctx context.Context, req StockRequest) (StockResponse, error) {
 	// Retrieve logger from context (auto-injected by guard)
 	log := core.LoggerFromContext(ctx)
-	log.Debug("checking stock", "sku", req.SKU)
+	if log != nil {
+		log.Debug("checking stock", "sku", req.SKU)
+	}
 
 	// Simulated business logic
 	stockLevels := map[string]int{
@@ -33,24 +35,25 @@ func CheckStock(ctx context.Context, req StockRequest) (StockResponse, error) {
 	}
 
 	count := stockLevels[req.SKU]
-	log.Info("stock check complete", "sku", req.SKU, "count", count)
+	if log != nil {
+		log.Info("stock check complete", "sku", req.SKU, "count", count)
+	}
 	return StockResponse{SKU: req.SKU, Count: count}, nil
 }
 
 func main() {
 	ctx := context.Background()
 
-	// 1. Initialize Manglekit with default settings (StdLogger, empty policy)
-	client := sdk.Must(sdk.NewDefault())
+	// 1. Initialize Manglekit
+	client := manglekit.Must(manglekit.NewClient(ctx))
 
 	client.Logger().Info("Manglekit client initialized")
 
 	// 2. Create a protected action in one line using Define
 	// This wraps the Go function and applies governance automatically
-	action := sdk.Define(client, "checkStock", CheckStock)
+	action := manglekit.Define(client, "checkStock", CheckStock)
 
 	// 3. Execute the protected action with type-safe I/O using Run
-	// No envelope packing/unpacking, no type assertions needed
 	input := StockRequest{SKU: "IPHONE"}
 	client.Logger().Info("Executing protected action", "sku", input.SKU)
 

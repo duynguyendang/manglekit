@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/engine"
-	"github.com/duynguyendang/manglekit/internal/guard"
 )
 
 // MockAction just passes data through.
@@ -35,9 +34,6 @@ type WrapperAction struct {
 func (w *WrapperAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	fmt.Printf("[%s] Executing (Nested) with Input ID: %s\n", w.Name, input.ID)
 	// Call Inner Action
-	// Note: We don't need to manually propagate context here, Guard does it.
-	// But wait, GuardedAction is the one that sets the context.
-	// If w.Inner is a GuardedAction, it will see the parent ID set by WrapperAction's Guard.
 	return w.Inner.Execute(ctx, input)
 }
 
@@ -46,22 +42,23 @@ func (w *WrapperAction) Metadata() core.ActionMetadata {
 }
 
 func main() {
-	// 1. Setup Engine and Actions
-	eng := engine.New()
+	// 1. Setup Client
+	ctx := context.Background()
+	client := manglekit.Must(manglekit.NewClient(ctx))
 
+	// Define raw Actions
 	actionA := &MockAction{Name: "ActionA"}
 	actionB := &MockAction{Name: "ActionB"}
 	actionC := &MockAction{Name: "ActionC"}
 
-	// Wrap them in Guards
-	guardedA := guard.New(actionA, eng, "closed")
-	guardedB := guard.New(actionB, eng, "closed")
-	guardedC := guard.New(actionC, eng, "closed")
+	// Use Client to Protect them (Facade)
+	guardedA := client.Protect(actionA)
+	guardedB := client.Protect(actionB)
+	guardedC := client.Protect(actionC)
 
 	// 2. Scenario 1: Sequential Chain (A -> B -> C)
 	// We simulate a pipeline where A output is passed to B, etc.
 	fmt.Println("--- Scenario 1: Sequential Chain ---")
-	ctx := context.Background()
 
 	// A
 	inputA := core.NewEnvelope("Secret Data")
@@ -91,7 +88,8 @@ func main() {
 
 	// Create a wrapper that calls C
 	wrapper := &WrapperAction{Name: "Wrapper", Inner: guardedC}
-	guardedWrapper := guard.New(wrapper, eng, "closed")
+	// Protect the wrapper too
+	guardedWrapper := client.Protect(wrapper)
 
 	inputWrapper := core.NewEnvelope("Nested Data")
 	fmt.Printf("InputWrapper ID: %s\n", inputWrapper.ID)
@@ -105,57 +103,5 @@ func main() {
 	// 4. Verification
 	fmt.Println("\n--- Verification ---")
 	fmt.Println("Lineage verification via in-memory graph is deprecated in favor of OpenTelemetry tracing.")
-	/*
-		graph := eng.Lineage()
-
-		// Print all graph facts
-		facts, _ := graph.ToFacts()
-		for _, f := range facts {
-			fmt.Printf("Fact: %s\n", f.String())
-		}
-
-		// Check Chain: OutputC -> OutputB -> OutputA -> InputA
-		parent, ok := graph.GetParent(resC.ID.String())
-		if !ok {
-			log.Fatalf("Missing lineage for OutputC (%s)", resC.ID)
-		}
-		fmt.Printf("OutputC -> %s\n", parent)
-		if parent != resB.ID.String() {
-			log.Fatalf("Expected OutputC -> OutputB, got -> %s", parent)
-		}
-
-		parent, ok = graph.GetParent(resB.ID.String())
-		if !ok {
-			log.Fatalf("Missing lineage for OutputB")
-		}
-		fmt.Printf("OutputB -> %s\n", parent)
-		if parent != resA.ID.String() {
-			log.Fatalf("Expected OutputB -> OutputA, got -> %s", parent)
-		}
-
-		parent, ok = graph.GetParent(resA.ID.String())
-		if !ok {
-			log.Fatalf("Missing lineage for OutputA")
-		}
-		fmt.Printf("OutputA -> %s\n", parent)
-		if parent != inputA.ID.String() {
-			log.Fatalf("Expected OutputA -> InputA, got -> %s", parent)
-		}
-
-		fmt.Println("Sequential Chain Verification PASSED")
-
-		// Check Nested: OutputWrapper -> InputWrapper
-		parent, ok = graph.GetParent(resWrapper.ID.String())
-		if !ok {
-			log.Fatalf("Missing lineage for OutputWrapper")
-		}
-		fmt.Printf("OutputWrapper -> %s\n", parent)
-
-		if parent != inputWrapper.ID.String() {
-			log.Fatalf("Expected OutputWrapper -> InputWrapper, got -> %s", parent)
-		}
-
-		fmt.Println("Nested Call Verification PASSED")
-		fmt.Println("All Lineage Checks Passed!")
-	*/
+	// Original code commented out graph checks. We leave it at that.
 }

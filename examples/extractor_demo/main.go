@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/adapters/extractor"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/engine"
 )
 
 type Order struct {
@@ -28,25 +28,20 @@ func (m *MockLLM) Metadata() core.ActionMetadata {
 }
 
 func main() {
-	llm := &MockLLM{}
+	// 1. Init Client (Standard)
+	_ = manglekit.Must(manglekit.NewClient(context.Background()))
 
-	// Init extractor
-	// Extractor returns an Action.
-	// We use it via Execute currently as it's an Adapter.
-	// To modernize, we might wrap it in sdk.Define?
-	// But ExtractorAction is already an Action.
-	// We just ensure type safety on the result.
+	// 2. Define Components
+	llm := &MockLLM{}
 
 	ext, err := extractor.New("order_parser", llm, Order{})
 	if err != nil {
 		log.Fatalf("Failed to create extractor: %v", err)
 	}
 
-	input := core.NewEnvelope("I need a Laptop ASAP, just one.")
-
+	// 3. Register Action via Facade (Optional but good practice if we want governance)
 	// Execute
-	// The example demonstrates "Extractor" capability using the Action directly.
-
+	input := core.NewEnvelope("I need a Laptop ASAP, just one.")
 	result, err := ext.Execute(context.Background(), input)
 	if err != nil {
 		log.Fatalf("Execution failed: %v", err)
@@ -64,15 +59,5 @@ func main() {
 		log.Fatalf("Expected Product 'Laptop', got '%s'", order.Product)
 	}
 
-	// Engine Reflection Demo
-	fmt.Println("Generating Mangle Facts...")
-
-	facts, err := engine.ToFacts(result.ID.String(), order)
-	if err != nil {
-		log.Fatalf("Fact generation failed: %v", err)
-	}
-
-	for _, f := range facts {
-		fmt.Printf("Fact: %s\n", f)
-	}
+	fmt.Println("Extraction successful.")
 }
