@@ -7,6 +7,11 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // GuardedAction is a decorator that wraps any `core.Action` to enforce governance policies.
@@ -83,30 +88,45 @@ func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer core.Tra
 // Returns:
 //   - The result envelope (possibly modified by policy), or an error.
 func (g *GuardedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	// If no tracer is configured, execute without tracing
-	if g.tracer == nil {
-		return g.executeInternal(ctx, input)
-	}
-
-	// Get action metadata for span naming
+	// Auto-Tracing (Phase 5)
+	// We use the global OTel tracer "manglekit" to create spans automatically.
+	// This supersedes the legacy g.tracer usage for the main span,
+	// ensuring consistent observability without user configuration.
+	tracer := otel.Tracer("manglekit")
 	meta := g.inner.Metadata()
 
-	// Start the main transaction span named after the action
-	ctx, span := g.tracer.Start(ctx, fmt.Sprintf("Action.%s", meta.Name))
+	ctx, span := tracer.Start(ctx, fmt.Sprintf("Action.%s", meta.Name),
+		trace.WithAttributes(
+			attribute.String("mangle.action_name", meta.Name),
+			attribute.String("mangle.action_type", string(meta.Type)),
+			attribute.String("mangle.input_id", input.ID.String()),
+		),
+	)
 	defer span.End()
-
-	// Set attributes on the span
-	span.SetAttr(core.AttrActionName, meta.Name)
-	span.SetAttr(core.AttrActionType, meta.Type)
 
 	result, err := g.executeInternal(ctx, input)
 	if err != nil {
-		span.Error(err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		// Distinguish between Policy DENIAL and System ERROR
+		if g.isPolicyViolation(err) {
+			span.SetAttributes(attribute.String("mangle.outcome", "DENIED"))
+		} else {
+			span.SetAttributes(attribute.String("mangle.outcome", "ERROR"))
+		}
 		return core.Envelope{}, err
 	}
 
-	span.SetAttr(core.AttrOutcome, core.OutcomeSuccess)
+	span.SetAttributes(
+		attribute.String("mangle.outcome", "ALLOWED"),
+		attribute.String("mangle.output_id", result.ID.String()),
+	)
 	return result, nil
+}
+
+// isPolicyViolation checks if the error is a wrapped policy violation
+func (g *GuardedAction) isPolicyViolation(err error) bool {
+	return errors.Is(err, core.ErrPolicyViolation)
 }
 
 // Metadata delegates to the inner action's Metadata method.

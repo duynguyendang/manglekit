@@ -46,6 +46,9 @@ func NewEnvelope(payload any) Envelope {
 //   - k: The metadata key (e.g., core.KeyDecision).
 //   - v: The metadata value.
 func (e *Envelope) SetMeta(k, v string) {
+	if e.Metadata == nil {
+		e.Metadata = make(map[string]string)
+	}
 	e.Metadata[k] = v
 }
 
@@ -57,7 +60,26 @@ func (e *Envelope) SetMeta(k, v string) {
 // Returns:
 //   - The value associated with the key, or an empty string if not found.
 func (e *Envelope) GetMeta(k string) string {
+	if e.Metadata == nil {
+		return ""
+	}
 	return e.Metadata[k]
+}
+
+// SetFeedback injects the "Teacher's" feedback into metadata
+func (e *Envelope) SetFeedback(msg string) {
+	if e.Metadata == nil {
+		e.Metadata = make(map[string]string)
+	}
+	e.Metadata["manglekit.feedback"] = msg
+}
+
+// GetFeedback retrieves the feedback for the "Student" (AI/Logic)
+func (e *Envelope) GetFeedback() string {
+	if e.Metadata == nil {
+		return ""
+	}
+	return e.Metadata["manglekit.feedback"]
 }
 
 // AddLabel adds a security label to the envelope if it does not already exist.

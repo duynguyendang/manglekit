@@ -2,8 +2,8 @@
 context_type: architecture_snapshot
 project: manglekit
 language: go
-version: 1.2
-last_updated: 2025-12-05T16:00:00Z
+version: 1.3
+last_updated: 2025-12-06T12:00:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -116,7 +116,7 @@ The enforcement layer. It ensures no Action runs without policy checks.
 *   **Key Structs**:
     *   `GuardedAction` (`internal/guard/guard.go`): Implements `core.Action`. Wraps an inner Action.
 *   **Key Logic**:
-    *   `Execute`: Implements the `Trace -> Authorize -> Exec -> Validate -> Steer` lifecycle.
+    *   `Execute`: Implements the `Trace -> Authorize -> Exec -> Validate -> Steer` lifecycle. **Auto-Tracing** ensures every action starts an OTel span ("manglekit" tracer).
     *   `shouldBlock(err)`: Determines if execution should halt based on `FailureMode` (Open/Closed).
 
 ### 2.4 Adapters (`adapters/`)
@@ -155,7 +155,7 @@ Tracing the execution flow of a request through the system:
     *   If `RETRY` occurred, injects `prev_feedback` (History).
     *   If `PolicyViolationError` occurred, injects `mangle_feedback` (Teacher-Student Protocol).
 5.  **Guard Interception**: The retrieved Action is a `guard.GuardedAction`. `Execute()` is called (`internal/guard/guard.go`).
-6.  **Tracing**: `GuardedAction` starts an OTel span `Action.myAction`.
+6.  **Tracing**: `GuardedAction` starts an OTel span `Action.myAction` automatically.
 7.  **Authorization**: `GuardedAction` calls `engine.Authorize` (`internal/engine/solver.go`).
     *   Input is converted to facts via `ToFacts` (Struct) or `Flatten` (JSON).
     *   `runtime.ExecuteQuery` checks for `deny("Req")`.
@@ -168,7 +168,7 @@ Tracing the execution flow of a request through the system:
 10. **Steering**: `GuardedAction` calls `engine.EvaluateSteering`.
     *   Checks for `correction` (RETRY) or `next_step` (ROUTE).
 11. **Loop**: `runLoopInternal` receives the result.
-    *   If `RETRY`: Loops again with feedback.
+    *   If `RETRY`: **Smart Retry** with exponential backoff (up to 3 times) and feedback injection via `SetFeedback`.
     *   If `PolicyViolationError`: Catch error, set `mangle_feedback`, and RETRY (Teacher-Student).
     *   If `ROUTE`: Loops again with new action.
     *   If `ALLOW`: Returns result to user.
@@ -182,6 +182,7 @@ The standard container for all data moving through the kernel.
 *   `Metadata` (map[string]string): Control plane signals (`decision`, `latency`, `trace_id`).
 *   `SecurityLabels` ([]string): Taint tags (e.g., "secret", "pii") for information flow control.
 *   `ContentType` (string): "STRUCT" (Typed) or "JSON" (Dynamic).
+*   **Helpers**: `SetFeedback(msg)`, `GetFeedback()`.
 
 ### 4.2 Reflection & Flattening
 *   **Typed Mode**: Uses `engine.Reflector` (`internal/engine/reflection.go`) to flatten structs into `field(ID, Val)` facts.
@@ -209,7 +210,7 @@ The standard container for all data moving through the kernel.
 *   **Config Validation**: `config.Load` performs basic YAML parsing. Semantic validation (using `internal/util/schema`) is not yet integrated into the startup flow.
 
 ### 5.2 Hardcoded / Temporary Logic
-*   **Max Steps**: `runLoopInternal` has a hardcoded limit of `10` steps (`sdk/loop.go`).
+*   **Max Steps**: `runLoopInternal` has a hardcoded limit of `10` steps, with a specialized retry limit of `3` (`sdk/loop.go`).
 *   **Magic Strings**: Predicate names (`deny`, `correction`, `next_step`) are hardcoded in `internal/engine/solver.go`.
 *   **MCP Startup Resilience**: `mcp.Load` swallows connection errors (logs only), which may hide misconfigurations during startup.
 
@@ -259,6 +260,7 @@ The `mkit` CLI facilitates neuro-symbolic AI governance.
 
 ## 9. Changelog
 
+-   **2025-12-06**: **Invisible Governance (Phases 4 & 5)**. Implemented Teacher-Student Protocol (Smart Retry Loop with Backoff & Feedback) in `sdk/loop.go`. Added Auto-Tracing (OpenTelemetry) to `internal/guard/guard.go`. Added `SetFeedback`/`GetFeedback` to `core/envelope.go`.
 -   **2025-12-05**: **Facade Pattern & Internalization**. Moved `engine/` and `guard/` to `internal/`. Created root `manglekit.go` Facade. Renamed `sdk/sdk.go` to `sdk/client.go`. Replaced `sdk/action.go` with type-safe `sdk/generics.go`. Added `logger_std.go`.
 -   **2025-12-05**: **Synchronization Audit**. Updated `CONTEXT.md` to match exact file structure and API surface. Added `sdk/action.go` (Define/DefineDynamic), `sdk/tracing.go`, and `engine/memory/volatile.go`. Clarified `ExecuteByName` location (`sdk/loop.go`).
 -   **2025-12-05**: **Resilience Update**. Documented `MCPLoader` Soft Failure (Health Check) pattern and moved it from Technical Debt to Adapters.
