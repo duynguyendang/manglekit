@@ -11,7 +11,7 @@ It specifies conventions, automated tasks, and safety rules to ensure that all A
 
 Agents use this file as an **operational manual** to perform reasoning, refactoring, documentation updates, and observability instrumentation within the Go SDK.
 
-Agents must treat the documentation set (`CONTEXT.md`, `HLD.md`, `LLD.md`, `ADR.md`) as the synchronized **architecture source of truth**.
+Agents must treat the documentation set (`CONTEXT.md`, `HLD.md`, `LLD.md`, `ADR.md`, `ARCHITECTURE_RULES.md`) as the synchronized **architecture source of truth**.
 `CONTEXT.md` is the **live baseline** — always validate and update it whenever architecture or dependency injection logic changes.
 
 ---
@@ -69,7 +69,7 @@ Use the document’s internal structure as a guide:
 
 ### 3.3 Reflecting Code Changes
 
-When code changes affect architecture, interfaces, or runtime behavior, the agent must **edit `docs/CONTEXT.md` directly** —
+When code changes introduce **new features, functions, or modify workflows**, or affect architecture, interfaces, or runtime behavior, the agent must **edit `docs/CONTEXT.md` directly** —
 updating sections, known gaps, and timestamps. This guarantees that the documentation always mirrors the true, current state of the system.
 
 ---
@@ -107,6 +107,7 @@ test: add or fix unit tests
 
 Trigger the **auto-sync process** whenever any of the following occur:
 
+- **New features, functions, or workflow changes.**
 - Changes to `manglekit.go`, `guard/**`, `engine/**`, `core/**`, or `adapters/**`.
 - Addition or modification of an **Adapter**.
 - Changes to **Policy Logic** or **Reflection**.
@@ -161,13 +162,20 @@ Use naming pattern `Test<Component>_<Behavior>`.
 
 ## 10. Architecture Rules (Enforced)
 
-- **Wrap, Don't Build**: The framework does not construct objects; it wraps them.
+Agents must strictly adhere to the **Veto Rules** defined in `docs/ARCHITECTURE_RULES.md`.
+Any code violating these rules must be rejected or refactored immediately.
+
+**Key Constraints Summary:**
+- **⛔ STRICT IMPORT BOUNDARIES**: User-space code must NEVER import `internal/`.
+- **⛔ NO MANUAL LOGGING**: Use Guard Middleware; no `fmt.Println`.
+- **⛔ TYPE SAFETY**: Use `manglekit.Define[In, Out]`.
+- **⛔ NO 3RD-PARTY DEPS IN CORE**: Keep `core` lightweight.
+- **⛔ CONTEXT PROPAGATION**: `ctx` is mandatory everywhere.
 - **Layered dependencies**:
     - `guard` depends on `engine` and `core`.
     - `engine` depends on `core` and `google/mangle`.
     - `adapters` depend on `core` and external drivers.
     - `core` has NO dependencies.
-- **Context Propagation**: `ctx` must be passed through all layers.
 
 ---
 
@@ -258,6 +266,7 @@ This section documents key architectural patterns for v1.0.
 | `docs/ADR.md` | Architecture decisions | Understanding *why* (e.g., why Builder was removed) |
 | `docs/LOGGING.md` | Observability conventions | Implementing logging |
 | `docs/TRACING.md` | OTel span hierarchy | Debugging trace issues |
+| `docs/ARCHITECTURE_RULES.md` | Architecture rules |  |
 
 ---
 
@@ -271,6 +280,7 @@ Before committing any code changes, verify:
 - [ ] Context used for Logger/Tracer access
 
 ### Architecture Compliance Checks
+- [ ] **Veto Rules Check**: Verified against `docs/ARCHITECTURE_RULES.md`
 - [ ] No illegal cross-layer imports
 - [ ] Adapters do not depend on Guard or Engine
 - [ ] Guard always creates a span
