@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/google/mangle/analysis"
 	"github.com/google/mangle/ast"
@@ -20,6 +21,7 @@ import (
 // It manages the lifecycle of Datalog programs, including loading rules from files,
 // parsing, analysis, stratification, and evaluation.
 type MangleRuntime struct {
+	mu sync.RWMutex
 	// programInfo contains the analyzed and stratified Datalog program
 	programInfo *analysis.ProgramInfo
 	// strata contains the stratification layers of the program for safe evaluation
@@ -56,6 +58,9 @@ func NewMangleRuntime() *MangleRuntime {
 // Returns:
 //   - An error if loading, parsing, or analysis fails.
 func (r *MangleRuntime) Load(path string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if path == "" {
 		return fmt.Errorf("path cannot be empty")
 	}
@@ -150,6 +155,9 @@ func (r *MangleRuntime) Load(path string) error {
 // Returns:
 //   - An error if parsing or evaluation fails.
 func (r *MangleRuntime) LoadFacts(facts []string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	for _, factStr := range facts {
 		atom, err := parse.Atom(factStr)
 		if err != nil {
@@ -176,6 +184,9 @@ func (r *MangleRuntime) LoadFacts(facts []string) error {
 // Returns:
 //   - An error if parsing, analysis, or evaluation fails.
 func (r *MangleRuntime) LoadFromString(rule string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if rule == "" {
 		return fmt.Errorf("rule cannot be empty")
 	}
@@ -229,6 +240,9 @@ func (r *MangleRuntime) LoadFromString(rule string) error {
 //   - true if derived, false otherwise.
 //   - error if the runtime is not initialized or execution fails.
 func (r *MangleRuntime) ExecuteQuery(facts []ast.Atom, queryStr string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
 	if r.programInfo == nil {
 		return false, fmt.Errorf("runtime not initialized; call Load or LoadFromString first")
 	}
@@ -269,6 +283,9 @@ func (r *MangleRuntime) ExecuteQuery(facts []ast.Atom, queryStr string) (bool, e
 // Returns:
 //   - An error if execution fails.
 func (r *MangleRuntime) QueryWithSolutions(facts []ast.Atom, queryStr string, onSolution func(map[string]any) error) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
 	if r.programInfo == nil {
 		return fmt.Errorf("runtime not initialized; call Load or LoadFromString first")
 	}

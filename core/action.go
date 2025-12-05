@@ -11,6 +11,12 @@ type ActionMetadata struct {
 	Type string
 	// InputContentType specifies the expected input format (Struct or JSON).
 	InputContentType ContentType
+	// InputType is the string name of the Go input type (e.g., "StockReq").
+	InputType string
+	// OutputType is the string name of the Go output type (e.g., "StockRes").
+	OutputType string
+	// IsDynamic indicates if the input type is generic (e.g., map[string]any or JSON).
+	IsDynamic bool
 }
 
 // Action defines the interface for a unit of work in the Manglekit system.

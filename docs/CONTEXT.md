@@ -3,7 +3,7 @@ context_type: architecture_snapshot
 project: manglekit
 language: go
 version: 1.3
-last_updated: 2025-12-06T12:00:00Z
+last_updated: 2025-12-07T12:00:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -86,6 +86,7 @@ The brain of the system. It translates Go objects into Datalog facts and evaluat
     *   `Validate(ctx, meta, output)`: Post-check hook. Evaluates `deny("Output")` and checks for `violation_msg(Msg)`.
     *   `EvaluateSteering(ctx, input)`: Determines next step (`RETRY` with `correction`, `ROUTE` with `next_step`).
     *   `LoadFacts(facts)`: Injects dynamic facts at runtime.
+    *   `RegisterActionMetadata(meta)`: Injects `action("name")` and `has_input/output` facts for Planner discovery.
     *   `LoadKnowledge(path)`: Loads static RDF knowledge from Turtle files.
     *   `LoadFromString(rule)`: Parses and loads a single Datalog rule from a string.
     *   `ExecuteQuery(ctx, facts, query)`: Runs a raw Datalog query with tracing.
@@ -260,6 +261,7 @@ The `mkit` CLI facilitates neuro-symbolic AI governance.
 
 ## 9. Changelog
 
+-   **2025-12-07**: **Runtime Reflection (Action Discovery)**. Enabled Action Discovery for the Planner. `Define` now extracts Go types via reflection and injects them as Datalog facts (`action`, `has_input`, `has_output`) into the Engine at registration time. Added `RegisterActionMetadata` to `PolicyEngine` and `sync.RWMutex` to `MangleRuntime` for thread safety.
 -   **2025-12-06**: **Invisible Governance (Phases 4 & 5)**. Implemented Teacher-Student Protocol (Smart Retry Loop with Backoff & Feedback) in `sdk/loop.go`. Added Auto-Tracing (OpenTelemetry) to `internal/guard/guard.go`. Added `SetFeedback`/`GetFeedback` to `core/envelope.go`.
 -   **2025-12-05**: **Facade Pattern & Internalization**. Moved `engine/` and `guard/` to `internal/`. Created root `manglekit.go` Facade. Renamed `sdk/sdk.go` to `sdk/client.go`. Replaced `sdk/action.go` with type-safe `sdk/generics.go`. Added `logger_std.go`.
 -   **2025-12-05**: **Synchronization Audit**. Updated `CONTEXT.md` to match exact file structure and API surface. Added `sdk/action.go` (Define/DefineDynamic), `sdk/tracing.go`, and `engine/memory/volatile.go`. Clarified `ExecuteByName` location (`sdk/loop.go`).
