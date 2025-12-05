@@ -3,8 +3,10 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"reflect"
+
 	"github.com/duynguyendang/manglekit/core"
-    "github.com/duynguyendang/manglekit/internal/util"
+	"github.com/duynguyendang/manglekit/internal/util"
 )
 
 // Runnable is a handle for a type-safe action
@@ -20,9 +22,24 @@ func Define[In any, Out any](
 	handler func(context.Context, In) (Out, error),
 ) *Runnable[In, Out] {
 
+	// Reflection: Extract type names
+	inType := reflect.TypeOf((*In)(nil)).Elem()
+	if inType.Kind() == reflect.Ptr {
+		inType = inType.Elem()
+	}
+	inName := inType.Name()
+
+	outType := reflect.TypeOf((*Out)(nil)).Elem()
+	if outType.Kind() == reflect.Ptr {
+		outType = outType.Elem()
+	}
+	outName := outType.Name()
+
 	// Adapter: Convert Typed Handler -> Core Action
 	wrappedAction := &util.FuncWrapper{
-		ActionName: name,
+		ActionName:     name,
+		MetaInputType:  inName,
+		MetaOutputType: outName,
 		Fn: func(ctx context.Context, env core.Envelope) (core.Envelope, error) {
 			var input In
             // Type Assertion on Payload

@@ -255,6 +255,11 @@ func newDefaultLogger() core.Logger {
 //   - action: The action instance.
 func (c *Client) RegisterAction(name string, action core.Action) {
 	c.registry[name] = action
+	if c.engine != nil {
+		if err := c.engine.RegisterActionMetadata(action.Metadata()); err != nil {
+			c.logger.Warn("failed to register action metadata to engine", "action", name, "error", err)
+		}
+	}
 }
 
 // Shutdown cleans up resources used by the client, such as flushing traces.

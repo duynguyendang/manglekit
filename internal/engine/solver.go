@@ -146,6 +146,36 @@ func (e *PolicyEngine) LoadFacts(facts []string) error {
 	return e.runtime.LoadFacts(facts)
 }
 
+// RegisterActionMetadata injects metadata about a registered action into the Datalog runtime.
+// It generates facts that describe the action's interface, enabling the Planner to reason about it.
+//
+// Generated Facts:
+//   - action("name")
+//   - has_input("name", "InputType")
+//   - has_output("name", "OutputType")
+//
+// Parameters:
+//   - meta: The metadata of the action.
+//
+// Returns:
+//   - An error if fact loading fails.
+func (e *PolicyEngine) RegisterActionMetadata(meta core.ActionMetadata) error {
+	var facts []string
+	safeName := escapeString(meta.Name)
+
+	facts = append(facts, fmt.Sprintf("action(\"%s\")", safeName))
+
+	if meta.InputType != "" {
+		facts = append(facts, fmt.Sprintf("has_input(\"%s\", \"%s\")", safeName, escapeString(meta.InputType)))
+	}
+
+	if meta.OutputType != "" {
+		facts = append(facts, fmt.Sprintf("has_output(\"%s\", \"%s\")", safeName, escapeString(meta.OutputType)))
+	}
+
+	return e.LoadFacts(facts)
+}
+
 // LoadFromPath loads policy rules and facts from the specified file system path.
 // It delegates to the underlying MangleRuntime to parse and compile the rules.
 //
