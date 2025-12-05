@@ -15,30 +15,31 @@ import (
 type StubbornAI struct{}
 
 func (a *StubbornAI) Execute(ctx context.Context, env core.Envelope) (core.Envelope, error) {
+	log := core.LoggerFromContext(ctx)
+
 	// 1. Check for feedback (Teacher-Student Protocol)
 	feedback, hasFeedback := env.Metadata["mangle_feedback"]
 
 	// 2. Simulate the AI "seeing" the prompt + feedback
 	// In a real LLMAction, the feedback is appended to the prompt string.
-	// Here, we print it to the console to show the user what's happening.
 	prompt := fmt.Sprintf("%v", env.Payload)
 	if hasFeedback {
 		// Simulate the injected system warning
 		prompt = fmt.Sprintf("%s\n[SYSTEM WARNING]: %s", prompt, feedback)
 
 		// Visual cue for the demo
-		fmt.Println("👮 Manglekit: DENIED! (Policy Violation Detected)")
+		log.Warn("Manglekit: DENIED! (Policy Violation Detected)")
 	}
 
-	fmt.Printf("\n📥 [StubbornAI] Received Prompt:\n%s\n", prompt)
+	log.Info("StubbornAI Received Prompt", "prompt", prompt)
 
 	// 3. Logic: If warned, behave correctly. If not, behave greedily.
 	if hasFeedback {
-		fmt.Println("🤖 AI: Oops, I see the feedback. Retrying with $450...")
+		log.Info("AI: Oops, I see the feedback. Retrying with $450...")
 		return core.NewEnvelope(map[string]int{"amount": 450}), nil
 	}
 
-	fmt.Println("🤖 AI: Trying to spend $1000...")
+	log.Info("AI: Trying to spend $1000...")
 	return core.NewEnvelope(map[string]int{"amount": 1000}), nil
 }
 

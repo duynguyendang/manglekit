@@ -2,6 +2,7 @@ package manglekit
 
 import (
 	"context"
+
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 )
@@ -13,8 +14,10 @@ type ExecuteOption = sdk.ExecuteOption
 
 // --- Facade Functions ---
 
-// NewClient initializes the client with a default Slog logger
+// NewClient initializes the client with a default Slog logger.
+// It implements the "Batteries Included" philosophy by injecting a default logger.
 func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
+	// Inject default logger first (can be overridden by opts)
 	defaultOpts := []ClientOption{
 		sdk.WithLogger(getDefaultLogger()),
 	}
@@ -24,7 +27,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 
 // Must helper for panic-on-error initialization
 func Must(c *Client, err error) *Client {
-    return sdk.Must(c, err)
+	return sdk.Must(c, err)
 }
 
 // Define is the public entry point for creating Actions

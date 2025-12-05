@@ -1,5 +1,7 @@
 package core
 
+import "context"
+
 // Logger defines a vendor-neutral interface for structured logging. The
 // methods follow a "message + key/value" calling convention so callers can
 // attach context without committing to any specific backend semantics.
@@ -26,6 +28,23 @@ type Logger interface {
 	// With returns a child logger that automatically appends the supplied
 	// key/value pairs to every log record.
 	With(fields ...any) Logger
+}
+
+// contextKeyLogger is the context key for injecting the Logger.
+type contextKeyLogger struct{}
+
+// ContextWithLogger injects the provided Logger into the context.
+func ContextWithLogger(ctx context.Context, l Logger) context.Context {
+	return context.WithValue(ctx, contextKeyLogger{}, l)
+}
+
+// LoggerFromContext retrieves the Logger from the context.
+// If no Logger is found, it returns a NopLogger (safe default).
+func LoggerFromContext(ctx context.Context) Logger {
+	if l, ok := ctx.Value(contextKeyLogger{}).(Logger); ok {
+		return l
+	}
+	return NopLogger{}
 }
 
 // NopLogger is a Logger implementation that discards all log messages.

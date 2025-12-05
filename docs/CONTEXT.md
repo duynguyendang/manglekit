@@ -52,8 +52,7 @@ manglekit/
 ├── core/                 # [PUBLIC API] Interfaces and shared types (No dependencies)
 │   ├── action.go         # Action interface
 │   ├── envelope.go       # Envelope struct
-│   ├── logger.go         # Logger interface
-│   ├── logger_context.go # Context helpers (LoggerFromContext)
+│   ├── logger.go         # Logger interface & Context helpers
 │   ├── tracer.go         # Tracer interface
 │   ├── memory.go         # MemoryStore interface (Chat History)
 │   ├── state.go          # StateProvider interface (Generic State)
@@ -195,7 +194,7 @@ The standard container for all data moving through the kernel.
 ### 4.3 Memory & Context
 *   **Lineage**: `context.Context` carries the Parent ID via `core.WithParentID` / `core.GetParentID` (`core/context_lineage.go`).
 *   **Facts**: `context.Context` carries request-scoped facts via `sdk.WithFact`.
-*   **Logging**: `context.Context` carries the Logger via `core.LoggerWithContext`.
+*   **Logging**: `context.Context` carries the Logger via `core.ContextWithLogger`.
 *   **Session History**: Managed by `core.MemoryStore` interface.
     *   `VolatileStore` (`internal/engine/memory/volatile.go`): In-memory map for transient sessions.
     *   `NoOpStore`: Default stateless behavior.
