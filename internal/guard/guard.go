@@ -138,14 +138,13 @@ func (g *GuardedAction) shouldBlock(err error) bool {
 // can access it via core.LoggerFromContext(ctx).
 func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	// Inject the logger into the context for downstream access
-	ctx = core.LoggerWithContext(ctx, g.engine.Logger())
+	ctx = core.ContextWithLogger(ctx, g.engine.Logger())
 
 	logger := core.LoggerFromContext(ctx)
 	meta := g.inner.Metadata()
-	logger.Debug("starting action execution",
-		core.AttrActionName, meta.Name,
-		core.AttrActionType, meta.Type,
-		"envelope.id", input.ID.String(),
+	logger.Info("Action started",
+		"action", meta.Name,
+		"input_id", input.ID.String(),
 	)
 
 	// 1. Ingestion: Link Input to Parent (Tracing only)
@@ -197,7 +196,7 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 	if err != nil {
 		if g.shouldBlock(err) {
 			logger.Warn("validation failed",
-				core.AttrActionName, meta.Name,
+				"action", meta.Name,
 				"error", err.Error(),
 			)
 			return core.Envelope{}, fmt.Errorf("validation failed: %w", err)
@@ -211,7 +210,7 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 	decision, steeringMeta, err := g.engine.EvaluateSteering(ctx, validatedResult)
 	if err != nil {
 		logger.Warn("steering evaluation failed",
-			core.AttrActionName, meta.Name,
+			"action", meta.Name,
 			"error", err.Error(),
 		)
 		return core.Envelope{}, fmt.Errorf("steering evaluation failed: %w", err)
@@ -226,10 +225,9 @@ func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope
 		validatedResult.Metadata[k] = v
 	}
 
-	logger.Debug("action execution completed successfully",
-		core.AttrActionName, meta.Name,
-		core.AttrActionType, meta.Type,
-		"decision", decision,
+	logger.Info("Action completed",
+		"action", meta.Name,
+		"result", "success", // Simplified as per doc
 	)
 
 	return validatedResult, nil

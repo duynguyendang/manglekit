@@ -46,6 +46,11 @@ func (c *Client) ExecuteByName(ctx context.Context, actionName string, input any
 //     - ALLOW: Return the result (success).
 //     - DENY: Return an error.
 func (c *Client) runLoopInternal(ctx context.Context, startAction string, payload any, params ExecutionParams) (core.Envelope, error) {
+	// Inject the logger into the context for downstream access
+	if c.logger != nil {
+		ctx = core.ContextWithLogger(ctx, c.logger)
+	}
+
 	// 1. Determine Store Strategy
 	var currentHistory []core.ChatMessage
 	var store core.MemoryStore

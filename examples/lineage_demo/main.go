@@ -15,7 +15,8 @@ type MockAction struct {
 }
 
 func (m *MockAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	fmt.Printf("[%s] Executing with Input ID: %s\n", m.Name, input.ID)
+	log := core.LoggerFromContext(ctx)
+	log.Info("Executing action", "name", m.Name, "input_id", input.ID.String())
 	// Output ID will be new
 	out := core.NewEnvelope(input.Payload)
 	return out, nil
@@ -32,7 +33,8 @@ type WrapperAction struct {
 }
 
 func (w *WrapperAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	fmt.Printf("[%s] Executing (Nested) with Input ID: %s\n", w.Name, input.ID)
+	log := core.LoggerFromContext(ctx)
+	log.Info("Executing nested action", "name", w.Name, "input_id", input.ID.String())
 	// Call Inner Action
 	return w.Inner.Execute(ctx, input)
 }
