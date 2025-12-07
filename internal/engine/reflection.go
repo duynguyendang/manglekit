@@ -6,22 +6,8 @@ import (
 	"strings"
 )
 
-// ToFacts converts a Go data structure into a slice of string-represented Mangle Datalog facts.
-// It recursively traverses structs, maps, slices, and arrays.
-//
-// Format:
-//
-//	predicate(entityID, value)
-//
-// Nested fields are flattened using underscore delimiters (e.g., "address_city").
-//
-// Parameters:
-//   - id: The unique identifier for the entity (e.g., "Req", "Output").
-//   - input: The Go value to convert.
-//
-// Returns:
-//   - A slice of strings, where each string is a Datalog fact (e.g., 'name("Req", "Alice")').
-//   - An error if conversion fails.
+// ToFacts converts a Go data structure into Mangle Datalog facts.
+// It is the entry point for turning runtime objects into logic predicates.
 func ToFacts(id string, input any) ([]string, error) {
 	if input == nil {
 		return nil, nil
@@ -29,8 +15,10 @@ func ToFacts(id string, input any) ([]string, error) {
 	var facts []string
 	v := reflect.ValueOf(input)
 
-	// Use empty path initially.
-	if err := toFactsRecursive(id, "", v, &facts); err != nil {
+	// Track visited pointers to prevent infinite recursion (Cycles)
+	visited := make(map[uintptr]bool)
+
+	if err := toFactsRecursive(id, "", v, &facts, visited); err != nil {
 		return nil, err
 	}
 	return facts, nil
@@ -85,16 +73,24 @@ func escapeString(s string) string {
 	return sb.String()
 }
 
-// toFactsRecursive traverses the reflection value tree and appends facts to the slice.
-func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, args ...string) error {
-	// Dereference pointers, skipping if nil.
-	if v.Kind() == reflect.Ptr {
+func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited map[uintptr]bool, args ...string) error {
+	// 1. Dereference Pointers & Interfaces
+	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return nil
+		}
+		// Cycle Detection for Pointers
+		if v.Kind() == reflect.Ptr {
+			ptr := v.Pointer()
+			if visited[ptr] {
+				return nil // Cycle detected: stop this branch silently
+			}
+			visited[ptr] = true
 		}
 		v = v.Elem()
 	}
 
+	// 2. Switch on Kind
 	switch v.Kind() {
 	case reflect.Struct:
 		t := v.Type()
@@ -102,19 +98,17 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, args ..
 			field := v.Field(i)
 			structField := t.Field(i)
 
-			// Skip unexported fields.
+			// Skip unexported fields
 			if !structField.IsExported() {
 				continue
 			}
 
-			// Determine the predicate name from the tag or field name.
-			// Priority: mangle tag > json tag > field name
+			// Determine Field Name (Tag Priority: mangle > json > struct name)
 			tag := structField.Tag.Get("mangle")
 			fieldName := tag
 			if fieldName == "" {
 				jsonTag := structField.Tag.Get("json")
 				if jsonTag != "" && jsonTag != "-" {
-					// json tag often looks like "name,omitempty"
 					parts := strings.Split(jsonTag, ",")
 					fieldName = parts[0]
 				}
@@ -123,85 +117,105 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, args ..
 				fieldName = strings.ToLower(structField.Name)
 			}
 
-			newPath := fieldName
-			if path != "" {
-				newPath = path + "_" + fieldName
+			// Handle Embedded (Anonymous) Fields
+			// Strategy: Flatten if anonymous AND untagged
+			newPath := path
+			isAnonymousUntagged := structField.Anonymous && tag == "" && structField.Tag.Get("json") == ""
+
+			if !isAnonymousUntagged {
+				if newPath != "" {
+					newPath = newPath + "_" + fieldName
+				} else {
+					newPath = fieldName
+				}
 			}
 
-			if err := toFactsRecursive(id, newPath, field, facts, args...); err != nil {
+			if err := toFactsRecursive(id, newPath, field, facts, visited, args...); err != nil {
 				return err
 			}
 		}
+
 	case reflect.Map:
 		for _, key := range v.MapKeys() {
 			val := v.MapIndex(key)
 			keyStr := fmt.Sprintf("%v", key.Interface())
 
-			// For maps, we treat the key as an additional argument to the predicate.
-			newArgs := append([]string{}, args...)
-			newArgs = append(newArgs, keyStr)
+			// Append key to args for the next level
+			newArgs := make([]string, len(args)+1)
+			copy(newArgs, args)
+			newArgs[len(args)] = keyStr
 
-			if err := toFactsRecursive(id, path, val, facts, newArgs...); err != nil {
+			if err := toFactsRecursive(id, path, val, facts, visited, newArgs...); err != nil {
 				return err
 			}
 		}
+
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < v.Len(); i++ {
-			if err := toFactsRecursive(id, path, v.Index(i), facts, args...); err != nil {
+			// Treat Slice as Set (Ignore index). Recursively process elements.
+			if err := toFactsRecursive(id, path, v.Index(i), facts, visited, args...); err != nil {
 				return err
 			}
 		}
+
 	default:
-		// Base case for literal values.
-		var strVal string
-		var isNumeric bool
-
-		switch v.Kind() {
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			strVal = fmt.Sprintf("%d", v.Int())
-			isNumeric = true
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			strVal = fmt.Sprintf("%d", v.Uint())
-			isNumeric = true
-		case reflect.Float32, reflect.Float64:
-			strVal = fmt.Sprintf("%f", v.Float())
-			isNumeric = true
-		default:
-			strVal = fmt.Sprintf("%v", v.Interface())
-		}
-
-		// If path is empty (top-level primitive), use "value" default
-		predicate := path
-		if predicate == "" {
-			predicate = "value"
-		}
-
-		safeID := escapeString(id)
-
-		var sb strings.Builder
-		sb.WriteString(predicate)
-		sb.WriteByte('(')
-		sb.WriteByte('"')
-		sb.WriteString(safeID)
-		sb.WriteByte('"')
-
-		for _, arg := range args {
-			sb.WriteString(", \"")
-			sb.WriteString(escapeString(arg))
-			sb.WriteByte('"')
-		}
-
-		sb.WriteString(", ")
-		if isNumeric {
-			sb.WriteString(strVal)
-		} else {
-			sb.WriteByte('"')
-			sb.WriteString(escapeString(strVal))
-			sb.WriteByte('"')
-		}
-		sb.WriteByte(')')
-
-		*facts = append(*facts, sb.String())
+		// primitive handling
+		generatePrimitiveFact(id, path, v, facts, args...)
 	}
 	return nil
+}
+
+// generatePrimitiveFact creates the final Datalog string: predicate("id", "arg", value).
+func generatePrimitiveFact(id, path string, v reflect.Value, facts *[]string, args ...string) {
+	var strVal string
+	var isNumeric bool
+
+	switch v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		strVal = fmt.Sprintf("%d", v.Int())
+		isNumeric = true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		strVal = fmt.Sprintf("%d", v.Uint())
+		isNumeric = true
+	case reflect.Float32, reflect.Float64:
+		strVal = fmt.Sprintf("%g", v.Float()) // Use %g to preserve significant digits
+		isNumeric = true
+	case reflect.Bool:
+		strVal = fmt.Sprintf("%v", v.Bool())
+	default:
+		strVal = fmt.Sprintf("%v", v.Interface())
+	}
+
+	predicate := path
+	if predicate == "" {
+		predicate = "value"
+	}
+
+	// Helper to escape strings (Must ensure this exists in file)
+	safeID := escapeString(id)
+
+	var sb strings.Builder
+	sb.WriteString(predicate)
+	sb.WriteByte('(')
+	sb.WriteByte('"')
+	sb.WriteString(safeID)
+	sb.WriteByte('"')
+
+	for _, arg := range args {
+		sb.WriteString(", \"")
+		sb.WriteString(escapeString(arg))
+		sb.WriteByte('"')
+	}
+
+	sb.WriteString(", ")
+	if isNumeric {
+		sb.WriteString(strVal)
+	} else {
+		sb.WriteByte('"')
+		sb.WriteString(escapeString(strVal))
+		sb.WriteByte('"')
+	}
+	sb.WriteByte(')')
+
+	*facts = append(*facts, sb.String())
 }

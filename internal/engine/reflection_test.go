@@ -40,7 +40,7 @@ func TestToFacts(t *testing.T) {
 		`location_city("test", "Anytown")`,
 		`tags("test", "alpha")`,
 		`tags("test", "beta")`,
-		`data("test", "id", "123")`,
+		`data("test", "id", 123)`,
 		`data("test", "isAdmin", "true")`,
 	}
 
