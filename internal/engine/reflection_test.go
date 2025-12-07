@@ -57,3 +57,29 @@ func TestToFacts(t *testing.T) {
 		t.Errorf("ToFacts() got = %v, want %v", facts, expectedFacts)
 	}
 }
+
+func TestLabelsToFacts(t *testing.T) {
+	labels := []string{"secret", "pii", "complex\"label\\"}
+	entityID := "req\"1"
+
+	expected := []string{
+		`has_label("req\"1", "secret")`,
+		`has_label("req\"1", "pii")`,
+		`has_label("req\"1", "complex\"label\\")`,
+	}
+
+	facts, err := LabelsToFacts(entityID, labels)
+	if err != nil {
+		t.Fatalf("LabelsToFacts failed: %v", err)
+	}
+
+	if len(facts) != len(expected) {
+		t.Fatalf("Expected %d facts, got %d", len(expected), len(facts))
+	}
+
+	for i, fact := range facts {
+		if fact != expected[i] {
+			t.Errorf("Fact %d: got %s, want %s", i, fact, expected[i])
+		}
+	}
+}

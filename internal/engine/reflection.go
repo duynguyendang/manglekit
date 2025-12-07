@@ -52,12 +52,20 @@ func ToFacts(id string, input any) ([]string, error) {
 //   - An error if conversion fails (unlikely, mostly wrapper around string formatting).
 func LabelsToFacts(entityID string, labels []string) ([]string, error) {
 	var facts []string
+	if len(labels) > 0 {
+		facts = make([]string, 0, len(labels))
+	}
+
+	safeID := escapeString(entityID)
+
 	for _, label := range labels {
-		// Escape double quotes and backslashes in the label and entityID
-		safeID := escapeString(entityID)
-		safeLabel := escapeString(label)
-		fact := fmt.Sprintf("has_label(\"%s\", \"%s\")", safeID, safeLabel)
-		facts = append(facts, fact)
+		var sb strings.Builder
+		sb.WriteString("has_label(\"")
+		sb.WriteString(safeID)
+		sb.WriteString("\", \"")
+		sb.WriteString(escapeString(label))
+		sb.WriteString("\")")
+		facts = append(facts, sb.String())
 	}
 	return facts, nil
 }
@@ -65,9 +73,16 @@ func LabelsToFacts(entityID string, labels []string) ([]string, error) {
 // escapeString escapes special characters (backslashes and double quotes)
 // to ensure the resulting string is a valid Mangle string constant.
 func escapeString(s string) string {
-	s = strings.ReplaceAll(s, "\\", "\\\\")
-	s = strings.ReplaceAll(s, "\"", "\\\"")
-	return s
+	var sb strings.Builder
+	sb.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if b == '\\' || b == '"' {
+			sb.WriteByte('\\')
+		}
+		sb.WriteByte(b)
+	}
+	return sb.String()
 }
 
 // toFactsRecursive traverses the reflection value tree and appends facts to the slice.
@@ -163,21 +178,30 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, args ..
 
 		safeID := escapeString(id)
 
-		// Construct fact with args: predicate("id", arg1, ..., value)
-		var factParts []string
-		factParts = append(factParts, fmt.Sprintf("\"%s\"", safeID))
+		var sb strings.Builder
+		sb.WriteString(predicate)
+		sb.WriteByte('(')
+		sb.WriteByte('"')
+		sb.WriteString(safeID)
+		sb.WriteByte('"')
+
 		for _, arg := range args {
-			factParts = append(factParts, fmt.Sprintf("\"%s\"", escapeString(arg)))
+			sb.WriteString(", \"")
+			sb.WriteString(escapeString(arg))
+			sb.WriteByte('"')
 		}
 
+		sb.WriteString(", ")
 		if isNumeric {
-			factParts = append(factParts, strVal)
+			sb.WriteString(strVal)
 		} else {
-			factParts = append(factParts, fmt.Sprintf("\"%s\"", escapeString(strVal)))
+			sb.WriteByte('"')
+			sb.WriteString(escapeString(strVal))
+			sb.WriteByte('"')
 		}
+		sb.WriteByte(')')
 
-		fact := fmt.Sprintf("%s(%s)", predicate, strings.Join(factParts, ", "))
-		*facts = append(*facts, fact)
+		*facts = append(*facts, sb.String())
 	}
 	return nil
 }
