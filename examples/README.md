@@ -19,6 +19,7 @@ The examples are categorized by the architectural layer they demonstrate, moving
 | **`extractor_demo`** | **Semantic Fact Generation** | Uses the Extractor Adapter to enforce **strongly-typed Go Structs** as output from LLMs, providing clean, structured facts for policy evaluation. |
 | **`kernel_knowledge_demo`** | **Static Knowledge Integration** | Demonstrates loading and querying static, external knowledge bases (e.g., **RDF/Turtle files**) directly within Datalog policies to ground AI decisions. |
 | **`dynamic_pricing`** | **Runtime Context Injection** | Shows how to inject dynamic application state (user tier, inventory, time) as **Datalog Facts** to govern complex, real-time business logic. |
+| **`context_aware_rag`** | **Knowledge Graph Filtering** | Demonstrates **Context-Aware Knowledge** by filtering N-Quads data using Datalog rules based on user roles (Multi-tenancy). |
 
 -----
 

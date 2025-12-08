@@ -1,0 +1,15 @@
+// Declarations (Implicit via dummy facts)
+quad("decl", "decl", "decl", "decl").
+request_role("decl").
+
+// Public facts are always viewable
+viewable_fact(S, P, O) :- quad(S, P, O, "http://graph/public").
+
+// Employees can view internal facts
+viewable_fact(S, P, O) :- request_role("employee"), quad(S, P, O, "http://graph/internal").
+
+// Executives can view everything
+viewable_fact(S, P, O) :- request_role("executive"), quad(S, P, O, _).
+
+// Query specific status based on viewable facts
+result(Status) :- viewable_fact("http://project/alpha", "http://pred/status", Status).

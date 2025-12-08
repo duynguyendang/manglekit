@@ -357,14 +357,40 @@ func cleanSource(raw string) string {
 			continue
 		}
 
-		// 3. Handle inline comments (Naive approach: split by % or //)
-		// Note: This might break strings containing % or //, but standard Datalog usually doesn't have complex strings.
-		// For robustness, ideally we use a lexer, but this suffices for basic policies.
-		if idx := strings.Index(ln, "%"); idx >= 0 {
-			ln = ln[:idx]
+		// 3. Handle inline comments while respecting quotes
+		// We iterate through the string to find the start of a comment that is NOT inside a string.
+		commentIdx := -1
+		inQuote := false
+		for i := 0; i < len(ln); i++ {
+			char := ln[i]
+			if char == '"' {
+				// Handle escaped quotes if necessary, though Datalog usually implies simple escaping?
+				// For now, toggle state. strictly speaking, we should check for backslash.
+				escaped := false
+				if i > 0 && ln[i-1] == '\\' {
+					escaped = true
+				}
+				if !escaped {
+					inQuote = !inQuote
+				}
+			}
+
+			if !inQuote {
+				// Check for %
+				if char == '%' {
+					commentIdx = i
+					break
+				}
+				// Check for //
+				if char == '/' && i+1 < len(ln) && ln[i+1] == '/' {
+					commentIdx = i
+					break
+				}
+			}
 		}
-		if idx := strings.Index(ln, "//"); idx >= 0 {
-			ln = ln[:idx]
+
+		if commentIdx >= 0 {
+			ln = ln[:commentIdx]
 		}
 
 		if strings.TrimSpace(ln) == "" {

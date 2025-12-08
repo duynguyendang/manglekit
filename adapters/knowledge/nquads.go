@@ -31,7 +31,7 @@ func (l *NQuadsLoader) GetBaseRules() string {
 }
 
 // Parse reads from the given reader and converts N-Triples/N-Quads into Datalog facts.
-// It handles simple splitting by space and supports both 3-part (default graph) and 4-part (named graph) lines.
+// It robustly handles quoted literals containing spaces.
 func (l *NQuadsLoader) Parse(r io.Reader) ([]string, error) {
 	scanner := bufio.NewScanner(r)
 	var facts []string
@@ -45,25 +45,75 @@ func (l *NQuadsLoader) Parse(r io.Reader) ([]string, error) {
 			continue
 		}
 
-		// Sanitize: Trim trailing " ." (space + dot) from the line.
-		// Handling simply trailing point with optional space
-		line = strings.TrimSuffix(line, ".")
-		line = strings.TrimSpace(line)
+		// Simple Tokenizer
+		var tokens []string
+		var currentToken strings.Builder
+		inQuote := false
+		escaped := false
 
-		// Split: Split the string by spaces.
-		parts := strings.Fields(line) // Fields splits by one or more whitespace characters
+		// We iterate manually to handle quotes
+		for _, r := range line {
+			if inQuote {
+				if r == '"' && !escaped {
+					inQuote = false
+					currentToken.WriteRune(r)
+				} else if r == '\\' && !escaped {
+					escaped = true
+					currentToken.WriteRune(r)
+				} else {
+					escaped = false
+					currentToken.WriteRune(r)
+				}
+				continue
+			}
+
+			// Not in quote
+			if r == '"' {
+				inQuote = true
+				currentToken.WriteRune(r)
+				continue
+			}
+
+			if r == ' ' || r == '\t' {
+				if currentToken.Len() > 0 {
+					tokens = append(tokens, currentToken.String())
+					currentToken.Reset()
+				}
+				continue
+			}
+
+			// Check for end of statement dot (if isolated or at end)
+			// But determining if '.' is a token or part of URI/Literal is tricky if not careful.
+			// Standard N-Quads: dot is separate token usually separated by space,
+			// or at the end of the line.
+			// Let's treat it as a char, and handle it in post-processing or tokenizing.
+			// Assuming '.' followed by space or EOF is a separator only if not in token.
+			// Simplification: Standard format has space before dot.
+			currentToken.WriteRune(r)
+		}
+		if currentToken.Len() > 0 {
+			tokens = append(tokens, currentToken.String())
+		}
+
+		// Validate and Extract
+		// Tokens should be: S, P, O, [G], "."
+		// The last token should be "."
+		if len(tokens) > 0 && tokens[len(tokens)-1] == "." {
+			tokens = tokens[:len(tokens)-1]
+		}
 
 		var s, p, o, g string
 
-		if len(parts) == 3 {
+		if len(tokens) == 3 {
 			// <s> <p> <o>
-			s, p, o = parts[0], parts[1], parts[2]
+			s, p, o = tokens[0], tokens[1], tokens[2]
 			g = DefaultGraph
-		} else if len(parts) == 4 {
+		} else if len(tokens) == 4 {
 			// <s> <p> <o> <g>
-			s, p, o, g = parts[0], parts[1], parts[2], parts[3]
+			s, p, o, g = tokens[0], tokens[1], tokens[2], tokens[3]
 		} else {
-			// Else: Skip line or log warning (do not panic).
+			// Malformed or complex case (e.g. lang tags parsed as separate tokens if spaces?)
+			// For this objective, we assume standard format.
 			continue
 		}
 
@@ -71,11 +121,9 @@ func (l *NQuadsLoader) Parse(r io.Reader) ([]string, error) {
 		s = l.clean(s)
 		p = l.clean(p)
 		o = l.clean(o)
-		g = l.clean(g) // Graph can also be a URI
+		g = l.clean(g)
 
 		// Generate Datalog fact
-		// We use %q to properly quote the strings for Datalog (Fact logic)
-		// Usually Datalog expects: quad("s", "p", "o", "g").
 		fact := fmt.Sprintf("quad(%q, %q, %q, %q)", s, p, o, g)
 		facts = append(facts, fact)
 	}
