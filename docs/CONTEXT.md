@@ -28,6 +28,8 @@ manglekit/
 │   ├── options_ext.go    # Extended ExecutionOptions (WithMetadataMap)
 │   ├── tracing.go        # Tracing setup (WithStdoutTracer)
 │   ├── types.go          # Type aliases
+│   ├── planner.go        # AI Planner (Goal -> PlanSteps)
+│   ├── executor.go       # Plan Exec (PlanSteps -> Execution)
 │   └── policy_generator.go # Policy Copilot (Natural Language -> Datalog)
 ├── internal/             # [PRIVATE] Implementation details
 │   ├── engine/           # [LOGIC] The Datalog reasoning core
@@ -79,7 +81,7 @@ manglekit/
 The brain of the system. It translates Go objects into Datalog facts and evaluates policies.
 *   **Key Structs**:
     *   `PolicyEngine` (`internal/engine/solver.go`): The main facade. Manages `MangleRuntime`, `Tracer`, and `Logger`.
-    *   `MangleRuntime` (`internal/engine/runtime.go`): Wraps `google/mangle`. Handles parsing, stratification (`strata`), and query execution. Also strips comments (`//`, `%`).
+    *   `MangleRuntime` (`internal/engine/runtime.go`): Wraps `google/mangle`. Handles parsing, stratification (`strata`), and query execution. Ensures atomic state updates and strict isolation for concurrent queries. Also strips comments (`//`, `%`).
     *   `VolatileStore` (`internal/engine/memory/volatile.go`): In-memory implementation of `core.MemoryStore` for transient sessions.
 *   **Key Functions**:
     *   `Authorize(ctx, meta, input)`: Pre-check hook. Evaluates `deny("Req")`.
@@ -89,8 +91,8 @@ The brain of the system. It translates Go objects into Datalog facts and evaluat
     *   `RegisterActionMetadata(meta)`: Injects `action("name")` and `has_input/output` facts for Planner discovery.
     *   `LoadKnowledge(path)`: Loads static RDF knowledge from Turtle files.
     *   `LoadFromString(rule)`: Parses and loads a single Datalog rule from a string.
-    *   `ExecuteQuery(ctx, facts, query)`: Runs a raw Datalog query with tracing.
-    *   `ToFacts(id, input)` (`internal/engine/reflection.go`): Reflectively converts Go Structs to `predicate(id, val)` facts (Typed Mode).
+    *   `ExecuteQuery(ctx, facts, query)`: Runs a raw Datalog query with tracing. Uses atomic temporary state to avoid contamination.
+    *   `ToFacts(id, input)` (`internal/engine/reflection.go`): Reflectively converts Go Structs to `predicate(id, val)` facts. Now supports deep Maps, Slices, and numeric types (Reflector 2.0).
     *   `Flatten(id, input)` (`internal/engine/flattener.go`): Recursively converts JSON/Maps to graph facts (`json_link`, `json_val`) (Dynamic Mode).
 
 ### 2.2 SDK (`sdk/`)
@@ -108,6 +110,9 @@ The user-facing API and orchestration kernel.
     *   `ExecuteByName`: Entry point for the Semantic State Machine (`sdk/loop.go`).
     *   `WithStdoutTracer`: ClientOption for enabling console tracing (`sdk/tracing.go`).
     *   `NewPolicyGenerator`: Creates a `Generator` to translate natural language to Datalog rules.
+    *   `Plan(ctx, goal)`: Generates a multi-step execution plan using Datalog reasoning (`sdk/planner.go`).
+*   **Key Logic**:
+    *   `ExecuteByName` (`sdk/loop.go`): Implements the Semantic State Machine with **Smart Retry** (Backoff + Feedback) and **Smart Routing** (`next_step`).
 *   **Configuration**:
     *   `ClientOption`: `WithPolicyPath`, `WithFailureMode`, `WithLogger`, `WithMemory`.
     *   `ExecuteOption`: `WithSessionID` (Persist), `WithTransientMemory` (Volatile), `WithMetadata`, `WithMetadataMap`.
@@ -258,9 +263,19 @@ The `mkit` CLI facilitates neuro-symbolic AI governance.
 | `steering` | **Control Flow**, `next_step` logic, Routing |
 | `taint_demo` | **Information Flow**, Security Labels, Taint Tracking |
 | `extractor_demo` | **Structured Output**, JSON Extraction |
+| `genesis_demo` | **System Initialization**, Basic Flow |
+| `kernel_knowledge_demo` | **Static Knowledge**, RDF/Turtle Loading |
+| `lineage_demo` | **Traceability**, Parent ID Propagation |
+| `options_demo` | **Configuration**, Functional Options |
+| `planner` | **Planning**, Goal-Oriented Action Sequencing |
+| `semantic_feedback` | **Teacher-Student**, Feedback Loops, Auto-Correction |
+| `stateful_demo` | **Memory**, Session Persistence, History |
 
 ## 9. Changelog
 
+-   **2025-12-08**: **Reflector 2.0 (Type Safety)**. Extended `engine/reflection.go` to handle `reflect.Map`, `reflect.Slice`, and native numeric types (`%g`) to prevent silent failures and support dynamic data structures. Added cycle detection.
+-   **2025-12-08**: **Runtime Hardening**. Overhauled `engine/runtime.go` to use atomic locking and copy-on-write state management, ensuring crash safety and preventing state pollution in concurrent environments.
+-   **2025-12-08**: **Loop Intelligence**. Enhanced `sdk/loop.go` with exponential backoff and teacher-student feedback injection in the retry loop.
 -   **2025-12-07**: **Runtime Reflection (Action Discovery)**. Enabled Action Discovery for the Planner. `Define` now extracts Go types via reflection and injects them as Datalog facts (`action`, `has_input`, `has_output`) into the Engine at registration time. Added `RegisterActionMetadata` to `PolicyEngine` and `sync.RWMutex` to `MangleRuntime` for thread safety.
 -   **2025-12-06**: **Invisible Governance (Phases 4 & 5)**. Implemented Teacher-Student Protocol (Smart Retry Loop with Backoff & Feedback) in `sdk/loop.go`. Added Auto-Tracing (OpenTelemetry) to `internal/guard/guard.go`. Added `SetFeedback`/`GetFeedback` to `core/envelope.go`.
 -   **2025-12-05**: **Facade Pattern & Internalization**. Moved `engine/` and `guard/` to `internal/`. Created root `manglekit.go` Facade. Renamed `sdk/sdk.go` to `sdk/client.go`. Replaced `sdk/action.go` with type-safe `sdk/generics.go`. Added `logger_std.go`.
