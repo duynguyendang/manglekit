@@ -58,39 +58,67 @@ func LabelsToFacts(entityID string, labels []string) ([]string, error) {
 	return facts, nil
 }
 
-// escapeString escapes special characters (backslashes and double quotes)
-// to ensure the resulting string is a valid Mangle string constant.
+// escapeString escapes special characters to ensure the resulting string
+// is a valid Mangle string constant.
 func escapeString(s string) string {
 	var sb strings.Builder
 	sb.Grow(len(s))
 	for i := 0; i < len(s); i++ {
 		b := s[i]
-		if b == '\\' || b == '"' {
+		switch b {
+		case '\\', '"':
 			sb.WriteByte('\\')
+			sb.WriteByte(b)
+		case '\n':
+			sb.WriteString("\\n")
+		case '\r':
+			sb.WriteString("\\r")
+		case '\t':
+			sb.WriteString("\\t")
+		default:
+			if b < 32 {
+				// Replace other control characters to avoid breaking the parser
+				sb.WriteByte(' ')
+			} else {
+				sb.WriteByte(b)
+			}
 		}
-		sb.WriteByte(b)
 	}
 	return sb.String()
 }
 
 func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited map[uintptr]bool, args ...string) error {
-	// 1. Dereference Pointers & Interfaces
-	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+	if !v.IsValid() {
+		return nil
+	}
+
+	// 1. Dereference Interfaces
+	for v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return nil
-		}
-		// Cycle Detection for Pointers
-		if v.Kind() == reflect.Ptr {
-			ptr := v.Pointer()
-			if visited[ptr] {
-				return nil // Cycle detected: stop this branch silently
-			}
-			visited[ptr] = true
 		}
 		v = v.Elem()
 	}
 
-	// 2. Switch on Kind
+	// 2. Cycle Detection (Ptr, Map, Slice) & Dereference Ptr
+	k := v.Kind()
+	if k == reflect.Ptr || k == reflect.Map || k == reflect.Slice {
+		if v.IsNil() {
+			return nil
+		}
+		ptr := v.Pointer()
+		if visited[ptr] {
+			return nil // Cycle detected
+		}
+		visited[ptr] = true
+		defer delete(visited, ptr) // Stack-based tracking to allow DAGs but prevent loops
+	}
+
+	if k == reflect.Ptr {
+		v = v.Elem()
+	}
+
+	// 3. Switch on Kind
 	switch v.Kind() {
 	case reflect.Struct:
 		t := v.Type()
@@ -103,12 +131,22 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 				continue
 			}
 
-			// Determine Field Name (Tag Priority: mangle > json > struct name)
+			// [CRITICAL FIX] Explicitly handle ignore tags first
 			tag := structField.Tag.Get("mangle")
+			if tag == "-" {
+				continue // Ignore immediately
+			}
+
+			jsonTag := structField.Tag.Get("json")
+			// Check json:"-" or json:"-,omitempty"
+			if jsonTag == "-" || strings.HasPrefix(jsonTag, "-,") {
+				continue // Ignore immediately
+			}
+
+			// Determine Field Name
 			fieldName := tag
 			if fieldName == "" {
-				jsonTag := structField.Tag.Get("json")
-				if jsonTag != "" && jsonTag != "-" {
+				if jsonTag != "" {
 					parts := strings.Split(jsonTag, ",")
 					fieldName = parts[0]
 				}
@@ -140,7 +178,7 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 			val := v.MapIndex(key)
 			keyStr := fmt.Sprintf("%v", key.Interface())
 
-			// Append key to args for the next level
+			// Append key to args
 			newArgs := make([]string, len(args)+1)
 			copy(newArgs, args)
 			newArgs[len(args)] = keyStr
@@ -152,8 +190,13 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < v.Len(); i++ {
-			// Treat Slice as Set (Ignore index). Recursively process elements.
-			if err := toFactsRecursive(id, path, v.Index(i), facts, visited, args...); err != nil {
+			// Include index to preserve association and order
+			idxStr := fmt.Sprintf("%d", i)
+			newArgs := make([]string, len(args)+1)
+			copy(newArgs, args)
+			newArgs[len(args)] = idxStr
+
+			if err := toFactsRecursive(id, path, v.Index(i), facts, visited, newArgs...); err != nil {
 				return err
 			}
 		}
