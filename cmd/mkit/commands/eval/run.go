@@ -34,11 +34,13 @@ var EvalCmd = &cobra.Command{
 		}
 
 		// 2. Initialize Engine
-		// Using New() as we need a basic engine.
+		// New() now auto-loads std.dl, so no manual declaration fixes needed!
 		e := engine.New()
 
 		// 3. Load Policy
 		if err := e.LoadPolicy(string(policyBytes)); err != nil {
+			// This might still error if the user uses non-standard predicates without declaring them,
+			// but json_str, quad etc are now covered.
 			return fmt.Errorf("failed to load policy: %w", err)
 		}
 

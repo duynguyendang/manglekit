@@ -210,6 +210,57 @@ func (r *MangleRuntime) LoadFromString(rule string) error {
 	return r.LoadFromSource(rule)
 }
 
+// AddPolicy adds new rules to the existing program state (Incremental Loading).
+func (r *MangleRuntime) AddPolicy(source string) error {
+	if source == "" {
+		return nil
+	}
+
+	cleaned := cleanSource(source)
+	unit, err := parse.Unit(strings.NewReader(cleaned))
+	if err != nil {
+		return fmt.Errorf("failed to parse source: %w", err)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Append to existing rules
+	newRuleUnits := make([]parse.SourceUnit, len(r.ruleUnits)+1)
+	copy(newRuleUnits, r.ruleUnits)
+	newRuleUnits[len(r.ruleUnits)] = unit
+
+	// Re-Analyze
+	edbDeclarations := make(map[ast.PredicateSym]ast.Decl)
+	programInfo, err := analysis.Analyze(newRuleUnits, edbDeclarations)
+	if err != nil {
+		return fmt.Errorf("failed to analyze combined program: %w", err)
+	}
+
+	strata, predToStratum, err := analysis.Stratify(analysis.Program{
+		EdbPredicates: programInfo.EdbPredicates,
+		IdbPredicates: programInfo.IdbPredicates,
+		Rules:         programInfo.Rules,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to stratify combined program: %w", err)
+	}
+
+	// Update State
+	r.ruleUnits = newRuleUnits
+	r.programInfo = programInfo
+	r.strata = strata
+	r.predToStratum = predToStratum
+	r.ready = true
+
+	// Re-evaluate base facts with new rules
+	if err := r.evaluate(r.baseFactStore); err != nil {
+		return fmt.Errorf("failed to evaluate combined program: %w", err)
+	}
+
+	return nil
+}
+
 // ExecuteQuery runs a boolean Datalog query.
 func (r *MangleRuntime) ExecuteQuery(facts []ast.Atom, queryStr string) (bool, error) {
 	r.mu.RLock()

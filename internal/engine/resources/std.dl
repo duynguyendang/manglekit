@@ -1,0 +1,16 @@
+% --- Manglekit Standard Library ---
+% Auto-loaded on engine startup.
+
+% 1. Dynamic JSON Input (from engine.Flatten)
+Decl json_str(Parent, Key, Val) .
+Decl json_num(Parent, Key, Val) .
+Decl json_bool(Parent, Key, Val) .
+Decl json_link(Parent, Key, Child) .
+Decl json_null(Parent, Key) .
+
+% 2. Knowledge Base Input (from N-Quads/N-Triples)
+Decl quad(S, P, O, G) .
+
+% 3. Standard Helpers
+Decl triple(S, P, O) .
+triple(S, P, O) :- quad(S, P, O, _).

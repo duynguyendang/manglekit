@@ -26,11 +26,18 @@ type PolicyEngine struct {
 // Returns:
 //   - A pointer to a new PolicyEngine instance.
 func New() *PolicyEngine {
-	return &PolicyEngine{
+	pe := &PolicyEngine{
 		tracer:  &core.NopTracer{},
 		logger:  core.NopLogger{},
 		runtime: NewMangleRuntime(),
 	}
+
+	// Auto-load Standard Library
+	if err := pe.runtime.AddPolicy(resources.GetStdLib()); err != nil {
+		panic("manglekit: failed to load std.dl: " + err.Error())
+	}
+
+	return pe
 }
 
 // NewWithTracer creates a new PolicyEngine with tracing enabled.
@@ -77,13 +84,19 @@ func NewWithObservability(tracer core.Tracer, logger core.Logger) *PolicyEngine 
 	}
 
 	// Load Planner Core Rules
-	if err := pe.runtime.LoadFromString(resources.GetPlannerRules()); err != nil {
-		// If the core schema fails to load, we should log it as a critical error.
-		// However, NewWithObservability does not return an error, so we log and proceed.
-		// The system will function but planning will fail.
+	if err := pe.runtime.AddPolicy(resources.GetPlannerRules()); err != nil {
 		if logger != nil {
 			logger.Error("failed to load planner core schema", "error", err)
 		}
+	}
+
+	// Load Manglekit Standard Library (std.dl)
+	if err := pe.runtime.AddPolicy(resources.GetStdLib()); err != nil {
+		if logger != nil {
+			logger.Error("failed to load standard library", "error", err)
+		}
+		// Failure to load stdlib is critical for dynamic features
+		panic("manglekit: failed to load std.dl: " + err.Error())
 	}
 
 	return pe
@@ -172,7 +185,7 @@ func (e *PolicyEngine) LoadPolicy(policy string) error {
 	}
 
 	// Load the rules into the Mangle runtime
-	if err := e.runtime.LoadFromString(policy); err != nil {
+	if err := e.runtime.AddPolicy(policy); err != nil {
 		return fmt.Errorf("failed to load policy: %w", err)
 	}
 
