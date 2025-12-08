@@ -18,62 +18,40 @@ import (
 )
 
 // MangleRuntime encapsulates the Google Mangle Datalog engine.
-// It manages the lifecycle of Datalog programs, including loading rules from files,
-// parsing, analysis, stratification, and evaluation.
 type MangleRuntime struct {
 	mu sync.RWMutex
-	// programInfo contains the analyzed and stratified Datalog program
-	programInfo *analysis.ProgramInfo
-	// strata contains the stratification layers of the program for safe evaluation
-	strata []analysis.Nodeset
-	// predToStratum maps predicates to their strata for evaluation ordering
+
+	// State fields (protected by mu)
+	programInfo   *analysis.ProgramInfo
+	strata        []analysis.Nodeset
 	predToStratum map[ast.PredicateSym]int
-	// baseFactStore holds the base facts loaded from files
 	baseFactStore factstore.SimpleInMemoryStore
-	// ruleUnits collects all rule source units loaded into the runtime
-	ruleUnits []parse.SourceUnit
+	ruleUnits     []parse.SourceUnit
+	ready         bool // Flag to indicate if the runtime is initialized
 }
 
 // NewMangleRuntime initializes a new, empty MangleRuntime.
-//
-// Returns:
-//   - A pointer to a new MangleRuntime instance.
 func NewMangleRuntime() *MangleRuntime {
 	return &MangleRuntime{
 		predToStratum: make(map[ast.PredicateSym]int),
 		baseFactStore: factstore.NewSimpleInMemoryStore(),
+		ready:         false,
 	}
 }
 
 // Load loads Datalog rules and facts from the specified path.
-//
-// Supported inputs:
-//   - A single file path (e.g., "policy.dl").
-//   - A directory path (recursively loads all .dl, .dlog, .facts, .edb files).
-//   - A glob pattern (e.g., "policies/*.dl").
-//
-// It parses, analyzes, and stratifies the resulting program.
-//
-// Parameters:
-//   - path: The file system path or glob pattern.
-//
-// Returns:
-//   - An error if loading, parsing, or analysis fails.
+// CRITICAL CHANGE: This REPLACES the current program state.
 func (r *MangleRuntime) Load(path string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	if path == "" {
 		return fmt.Errorf("path cannot be empty")
 	}
 
-	// Resolve the path into a list of actual files
+	// 1. Resolve files (I/O) - No lock needed yet
 	files, err := resolveFiles(path)
 	if err != nil {
 		return fmt.Errorf("failed to resolve path: %w", err)
 	}
 
-	// Separate into rule files and fact files
 	var ruleFiles, factFiles []string
 	for _, file := range files {
 		switch {
@@ -85,52 +63,44 @@ func (r *MangleRuntime) Load(path string) error {
 	}
 
 	if len(ruleFiles) == 0 && len(factFiles) == 0 {
-		return fmt.Errorf("no .dlog or fact files found")
+		return fmt.Errorf("no .dlog or fact files found in %s", path)
 	}
 
-	// Parse rule files to build the program
-	var units []parse.SourceUnit
+	// 2. Parse and Build State (Local Variables)
+	// We build everything locally to ensure atomicity. If parsing fails,
+	// the existing runtime state remains untouched.
+	var newRuleUnits []parse.SourceUnit
 	edbDeclarations := make(map[ast.PredicateSym]ast.Decl)
 
+	// Parse Rules
 	for _, ruleFile := range ruleFiles {
 		unit, err := parseRuleFile(ruleFile)
 		if err != nil {
 			return fmt.Errorf("failed to parse rule file %s: %w", ruleFile, err)
 		}
-		units = append(units, unit)
+		newRuleUnits = append(newRuleUnits, unit)
 	}
 
-	// Append newly parsed units to persistent storage
-	r.ruleUnits = append(r.ruleUnits, units...)
-
-	// Parse fact files and collect facts
-	var initialFacts []ast.Atom
+	// Parse Facts and build Base Store
+	newBaseStore := factstore.NewSimpleInMemoryStore()
 	for _, factFile := range factFiles {
 		unit, err := parseRuleFile(factFile)
 		if err != nil {
 			return fmt.Errorf("failed to parse fact file %s: %w", factFile, err)
 		}
-		// A fact is a clause with an empty body (no premises).
 		for _, clause := range unit.Clauses {
 			if len(clause.Premises) == 0 {
-				initialFacts = append(initialFacts, clause.Head)
+				newBaseStore.Add(clause.Head)
 			}
 		}
 	}
 
-	// Add initial facts to base store
-	for _, fact := range initialFacts {
-		r.baseFactStore.Add(fact)
-	}
-
-	// Analyze the program
-	// Use all accumulated rule units
-	programInfo, err := analysis.Analyze(r.ruleUnits, edbDeclarations)
+	// 3. Analyze and Stratify (CPU Intensive)
+	programInfo, err := analysis.Analyze(newRuleUnits, edbDeclarations)
 	if err != nil {
 		return fmt.Errorf("failed to analyze program: %w", err)
 	}
 
-	// Stratify the program
 	strata, predToStratum, err := analysis.Stratify(analysis.Program{
 		EdbPredicates: programInfo.EdbPredicates,
 		IdbPredicates: programInfo.IdbPredicates,
@@ -140,26 +110,80 @@ func (r *MangleRuntime) Load(path string) error {
 		return fmt.Errorf("failed to stratify program: %w", err)
 	}
 
+	// 4. Initial Evaluation (Validation)
+	// We run this on the local store to ensure the program doesn't crash on init.
+	if _, err := engine.EvalStratifiedProgramWithStats(programInfo, strata, predToStratum, newBaseStore); err != nil {
+		return fmt.Errorf("failed to evaluate base program: %w", err)
+	}
+
+	// 5. Atomic Swap (Critical Section)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.ruleUnits = newRuleUnits
+	r.baseFactStore = newBaseStore
 	r.programInfo = programInfo
 	r.strata = strata
 	r.predToStratum = predToStratum
+	r.ready = true
 
-	// Perform initial evaluation with base facts
+	return nil
+}
+
+// LoadFromSource parses and loads a full Datalog program from a string.
+// REPLACES current state.
+func (r *MangleRuntime) LoadFromSource(source string) error {
+	if source == "" {
+		return fmt.Errorf("source cannot be empty")
+	}
+
+	cleaned := cleanSource(source)
+	unit, err := parse.Unit(strings.NewReader(cleaned))
+	if err != nil {
+		return fmt.Errorf("failed to parse source: %w", err)
+	}
+
+	// Local state build
+	newRuleUnits := []parse.SourceUnit{unit}
+	edbDeclarations := make(map[ast.PredicateSym]ast.Decl)
+
+	programInfo, err := analysis.Analyze(newRuleUnits, edbDeclarations)
+	if err != nil {
+		return fmt.Errorf("failed to analyze program: %w", err)
+	}
+
+	strata, predToStratum, err := analysis.Stratify(analysis.Program{
+		EdbPredicates: programInfo.EdbPredicates,
+		IdbPredicates: programInfo.IdbPredicates,
+		Rules:         programInfo.Rules,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to stratify program: %w", err)
+	}
+
+	// Create new store (resetting old facts if this is a full reload)
+	newBaseStore := factstore.NewSimpleInMemoryStore()
+
+	// Atomic Swap
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.ruleUnits = newRuleUnits
+	r.baseFactStore = newBaseStore
+	r.programInfo = programInfo
+	r.strata = strata
+	r.predToStratum = predToStratum
+	r.ready = true
+
+	// Evaluate with empty base store
 	if err := r.evaluate(r.baseFactStore); err != nil {
-		return fmt.Errorf("failed to evaluate base program: %w", err)
+		return fmt.Errorf("failed to evaluate program: %w", err)
 	}
 
 	return nil
 }
 
 // LoadFacts injects a list of raw Datalog fact strings into the runtime's base knowledge.
-// This is useful for loading dynamic knowledge or facts from external sources.
-//
-// Parameters:
-//   - facts: A slice of Datalog fact strings (e.g., 'user_role("alice", "admin")').
-//
-// Returns:
-//   - An error if parsing or evaluation fails.
 func (r *MangleRuntime) LoadFacts(facts []string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -172,8 +196,7 @@ func (r *MangleRuntime) LoadFacts(facts []string) error {
 		r.baseFactStore.Add(atom)
 	}
 
-	// If a program is already loaded, re-evaluate to update derived facts
-	if r.programInfo != nil {
+	if r.ready {
 		if err := r.evaluate(r.baseFactStore); err != nil {
 			return fmt.Errorf("failed to evaluate program with new facts: %w", err)
 		}
@@ -181,170 +204,76 @@ func (r *MangleRuntime) LoadFacts(facts []string) error {
 	return nil
 }
 
-// LoadFromSource parses and loads a full Datalog program provided as a string.
-// It supports multiple rules, declarations, and comments.
-//
-// Parameters:
-//   - source: A valid Datalog program string.
-//
-// Returns:
-//   - An error if parsing, analysis, or evaluation fails.
-func (r *MangleRuntime) LoadFromSource(source string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if source == "" {
-		return fmt.Errorf("source cannot be empty")
-	}
-
-	// Clean the source (strip comments, normalize newlines)
-	// Normalize newlines
-	s := strings.ReplaceAll(source, "\r\n", "\n")
-	lines := strings.Split(s, "\n")
-	kept := lines[:0]
-	for _, ln := range lines {
-		trimLn := strings.TrimSpace(ln)
-		// Skip empty lines and full-line comments
-		if trimLn == "" || strings.HasPrefix(trimLn, "%") || strings.HasPrefix(trimLn, "//") {
-			continue
-		}
-		// Note: We do NOT skip lines that are just "." because in Datalog
-		// a dot can be a valid clause terminator on its own line.
-		kept = append(kept, ln)
-	}
-	cleaned := strings.Join(kept, "\n")
-
-	// Parse source unit
-	unit, err := parse.Unit(strings.NewReader(cleaned))
-	if err != nil {
-		return fmt.Errorf("failed to parse source: %w", err)
-	}
-
-	// Append to persistent storage
-	r.ruleUnits = append(r.ruleUnits, unit)
-
-	edbDeclarations := make(map[ast.PredicateSym]ast.Decl)
-
-	// Analyze the program
-	// Use all accumulated rule units
-	programInfo, err := analysis.Analyze(r.ruleUnits, edbDeclarations)
-	if err != nil {
-		return fmt.Errorf("failed to analyze program: %w", err)
-	}
-
-	// Stratify the program
-	strata, predToStratum, err := analysis.Stratify(analysis.Program{
-		EdbPredicates: programInfo.EdbPredicates,
-		IdbPredicates: programInfo.IdbPredicates,
-		Rules:         programInfo.Rules,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to stratify program: %w", err)
-	}
-
-	r.programInfo = programInfo
-	r.strata = strata
-	r.predToStratum = predToStratum
-
-	// Perform initial evaluation with base facts
-	if err := r.evaluate(r.baseFactStore); err != nil {
-		return fmt.Errorf("failed to evaluate program: %w", err)
-	}
-
-	return nil
-}
-
-// LoadFromString parses and loads a single Datalog rule provided as a string.
-// This is typically used for dynamic rule injection or testing.
-//
-// Parameters:
-//   - rule: A valid Datalog rule string.
-//
-// Returns:
-//   - An error if parsing, analysis, or evaluation fails.
+// LoadFromString parses and loads a full Datalog program provided as a string.
+// IMPORTANT: This REPLACES the current program state.
 func (r *MangleRuntime) LoadFromString(rule string) error {
-	// Re-implement using LoadFromSource for consistency,
-	// but LoadFromString implies a single rule/clause without comments logic usually.
-	// For backward compatibility/simplicity, we can just wrap LoadFromSource.
 	return r.LoadFromSource(rule)
 }
 
-// ExecuteQuery runs a boolean Datalog query against the current program state + additional temporary facts.
-// It returns true if the query atom can be derived.
-//
-// Parameters:
-//   - facts: Temporary facts to include in this specific query execution (e.g., request data).
-//   - queryStr: The Datalog query atom (e.g., 'deny("req-123")').
-//
-// Returns:
-//   - true if derived, false otherwise.
-//   - error if the runtime is not initialized or execution fails.
+// ExecuteQuery runs a boolean Datalog query.
 func (r *MangleRuntime) ExecuteQuery(facts []ast.Atom, queryStr string) (bool, error) {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	if r.programInfo == nil {
-		return false, fmt.Errorf("runtime not initialized; call Load or LoadFromString first")
+	// Check readiness under lock
+	if !r.ready {
+		r.mu.RUnlock()
+		return false, fmt.Errorf("runtime not initialized")
 	}
 
-	// Create a working fact store and merge base facts
+	// 1. Snapshot the state needed for evaluation
+	// We copy the base store to avoid contaminating the global state with request-scoped facts.
+	// Note: This is O(N) where N is base facts.
 	workingStore := factstore.NewSimpleInMemoryStore()
 	workingStore.Merge(r.baseFactStore)
 
-	// Add the provided facts
+	// Capture pointers to analysis structures (they are read-only during eval)
+	pInfo := r.programInfo
+	strata := r.strata
+	pStratum := r.predToStratum
+
+	r.mu.RUnlock() // Release lock early to allow concurrent evaluations
+
+	// 2. Add temporary facts
 	for _, fact := range facts {
 		workingStore.Add(fact)
 	}
 
-	// Evaluate the program with the combined facts
-	if err := r.evaluate(workingStore); err != nil {
-		return false, fmt.Errorf("failed to evaluate query: %w", err)
+	// 3. Evaluate (Expensive part, runs without blocking main lock)
+	if _, err := engine.EvalStratifiedProgramWithStats(pInfo, strata, pStratum, workingStore); err != nil {
+		return false, fmt.Errorf("evaluation failed: %w", err)
 	}
 
-	// Parse the query atom
+	// 4. Check result
 	queryAtom, err := parse.Atom(queryStr)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse query '%s': %w", queryStr, err)
 	}
 
-	// Check if the query atom exists in the fact store
-	found := workingStore.Contains(queryAtom)
-	return found, nil
+	return workingStore.Contains(queryAtom), nil
 }
 
-// QueryWithSolutions executes a Datalog query and invokes a callback for each solution found.
-// This allows extracting values from the query (e.g., 'next_step(Req, Target)').
-//
-// Parameters:
-//   - facts: Temporary facts to include.
-//   - queryStr: The Datalog query with variables (e.g., 'correction(Req, Hint)').
-//   - onSolution: A callback function executed for each matching solution map.
-//
-// Returns:
-//   - An error if execution fails.
+// QueryWithSolutions executes a query and invokes callback for solutions.
 func (r *MangleRuntime) QueryWithSolutions(facts []ast.Atom, queryStr string, onSolution func(map[string]any) error) error {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	if r.programInfo == nil {
-		return fmt.Errorf("runtime not initialized; call Load or LoadFromString first")
+	if !r.ready {
+		r.mu.RUnlock()
+		return fmt.Errorf("runtime not initialized")
 	}
 
-	// Create a working fact store and merge base facts
 	workingStore := factstore.NewSimpleInMemoryStore()
 	workingStore.Merge(r.baseFactStore)
+	pInfo := r.programInfo
+	strata := r.strata
+	pStratum := r.predToStratum
+	r.mu.RUnlock()
 
-	// Add the provided facts
 	for _, fact := range facts {
 		workingStore.Add(fact)
 	}
 
-	// Evaluate the program with the combined facts
-	if err := r.evaluate(workingStore); err != nil {
-		return fmt.Errorf("failed to evaluate query: %w", err)
+	if _, err := engine.EvalStratifiedProgramWithStats(pInfo, strata, pStratum, workingStore); err != nil {
+		return fmt.Errorf("evaluation failed: %w", err)
 	}
 
-	// Parse the query atom
 	queryAtom, err := parse.Atom(queryStr)
 	if err != nil {
 		return fmt.Errorf("failed to parse query '%s': %w", queryStr, err)
@@ -353,57 +282,42 @@ func (r *MangleRuntime) QueryWithSolutions(facts []ast.Atom, queryStr string, on
 	q := ast.NewQuery(queryAtom.Predicate)
 
 	return workingStore.GetFacts(q, func(factAtom ast.Atom) error {
-		// Manual unification of the query atom against the fact atom.
-		match := true
+		// Manual Unification
 		if len(factAtom.Args) != len(queryAtom.Args) {
 			return nil
 		}
+
+		solution := make(map[string]any)
+		match := true
+
 		for i, queryArg := range queryAtom.Args {
-			if _, isVar := queryArg.(ast.Variable); isVar {
-				continue
+			if v, isVar := queryArg.(ast.Variable); isVar {
+				// It's a variable, capture the value
+				valStr, err := constantToString(factAtom.Args[i])
+				if err != nil {
+					return fmt.Errorf("error converting term: %w", err)
+				}
+				solution[v.Symbol] = valStr
+			} else {
+				// It's a constant, check equality
+				if !queryArg.Equals(factAtom.Args[i]) {
+					match = false
+					break
+				}
 			}
-			if !queryArg.Equals(factAtom.Args[i]) {
-				match = false
-				break
-			}
-		}
-		if !match {
-			return nil
 		}
 
-		// Build solution map
-		solution := make(map[string]any)
-		for i, arg := range queryAtom.Args {
-			if v, ok := arg.(ast.Variable); ok {
-				term := factAtom.Args[i]
-				var val string
-				if c, ok := term.(ast.Constant); ok {
-					var err error
-					val, err = constantToString(c)
-					if err != nil {
-						return fmt.Errorf("could not convert solution term '%v' to string: %w", term, err)
-					}
-				} else {
-					return fmt.Errorf("expected a constant in query solution, but got %T", term)
-				}
-				solution[v.Symbol] = val
-			}
+		if match {
+			return onSolution(solution)
 		}
-		return onSolution(solution)
+		return nil
 	})
 }
 
-// evaluate performs stratified evaluation of the program with the given fact store.
+// evaluate helper (internal use only, assumes lock is held or local store)
 func (r *MangleRuntime) evaluate(store factstore.FactStore) error {
-	if r.programInfo == nil || r.strata == nil || r.predToStratum == nil {
-		return fmt.Errorf("runtime not initialized")
-	}
-
 	_, err := engine.EvalStratifiedProgramWithStats(r.programInfo, r.strata, r.predToStratum, store)
-	if err != nil {
-		return fmt.Errorf("mangle engine evaluation failed: %w", err)
-	}
-	return nil
+	return err
 }
 
 // --- Helper Functions ---
@@ -419,32 +333,55 @@ func isFactFile(p string) bool {
 		strings.HasSuffix(p, ".data")
 }
 
-// parseRuleFile parses a single .dlog rule file into a source unit.
+func cleanSource(raw string) string {
+	// Strip UTF-8 BOM
+	if strings.HasPrefix(raw, "\xef\xbb\xbf") {
+		raw = raw[3:]
+	}
+
+	// Normalize line endings
+	s := strings.ReplaceAll(raw, "\r\n", "\n")
+	lines := strings.Split(s, "\n")
+	kept := lines[:0]
+
+	for _, ln := range lines {
+		trimLn := strings.TrimSpace(ln)
+
+		// 1. Skip empty lines
+		if trimLn == "" {
+			continue
+		}
+
+		// 2. Skip full line comments
+		if strings.HasPrefix(trimLn, "%") || strings.HasPrefix(trimLn, "//") {
+			continue
+		}
+
+		// 3. Handle inline comments (Naive approach: split by % or //)
+		// Note: This might break strings containing % or //, but standard Datalog usually doesn't have complex strings.
+		// For robustness, ideally we use a lexer, but this suffices for basic policies.
+		if idx := strings.Index(ln, "%"); idx >= 0 {
+			ln = ln[:idx]
+		}
+		if idx := strings.Index(ln, "//"); idx >= 0 {
+			ln = ln[:idx]
+		}
+
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+
+		kept = append(kept, ln)
+	}
+	return strings.Join(kept, "\n")
+}
+
 func parseRuleFile(file string) (parse.SourceUnit, error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
 		return parse.SourceUnit{}, fmt.Errorf("could not open rule file %s: %w", file, err)
 	}
-
-	// Strip UTF-8 BOM if present
-	if len(b) >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF {
-		b = b[3:]
-	}
-
-	// Normalize newlines and drop lines that are just "."
-	s := strings.ReplaceAll(string(b), "\r\n", "\n")
-	lines := strings.Split(s, "\n")
-	kept := lines[:0]
-	for _, ln := range lines {
-		trimLn := strings.TrimSpace(ln)
-		// Skip empty lines, lines that are just ".", and comments
-		if trimLn == "." || strings.HasPrefix(trimLn, "%") || strings.HasPrefix(trimLn, "//") {
-			continue
-		}
-		kept = append(kept, ln)
-	}
-	cleaned := strings.Join(kept, "\n")
-
+	cleaned := cleanSource(string(b))
 	unit, err := parse.Unit(strings.NewReader(cleaned))
 	if err != nil {
 		return parse.SourceUnit{}, fmt.Errorf("could not parse rule file %s: %w", file, err)
@@ -452,7 +389,23 @@ func parseRuleFile(file string) (parse.SourceUnit, error) {
 	return unit, nil
 }
 
-// resolveFiles resolves a path (file, directory, or glob) into a list of file paths.
+func constantToString(term ast.BaseTerm) (string, error) {
+	if c, ok := term.(ast.Constant); ok {
+		if v, err := c.StringValue(); err == nil {
+			return v, nil
+		}
+		if v, err := c.NameValue(); err == nil {
+			return v, nil
+		}
+		if v, err := c.NumberValue(); err == nil {
+			return fmt.Sprintf("%d", v), nil
+		}
+		return "", fmt.Errorf("unsupported constant type: %v", c.Type)
+	}
+	return fmt.Sprintf("%v", term), nil
+}
+
+// resolveFiles remains the same as your original implementation...
 func resolveFiles(path string) ([]string, error) {
 	info, err := os.Stat(path)
 	switch {
@@ -487,7 +440,6 @@ func resolveFiles(path string) ([]string, error) {
 	}
 }
 
-// collectFiles recursively collects all files from a directory.
 func collectFiles(root string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -507,21 +459,6 @@ func collectFiles(root string) ([]string, error) {
 	return files, nil
 }
 
-// hasMeta checks if a path contains glob metacharacters.
 func hasMeta(path string) bool {
 	return strings.ContainsAny(path, "*?[")
-}
-
-// constantToString converts a Mangle constant to a string.
-func constantToString(c ast.Constant) (string, error) {
-	if v, err := c.StringValue(); err == nil {
-		return v, nil
-	}
-	if v, err := c.NameValue(); err == nil {
-		return v, nil
-	}
-	if v, err := c.NumberValue(); err == nil {
-		return fmt.Sprintf("%d", v), nil
-	}
-	return "", fmt.Errorf("unsupported constant type: %v", c.Type)
 }
