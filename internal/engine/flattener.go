@@ -53,7 +53,16 @@ func flattenRecursive(nodeID string, v reflect.Value, facts *[]string, counter *
 			keyStr := fmt.Sprintf("%v", key.Interface())
 			safeKey := escapeString(keyStr)
 
-			if isComplexKind(val.Kind()) {
+			// Unwrap interface to check actual type
+			effVal := val
+			for effVal.Kind() == reflect.Interface || effVal.Kind() == reflect.Ptr {
+				if effVal.IsNil() {
+					break
+				}
+				effVal = effVal.Elem()
+			}
+
+			if isComplexKind(effVal.Kind()) {
 				*counter++
 				childID := fmt.Sprintf("node_%d", *counter)
 
@@ -65,7 +74,7 @@ func flattenRecursive(nodeID string, v reflect.Value, facts *[]string, counter *
 					return err
 				}
 			} else {
-				addPrimitiveReflect(nodeID, safeKey, val, facts)
+				addPrimitiveReflect(nodeID, safeKey, effVal, facts)
 			}
 		}
 
@@ -74,7 +83,16 @@ func flattenRecursive(nodeID string, v reflect.Value, facts *[]string, counter *
 			val := v.Index(i)
 			keyStr := strconv.Itoa(i) // Index is the key
 
-			if isComplexKind(val.Kind()) {
+			// Unwrap interface to check actual type
+			effVal := val
+			for effVal.Kind() == reflect.Interface || effVal.Kind() == reflect.Ptr {
+				if effVal.IsNil() {
+					break
+				}
+				effVal = effVal.Elem()
+			}
+
+			if isComplexKind(effVal.Kind()) {
 				*counter++
 				childID := fmt.Sprintf("node_%d", *counter)
 
@@ -85,7 +103,7 @@ func flattenRecursive(nodeID string, v reflect.Value, facts *[]string, counter *
 					return err
 				}
 			} else {
-				addPrimitiveReflect(nodeID, keyStr, val, facts)
+				addPrimitiveReflect(nodeID, keyStr, effVal, facts)
 			}
 		}
 	default:
@@ -97,10 +115,8 @@ func flattenRecursive(nodeID string, v reflect.Value, facts *[]string, counter *
 
 // Helper to check complexity based on Kind (faster than interface check)
 func isComplexKind(k reflect.Kind) bool {
-	// Need to handle Ptr/Interface unwrapping if nested?
-	// flattenRecursive handles unwrapping, but here we just need a quick check.
-	// For robustness, let's assume if it is Interface/Ptr it MIGHT be complex.
-	return k == reflect.Map || k == reflect.Slice || k == reflect.Array || k == reflect.Interface || k == reflect.Ptr
+	// Ptr/Interface should be unwrapped before calling this
+	return k == reflect.Map || k == reflect.Slice || k == reflect.Array
 }
 
 // addPrimitiveReflect uses reflect.Value to handle types precisely

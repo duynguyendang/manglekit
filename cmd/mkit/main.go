@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/duynguyendang/manglekit/cmd/mkit/commands/eval"
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/gen"
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/inspect"
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/kg"
@@ -31,5 +32,6 @@ func main() {
 	gen.AddCommands(rootCmd)
 	inspect.AddCommands(rootCmd)
 	kg.AddCommands(rootCmd)
+	eval.AddCommands(rootCmd)
 	Execute()
 }

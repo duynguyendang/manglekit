@@ -254,6 +254,8 @@ The `mkit` CLI facilitates neuro-symbolic AI governance.
 *   **Commands**:
     *   `gen`: Generate rules or policies.
     *   `inspect`: Inspect data schemas or policy states.
+    *   `kg`: Knowledge Graph utilities (convert formats).
+    *   `eval`: One-off policy evaluation ("REPL").
 
 ## 8. Reference Examples (`examples/`)
 
@@ -273,6 +275,7 @@ The `mkit` CLI facilitates neuro-symbolic AI governance.
 | `semantic_feedback` | **Teacher-Student**, Feedback Loops, Auto-Correction |
 ## 9. Changelog
 
+-   **2025-12-08**: **CLI Expansion**. Added `mkit kg` (Knowledge Graph conversion) and `mkit eval` (Local Policy REPL) commands to the CLI toolset.
 -   **2025-12-08**: **Cleanup**. Removed redundant `internal/util/wrapper.go`. `sdk` now uses `adapters/func` for function wrapping, enforcing the reuse architecture.
 -   **2025-12-08**: **Clean Logging Architecture**. Moved default logging logic to `internal/logger/std.go` (Zero-Dependency `slog`) and external adapters to `adapters/logger/` (e.g., `zap_adapter.go`). Cleaned up root directory by removing `logger_std.go`.
 -   **2025-12-08**: **Reflector 2.0 (Type Safety)**. Extended `engine/reflection.go` to handle `reflect.Map`, `reflect.Slice`, and native numeric types (`%g`) to prevent silent failures and support dynamic data structures. Added cycle detection.
