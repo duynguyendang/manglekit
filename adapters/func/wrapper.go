@@ -3,6 +3,7 @@ package function
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/duynguyendang/manglekit/core"
 )
@@ -17,6 +18,8 @@ type Wrapper[In any, Out any] struct {
 	name        string
 	fn          ToolFunc[In, Out]
 	contentType core.ContentType
+	inputType   string
+	outputType  string
 }
 
 // New creates a new Action wrapper for the provided function.
@@ -28,10 +31,25 @@ type Wrapper[In any, Out any] struct {
 // Returns:
 //   - A pointer to the initialized Wrapper.
 func New[In any, Out any](name string, fn ToolFunc[In, Out]) *Wrapper[In, Out] {
+	// Reflection: Extract type names
+	inType := reflect.TypeOf((*In)(nil)).Elem()
+	if inType.Kind() == reflect.Ptr {
+		inType = inType.Elem()
+	}
+	inName := inType.Name()
+
+	outType := reflect.TypeOf((*Out)(nil)).Elem()
+	if outType.Kind() == reflect.Ptr {
+		outType = outType.Elem()
+	}
+	outName := outType.Name()
+
 	return &Wrapper[In, Out]{
 		name:        name,
 		fn:          fn,
 		contentType: core.TypeStruct, // Default
+		inputType:   inName,
+		outputType:  outName,
 	}
 }
 
@@ -70,5 +88,8 @@ func (w *Wrapper[In, Out]) Metadata() core.ActionMetadata {
 		Name:             w.name,
 		Type:             "function",
 		InputContentType: w.contentType,
+		InputType:        w.inputType,
+		OutputType:       w.outputType,
+		IsDynamic:        false,
 	}
 }

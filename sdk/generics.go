@@ -3,10 +3,8 @@ package sdk
 import (
 	"context"
 	"fmt"
-	"reflect"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/util"
+	function "github.com/duynguyendang/manglekit/adapters/func"
 )
 
 // Runnable is a handle for a type-safe action
@@ -22,42 +20,8 @@ func Define[In any, Out any](
 	handler func(context.Context, In) (Out, error),
 ) *Runnable[In, Out] {
 
-	// Reflection: Extract type names
-	inType := reflect.TypeOf((*In)(nil)).Elem()
-	if inType.Kind() == reflect.Ptr {
-		inType = inType.Elem()
-	}
-	inName := inType.Name()
-
-	outType := reflect.TypeOf((*Out)(nil)).Elem()
-	if outType.Kind() == reflect.Ptr {
-		outType = outType.Elem()
-	}
-	outName := outType.Name()
-
 	// Adapter: Convert Typed Handler -> Core Action
-	wrappedAction := &util.FuncWrapper{
-		ActionName:     name,
-		MetaInputType:  inName,
-		MetaOutputType: outName,
-		Fn: func(ctx context.Context, env core.Envelope) (core.Envelope, error) {
-			var input In
-            // Type Assertion on Payload
-			if p, ok := env.Payload.(In); ok {
-				input = p
-			} else {
-                // TODO: Add JSON map decoding logic here if needed for dynamic inputs
-				return core.Envelope{}, fmt.Errorf("input type mismatch: expected %T, got %T", input, env.Payload)
-			}
-
-			outData, err := handler(ctx, input)
-			if err != nil {
-				return core.Envelope{}, err
-			}
-
-			return core.NewEnvelope(outData), nil
-		},
-	}
+	wrappedAction := function.New(name, handler)
 
 	c.RegisterAction(name, c.Protect(wrappedAction)) // Wrap with Policy Guard
 
@@ -72,7 +36,7 @@ func (r *Runnable[In, Out]) Run(ctx context.Context, input In) (Out, error) {
 	// ExecuteByName will wrap the input in an envelope
 	resEnv, err := r.client.ExecuteByName(ctx, r.name, input)
 
-    var zero Out
+	var zero Out
 	if err != nil {
 		return zero, err
 	}

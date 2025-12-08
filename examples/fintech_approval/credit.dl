@@ -3,7 +3,6 @@ rich("decl", "decl").
 guarantor("decl", "decl").
 request_loan("decl", "decl").
 
-// Logic đệ quy: Được vay nếu có người bảo lãnh giàu
 eligible(User) :- rich(User, "true").
 eligible(User) :- guarantor(User, Sponsor), eligible(Sponsor).
 
