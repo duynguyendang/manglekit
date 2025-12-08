@@ -3,15 +3,19 @@ package schema
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 
-	"github.com/invopop/jsonschema"
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 // Generate generates a JSON Schema definition from a Go Struct.
-// It uses invopop/jsonschema for generation, useful for CLI tools.
+// It uses google/jsonschema-go/jsonschema for generation.
 func Generate(v any) (string, error) {
-	r := new(jsonschema.Reflector)
-	schema := r.Reflect(v)
+	t := reflect.TypeOf(v)
+	schema, err := jsonschema.ForType(t, &jsonschema.ForOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to generate schema: %w", err)
+	}
 
 	schemaBytes, err := json.MarshalIndent(schema, "", "  ")
 	if err != nil {

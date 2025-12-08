@@ -8,12 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGenerate(t *testing.T) {
-	type User struct {
-		Name string `json:"name"`
-		Age  int    `json:"age"`
-	}
+type User struct {
+	Name string `json:"name"`
+	Age  int    `json:"age"`
+}
 
+func TestGenerate(t *testing.T) {
 	output, err := schema.Generate(User{})
 	require.NoError(t, err)
 
@@ -23,10 +23,7 @@ func TestGenerate(t *testing.T) {
 }
 
 func TestValidateStruct(t *testing.T) {
-	type User struct {
-		Name string `json:"name"`
-		Age  int    `json:"age"`
-	}
+	// User struct is defined at package level
 
 	// First generate the schema
 	schemaStr, err := schema.Generate(User{})
@@ -46,10 +43,7 @@ func TestValidateStruct(t *testing.T) {
 }
 
 func TestValidateJSON(t *testing.T) {
-	type User struct {
-		Name string `json:"name"`
-		Age  int    `json:"age"`
-	}
+	// User struct is defined at package level
 
 	schemaStr, err := schema.Generate(User{})
 	require.NoError(t, err)

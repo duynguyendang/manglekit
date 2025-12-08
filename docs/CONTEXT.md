@@ -39,7 +39,7 @@ manglekit/
 │   │   ├── reflection.go     # ToFacts (Struct -> Fact conversion)
 │   │   ├── flattener.go      # Flatten (JSON -> Graph conversion)
 │   │   ├── memory/           # Memory Store implementations
-│   │   └── resources/        # Knowledge Base (RDF/Turtle loading)
+│   │   └── resources/        # Core Datalog resources (e.g., Planner rules)
 │   ├── guard/            # [GOVERNANCE] The interception layer
 │   │   ├── guard.go          # GuardedAction decorator
 │   │   └── guard_test.go     # Governance tests
@@ -67,6 +67,7 @@ manglekit/
 │   ├── func/             # Native Go function wrapper
 │   ├── mcp/              # Model Context Protocol tools (Action & Loader)
 │   ├── vector/           # Vector database retrievers
+│   ├── knowledge/        # [ETL] Knowledge Adapters (RDF, N-Triples)
 │   └── extractor/        # Structured data extraction
 ├── config/               # Configuration loading
 │   ├── schema.go         # Config struct definitions (YAML mapping)
@@ -89,7 +90,6 @@ The brain of the system. It translates Go objects into Datalog facts and evaluat
     *   `EvaluateSteering(ctx, input)`: Determines next step (`RETRY` with `correction`, `ROUTE` with `next_step`).
     *   `LoadFacts(facts)`: Injects dynamic facts at runtime.
     *   `RegisterActionMetadata(meta)`: Injects `action("name")` and `has_input/output` facts for Planner discovery.
-    *   `LoadKnowledge(path)`: Loads static RDF knowledge from Turtle files.
     *   `LoadFromString(rule)`: Parses and loads a single Datalog rule from a string.
     *   `ExecuteQuery(ctx, facts, query)`: Runs a raw Datalog query with tracing. Uses atomic temporary state to avoid contamination.
     *   `ToFacts(id, input)` (`internal/engine/reflection.go`): Reflectively converts Go Structs to `predicate(id, val)` facts. Now supports deep Maps, Slices, and numeric types (Reflector 2.0).
@@ -136,6 +136,8 @@ Concrete implementations of `core.Action`.
     *   `Wrapper` (`adapters/func/wrapper.go`): Wraps a native Go function (`ToolFunc`).
     *   `LLMAction` (`adapters/ai/adapter.go`): Wraps a `TextGenerator` (e.g., `GenkitGenerator`).
     *   `RetrieverAction` (`adapters/vector/retriever_adapter.go`): Wraps a `DocumentRetriever` (e.g., `GenkitRetriever`).
+    *   `NTriplesLoader` (`adapters/knowledge/ntriples.go`): Zero-dependency N-Triples parser.
+    *   `RDFLoader` (`adapters/knowledge/rdf.go`): Adapter for parsing RDF/Turtle files into facts.
 
 ### 2.5 Config (`config/`)
 Handles configuration loading and validation.

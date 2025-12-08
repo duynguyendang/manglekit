@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine/resources"
@@ -117,36 +116,6 @@ func (e *PolicyEngine) Logger() core.Logger {
 	return e.logger
 }
 
-// LoadKnowledge loads static knowledge (facts) from a Turtle (.ttl) file.
-// These facts are persisted in the runtime and available for all subsequent evaluations.
-//
-// Parameters:
-//   - path: The file path to the .ttl file.
-//
-// Returns:
-//   - An error if loading or parsing fails.
-func (e *PolicyEngine) LoadKnowledge(path string) error {
-	if path == "" {
-		return nil
-	}
-
-	// Load facts from knowledge store
-	facts, err := resources.LoadFromPath(path)
-	if err != nil {
-		return fmt.Errorf("failed to load knowledge from %s: %w", path, err)
-	}
-
-	// Add to runtime
-	if err := e.runtime.LoadFacts(facts); err != nil {
-		return fmt.Errorf("failed to load knowledge facts into runtime: %w", err)
-	}
-
-	if e.logger != nil {
-		e.logger.Debug("knowledge loaded", "path", path, "facts_count", len(facts))
-	}
-	return nil
-}
-
 // LoadFacts injects a list of raw Datalog fact strings into the runtime's base knowledge.
 // This allows adding dynamic context or configuration at runtime (e.g., feature flags).
 //
@@ -189,33 +158,27 @@ func (e *PolicyEngine) RegisterActionMetadata(meta core.ActionMetadata) error {
 	return e.LoadFacts(facts)
 }
 
-// LoadFromPath loads policy rules and facts from the specified file system path.
-// It delegates to the underlying MangleRuntime to parse and compile the rules.
+// LoadPolicy loads policy rules from a raw Datalog string.
+// This decouples the engine from file I/O.
 //
 // Parameters:
-//   - path: File path, directory, or glob pattern.
+//   - policy: The Datalog rules as a string.
 //
 // Returns:
-//   - An error if the policy files cannot be read or are invalid.
-func (e *PolicyEngine) LoadFromPath(path string) error {
-	if path == "" {
+//   - An error if parsing or loading fails.
+func (e *PolicyEngine) LoadPolicy(policy string) error {
+	if policy == "" {
 		return nil
 	}
 
-	// Verify the file exists and is readable (pre-flight check)
-	_, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to read policy file: %w", err)
-	}
-
 	// Load the rules into the Mangle runtime
-	if err := e.runtime.Load(path); err != nil {
-		return fmt.Errorf("failed to load policy rules: %w", err)
+	if err := e.runtime.LoadFromString(policy); err != nil {
+		return fmt.Errorf("failed to load policy: %w", err)
 	}
 
-	// Log successful load (optional debug message)
+	// Log successful load
 	if e.logger != nil {
-		e.logger.Debug("policy loaded from file", "path", path)
+		e.logger.Debug("policy loaded from string", "length", len(policy))
 	}
 
 	return nil

@@ -3,9 +3,12 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/duynguyendang/manglekit/adapters/knowledge"
 	mcpAdapter "github.com/duynguyendang/manglekit/adapters/mcp"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
@@ -76,7 +79,11 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 
 	// Load policy from file if provided
 	if c.initialPolicyPath != "" {
-		if err := c.engine.LoadFromPath(c.initialPolicyPath); err != nil {
+		content, err := os.ReadFile(c.initialPolicyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read policy file: %w", err)
+		}
+		if err := c.engine.LoadPolicy(string(content)); err != nil {
 			return nil, err
 		}
 	}
@@ -120,15 +127,45 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 
 	// Load policy from the configured path
 	if cfg != nil && cfg.Policy.Path != "" {
-		if err := c.engine.LoadFromPath(cfg.Policy.Path); err != nil {
+		content, err := os.ReadFile(cfg.Policy.Path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read policy file %q: %w", cfg.Policy.Path, err)
+		}
+		if err := c.engine.LoadPolicy(string(content)); err != nil {
 			return nil, fmt.Errorf("failed to load policy from %q: %w", cfg.Policy.Path, err)
 		}
 	}
 
 	// Load knowledge from the configured path
 	if cfg != nil && cfg.Knowledge.Path != "" {
-		if err := c.engine.LoadKnowledge(cfg.Knowledge.Path); err != nil {
-			return nil, fmt.Errorf("failed to load knowledge from %q: %w", cfg.Knowledge.Path, err)
+		path := cfg.Knowledge.Path
+		var facts []string
+		var err error
+
+		if strings.HasSuffix(path, ".nt") {
+			f, err := os.Open(path)
+			if err != nil {
+				return nil, fmt.Errorf("failed to open knowledge file %q: %w", path, err)
+			}
+			// We defer Close in a function closure or just call it if not returning.
+			// Since we might return, defer is safer but need scope?
+			// os.Open is simple enough here.
+			// To be strictly correct with defer in loop/block:
+			loader := knowledge.NewNTriplesLoader()
+			facts, err = loader.Parse(f)
+			f.Close()
+		} else {
+			// Default to RDF Loader (Turtle/XML)
+			loader := knowledge.NewRDFLoader()
+			facts, err = loader.Parse(path)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse knowledge from %q: %w", path, err)
+		}
+
+		if err := c.engine.LoadFacts(facts); err != nil {
+			return nil, fmt.Errorf("failed to load knowledge facts from %q: %w", path, err)
 		}
 	}
 
@@ -210,10 +247,17 @@ func (c *Client) Protect(action core.Action) core.Action {
 	return guard.New(action, c.engine, c.failureMode)
 }
 
-// Engine returns the underlying PolicyEngine instance.
-// This provides access to low-level engine methods like RecordLineage or explicit evaluation.
 func (c *Client) Engine() *engine.PolicyEngine {
 	return c.engine
+}
+
+// LoadFacts allows manually injecting straight Datalog facts into the engine.
+// This supports the "Explicit Loading" workflow where adapters parse data first.
+func (c *Client) LoadFacts(facts []string) error {
+	if c.engine == nil {
+		return fmt.Errorf("engine not initialized")
+	}
+	return c.engine.LoadFacts(facts)
 }
 
 // Tracer returns the OpenTelemetry Tracer used by the client.
@@ -245,7 +289,6 @@ func newDefaultLogger() core.Logger {
 	}
 	return logger.NewZapAdapter(z.Sugar())
 }
-
 
 // RegisterAction adds an action to the client's internal registry.
 // Registered actions can be invoked by name using ExecuteByName, enabling dynamic routing.

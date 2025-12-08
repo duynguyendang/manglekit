@@ -3,30 +3,29 @@ package schema
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
-	"github.com/santhosh-tekuri/jsonschema/v5"
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 // ValidateJSON validates a JSON string against a given schema string.
-// It uses santhosh-tekuri/jsonschema/v5 for robust validation.
+// It uses google/jsonschema-go/jsonschema for validation.
 func ValidateJSON(schemaStr string, jsonStr string) error {
-	compiler := jsonschema.NewCompiler()
-	if err := compiler.AddResource("schema.json", strings.NewReader(schemaStr)); err != nil {
-		return fmt.Errorf("failed to add schema resource: %w", err)
+	var s jsonschema.Schema
+	if err := json.Unmarshal([]byte(schemaStr), &s); err != nil {
+		return fmt.Errorf("failed to parse schema json: %w", err)
 	}
 
-	sch, err := compiler.Compile("schema.json")
+	resolved, err := s.Resolve(nil)
 	if err != nil {
-		return fmt.Errorf("failed to compile schema: %w", err)
+		return fmt.Errorf("failed to resolve schema: %w", err)
 	}
 
-	var v interface{}
+	var v any
 	if err := json.Unmarshal([]byte(jsonStr), &v); err != nil {
 		return fmt.Errorf("failed to unmarshal json: %w", err)
 	}
 
-	if err := sch.Validate(v); err != nil {
+	if err := resolved.Validate(v); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
