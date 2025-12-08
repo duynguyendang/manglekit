@@ -3,6 +3,7 @@ module github.com/duynguyendang/manglekit
 go 1.24.1
 
 require (
+	github.com/cayleygraph/quad v1.2.4
 	github.com/firebase/genkit/go v1.2.0
 	github.com/google/jsonschema-go v0.3.0
 	github.com/google/mangle v0.3.0
@@ -33,7 +34,9 @@ require (
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mark3labs/mcp-go v0.29.0 // indirect
 	github.com/mbleigh/raymond v0.0.0-20250414171441-6b3a58ab9e0a // indirect
+	github.com/piprate/json-gold v0.3.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/pquerna/cachecontrol v0.0.0-20180517163645-1555304b9b35 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
