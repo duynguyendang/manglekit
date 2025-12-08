@@ -93,7 +93,7 @@ While the default is robust, you can override it with your own logger (e.g., Ube
 ```go
 import (
     "github.com/duynguyendang/manglekit"
-    "github.com/duynguyendang/manglekit/adapters/zapadapter"
+    "github.com/duynguyendang/manglekit/adapters/logger"
     "go.uber.org/zap"
 )
 
@@ -102,29 +102,31 @@ func main() {
     zapLog, _ := zap.NewProduction()
     
     // 2. Adapt and Inject
-    // This overrides the default singleton logger.
+    // This overrides the default internal logger for this client instance.
     client, _ := manglekit.NewClient(ctx, 
-        manglekit.WithLogger(zapadapter.New(zapLog)),
+        manglekit.WithLogger(logger.NewZapAdapter(zapLog.Sugar())),
     )
 }
 ```
 
 ## 5. Implementation Details (Internal)
 
-  * **Location:** `manglekit/logger_std.go` (Root package).
+  * **Location:** `internal/logger/std.go`.
   * **Engine:** `log/slog` (Go 1.21+).
-  * **Pattern:** Lazy-loaded Singleton.
-      * The first time `NewClient` or `NewStdLogger` is called, the system initializes the default logger via `sync.Once`.
-  * **Format:** Defaults to `TextHandler` (human-readable) for development. Can be configured to `JSONHandler` via environment variables (future roadmap).
+  * **Pattern:** Factory (`NewDefault`).
+      * Each call to `NewClient` (without overrides) creates a fresh, thread-safe logger instance. Global state and `sync.Once` singletons have been removed to ensure isolation.
+  * **Format:** Defaults to `TextHandler` (human-readable) for development.
 
-## 6. Helper Functions
+## 6. Accessing the Logger
 
-The root `manglekit` package provides helpers to access the default logger without needing a client instance:
+Outside of the `Client`, you typically don't need to access the Manglekit logger directly. Within an Action, always retrieve it from the Context:
 
 ```go
-// Create or retrieve the default singleton logger
-log := manglekit.NewStdLogger()
-log.Info("Application starting...")
+func MyHandler(ctx context.Context, input MyData) (MyOutput, error) {
+    log := core.LoggerFromContext(ctx)
+    log.Info("processing", "id", input.ID)
+    return MyOutput{}, nil
+}
 ```
 
 ## Best Practices Checklist

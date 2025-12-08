@@ -267,14 +267,10 @@ The `mkit` CLI facilitates neuro-symbolic AI governance.
 | `steering` | **Control Flow**, `next_step` logic, Routing |
 | `taint_demo` | **Information Flow**, Security Labels, Taint Tracking |
 | `extractor_demo` | **Structured Output**, JSON Extraction |
-| `genesis_demo` | **System Initialization**, Basic Flow |
 | `kernel_knowledge_demo` | **Static Knowledge**, RDF/Turtle Loading |
 | `lineage_demo` | **Traceability**, Parent ID Propagation |
-| `options_demo` | **Configuration**, Functional Options |
 | `planner` | **Planning**, Goal-Oriented Action Sequencing |
 | `semantic_feedback` | **Teacher-Student**, Feedback Loops, Auto-Correction |
-| `stateful_demo` | **Memory**, Session Persistence, History |
-
 ## 9. Changelog
 
 -   **2025-12-08**: **Clean Logging Architecture**. Moved default logging logic to `internal/logger/std.go` (Zero-Dependency `slog`) and external adapters to `adapters/logger/` (e.g., `zap_adapter.go`). Cleaned up root directory by removing `logger_std.go`.

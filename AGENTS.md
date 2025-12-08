@@ -112,19 +112,7 @@ test: add or fix unit tests
 
 > Goal: Whenever source changes affect architecture or runtime behavior, the **coding agent must directly update** `docs/CONTEXT.md` (and related docs) itself.
 
-### 6.1 When to Trigger an Update
-
-Trigger the **auto-sync process** whenever any of the following occur:
-
-- **New features, functions, or workflow changes.**
-- Changes to `manglekit.go`, `guard/**`, `engine/**`, `core/**`, or `adapters/**`.
-- Addition or modification of an **Adapter**.
-- Changes to **Policy Logic** or **Reflection**.
-- Changes in **observability** or **lifecycle**.
-
-### 6.2 Self-Update Algorithm
-
-1. **Collect diff context**: Identify modified files.
+1. **Collect diff context**: Identify modified files in this session.
 2. **Infer impact scope**: Identify affected components.
 3. **Edit `docs/CONTEXT.md` directly**: Update Snapshot, Contracts, Gaps, Changelog.
 4. **Edit `docs/LLD.md` and `docs/HLD.md` if needed**.

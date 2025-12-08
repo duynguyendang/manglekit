@@ -29,7 +29,7 @@ func (m *MockLLM) Metadata() core.ActionMetadata {
 
 func main() {
 	// 1. Init Client (Standard)
-	_ = manglekit.Must(manglekit.NewClient(context.Background()))
+	client := manglekit.Must(manglekit.NewClient(context.Background()))
 
 	// 2. Define Components
 	llm := &MockLLM{}
@@ -39,10 +39,13 @@ func main() {
 		log.Fatalf("Failed to create extractor: %v", err)
 	}
 
-	// 3. Register Action via Facade (Optional but good practice if we want governance)
+	// 3. Protect Action via Facade (Required for Governance)
+	// We wrap the extractor action with client.Protect to ensure all policies are enforced.
+	guardedExt := client.Protect(ext)
+
 	// Execute
 	input := core.NewEnvelope("I need a Laptop ASAP, just one.")
-	result, err := ext.Execute(context.Background(), input)
+	result, err := guardedExt.Execute(context.Background(), input)
 	if err != nil {
 		log.Fatalf("Execution failed: %v", err)
 	}
