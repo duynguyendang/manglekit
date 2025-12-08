@@ -12,7 +12,16 @@ It specifies conventions, automated tasks, and safety rules to ensure that all A
 Agents use this file as an **operational manual** to perform reasoning, refactoring, documentation updates, and observability instrumentation within the Go SDK.
 
 Agents must treat the documentation set (`CONTEXT.md`, `HLD.md`, `LLD.md`, `ADR.md`, `ARCHITECTURE_RULES.md`) as the synchronized **architecture source of truth**.
-`CONTEXT.md` is the **live baseline** — always validate and update it whenever architecture or dependency injection logic changes.
+
+🔥 CRITICAL INSTRUCTION: 
+
+You are PROHIBITED from generating code unless you have loaded docs/CONTEXT.md into your context window first. You must treat CONTEXT.md as a variable that must be mutated whenever source code is mutated.
+
+Before marking ANY task as complete, you MUST verify if docs/CONTEXT.md needs synchronization. You cannot output code without subsequently outputting the updated documentation in the same response block or immediately suggesting it. Steps for every request:
+- Plan the Code Change.
+- Execute Code Change.
+- IMMEDIATELY Read docs/CONTEXT.md.
+- IMMEDIATELY Update docs/CONTEXT.md to reflect the change.
 
 ---
 
@@ -295,6 +304,15 @@ Before committing any code changes, verify:
 - [ ] YAML metadata preserved in all docs
 - [ ] No removal of documented sections or warnings
 - [ ] Commit is atomic and logically coherent
+
+### DEFINITION OF DONE (MANDATORY)
+The agent must NOT consider a task finished until:
+- The code logic is implemented.
+- Tests are updated.
+- `docs/CONTEXT.md` has been checked and updated (ChangeLog + Architecture Snapshot).
+- The `last_updated` field in `CONTEXT.md` matches today's date.
+
+If you produce code but do not produce the diff for `CONTEXT.md`, you are violating the system rules.
 
 ---
 

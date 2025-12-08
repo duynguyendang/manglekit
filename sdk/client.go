@@ -16,7 +16,6 @@ import (
 	"github.com/duynguyendang/manglekit/internal/guard"
 	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/telemetry"
-	"go.uber.org/zap"
 )
 
 const (
@@ -59,7 +58,7 @@ type Client struct {
 //   - A pointer to the initialized Client, or an error if initialization fails.
 func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	c := &Client{
-		logger:   core.NopLogger{},
+		logger:   logger.NewDefault(),
 		registry: make(map[string]core.Action),
 		memory:   core.NoOpStore{},
 	}
@@ -103,7 +102,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 //   - A pointer to the Client, or an error.
 func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error) {
 	// Initialize logger (use default for now)
-	log := newDefaultLogger()
+	log := logger.NewDefault()
 
 	// Create client with loaded configuration
 	c := &Client{
@@ -272,22 +271,14 @@ func (c *Client) Logger() core.Logger {
 }
 
 // NewDefault initializes a Client with sensible default settings:
-//   - Zap production logger (or standard output if Zap fails).
+//   - Default internal logger (slog).
 //   - No-op tracer.
 //   - No policy loaded (allow-all default).
 //
 // Returns:
 //   - A pointer to the Client, or an error.
 func NewDefault() (*Client, error) {
-	return NewClient(context.Background(), WithLogger(newDefaultLogger()))
-}
-
-func newDefaultLogger() core.Logger {
-	z, err := zap.NewProduction()
-	if err != nil {
-		return logger.NewStdLogger()
-	}
-	return logger.NewZapAdapter(z.Sugar())
+	return NewClient(context.Background())
 }
 
 // RegisterAction adds an action to the client's internal registry.

@@ -17,7 +17,7 @@ This document provides a strictly factual, deep-dive technical snapshot of the M
 ```text
 manglekit/
 ├── manglekit.go          # [FACADE] Root entry point (Aliases to SDK)
-├── logger_std.go         # [FACADE] Default Slog implementation
+
 ├── sdk/                  # [KERNEL] The orchestration layer
 │   ├── client.go         # Client struct, initialization (formerly sdk.go)
 │   ├── generics.go       # Type-safe Define/Run wrappers (Runnable)
@@ -46,7 +46,7 @@ manglekit/
 │   ├── util/             # Utilities
 │   │   ├── wrapper.go        # Generic Action Wrapper
 │   │   └── schema/           # Schema validation
-│   ├── logger/           # Logger adapters (Zap, Stdout)
+│   ├── logger/           # Default Zero-Dependency Logger (slog)
 │   ├── telemetry/        # OTel tracing setup
 │   ├── statehelper/      # State manipulation helpers
 │   ├── tools/            # CLI internal tools (RuleGen)
@@ -68,6 +68,7 @@ manglekit/
 │   ├── mcp/              # Model Context Protocol tools (Action & Loader)
 │   ├── vector/           # Vector database retrievers
 │   ├── knowledge/        # [ETL] Knowledge Adapters (RDF, N-Triples)
+│   ├── logger/           # [OBSERVABILITY] External Logger Adapters (Zap)
 │   └── extractor/        # Structured data extraction
 ├── config/               # Configuration loading
 │   ├── schema.go         # Config struct definitions (YAML mapping)
@@ -138,6 +139,7 @@ Concrete implementations of `core.Action`.
     *   `RetrieverAction` (`adapters/vector/retriever_adapter.go`): Wraps a `DocumentRetriever` (e.g., `GenkitRetriever`).
     *   `NTriplesLoader` (`adapters/knowledge/ntriples.go`): Zero-dependency N-Triples parser.
     *   `RDFLoader` (`adapters/knowledge/rdf.go`): Adapter for parsing RDF/Turtle files into facts.
+    *   `ZapAdapter` (`adapters/logger/zap_adapter.go`): Adapter for Uber's Zap logger.
 
 ### 2.5 Config (`config/`)
 Handles configuration loading and validation.
@@ -147,7 +149,7 @@ Handles configuration loading and validation.
 
 ### 2.6 Internal (`internal/`)
 Private implementation details not exposed in the public API.
-*   **Logger**: `zap_adapter.go` (Zap) and `std_logger.go` (Standard Lib).
+*   **Logger**: `std.go` implements the default `log/slog` adapter (Zero-Dependency).
 *   **Telemetry**: `otel.go` handles OpenTelemetry provider registration.
 *   **Utils**: `schema/` contains JSON schema generation and validation logic.
 *   **Tools**: `rulegen/` for CLI rule generation.
@@ -275,6 +277,7 @@ The `mkit` CLI facilitates neuro-symbolic AI governance.
 
 ## 9. Changelog
 
+-   **2025-12-08**: **Clean Logging Architecture**. Moved default logging logic to `internal/logger/std.go` (Zero-Dependency `slog`) and external adapters to `adapters/logger/` (e.g., `zap_adapter.go`). Cleaned up root directory by removing `logger_std.go`.
 -   **2025-12-08**: **Reflector 2.0 (Type Safety)**. Extended `engine/reflection.go` to handle `reflect.Map`, `reflect.Slice`, and native numeric types (`%g`) to prevent silent failures and support dynamic data structures. Added cycle detection.
 -   **2025-12-08**: **Runtime Hardening**. Overhauled `engine/runtime.go` to use atomic locking and copy-on-write state management, ensuring crash safety and preventing state pollution in concurrent environments.
 -   **2025-12-08**: **Loop Intelligence**. Enhanced `sdk/loop.go` with exponential backoff and teacher-student feedback injection in the retry loop.

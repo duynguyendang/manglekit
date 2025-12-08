@@ -14,15 +14,10 @@ type ExecuteOption = sdk.ExecuteOption
 
 // --- Facade Functions ---
 
-// NewClient initializes the client with a default Slog logger.
-// It implements the "Batteries Included" philosophy by injecting a default logger.
+// NewClient initializes the client with defaults.
+// It implements the "Batteries Included" philosophy by leveraging SDK defaults.
 func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
-	// Inject default logger first (can be overridden by opts)
-	defaultOpts := []ClientOption{
-		sdk.WithLogger(getDefaultLogger()),
-	}
-	finalOpts := append(defaultOpts, opts...)
-	return sdk.NewClient(ctx, finalOpts...)
+	return sdk.NewClient(ctx, opts...)
 }
 
 // Must helper for panic-on-error initialization
@@ -40,11 +35,11 @@ func Define[In any, Out any](
 }
 
 // --- Option Wrappers ---
-func WithPolicyPath(path string) ClientOption { return sdk.WithPolicyPath(path) }
-func WithFailMode(mode string) ClientOption { return sdk.WithFailMode(mode) }
-func WithLogger(l core.Logger) ClientOption { return sdk.WithLogger(l) }
+func WithPolicyPath(path string) ClientOption        { return sdk.WithPolicyPath(path) }
+func WithFailMode(mode string) ClientOption          { return sdk.WithFailMode(mode) }
+func WithLogger(l core.Logger) ClientOption          { return sdk.WithLogger(l) }
 func WithMemory(store core.MemoryStore) ClientOption { return sdk.WithMemory(store) }
 
-func WithSessionID(id string) ExecuteOption { return sdk.WithSessionID(id) }
-func WithTransientMemory() ExecuteOption { return sdk.WithTransientMemory() }
+func WithSessionID(id string) ExecuteOption        { return sdk.WithSessionID(id) }
+func WithTransientMemory() ExecuteOption           { return sdk.WithTransientMemory() }
 func WithMetadata(key, value string) ExecuteOption { return sdk.WithMetadata(key, value) }
