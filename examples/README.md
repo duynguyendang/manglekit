@@ -93,6 +93,15 @@ go run .
 
 -----
 
+## 🏗️ Building New Agents
+
+Want to create your own agent? Check out the **[Agent Guide](AGENTS.md)** for:
+  * **Standard Scaffolding**: Copy-pasteable templates for new agents.
+  * **Architecture Rules**: The "4 Iron Rules" required for Manglekit agents.
+  * **Best Practices**: Detailed steps for creating robust, policy-governed tools.
+
+-----
+
 ### License
 
 All examples are MIT-licensed and intended for educational and experimental use within the Manglekit ecosystem.

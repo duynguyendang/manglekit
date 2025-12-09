@@ -64,7 +64,8 @@ manglekit/
 │   └── types.go          # Shared types (Message, Query, Answer)
 ├── adapters/             # [DRIVERS] Bridges to external systems
 │   ├── ai/               # Google Genkit AI models
-│   │   ├── gemini.go         # Gemini Adapter
+│   │   ├── gemini.go         # Gemini Adapter (GoogleAI Plugin)
+│   │   ├── genkit.go         # Generic Genkit Adapter (Native Structured Output)
 │   │   └── utils.go          # AI Utilities (GenerateStruct)
 │   ├── func/             # Native Go function wrapper
 │   ├── mcp/              # Model Context Protocol tools (Action & Loader)
@@ -140,9 +141,10 @@ Concrete implementations of `core.Action`.
         *   **FailOnStartup=false**: Logs warning, returns "Unhealthy" actions (Soft Failure).
     *   `ExtractorAction` (`adapters/extractor/adapter.go`): Uses an LLM to extract JSON.
     *   `Wrapper` (`adapters/func/wrapper.go`): Wraps a native Go function (`ToolFunc`).
-    *   `GeminiAdapter` (`adapters/ai/gemini.go`): Implements `sdk.TextGenerator` using Google Genkit (Gemini models).
+    *   `GeminiAdapter` (`adapters/ai/gemini.go`): Factory for Google Gemini models. Delegates to `GenkitAdapter`.
+    *   `GenkitAdapter` (`adapters/ai/genkit.go`): Generic adapter for any Genkit model. Supports native `genkit.GenerateData[T]` for robust structured output.
     *   `LLMAction` (`adapters/ai/adapter.go`): Wraps a `TextGenerator`. Handles feedback injection (`mangle_feedback`).
-    *   `utils.go` (`adapters/ai`): Helper `GenerateStruct[T]` for type-safe AI responses.
+    *   `utils.go` (`adapters/ai`): Helper `GenerateStruct[T]`. Prioritizes native Genkit structured output; falls back to JSON parsing.
     *   `RetrieverAction` (`adapters/vector/retriever_adapter.go`): Wraps a `DocumentRetriever` (e.g., `GenkitRetriever`).
     *   `NQuadsLoader` (`adapters/knowledge/nquads.go`): Zero-dependency N-Quads and N-Triples parser.
     *   `RDFLoader` (`adapters/knowledge/rdf.go`): Adapter for parsing RDF/Turtle files into facts.
@@ -280,11 +282,11 @@ The `mkit` CLI facilitates neuro-symbolic AI governance.
 | `kernel_knowledge_demo` | **Static Knowledge**, RDF/Turtle Loading |
 | `lineage_demo` | **Traceability**, Parent ID Propagation |
 | `planner` | **Planning**, Goal-Oriented Action Sequencing |
-| `semantic_feedback` | **Teacher-Student**, Feedback Loops, Auto-Correction |
+| `semantic_feedback` | **Teacher-Student**, Real AI (Gemini), Structured Output, Auto-Correction |
 | `context_aware_rag` | **Context Awareness**, Knowledge Graph, Role-Based Access |
 ## 9. Changelog
 
--   **2025-12-09**: **AI Integration**. Added `adapters/ai/gemini.go` for full Gemini integration and `adapters/ai/utils.go` for generic structured generation (`GenerateStruct[T]`). Defined `sdk.TextGenerator` interface.
+-   **2025-12-09**: **Advanced AI Integration**. Added `adapters/ai/genkit.go` for generic Genkit model support. Updated `adapters/ai/utils.go` to use **Native Genkit Structured Output** (`genkit.GenerateData`) for `GenerateStruct[T]`, providing robust schema enforcement. Refactored `semantic_feedback` example to use real Gemini models.
 -   **2025-12-09**: **Context-Aware RAG**. Added `examples/context_aware_rag` demonstrating role-based knowledge filtering using N-Quads.
 -   **2025-12-08**: **N-Quads Loader**. Implemented `adapters/knowledge/nquads.go`, replacing/extending N-Triples support to handle N-Quads (.nq) and graphs.
 -   **2025-12-08**: **CLI Expansion**. Added `mkit kg` (Knowledge Graph conversion) and `mkit eval` (Local Policy REPL) commands to the CLI toolset.
