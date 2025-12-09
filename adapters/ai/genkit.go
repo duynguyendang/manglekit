@@ -5,32 +5,42 @@ import (
 
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
 )
 
 // genkitAdapter adapts the Firebase Genkit ai.Model interface to the Manglekit sdk.TextGenerator interface.
 type genkitAdapter struct {
 	model ai.Model
+	gk    *genkit.Genkit
 }
 
 // NewGenkitAdapter creates a new adapter from a pre-initialized Genkit model.
 //
 // Parameters:
 //   - model: The Genkit model instance (e.g., from googlegenai.GoogleAIModel).
+//   - gk: The Genkit instance.
 //
 // Returns:
 //   - A sdk.TextGenerator implementation.
-func NewGenkitAdapter(model ai.Model) sdk.TextGenerator {
+func NewGenkitAdapter(model ai.Model, gk *genkit.Genkit) sdk.TextGenerator {
 	return &genkitAdapter{
 		model: model,
+		gk:    gk,
 	}
 }
 
 // Complete generates text using the underlying Genkit model.
 func (g *genkitAdapter) Complete(ctx context.Context, prompt string) (string, error) {
-	req := ai.NewModelRequest(
-		&ai.GenerationCommonConfig{Temperature: 1}, // Default to 1, user can control via prompting or we can expand config later
-		ai.NewUserTextMessage(prompt),
-	)
+	req := &ai.ModelRequest{
+		Messages: []*ai.Message{{
+			Role:    ai.RoleUser,
+			Content: []*ai.Part{ai.NewTextPart(prompt)},
+		}},
+		// Output describes the desired response format.
+		Output: &ai.ModelOutputConfig{
+			Format: ai.OutputFormatJSON,
+		},
+	}
 
 	resp, err := g.model.Generate(ctx, req, nil)
 	if err != nil {

@@ -41,7 +41,7 @@ func (a *BudgetAction) Execute(ctx context.Context, env core.Envelope) (core.Env
 	Output specific JSON only: {"amount": <number>}`
 
 	// Use the generic structured generation helper
-	resp, err := ai.GenerateStruct[BudgetResponse](ctx, a.gen, prompt, sysPrompt)
+	resp, err := ai.GenerateStruct[BudgetResponse](ctx, a.gen, sysPrompt, prompt)
 	if err != nil {
 		return core.Envelope{}, err
 	}

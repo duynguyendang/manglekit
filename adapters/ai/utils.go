@@ -7,82 +7,62 @@ import (
 	"strings"
 
 	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
 )
 
-// GenerateStruct generates a structured response from the LLM.
-// It handles feedback injection, JSON sanitization, and unmarshaling.
-func GenerateStruct[T any](ctx context.Context, gen sdk.TextGenerator, userReq string, sysPrompt string) (T, error) {
+// GenerateStruct generates a type-safe response.
+// It prioritizes Native Genkit Structured Output if available.
+func GenerateStruct[T any](ctx context.Context, gen sdk.TextGenerator, sysPrompt string, userReq string) (T, error) {
 	var result T
 
-	// Construct the prompt
-	prompt := buildPrompt(userReq, sysPrompt, sdk.ContextFacts(ctx))
+	// 1. Construct Prompt with Teacher-Student Feedback
+	fullPrompt := fmt.Sprintf("%s\n\nUser Request: %s", sysPrompt, userReq)
 
-	// Call AI
-	resp, err := gen.Complete(ctx, prompt)
-	if err != nil {
-		return result, fmt.Errorf("llm completion failed: %w", err)
+	// Retrieve feedback injected by Manglekit Core
+	facts := sdk.ContextFacts(ctx)
+	if feedback, ok := facts["mangle_feedback"]; ok && feedback != "" {
+		fullPrompt += fmt.Sprintf("\n\n[SYSTEM CORRECTION]: Your previous answer failed policy check. Reason: '%s'. Fix it immediately.", feedback)
 	}
 
-	// Sanitize response
-	cleaned := sanitizeJSON(resp)
+	// 2. OPTIMIZED PATH: Native Genkit
+	// Check if the generator is our specific Genkit adapter
+	if adapter, ok := gen.(*genkitAdapter); ok {
+		// Use Genkit's native feature.
+		// ai.GenerateData[T] handles:
+		// - Schema generation for T (via WithOutputType)
+		// - Markdown stripping (sanitization)
+		// - Valid JSON parsing (via resp.Output(&value))
+		output, _, err := genkit.GenerateData[T](ctx, adapter.gk,
+			ai.WithModel(adapter.model),
+			ai.WithPrompt(fullPrompt),
+		)
+		if err != nil {
+			return result, fmt.Errorf("genkit native generation failed: %w", err)
+		}
+		// output is *T
+		if output != nil {
+			return *output, nil
+		}
+		return result, fmt.Errorf("genkit returned nil output")
+	}
 
-	// Unmarshal
+	// 3. FALLBACK PATH: Standard JSON (For mocks or other providers)
+	rawResp, err := gen.Complete(ctx, fullPrompt)
+	if err != nil {
+		return result, err
+	}
+
+	// Minimal manual cleanup (just in case) using standard strings
+	cleaned := strings.TrimSpace(rawResp)
+	cleaned = strings.TrimPrefix(cleaned, "```json")
+	cleaned = strings.TrimPrefix(cleaned, "```")
+	cleaned = strings.TrimSuffix(cleaned, "```")
+	cleaned = strings.TrimSpace(cleaned)
+
 	if err := json.Unmarshal([]byte(cleaned), &result); err != nil {
-		return result, fmt.Errorf("failed to unmarshal json: %w\nResponse (sanitized): %s\nOriginal: %s", err, cleaned, resp)
+		return result, fmt.Errorf("manual json unmarshal failed: %w. Raw: %s", err, rawResp)
 	}
 
 	return result, nil
-}
-
-// buildPrompt creates the final prompt string with feedback if available.
-func buildPrompt(userReq, sysPrompt string, facts map[string]string) string {
-	var sb strings.Builder
-	sb.WriteString(sysPrompt)
-	sb.WriteString("\n\nUser Request: ")
-	sb.WriteString(userReq)
-
-	if feedback, ok := facts["mangle_feedback"]; ok && feedback != "" {
-		sb.WriteString("\n\n--- PREVIOUS ATTEMPT REJECTED ---\n")
-		sb.WriteString("Reason: ")
-		sb.WriteString(feedback)
-		sb.WriteString("\n\nInstruction: Please correct your answer to satisfy the policy requirement mentioned above.")
-	}
-
-	return sb.String()
-}
-
-// sanitizeJSON attempts to extract valid JSON from a raw LLM string.
-// It supports extracting from Markdown code blocks (```json ... ```)
-// and fallback to finding the first/last JSON delimiters.
-func sanitizeJSON(input string) string {
-	input = strings.TrimSpace(input)
-
-	// 1. Attempt to find a Markdown code block
-	if start := strings.Index(input, "```"); start != -1 {
-		// Look for the closing block specifically after the start
-		end := strings.LastIndex(input, "```")
-		if end > start {
-			// Extract content inside the block
-			content := input[start+3 : end]
-			content = strings.TrimSpace(content)
-
-			// Remove optional language identifier (e.g., "json")
-			if strings.HasPrefix(content, "json") {
-				content = content[4:]
-			}
-			return strings.TrimSpace(content)
-		}
-	}
-
-	// 2. Fallback: Identify the widest possible JSON boundaries
-	// We look for the first '[' or '{' and the last ']' or '}'
-	start := strings.IndexAny(input, "{[")
-	end := strings.LastIndexAny(input, "}]")
-
-	if start != -1 && end != -1 && end > start {
-		return input[start : end+1]
-	}
-
-	// Return original if no patterns matched
-	return input
 }

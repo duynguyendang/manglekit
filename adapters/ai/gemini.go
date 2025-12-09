@@ -6,15 +6,9 @@ import (
 	"sync"
 
 	"github.com/duynguyendang/manglekit/sdk"
-	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 )
-
-type geminiAdapter struct {
-	gk    *genkit.Genkit
-	model ai.Model
-}
 
 var (
 	gk       *genkit.Genkit
@@ -47,23 +41,5 @@ func NewGemini(ctx context.Context, apiKey string, modelName string) (sdk.TextGe
 	// We rely on the implicit configuration of the googlegenai package via environment variables.
 	model := googlegenai.GoogleAIModel(gk, modelName)
 
-	return &geminiAdapter{
-		gk:    gk,
-		model: model,
-	}, nil
-}
-
-// Complete generates text using the underlying Gemini model.
-func (g *geminiAdapter) Complete(ctx context.Context, prompt string) (string, error) {
-	req := ai.NewModelRequest(
-		nil, // Use default config
-		ai.NewUserTextMessage(prompt),
-	)
-
-	resp, err := g.model.Generate(ctx, req, nil)
-	if err != nil {
-		return "", err
-	}
-
-	return resp.Text(), nil
+	return NewGenkitAdapter(model, gk), nil
 }
