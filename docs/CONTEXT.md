@@ -2,8 +2,8 @@
 context_type: architecture_snapshot
 project: manglekit
 language: go
-version: 1.3
-last_updated: 2025-12-07T12:00:00Z
+version: 1.4
+last_updated: 2025-12-09T13:30:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -20,6 +20,7 @@ manglekit/
 
 ├── sdk/                  # [KERNEL] The orchestration layer
 │   ├── client.go         # Client struct, initialization (formerly sdk.go)
+│   ├── interfaces.go     # Core Interfaces (TextGenerator)
 │   ├── generics.go       # Type-safe Define/Run wrappers (Runnable)
 │   ├── loop.go           # Semantic State Machine (ExecuteByName, RunLoop)
 │   ├── context.go        # Context helpers (WithFact, ContextFacts)
@@ -63,10 +64,14 @@ manglekit/
 │   └── types.go          # Shared types (Message, Query, Answer)
 ├── adapters/             # [DRIVERS] Bridges to external systems
 │   ├── ai/               # Google Genkit AI models
+│   │   ├── gemini.go         # Gemini Adapter
+│   │   └── utils.go          # AI Utilities (GenerateStruct)
 │   ├── func/             # Native Go function wrapper
 │   ├── mcp/              # Model Context Protocol tools (Action & Loader)
 │   ├── vector/           # Vector database retrievers
-│   ├── knowledge/        # [ETL] Knowledge Adapters (RDF, N-Triples)
+│   ├── knowledge/        # [ETL] Knowledge Adapters (RDF, N-Triples, N-Quads)
+│   │   ├── nquads.go         # N-Quads/N-Triples Loader (Zero-Dep)
+│   │   └── rdf.go            # RDF Loader
 │   ├── logger/           # [OBSERVABILITY] External Logger Adapters (Zap)
 │   └── extractor/        # Structured data extraction
 ├── config/               # Configuration loading
@@ -74,6 +79,7 @@ manglekit/
 │   └── loader.go         # Viper-based config loading logic with Env Expansion
 └── cmd/                  # CLI tools (mkit)
     └── mkit/             # Main entry point
+        └── commands/         # CLI Subcommands (kg, eval, gen)
 ```
 
 ## 2. Core Component Analysis
@@ -134,9 +140,11 @@ Concrete implementations of `core.Action`.
         *   **FailOnStartup=false**: Logs warning, returns "Unhealthy" actions (Soft Failure).
     *   `ExtractorAction` (`adapters/extractor/adapter.go`): Uses an LLM to extract JSON.
     *   `Wrapper` (`adapters/func/wrapper.go`): Wraps a native Go function (`ToolFunc`).
-    *   `LLMAction` (`adapters/ai/adapter.go`): Wraps a `TextGenerator` (e.g., `GenkitGenerator`).
+    *   `GeminiAdapter` (`adapters/ai/gemini.go`): Implements `sdk.TextGenerator` using Google Genkit (Gemini models).
+    *   `LLMAction` (`adapters/ai/adapter.go`): Wraps a `TextGenerator`. Handles feedback injection (`mangle_feedback`).
+    *   `utils.go` (`adapters/ai`): Helper `GenerateStruct[T]` for type-safe AI responses.
     *   `RetrieverAction` (`adapters/vector/retriever_adapter.go`): Wraps a `DocumentRetriever` (e.g., `GenkitRetriever`).
-    *   `NTriplesLoader` (`adapters/knowledge/ntriples.go`): Zero-dependency N-Triples parser.
+    *   `NQuadsLoader` (`adapters/knowledge/nquads.go`): Zero-dependency N-Quads and N-Triples parser.
     *   `RDFLoader` (`adapters/knowledge/rdf.go`): Adapter for parsing RDF/Turtle files into facts.
     *   `ZapAdapter` (`adapters/logger/zap_adapter.go`): Adapter for Uber's Zap logger.
 
@@ -273,8 +281,12 @@ The `mkit` CLI facilitates neuro-symbolic AI governance.
 | `lineage_demo` | **Traceability**, Parent ID Propagation |
 | `planner` | **Planning**, Goal-Oriented Action Sequencing |
 | `semantic_feedback` | **Teacher-Student**, Feedback Loops, Auto-Correction |
+| `context_aware_rag` | **Context Awareness**, Knowledge Graph, Role-Based Access |
 ## 9. Changelog
 
+-   **2025-12-09**: **AI Integration**. Added `adapters/ai/gemini.go` for full Gemini integration and `adapters/ai/utils.go` for generic structured generation (`GenerateStruct[T]`). Defined `sdk.TextGenerator` interface.
+-   **2025-12-09**: **Context-Aware RAG**. Added `examples/context_aware_rag` demonstrating role-based knowledge filtering using N-Quads.
+-   **2025-12-08**: **N-Quads Loader**. Implemented `adapters/knowledge/nquads.go`, replacing/extending N-Triples support to handle N-Quads (.nq) and graphs.
 -   **2025-12-08**: **CLI Expansion**. Added `mkit kg` (Knowledge Graph conversion) and `mkit eval` (Local Policy REPL) commands to the CLI toolset.
 -   **2025-12-08**: **Cleanup**. Removed redundant `internal/util/wrapper.go`. `sdk` now uses `adapters/func` for function wrapping, enforcing the reuse architecture.
 -   **2025-12-08**: **Clean Logging Architecture**. Moved default logging logic to `internal/logger/std.go` (Zero-Dependency `slog`) and external adapters to `adapters/logger/` (e.g., `zap_adapter.go`). Cleaned up root directory by removing `logger_std.go`.
