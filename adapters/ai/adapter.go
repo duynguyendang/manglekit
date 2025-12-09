@@ -5,29 +5,14 @@ import (
 	"fmt"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/firebase/genkit/go/ai"
+	"github.com/duynguyendang/manglekit/sdk"
 )
 
-// TextGenerator defines the interface for a raw text generation capability.
-// It abstracts away the specific provider (e.g., Genkit, OpenAI, custom logic),
-// allowing the AI layer to be swappable.
-type TextGenerator interface {
-	// Complete generates a text completion for the given prompt.
-	//
-	// Parameters:
-	//   - ctx: The execution context.
-	//   - prompt: The input text prompt.
-	//
-	// Returns:
-	//   - The generated text, or an error.
-	Complete(ctx context.Context, prompt string) (string, error)
-}
-
-// LLMAction is a concrete implementation of core.Action that wraps a TextGenerator.
+// LLMAction is a concrete implementation of core.Action that wraps a sdk.TextGenerator.
 // It adapts the specific TextGenerator interface to the universal core.Action envelope interface.
 type LLMAction struct {
 	name      string
-	generator TextGenerator
+	generator sdk.TextGenerator
 }
 
 // NewLLMAction creates a new LLMAction instance.
@@ -39,7 +24,7 @@ type LLMAction struct {
 // Returns:
 //   - A pointer to the initialized LLMAction.
 //   - An error if the generator is nil.
-func NewLLMAction(name string, generator TextGenerator) (*LLMAction, error) {
+func NewLLMAction(name string, generator sdk.TextGenerator) (*LLMAction, error) {
 	if generator == nil {
 		return nil, fmt.Errorf("NewLLMAction(%s): generator cannot be nil", name)
 	}
@@ -88,18 +73,4 @@ func (a *LLMAction) Metadata() core.ActionMetadata {
 		Name: a.name,
 		Type: "llm",
 	}
-}
-
-// NewGenkitAction creates a ready-to-use core.Action from a Google Genkit ai.Model.
-// This is a convenience factory that combines the Genkit adapter with the Action wrapper.
-//
-// Parameters:
-//   - name: The human-readable name for this action.
-//   - model: The Genkit model instance (e.g., from googleai.Model("gemini-1.5-pro")).
-//
-// Returns:
-//   - A core.Action that can be protected and executed by Manglekit, or an error.
-func NewGenkitAction(name string, model ai.Model) (core.Action, error) {
-	generator := NewGenkitGenerator(model)
-	return NewLLMAction(name, generator)
 }
