@@ -22,7 +22,7 @@ func GenerateStruct[T any](ctx context.Context, gen sdk.TextGenerator, userReq s
 	// The sdk.ContextFacts function returns map[string]string.
 	facts := sdk.ContextFacts(ctx)
 	if feedback, ok := facts["mangle_feedback"]; ok && feedback != "" {
-		prompt += fmt.Sprintf("\n\n[CORRECTION]: %s", feedback)
+		prompt += fmt.Sprintf("\n\n--- PREVIOUS ATTEMPT REJECTED ---\nReason: %s\n\nInstruction: Please correct your answer to satisfy the policy requirement mentioned above.", feedback)
 	}
 
 	// Call AI

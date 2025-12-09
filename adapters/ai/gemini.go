@@ -34,9 +34,13 @@ func NewGemini(ctx context.Context, apiKey string, modelName string) (sdk.TextGe
 			}
 		}
 
-		// Initialize Genkit with a background context to ensure the instance persists
-		// beyond the lifecycle of the initialization request.
-		gk = genkit.Init(context.Background(), nil)
+		// Create GoogleAI Plugin instance manually
+		gai := &googlegenai.GoogleAI{
+			APIKey: apiKey,
+		}
+
+		// Initialize Genkit with the plugin using proper Option
+		gk = genkit.Init(context.Background(), genkit.WithPlugins(gai))
 	})
 
 	// Get the model from the initialized Genkit instance.
@@ -52,7 +56,7 @@ func NewGemini(ctx context.Context, apiKey string, modelName string) (sdk.TextGe
 // Complete generates text using the underlying Gemini model.
 func (g *geminiAdapter) Complete(ctx context.Context, prompt string) (string, error) {
 	req := ai.NewModelRequest(
-		&ai.GenerationCommonConfig{Temperature: 1},
+		nil, // Use default config
 		ai.NewUserTextMessage(prompt),
 	)
 

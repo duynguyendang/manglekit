@@ -8,6 +8,7 @@ require (
 	github.com/google/jsonschema-go v0.3.0
 	github.com/google/mangle v0.3.0
 	github.com/google/uuid v1.6.0
+	github.com/joho/godotenv v1.5.1
 	github.com/knakk/rdf v0.0.0-20190304171630-8521bf4c5042
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.11.1

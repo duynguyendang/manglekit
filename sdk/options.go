@@ -71,6 +71,20 @@ func WithMemory(store core.MemoryStore) ClientOption {
 	}
 }
 
+// WithLLM configures the AI backend for the client.
+// This supports the "Explicit AI Adapter" pattern where the application initializes the model
+// (e.g., via Genkit) and passes it to the SDK.
+//
+// Parameters:
+//   - gen: A TextGenerator implementation (e.g., adapters.ai.NewGenkitAdapter(model)).
+func WithLLM(gen TextGenerator) ClientOption {
+	return func(c *Client) {
+		if gen != nil {
+			c.llm = gen
+		}
+	}
+}
+
 // ExecutionParams holds the configuration for a specific execution run.
 type ExecutionParams struct {
 	// SessionID is the unique identifier for a conversation/session.
