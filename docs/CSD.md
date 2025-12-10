@@ -48,10 +48,10 @@ The fundamental atomic unit of Manglekit is the **Supervised Action**. It wraps 
     * *Logic:* "Does this request meet the preconditions?"
     * *Outcome:* If valid, proceed. If invalid, return a structured `AlignmentError`.
 3.  **Execution (Genkit):** The Request is passed to the AI Adapter. The AI performs the task (e.g., Generate Code).
-4.  **Evaluation & Correction (Mangle):** The output is rigorously checked against the **Blueprint**.
-    * *Scenario:* The AI generated valid JSON but violated a business rule (e.g., Budget > $500).
-    * *Reaction:* Manglekit triggers an **Intervention**. It feeds the error back to the AI: *"Correction: Budget must be under $500. Fix it."*
-    * *Result:* The AI self-corrects and returns the valid result.
+4.  **Evaluation & Decision (Mangle):** The output is checked against the Blueprint. The Engine makes a Decision:
+    * *Correction (Retry):* If the error is recoverable (e.g., Syntax Error), feed feedback to AI and loop.
+    * *Steering (Route):* If the result requires escalation (e.g., High Risk), route to a different handler (e.g., Human Review) without re-prompting the AI.
+    * *Rejection (Deny):* If the violation is critical, halt execution immediately.
 
 ---
 
@@ -68,10 +68,9 @@ The fundamental atomic unit of Manglekit is the **Supervised Action**. It wraps 
 
 ## 5. Strategic Capabilities
 
-### 5.1 Neuro-Symbolic Steering
-We use logic to "program" the AI's flow, not just prompt it.
-* **Mechanism:** `next_step("review_phase") :- output.score < 90.`
-* **Result:** The logic engine dynamically routes the AI to the next appropriate step (e.g., Human Review, Critic Agent, or Final Approval).
+### 5.1 Programmable Flow Control We use logic to determine the Next Best Action, not just blindly retry.
+* **Mechanism:** The Blueprint dictates whether to **Loop (with feedback)**, **Route (to another agent/human)**, or **Fail**.
+* **Benefit:** Prevents "Infinite Retry Loops" on unrecoverable errors and enables complex workflows like "Escalation to Human".
 
 ### 5.2 Resilience Layer (Circuit Breaker)
 * **Problem:** AI APIs fail or stall.
