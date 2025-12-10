@@ -10,6 +10,8 @@ import (
 	"github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/joho/godotenv"
 )
 
@@ -70,8 +72,8 @@ func main() {
 		}
 	}
 
-	// 1. Initialize Gemini Adapter (handles Genkit init internally)
-	// We use the helper from adapters/ai which ensures singleton initialization.
+	// 1. Initialize Gemini Adapter
+	// We demonstrate the Native Genkit initialization pattern here.
 	modelName := "gemini-2.5-flash"
 	apiKey := os.Getenv("GOOGLE_API_KEY")
 
@@ -79,10 +81,15 @@ func main() {
 		fmt.Println("Warning: GOOGLE_API_KEY not set. This example requires a valid API key.")
 	}
 
-	adapter, err := ai.NewGemini(ctx, apiKey, modelName)
-	if err != nil {
-		log.Fatalf("Failed to initialize Gemini: %v", err)
-	}
+	// Explicit Genkit Initialization
+	// We initialize the plugin and the Genkit registry manually.
+	gai := &googlegenai.GoogleAI{APIKey: apiKey}
+	gk := genkit.Init(ctx, genkit.WithPlugins(gai))
+	rawModel := googlegenai.GoogleAIModel(gk, modelName)
+
+	// Clean initialization: Only the model is needed now.
+	// The adapter no longer requires the Genkit instance.
+	adapter := ai.NewGenkitAdapter(rawModel)
 
 	// 2. Initialize Manglekit Client with the blueprint
 	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithBlueprintPath(policyPath)))

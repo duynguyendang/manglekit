@@ -8,7 +8,6 @@ import (
 
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
 )
 
 // GenerateStruct generates a type-safe response.
@@ -38,22 +37,21 @@ func GenerateStruct[T any](ctx context.Context, gen sdk.TextGenerator, sysPrompt
 			ai.NewUserMessage(ai.NewTextPart(effectiveUserPrompt)),
 		}
 
-		// ai.GenerateData[T] handles:
-		// - Schema generation for T (via WithOutputType)
-		// - Markdown stripping (sanitization)
-		// - Valid JSON parsing (via resp.Output(&value))
-		output, _, err := genkit.GenerateData[T](ctx, adapter.gk,
+		// Use native ai.Generate directly on the model
+		resp, err := ai.Generate(ctx, nil,
 			ai.WithModel(adapter.model),
 			ai.WithMessages(messages...),
+			ai.WithOutputType(result), // <--- Native Structured Output
 		)
+
 		if err != nil {
 			return result, fmt.Errorf("genkit native generation failed: %w", err)
 		}
-		// output is *T
-		if output != nil {
-			return *output, nil
+
+		if err := resp.Output(&result); err != nil {
+			return result, fmt.Errorf("genkit output parsing failed: %w", err)
 		}
-		return result, fmt.Errorf("genkit returned nil output")
+		return result, nil
 	}
 
 	// 3. FALLBACK PATH: Standard JSON (For mocks or other providers)
