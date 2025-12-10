@@ -78,6 +78,12 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 			if next == "" {
 				return core.Envelope{}, fmt.Errorf("route decision missing next_step")
 			}
+
+			// Validate/Log Payload Handover
+			if c.logger != nil {
+				c.logger.Info("RunLoop: Routing to next action", "from", currentAction, "to", next, "payload_type", fmt.Sprintf("%T", result.Payload))
+			}
+
 			currentAction = next
 			currentPayload = result.Payload
 			continue
@@ -145,22 +151,14 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 			}
 
 			// Context-aware Backoff
-			sleepDuration := time.Duration(params.RetryCount) * BackoffBase
-			select {
-			case <-ctx.Done():
-				return core.Envelope{}, ctx.Err()
-			case <-time.After(sleepDuration):
-				// Return a mock result to signal RETRY to caller, or simpler: return Error?
-				// The prompt implies this function handles the "Switch" logic too.
-				// But here we are in Error handling block (PolicyViolation).
-				// In original code, this was "continue" inside loop.
-				// Here we can return a synthetic Envolope with DecisionRetry?
-				// Or return specific error that caller understands?
-				// Using synthetic envelope with Retry decision seems cleanest to keep loop uniform.
-				res := core.NewEnvelope(payload)
-				res.Metadata[core.KeyDecision] = core.DecisionRetry
-				return res, nil
+			if err := c.backoff(ctx, params.RetryCount); err != nil {
+				return core.Envelope{}, err
 			}
+
+			// Return a mock result to signal RETRY to caller
+			res := core.NewEnvelope(payload)
+			res.Metadata[core.KeyDecision] = core.DecisionRetry
+			return res, nil
 		}
 		return core.Envelope{}, err
 	}
@@ -207,20 +205,20 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		}
 
 		// Context-aware Backoff
-		sleepDuration := time.Duration(params.RetryCount) * BackoffBase
-		select {
-		case <-ctx.Done():
-			return core.Envelope{}, ctx.Err()
-		case <-time.After(sleepDuration):
-			// Return result so caller loops
-			return result, nil
+		if err := c.backoff(ctx, params.RetryCount); err != nil {
+			return core.Envelope{}, err
 		}
+		// Return result so caller loops
+		return result, nil
 
 	case core.DecisionRoute:
 		// Reset retry count for new action
-		// In original code: retryCount = 0.
 		params.RetryCount = 0
 		params.FeedbackHistory = nil
+
+		if c.logger != nil {
+			c.logger.Info("RunLoop: Feedback history cleared for new action route")
+		}
 		// Return result so caller loops
 		return result, nil
 
@@ -228,7 +226,14 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		return result, nil
 
 	case core.DecisionDeny:
-		return core.Envelope{}, fmt.Errorf("action denied by blueprint")
+		reason := result.Metadata["reason"]
+		if reason == "" {
+			reason = result.Metadata["violation_msg"]
+		}
+		if reason == "" {
+			reason = "policy violation"
+		}
+		return core.Envelope{}, fmt.Errorf("action denied by blueprint: %s", reason)
 	}
 
 	// Should not reach here for standard decisions
@@ -247,4 +252,15 @@ func safelyStringify(v any) string {
 	}
 	// Fallback
 	return fmt.Sprintf("%v", v)
+}
+
+// backoff handles the sleep and context cancellation check
+func (c *Client) backoff(ctx context.Context, retryCount int) error {
+	sleepDuration := time.Duration(retryCount) * BackoffBase
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(sleepDuration):
+		return nil
+	}
 }
