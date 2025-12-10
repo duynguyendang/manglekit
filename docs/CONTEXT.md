@@ -224,23 +224,15 @@ The standard container for all data moving through the kernel.
 
 ## 5. Technical Debt & Gaps
 
-### 5.1 Missing Implementations
-*   **Lineage Tracker**: The `LineageTracker` component is partially implemented via OTel and metadata, but lacks a dedicated graph store or query API.
-*   **Action Configuration**: The `actions` section in `mangle.yaml` is defined in the schema but ignored by the loader. Actions must be registered programmatically.
-*   **Config Validation**: `config.Load` performs basic YAML parsing. Semantic validation (using `internal/util/schema`) is not yet integrated into the startup flow.
+#### 5.1 Missing Implementations
+* **Config Validation**: `config.Load` currently performs only basic YAML parsing. Semantic validation (using `internal/util/schema` or `jsonschema`) is needed to ensure valid configurations at startup (e.g., verifying `knowledge_path` existence).
 
-### 5.2 Hardcoded / Temporary Logic
-*   **Max Steps**: `runLoopInternal` has a hardcoded limit of `10` steps, with a specialized retry limit of `3` (`sdk/loop.go`).
-*   **Magic Strings**: Predicate names (`deny`, `correction`, `next_step`) are hardcoded in `internal/engine/solver.go`.
-*   **MCP Startup Resilience**: `mcp.Load` swallows connection errors (logs only), which may hide misconfigurations during startup.
+#### 5.2 Hardcoded Logic
+* **Loop Constraints**: The Semantic State Machine (`sdk/loop.go`) enforces a hardcoded limit of `10` steps and `3` retries. These should be exposed as configurable `ExecuteOptions` (e.g., `WithMaxSteps`, `WithRetryLimit`).
 
-### 5.3 Panics
-*   **`sdk.Must`**: Explicitly designed to panic on initialization errors.
-*   **Examples**: Demo code in `examples/` frequently uses `panic(err)`.
-*   **Safety**: `guard` and `logger` are tested to ensure they do *not* panic, but `adapters` (specifically `ai`) have been flagged in audits for potential nil pointer panics if not initialized correctly.
-
-### 5.4 TODOs
-*   A scan of the codebase reveals **0** explicit `TODO` or `FIXME` markers.
+#### 5.3 Safety Gaps
+* **Adapter Validation**: AI and Vector adapters (`adapters/ai`, `adapters/vector`) need stricter validation in their constructors to ensure non-nil dependencies, returning errors at initialization rather than panicking during execution.
+* **Legacy MCP Cleanup**: The legacy `mcp.Load` path is unsafe as it swallows connection errors. It must be deprecated and fully replaced by `mcp.NewLoader` which supports `FailOnStartup` and proper health checks.
 
 ## 6. Development & Build
 
