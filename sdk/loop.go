@@ -103,7 +103,7 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 }
 
 // ExecuteSingleStep runs one step of the action and returns the decision.
-// It handles: Action Execution, History Persistence, Policy Violation Backoff, and Steering Logic (Retry/Route updates).
+// It handles: Action Execution, History Persistence, Blueprint Alignment Backoff, and Steering Logic (Retry/Route updates).
 func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, payload any, params *ExecutionParams) (core.Envelope, error) {
 	// 1. Resolve Action
 	action, ok := c.registry[actionName]
@@ -145,7 +145,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	}
 
 	// --- Phase 2: Blueprint Check (Pre-check) & Phase 3: Execution (Intuition) ---
-	// The Action.Execute wrapper handles the Pre-check (Policy) and the actual Genkit Execution.
+	// The Action.Execute wrapper handles the Pre-check (Blueprint) and the actual Genkit Execution.
 	result, err := action.Execute(ctx, env)
 	if err != nil {
 		var pve *core.AlignmentError
@@ -242,7 +242,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 			reason = result.Metadata["violation_msg"]
 		}
 		if reason == "" {
-			reason = "policy violation"
+			reason = "blueprint violation"
 		}
 		return core.Envelope{}, fmt.Errorf("action denied by blueprint: %s", reason)
 	}

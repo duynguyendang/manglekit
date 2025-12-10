@@ -102,7 +102,7 @@ func TestSupervisedAction_Execute(t *testing.T) {
 	// 1. Setup
 	eng := engine.New()
 	mock := &MockAction{}
-	supervisedAction := New(mock, eng, "closed")
+	supervisedAction := NewSupervisedAction(mock, eng, "closed")
 
 	// 2. Create input
 	inputPayload := "hello world"
@@ -134,7 +134,7 @@ func TestSupervisedAction_LoggerContextInjection(t *testing.T) {
 	testLogger := &TestLogger{}
 	eng := engine.NewWithObservability(nil, testLogger)
 	capturingAction := &LoggerCapturingAction{}
-	supervisedAction := New(capturingAction, eng, "closed")
+	supervisedAction := NewSupervisedAction(capturingAction, eng, "closed")
 
 	// 2. Create input
 	input := core.NewEnvelope("test payload")

@@ -28,7 +28,7 @@ If you are an AI Coding Agent, you **MUST** follow these rules. Violations will 
 
 ### 4\. ALWAYS Protect
 
-  * Every Action must be wrapped in `client.Protect(action)`.
+  * Every Action must be wrapped in `client.Supervise(action)`.
   * Unprotected actions are illegal in Manglekit. They bypass the Datalog Policy safety layer.
 
 -----
@@ -54,7 +54,7 @@ Initialize the Manglekit client. This loads the "Genes" (Policy Rules).
 
 ```go
 // "policy.dl" contains the logic: allow/deny rules.
-client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithPolicyPath("policy.dl")))
+client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithBlueprintPath("policy.dl")))
 ```
 
 ### Step 3: Initialize the Brain (Adapter)
@@ -90,7 +90,7 @@ budgetAction := manglekit.Define("budget_agent", func(ctx context.Context, req s
 Register the action with the `Protect` wrapper. Then execute it by name.
 
 ```go
-client.RegisterAction("budget_agent", client.Protect(budgetAction))
+client.RegisterAction("budget_agent", client.Supervise(budgetAction))
 result, err := client.ExecuteByName(ctx, "budget_agent", "Buy coffee")
 ```
 
@@ -125,7 +125,7 @@ func main() {
 	ctx := context.Background()
 
 	// 2. Core Engine
-	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithPolicyPath("policy.dl")))
+	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithBlueprintPath("policy.dl")))
 
 	// 3. AI Adapter
 	// Supported: ai.NewGemini, ai.NewOpenAI (future)
@@ -143,7 +143,7 @@ func main() {
 	})
 
 	// 5. Registration (With Protection)
-	client.RegisterAction("my_agent", client.Protect(myAgent))
+	client.RegisterAction("my_agent", client.Supervise(myAgent))
 
 	// 6. Execution
 	res, err := client.ExecuteByName(ctx, "my_agent", "Analyze this project...")
@@ -163,7 +163,7 @@ func main() {
 
 ### The Feedback Loop (Self-Correction)
 
-If `client.Protect` blocks an action (via Datalog Policy), Manglekit automatically injects the violation error back into `ai.GenerateStruct`.
+If `client.Supervise` blocks an action (via Datalog Policy), Manglekit automatically injects the violation error back into `ai.GenerateStruct`.
 
   * **You don't need to write loop logic.**
   * The `ai` adapter handles the retry and error injection automatically.

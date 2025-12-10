@@ -19,9 +19,14 @@ type AlignmentError struct {
 }
 
 func (e *AlignmentError) Error() string {
-	return fmt.Sprintf("[INTERVENTION]: %s", e.Message)
+	return fmt.Sprintf("[ALIGNMENT INTERVENTION]: %s", e.Message)
 }
 
 func (e *AlignmentError) Is(target error) bool {
 	return target == ErrAlignment
+}
+
+// IsAlignmentError checks if the error is an AlignmentError.
+func IsAlignmentError(err error) bool {
+	return errors.Is(err, ErrAlignment)
 }

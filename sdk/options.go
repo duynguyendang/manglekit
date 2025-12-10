@@ -23,14 +23,6 @@ func WithBlueprintPath(path string) ClientOption {
 	}
 }
 
-// WithPolicyPath specifies the file path to load Datalog rules from.
-// Deprecated: Use WithBlueprintPath instead.
-func WithPolicyPath(path string) ClientOption {
-	return func(c *Client) {
-		c.blueprintPath = path
-	}
-}
-
 // WithFailMode sets the resilience strategy for the client.
 //
 // Parameters:

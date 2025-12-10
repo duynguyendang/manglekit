@@ -2,7 +2,6 @@ package supervisor
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -14,15 +13,15 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// GuardedAction is a decorator that wraps any `core.Action` to enforce governance policies.
+// SupervisedAction is a decorator that wraps any `core.Action` to enforce governance blueprints.
 // It implements the standard "Trace -> Authorize -> Execute -> Validate" lifecycle.
 //
 // Lifecycle:
 //  1. Trace: Starts an OpenTelemetry span for the operation.
-//  2. Authorize: Checks Pre-Check policies (e.g., "deny(Req)").
+//  2. Authorize: Checks Pre-Check blueprints (e.g., "deny(Req)").
 //  3. Execute: Runs the inner action (e.g., calls the LLM).
-//  4. Validate: Checks Post-Check policies (e.g., "deny(Output)").
-//  5. Steering: Evaluates steering policies for routing or correction.
+//  4. Validate: Checks Post-Check blueprints (e.g., "deny(Output)").
+//  5. Steering: Evaluates steering blueprints for routing or correction.
 type SupervisedAction struct {
 	inner       core.Action
 	engine      *engine.PolicyEngine
@@ -30,16 +29,16 @@ type SupervisedAction struct {
 	failureMode string
 }
 
-// New creates a new GuardedAction with default settings (no tracing).
+// NewSupervisedAction creates a new SupervisedAction with default settings (no tracing).
 //
 // Parameters:
-//   - action: The inner action to protect.
+//   - action: The inner action to supervise.
 //   - eng: The policy engine to use for governance.
 //   - failureMode: The resilience strategy ("open" or "closed").
 //
 // Returns:
-//   - A new GuardedAction instance.
-func New(action core.Action, eng *engine.PolicyEngine, failureMode string) *SupervisedAction {
+//   - A new SupervisedAction instance.
+func NewSupervisedAction(action core.Action, eng *engine.PolicyEngine, failureMode string) *SupervisedAction {
 	return &SupervisedAction{
 		inner:       action,
 		engine:      eng,
@@ -48,17 +47,17 @@ func New(action core.Action, eng *engine.PolicyEngine, failureMode string) *Supe
 	}
 }
 
-// NewWithTracer creates a new GuardedAction with tracing enabled.
+// NewSupervisedActionWithTracer creates a new SupervisedAction with tracing enabled.
 //
 // Parameters:
-//   - action: The inner action to protect.
+//   - action: The inner action to supervise.
 //   - eng: The policy engine.
 //   - tracer: The tracer implementation.
 //   - failureMode: "open" (log only on system error) or "closed" (block on system error).
 //
 // Returns:
-//   - A new GuardedAction instance.
-func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer core.Tracer, failureMode string) *SupervisedAction {
+//   - A new SupervisedAction instance.
+func NewSupervisedActionWithTracer(action core.Action, eng *engine.PolicyEngine, tracer core.Tracer, failureMode string) *SupervisedAction {
 	if tracer == nil {
 		tracer = &core.NopTracer{}
 	}
@@ -70,7 +69,7 @@ func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer core.Tra
 	}
 }
 
-// Execute runs the guarded action, orchestrating the full governance lifecycle.
+// Execute runs the supervised action, orchestrating the full governance lifecycle.
 //
 // It performs the following steps:
 //  1. Starts a span.
@@ -86,7 +85,7 @@ func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer core.Tra
 //   - input: The data envelope.
 //
 // Returns:
-//   - The result envelope (possibly modified by policy), or an error.
+//   - The result envelope (possibly modified by blueprint), or an error.
 func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	// Auto-Tracing (Phase 5)
 	// We use the global OTel tracer "manglekit" to create spans automatically.
@@ -126,7 +125,7 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 
 // isAlignmentIssue checks if the error is a wrapped alignment check violation
 func (g *SupervisedAction) isAlignmentIssue(err error) bool {
-	return errors.Is(err, core.ErrAlignment)
+	return core.IsAlignmentError(err)
 }
 
 // Metadata delegates to the inner action's Metadata method.
@@ -141,7 +140,7 @@ func (g *SupervisedAction) shouldBlock(err error) bool {
 		return false
 	}
 	// Always block on explicit alignment issues
-	if errors.Is(err, core.ErrAlignment) {
+	if core.IsAlignmentError(err) {
 		return true
 	}
 	// If mode is "open" (Fail-Open), allow execution (return false)

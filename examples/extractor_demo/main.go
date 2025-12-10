@@ -40,8 +40,8 @@ func main() {
 	}
 
 	// 3. Protect Action via Facade (Required for Governance)
-	// We wrap the extractor action with client.Protect to ensure all policies are enforced.
-	guardedExt := client.Protect(ext)
+	// We wrap the extractor action with client.Supervise to ensure all policies are enforced.
+	guardedExt := client.Supervise(ext)
 
 	// Execute
 	input := core.NewEnvelope("I need a Laptop ASAP, just one.")

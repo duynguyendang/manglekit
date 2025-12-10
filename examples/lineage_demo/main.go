@@ -54,9 +54,9 @@ func main() {
 	actionC := &MockAction{Name: "ActionC"}
 
 	// Use Client to Protect them (Facade)
-	guardedA := client.Protect(actionA)
-	guardedB := client.Protect(actionB)
-	guardedC := client.Protect(actionC)
+	guardedA := client.Supervise(actionA)
+	guardedB := client.Supervise(actionB)
+	guardedC := client.Supervise(actionC)
 
 	// 2. Scenario 1: Sequential Chain (A -> B -> C)
 	// We simulate a pipeline where A output is passed to B, etc.
@@ -91,7 +91,7 @@ func main() {
 	// Create a wrapper that calls C
 	wrapper := &WrapperAction{Name: "Wrapper", Inner: guardedC}
 	// Protect the wrapper too
-	guardedWrapper := client.Protect(wrapper)
+	guardedWrapper := client.Supervise(wrapper)
 
 	inputWrapper := core.NewEnvelope("Nested Data")
 	fmt.Printf("InputWrapper ID: %s\n", inputWrapper.ID)

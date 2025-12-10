@@ -30,13 +30,13 @@ func main() {
 
 	// Action 1: SQL Generator (demonstrates RETRY)
 	gen := &SQLGenerator{}
-	client.RegisterAction("generate_sql", client.Protect(gen))
+	client.RegisterAction("generate_sql", client.Supervise(gen))
 
 	// Action 2: Router (demonstrates ROUTE)
-	client.RegisterAction("classify", client.Protect(&RouterAction{}))
+	client.RegisterAction("classify", client.Supervise(&RouterAction{}))
 
 	// Action 3: VIP Agent
-	client.RegisterAction("vip_agent", client.Protect(&VIPAction{}))
+	client.RegisterAction("vip_agent", client.Supervise(&VIPAction{}))
 
 	// 3. RunLoop - Scenario 1: Retry
 	fmt.Println("--- Scenario 1: Retry (Bad SQL) ---")

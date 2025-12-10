@@ -23,7 +23,7 @@ func Define[In any, Out any](
 	// Adapter: Convert Typed Handler -> Core Action
 	wrappedAction := function.New(name, handler)
 
-	c.RegisterAction(name, c.Protect(wrappedAction)) // Wrap with Policy Guard
+	c.RegisterAction(name, c.Supervise(wrappedAction)) // Wrap with Blueprint Supervisor
 
 	return &Runnable[In, Out]{
 		client: c,

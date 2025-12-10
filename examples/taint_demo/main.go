@@ -79,7 +79,7 @@ func main() {
 	// If we use `Protect`, we get a `core.Action` back.
 	// We can run `Execute` on that guarded action with our pre-labeled envelope.
 
-	guardedEcho := client.Protect(echo)
+	guardedEcho := client.Supervise(echo)
 
 	result1, err := guardedEcho.Execute(context.Background(), input1)
 	if err == nil {
