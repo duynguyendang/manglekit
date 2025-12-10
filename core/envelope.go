@@ -18,6 +18,9 @@ type Envelope struct {
 	Metadata map[string]string
 	// SecurityLabels holds taint tags (e.g., "secret", "pii") for information flow control.
 	SecurityLabels []string
+	// Facts holds structured logical facts extracted from the payload (e.g., "topic(billing)").
+	// These are fed directly into the Logic Engine for reasoning.
+	Facts []string
 	// ContentType indicates whether the payload is a Struct or JSON.
 	ContentType ContentType
 }

@@ -2,23 +2,24 @@
 
 # Manglekit
 
-**Manglekit** is a **Neuro-Symbolic AI Kernel** for Go. It adds a deterministic control plane to your probabilistic AI agents.
+**Manglekit** is the **Neuro-Symbolic Engine for Agents** in Go.
 
-Unlike frameworks that force you into rigid abstractions, Manglekit follows a **"Wrap, Don't Build"** philosophy. You bring your own tools (Genkit, LangChain, or raw APIs), and Manglekit wraps them in a Guarded Action—a secure, observable shell that enforces:
+It adds a deterministic control plane to your probabilistic AI workflows. By combining a logic engine (Google Mangle) with an execution runtime, Manglekit allows you to define *how* an agent should behave using strict protocols, ensuring reliability without sacrificing flexibility.
 
-1.  **Deterministic Safety**: Using a Datalog engine to enforce strict logic boundaries over LLM probabilities.
-2.  **Deep Observability**: Automatic tracing of *why* an agent made a decision (Logic Spans).
-3.  **Zero-Config Security**: Pre- and post-execution checks without polluting your business code.
+Unlike heavy agent frameworks that dictate your architecture, Manglekit follows a **"Wrap, Don't Build"** philosophy. You bring your own capabilities (Genkit, LangChain, or raw APIs), and Manglekit wraps them in a **Supervised Runtime**—handling the complex state machine of retries, corrections, and routing for you.
 
-> **📖 Architecture:** See [docs/CONTEXT.md](docs/CONTEXT.md) for the live architecture standard.
+## 🚀 Core Mechanics
 
-## 🚀 Key Features
+1.  **Deterministic Steering**: Control LLM probabilities with Datalog logic. If the AI hallucinates logic errors, the engine corrects it.
+2.  **Active Self-Correction**: Implements a native Teacher-Student loop. Errors are not just caught; they are fed back to the model for immediate recovery.
+3.  **Logical Observability**: Automatic tracing of the *reasoning process*. See exactly which rule triggered a decision via OpenTelemetry.
 
-*   🛡️ **Universal Guardrails**: Wrap *any* operation (LLM, Vector DB, Tool) in a secure `client.Protect()` shell.
-*   🧠 **Deterministic Logic**: Enforce strict safety rules using Datalog (`.dl`), curbing the chaotic nature of probabilistic AI.
-*   🪞 **Zero-Config Reflection**: Automatically map Go structs to Datalog facts—no manual glue code required.
-*   🔭 **Deep Observability**: Native OpenTelemetry integration emits "Logical Spans" to trace *why* a decision was made.
-*   🔌 **Plug-and-Play Drivers**: Built-in support for Google Genkit, MCP, and native Go functions via a modular driver system.
+## 🛠️ Key Features
+
+* 🏗️ **Blueprint-Driven Logic**: Define protocols in `.dl` files. Logic is treated as data—hot-swappable and decoupled from your Go code.
+* ⚡ **Supervised Actions**: Use `client.Manage()` to wrap any function. The runtime automatically handles the execution loop, context injection, and state management.
+* 🪞 **Type-Safe Reflection**: Zero-config mapping of Go structs to Logic predicates. Your data models *are* your logic schema.
+* 🔌 **Agnostic Driver System**: Works seamlessly with Google Genkit, MCP, or any custom provider via clean adapters.
 
 ## 🛠️ Getting Started
 
@@ -225,10 +226,7 @@ func main() {
 
 ### Architecture & Design
 
-*   **[docs/CONTEXT.md](docs/CONTEXT.md)**: Live architecture snapshot and system contracts (source of truth).
 *   **[docs/HLD.md](docs/HLD.md)**: High-level design explaining system boundaries and layering.
-*   **[docs/LLD.md](docs/LLD.md)**: Low-level implementation details for developers.
-*   **[docs/ADR.md](docs/ADR.md)**: Architecture Decision Records and design rationale.
 
 ### Configuration & Deployment
 

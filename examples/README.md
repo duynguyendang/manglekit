@@ -20,6 +20,7 @@ The examples are categorized by the architectural layer they demonstrate, moving
 | **`kernel_knowledge_demo`** | **Static Knowledge Integration** | Demonstrates loading and querying static, external knowledge bases (e.g., **RDF/Turtle files**) directly within Datalog policies to ground AI decisions. |
 | **`dynamic_pricing`** | **Runtime Context Injection** | Shows how to inject dynamic application state (user tier, inventory, time) as **Datalog Facts** to govern complex, real-time business logic. |
 | **`context_aware_rag`** | **Knowledge Graph Filtering** | Demonstrates **Context-Aware Knowledge** by filtering N-Quads data using Datalog rules based on user roles (Multi-tenancy). |
+| **`chat_chit`** | **Dual-Stream Envelope** | Demonstrates the **Dual-Stream** pattern: passing unstructured payload (Text) alongside structured facts (Logic) to drive routing without the engine understanding the raw text. |
 
 -----
 

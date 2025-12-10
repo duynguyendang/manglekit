@@ -282,6 +282,18 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 		facts = append(facts, atom)
 	}
 
+	// [NEW] Inject Explicit Facts from Envelope
+	for _, factStr := range input.Facts {
+		atom, err := parse.Atom(factStr)
+		if err != nil {
+			if e.logger != nil {
+				e.logger.Error("failed to parse envelop fact", "fact", factStr, "error", err)
+			}
+			return fmt.Errorf("envelope fact parsing error: %w", err)
+		}
+		facts = append(facts, atom)
+	}
+
 	// Execute the deny(Req) query
 	denied, err := e.runtime.ExecuteQuery(facts, fmt.Sprintf(`deny("%s")`, core.EntityInput))
 	if err != nil {
@@ -375,6 +387,18 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 		facts = append(facts, atom)
 	}
 
+	// [NEW] Inject Explicit Facts from Envelope
+	for _, factStr := range output.Facts {
+		atom, err := parse.Atom(factStr)
+		if err != nil {
+			if e.logger != nil {
+				e.logger.Error("failed to parse envelop fact", "fact", factStr, "error", err)
+			}
+			return core.Envelope{}, fmt.Errorf("envelope fact parsing error: %w", err)
+		}
+		facts = append(facts, atom)
+	}
+
 	// Execute the deny(Output) query for post-check validation
 	denied, err := e.runtime.ExecuteQuery(facts, fmt.Sprintf(`deny("%s")`, core.EntityOutput))
 	if err != nil {
@@ -443,6 +467,18 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 			e.logger.Debug("failed to convert input to facts for steering", "error", err)
 		}
 		return decision, metadata, fmt.Errorf("failed to convert input to facts: %w", err)
+	}
+
+	// [NEW] Inject Explicit Facts from Envelope
+	for _, factStr := range input.Facts {
+		atom, err := parse.Atom(factStr)
+		if err != nil {
+			if e.logger != nil {
+				e.logger.Error("failed to parse envelop fact", "fact", factStr, "error", err)
+			}
+			return decision, metadata, fmt.Errorf("envelope fact parsing error: %w", err)
+		}
+		facts = append(facts, atom)
 	}
 
 	// 1. Check Correction (Retry)
