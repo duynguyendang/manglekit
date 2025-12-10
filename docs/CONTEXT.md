@@ -119,7 +119,10 @@ The user-facing API and orchestration kernel.
     *   `NewPolicyGenerator`: Creates a `Generator` to translate natural language to Datalog rules.
     *   `Plan(ctx, goal)`: Generates a multi-step execution plan using Datalog reasoning (`sdk/planner.go`).
 *   **Key Logic**:
-    *   `ExecuteByName` (`sdk/loop.go`): Implements the Semantic State Machine with **Smart Retry** (Backoff + Alignment Check) and **Smart Routing** (`next_step`).
+    *   `ExecuteByName` (`sdk/loop.go`): Implements the **Self-Correcting Semantic State Machine**.
+        *   **Phase 1 (Context)**: Injects History, Feedback, and Context Facts (`sdk.WithFact`).
+        *   **Phase 2 & 3 (Pre-Check & Execution)**: Checks Blueprint then runs Action via `SupervisedAction`.
+        *   **Phase 4 (Post-Check)**: Evaluates result for **Smart Retry** (Backoff + Feedback) or **Smart Routing** (`next_step`).
 *   **Configuration**:
     *   `ClientOption`: `WithBlueprintPath`, `WithFailureMode`, `WithLogger`, `WithMemory`.
     *   `ExecuteOption`: `WithSessionID` (Persist), `WithTransientMemory` (Volatile), `WithMetadata`, `WithMetadataMap`.
@@ -170,28 +173,23 @@ Tracing the execution flow of a request through the system:
 
 1.  **Entry**: User calls `client.ExecuteByName(ctx, "myAction", input)` in `sdk/loop.go`.
 2.  **State Machine**: Calls `runLoopInternal`.
-3.  **Lookup**: `runLoopInternal` retrieves the `core.Action` from `c.registry["myAction"]`.
-4.  **Feedback Injection**:
-    *   If `RETRY` occurred, injects `prev_feedback` (History).
-    *   If `AlignmentError` occurred, injects `mangle_feedback` (Teacher-Student Protocol).
-5.  **Supervisor Interception**: The retrieved Action is a `supervisor.SupervisedAction`. `Execute()` is called (`internal/supervisor/supervisor.go`).
-6.  **Tracing**: `SupervisedAction` starts an OTel span `Action.myAction` automatically.
-7.  **Authorization**: `SupervisedAction` calls `engine.Authorize` (`internal/engine/solver.go`).
-    *   Input is converted to facts via `ToFacts` (Struct) or `Flatten` (JSON).
-    *   `runtime.ExecuteQuery` checks for `deny("Req")`.
-8.  **Execution**: If authorized, `GuardedAction` calls `inner.Execute()` (the Adapter).
-    *   e.g., `MCPAction` calls `tool.RunRaw`.
-9.  **Validation**: `SupervisedAction` calls `engine.Validate` (`internal/engine/solver.go`).
-    *   Output is converted to facts.
-    *   `runtime.ExecuteQuery` checks for `deny("Output")`.
-    *   If denied, queries `violation_msg(Msg)` to return a structured `AlignmentError`.
-10. **Steering**: `SupervisedAction` calls `engine.EvaluateSteering`.
-    *   Checks for `correction` (RETRY) or `next_step` (ROUTE).
-11. **Loop**: `runLoopInternal` receives the result.
-    *   If `RETRY`: **Smart Retry** with exponential backoff (up to 3 times) and feedback injection via `SetFeedback`.
-    *   If `AlignmentError`: Catch error, set `mangle_feedback`, and RETRY (Teacher-Student).
-    *   If `ROUTE`: Loops again with new action.
-    *   If `ALLOW`: Returns result to user.
+3.  **Phase 1: Context Injection**:
+    *   Injects `mangle_feedback` (from previous `AlignmentError`) and `prev_feedback` (History).
+    *   Injects Chat History and any Context Facts (`sdk.WithFact`) into `env.Metadata`.
+4.  **Lookup**: Retrieves the `core.Action` from `c.registry["myAction"]`.
+5.  **Phase 2: Blueprint Check (Pre-check)**: The `SupervisedAction` calls `engine.Authorize`.
+    *   Input is converted to facts (`ToFacts` or `Flatten`).
+    *   Checks for `deny("Req")`. If denied, flow halts.
+6.  **Phase 3: Execution (Intuition)**:
+    *   The `SupervisedAction` traces and runs the underlying Adapter (e.g., Genkit, MCP).
+7.  **Phase 4: Evaluation & Correction (Post-check)**:
+    *   **Validation**: `SupervisedAction` calls `engine.Validate`. Checks for `deny("Output")` or `violation_msg`.
+    *   **Steering**: `SupervisedAction` calls `engine.EvaluateSteering`. Checks for `correction` (RETRY) or `next_step` (ROUTE).
+8.  **Loop Logic**: `runLoopInternal` processes the Decision:
+    *   **RETRY**: Triggers **Smart Backoff** (Exponential Sleep). Injects feedback and loops on *same* action.
+    *   **ROUTE**: Clears feedback history, logs Payload Type, and loops on *next* action.
+    *   **ALLOW**: Returns result to user.
+    *   **DENY**: Returns explicit error (using `reason` or `violation_msg`).
 
 ## 4. Data Structures & State
 
@@ -278,6 +276,7 @@ The `mkit` CLI facilitates neuro-symbolic AI governance.
 | `context_aware_rag` | **Context Awareness**, Knowledge Graph, Role-Based Access |
 ## 9. Changelog
 
+-   **2025-12-10**: **Self-Correcting Loop V2**. Refactored `sdk/loop.go` to explicitly definition 4 Lifecycle Phases (Context, Pre-check, Execution, Post-check). Added `backoff` helper for DRY retry logic. Enhanced Denial observability (`violation_msg`). improved Type Safety logging for routing.
 -   **2025-12-10**: **CSD Alignment (Vocabulary Update)**. Refactored `internal/guard` to `internal/supervisor`. Renamed `GuardedAction` to `SupervisedAction` and `Policy` concepts to `Blueprint`. Standardized errors to `AlignmentError` with `[INTERVENTION]` prefix. This aligns the codebase with the "Industrial Assembly Line" metaphor.
 
 -   **2025-12-09**: **Advanced AI Integration**. Added `adapters/ai/genkit.go` for generic Genkit model support. Updated `adapters/ai/utils.go` to use **Native Genkit Structured Output** (`genkit.GenerateData`) for `GenerateStruct[T]`, providing robust schema enforcement. Refactored `semantic_feedback` example to use real Gemini models.
