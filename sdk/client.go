@@ -24,7 +24,7 @@ const (
 )
 
 // Client is the primary entry point for the Manglekit system.
-// It acts as the governance kernel, managing policies, observability, and action execution.
+// It acts as the governance kernel, managing blueprints, observability, and action execution.
 // Applications should create a single Client instance and reuse it.
 type Client struct {
 	// engine is the internal Policy Engine responsible for Datalog evaluation.
@@ -82,7 +82,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	if c.blueprintPath != "" {
 		content, err := os.ReadFile(c.blueprintPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read policy file: %w", err)
+			return nil, fmt.Errorf("failed to read blueprint file: %w", err)
 		}
 		if err := c.engine.LoadPolicy(string(content)); err != nil {
 			return nil, err
@@ -148,10 +148,6 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 			if err != nil {
 				return nil, fmt.Errorf("failed to open knowledge file %q: %w", path, err)
 			}
-			// We defer Close in a function closure or just call it if not returning.
-			// Since we might return, defer is safer but need scope?
-			// os.Open is simple enough here.
-			// To be strictly correct with defer in loop/block:
 			loader := knowledge.NewNTriplesLoader()
 			facts, err = loader.Parse(f)
 			f.Close()
@@ -220,8 +216,8 @@ func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientO
 			}
 
 			for _, action := range actions {
-				// Protect It
-				safeAction := c.Protect(action)
+				// Supervise It
+				safeAction := c.Supervise(action)
 				// Register It
 				c.RegisterAction(safeAction.Metadata().Name, safeAction)
 				c.logger.Info("Discovered MCP Tool", "name", safeAction.Metadata().Name)
@@ -232,20 +228,20 @@ func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientO
 	return c, nil
 }
 
-// Protect wraps a raw core.Action in a SupervisedAction.
+// Supervise wraps a raw core.Action in a SupervisedAction.
 // This applies the "Trace -> Authorize -> Execute -> Validate" governance lifecycle.
 // This is the core function of the Manglekit framework.
 //
 // Parameters:
-//   - action: The action to protect.
+//   - action: The action to supervise.
 //
 // Returns:
-//   - A new core.Action that enforces policies.
-func (c *Client) Protect(action core.Action) core.Action {
+//   - A new core.Action that enforces blueprints.
+func (c *Client) Supervise(action core.Action) core.Action {
 	if c.tracer != nil {
-		return supervisor.NewWithTracer(action, c.engine, c.tracer, c.failureMode)
+		return supervisor.NewSupervisedActionWithTracer(action, c.engine, c.tracer, c.failureMode)
 	}
-	return supervisor.New(action, c.engine, c.failureMode)
+	return supervisor.NewSupervisedAction(action, c.engine, c.failureMode)
 }
 
 func (c *Client) Engine() *engine.PolicyEngine {

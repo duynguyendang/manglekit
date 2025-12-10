@@ -149,10 +149,10 @@ func main() {
 	// 3. Register Actions
 	intentExtractor := &IntentExtractorAction{llm: gemini}
 
-	client.RegisterAction("extract_intent", client.Protect(intentExtractor))
-	client.RegisterAction("human_manager", client.Protect(&HumanManagerAction{}))
-	client.RegisterAction("tech_support_bot", client.Protect(&TechSupportAction{}))
-	client.RegisterAction("general_chat_bot", client.Protect(&GeneralBotAction{}))
+	client.RegisterAction("extract_intent", client.Supervise(intentExtractor))
+	client.RegisterAction("human_manager", client.Supervise(&HumanManagerAction{}))
+	client.RegisterAction("tech_support_bot", client.Supervise(&TechSupportAction{}))
+	client.RegisterAction("general_chat_bot", client.Supervise(&GeneralBotAction{}))
 
 	// 4. Run Scenarios
 	runScenario(ctx, client, "Angry Billing", "I was charged twice! Refund me NOW!")

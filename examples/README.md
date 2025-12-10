@@ -71,7 +71,7 @@ Manglekit allows you to build systems that are:
 ### Key Patterns
 
   * **Facade Pattern**: Use `manglekit.NewClient` and `manglekit.Define` for a clean, idiomatic Go API.
-  * **Guardrails**: Wrap any function or struct with `client.Protect` to enforce policies.
+  * **Guardrails**: Wrap any function or struct with `client.Supervise` to enforce policies.
   * **Adapters**: Integrate with external ecosystems (like Genkit) via `adapters/`.
 
 -----

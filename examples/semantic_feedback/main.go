@@ -65,10 +65,10 @@ func main() {
 	ctx := context.Background()
 
 	// Handle running from root or from subdirectory
-	policyPath := "examples/semantic_feedback/blueprint.dl"
-	if _, err := os.Stat(policyPath); os.IsNotExist(err) {
+	blueprintPath := "examples/semantic_feedback/blueprint.dl"
+	if _, err := os.Stat(blueprintPath); os.IsNotExist(err) {
 		if _, err := os.Stat("blueprint.dl"); err == nil {
-			policyPath = "blueprint.dl"
+			blueprintPath = "blueprint.dl"
 		}
 	}
 
@@ -92,14 +92,14 @@ func main() {
 	adapter := ai.NewGenkitAdapter(rawModel)
 
 	// 2. Initialize Manglekit Client with the blueprint
-	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithBlueprintPath(policyPath)))
+	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithBlueprintPath(blueprintPath)))
 
 	// 3. Register the Action
 	// Inject the REAL adapter into our Action
 	action := &BudgetAction{gen: adapter}
 
 	// We wrap it in Protect() so the policy engine runs on its output.
-	client.RegisterAction("stubborn_ai", client.Protect(action))
+	client.RegisterAction("stubborn_ai", client.Supervise(action))
 
 	fmt.Println("🎬 Starting Semantic Feedback Demo (Teacher-Student Protocol)...")
 	fmt.Println("---------------------------------------------------------------")

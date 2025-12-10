@@ -115,7 +115,7 @@ func main() {
 	retrieverAction := vector.NewGenkitRetrieverAction("rag-retriever", mockGenkitRetriever, nil)
 
 	// Create generic LLM Action using Genkit Adapter
-	genkitAdapter := ai.NewGenkitAdapter(mockGenkitModel, nil)
+	genkitAdapter := ai.NewGenkitAdapter(mockGenkitModel)
 	llmAction, err := ai.NewLLMAction("rag-llm", genkitAdapter)
 	if err != nil {
 		log.Error("Failed to create Genkit LLM action", "error", err)
@@ -123,9 +123,9 @@ func main() {
 	}
 
 	// 4. Protect Actions with Governance Guard
-	// Note: We use client.Protect because these are core.Actions from adapters, not simple functions for Define.
-	safeRetriever := client.Protect(retrieverAction)
-	safeLLM := client.Protect(llmAction)
+	// Note: We use client.Supervise because these are core.Actions from adapters, not simple functions for Define.
+	supervisedRetriever := client.Supervise(retrieverAction)
+	supervisedLLM := client.Supervise(llmAction)
 
 	log.Info("Actions protected with governance guard")
 	fmt.Println()
@@ -142,7 +142,7 @@ func main() {
 
 	// Step 5b: Execute Retrieval (Guarded)
 	fmt.Println("Step 1: Retrieval Phase (via Genkit)")
-	retrievedEnvelope, err := safeRetriever.Execute(ctx, queryEnvelope)
+	retrievedEnvelope, err := supervisedRetriever.Execute(ctx, queryEnvelope)
 	if err != nil {
 		log.Error("retrieval failed", "error", err)
 		os.Exit(1)
@@ -170,7 +170,7 @@ func main() {
 	llmInputEnvelope := core.NewEnvelope(prompt)
 
 	// Step 5d: Execute LLM (Guarded)
-	generatedEnvelope, err := safeLLM.Execute(ctx, llmInputEnvelope)
+	generatedEnvelope, err := supervisedLLM.Execute(ctx, llmInputEnvelope)
 	if err != nil {
 		log.Error("LLM generation failed", "error", err)
 		os.Exit(1)

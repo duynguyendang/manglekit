@@ -3,7 +3,7 @@ context_type: architecture_snapshot
 project: manglekit
 language: go
 version: 2.0
-last_updated: 2025-12-10T10:45:00Z
+last_updated: 2025-12-10T12:00:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -113,7 +113,7 @@ The user-facing API and orchestration kernel.
     *   `Must`: Panics on initialization error.
     *   `Define[In, Out]`: Registers a typed Action (Typed Mode, `TypeStruct`).
     *   `WithFact(ctx, key, val)`: Injects request-scoped facts into the context.
-    *   `SupervisedAction(Action)`: Wraps an Action with a `SupervisedAction`.
+    *   `Supervise(Action)`: Wraps an Action with a `SupervisedAction`.
     *   `ExecuteByName`: Entry point for the Semantic State Machine (`sdk/loop.go`).
     *   `WithStdoutTracer`: ClientOption for enabling console tracing (`sdk/tracing.go`).
     *   `NewPolicyGenerator`: Creates a `Generator` to translate natural language to Datalog rules.
@@ -276,8 +276,7 @@ The `mkit` CLI facilitates neuro-symbolic AI governance.
 | `context_aware_rag` | **Context Awareness**, Knowledge Graph, Role-Based Access |
 ## 9. Changelog
 
--   **2025-12-10**: **Self-Correcting Loop V2**. Refactored `sdk/loop.go` to explicitly definition 4 Lifecycle Phases (Context, Pre-check, Execution, Post-check). Added `backoff` helper for DRY retry logic. Enhanced Denial observability (`violation_msg`). improved Type Safety logging for routing.
--   **2025-12-10**: **CSD Alignment (Vocabulary Update)**. Refactored `internal/guard` to `internal/supervisor`. Renamed `GuardedAction` to `SupervisedAction` and `Policy` concepts to `Blueprint`. Standardized errors to `AlignmentError` with `[INTERVENTION]` prefix. This aligns the codebase with the "Industrial Assembly Line" metaphor.
+-   **2025-12-10**: **CSD Alignment (Vocabulary Update)**. Refactored `internal/guard` to `internal/supervisor`. Renamed `GuardedAction` to `SupervisedAction` and `Policy` concepts to `Blueprint`. Standardized errors to `AlignmentError` with `[ALIGNMENT INTERVENTION]` prefix. This aligns the codebase with the "Industrial Assembly Line" metaphor.
 
 -   **2025-12-09**: **Advanced AI Integration**. Added `adapters/ai/genkit.go` for generic Genkit model support. Updated `adapters/ai/utils.go` to use **Native Genkit Structured Output** (`genkit.GenerateData`) for `GenerateStruct[T]`, providing robust schema enforcement. Refactored `semantic_feedback` example to use real Gemini models.
 -   **2025-12-09**: **Context-Aware RAG**. Added `examples/context_aware_rag` demonstrating role-based knowledge filtering using N-Quads.

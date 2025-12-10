@@ -21,7 +21,7 @@ func GenerateStruct[T any](ctx context.Context, gen sdk.TextGenerator, sysPrompt
 	feedbackSuffix := ""
 	// Retrieve feedback injected by Manglekit Core
 	if feedback, ok := facts["mangle_feedback"]; ok && feedback != "" {
-		feedbackSuffix = fmt.Sprintf("\n\n[SYSTEM CORRECTION]: Your previous answer failed policy check. Reason: '%s'. Fix it immediately.", feedback)
+		feedbackSuffix = fmt.Sprintf("\n\n[ALIGNMENT INTERVENTION]: Your previous answer failed blueprint alignment check. Reason: '%s'. Fix it immediately.", feedback)
 	}
 
 	effectiveUserPrompt := userReq + feedbackSuffix

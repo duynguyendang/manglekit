@@ -16,7 +16,7 @@ import (
 )
 
 // TestTraceHierarchy verifies the correct OTel span hierarchy:
-// Action.MyAction (Guard)
+// Action.MyAction (Supervisor)
 // ├── Datalog.PreCheck (Engine.Authorize)
 // ├── Function.Execute / Inner Action
 // └── Datalog.PostCheck (Engine.Validate)
@@ -27,7 +27,7 @@ func TestTraceHierarchy(t *testing.T) {
 		trace.WithBatcher(exporter),
 	)
 
-	// Set global tracer provider so Guard uses it
+	// Set global tracer provider so Supervisor uses it
 	otel.SetTracerProvider(tp)
 
 	otelTracer := tp.Tracer("test")
@@ -36,14 +36,14 @@ func TestTraceHierarchy(t *testing.T) {
 	// Wrap OTel tracer with the telemetry adapter
 	coreTracer := telemetry.NewOTelTracer(otelTracer)
 
-	// Initialize the engine and guard with tracing
+	// Initialize the engine and supervisor with tracing
 	eng := engine.NewWithObservability(coreTracer, core.NopLogger{})
 
 	// Create a simple test action
 	innerAction := &MockAction{}
 
 	// Wrap it with the supervisor
-	supervisedAction := NewWithTracer(innerAction, eng, coreTracer, "closed")
+	supervisedAction := NewSupervisedActionWithTracer(innerAction, eng, coreTracer, "closed")
 
 	// Execute the action
 	ctx := context.Background()
@@ -104,7 +104,7 @@ func TestTraceHierarchyWithoutTracer(t *testing.T) {
 	// Create a supervisor without a tracer
 	eng := engine.New()
 	innerAction := &MockAction{}
-	supervisedAction := New(innerAction, eng, "closed")
+	supervisedAction := NewSupervisedAction(innerAction, eng, "closed")
 
 	// Execute the action
 	ctx := context.Background()
@@ -135,14 +135,14 @@ func TestTraceErrorHandling(t *testing.T) {
 	// Wrap OTel tracer with the telemetry adapter
 	coreTracer := telemetry.NewOTelTracer(otelTracer)
 
-	// Initialize the engine and guard with tracing
+	// Initialize the engine and supervisor with tracing
 	eng := engine.NewWithObservability(coreTracer, core.NopLogger{})
 
 	// Create a failing action
 	innerAction := &FailingAction{err: core.ErrAlignment}
 
 	// Wrap it with the supervisor
-	supervisedAction := NewWithTracer(innerAction, eng, coreTracer, "closed")
+	supervisedAction := NewSupervisedActionWithTracer(innerAction, eng, coreTracer, "closed")
 
 	// Execute the action
 	ctx := context.Background()
