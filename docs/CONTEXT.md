@@ -2,8 +2,8 @@
 context_type: architecture_snapshot
 project: manglekit
 language: go
-version: 1.4
-last_updated: 2025-12-09T13:30:00Z
+version: 2.0
+last_updated: 2025-12-10T10:45:00Z
 stability: stable
 audience: humans_and_agents
 ---
@@ -41,9 +41,9 @@ manglekit/
 │   │   ├── flattener.go      # Flatten (JSON -> Graph conversion)
 │   │   ├── memory/           # Memory Store implementations
 │   │   └── resources/        # Core Datalog resources (e.g., Planner rules)
-│   ├── guard/            # [GOVERNANCE] The interception layer
-│   │   ├── guard.go          # GuardedAction decorator
-│   │   └── guard_test.go     # Governance tests
+│   ├── supervisor/       # [GOVERNANCE] The interception layer
+│   │   ├── supervisor.go     # SupervisedAction decorator
+│   │   └── supervisor_test.go # Governance tests
 │   ├── util/             # Utilities
 │   │   └── schema/           # Schema validation
 │   ├── logger/           # Default Zero-Dependency Logger (slog)
@@ -59,7 +59,7 @@ manglekit/
 │   ├── memory.go         # MemoryStore interface (Chat History)
 │   ├── state.go          # StateProvider interface (Generic State)
 │   ├── context_lineage.go # Context helpers for Lineage (ParentID)
-│   ├── errors.go         # Standard error definitions (PolicyViolation)
+│   ├── errors.go         # Standard error definitions (AlignmentError)
 │   ├── constants.go      # System constants (Metadata keys, Decisions)
 │   └── types.go          # Shared types (Message, Query, Answer)
 ├── adapters/             # [DRIVERS] Bridges to external systems
@@ -113,21 +113,21 @@ The user-facing API and orchestration kernel.
     *   `Must`: Panics on initialization error.
     *   `Define[In, Out]`: Registers a typed Action (Typed Mode, `TypeStruct`).
     *   `WithFact(ctx, key, val)`: Injects request-scoped facts into the context.
-    *   `Protect(Action)`: Wraps an Action with a `GuardedAction`.
+    *   `SupervisedAction(Action)`: Wraps an Action with a `SupervisedAction`.
     *   `ExecuteByName`: Entry point for the Semantic State Machine (`sdk/loop.go`).
     *   `WithStdoutTracer`: ClientOption for enabling console tracing (`sdk/tracing.go`).
     *   `NewPolicyGenerator`: Creates a `Generator` to translate natural language to Datalog rules.
     *   `Plan(ctx, goal)`: Generates a multi-step execution plan using Datalog reasoning (`sdk/planner.go`).
 *   **Key Logic**:
-    *   `ExecuteByName` (`sdk/loop.go`): Implements the Semantic State Machine with **Smart Retry** (Backoff + Feedback) and **Smart Routing** (`next_step`).
+    *   `ExecuteByName` (`sdk/loop.go`): Implements the Semantic State Machine with **Smart Retry** (Backoff + Alignment Check) and **Smart Routing** (`next_step`).
 *   **Configuration**:
-    *   `ClientOption`: `WithPolicyPath`, `WithFailureMode`, `WithLogger`, `WithMemory`.
+    *   `ClientOption`: `WithBlueprintPath`, `WithFailureMode`, `WithLogger`, `WithMemory`.
     *   `ExecuteOption`: `WithSessionID` (Persist), `WithTransientMemory` (Volatile), `WithMetadata`, `WithMetadataMap`.
 
-### 2.3 Guard (`internal/guard/`)
-The enforcement layer. It ensures no Action runs without policy checks.
+### 2.3 Supervisor (`internal/supervisor/`)
+The enforcement layer. It ensures no Action runs without blueprint checks.
 *   **Key Structs**:
-    *   `GuardedAction` (`internal/guard/guard.go`): Implements `core.Action`. Wraps an inner Action.
+	*   `SupervisedAction` (`internal/supervisor/supervisor.go`): Implements `core.Action`. Wraps an inner Action.
 *   **Key Logic**:
     *   `Execute`: Implements the `Trace -> Authorize -> Exec -> Validate -> Steer` lifecycle. **Auto-Tracing** ensures every action starts an OTel span ("manglekit" tracer).
     *   `shouldBlock(err)`: Determines if execution should halt based on `FailureMode` (Open/Closed).
@@ -173,23 +173,23 @@ Tracing the execution flow of a request through the system:
 3.  **Lookup**: `runLoopInternal` retrieves the `core.Action` from `c.registry["myAction"]`.
 4.  **Feedback Injection**:
     *   If `RETRY` occurred, injects `prev_feedback` (History).
-    *   If `PolicyViolationError` occurred, injects `mangle_feedback` (Teacher-Student Protocol).
-5.  **Guard Interception**: The retrieved Action is a `guard.GuardedAction`. `Execute()` is called (`internal/guard/guard.go`).
-6.  **Tracing**: `GuardedAction` starts an OTel span `Action.myAction` automatically.
-7.  **Authorization**: `GuardedAction` calls `engine.Authorize` (`internal/engine/solver.go`).
+    *   If `AlignmentError` occurred, injects `mangle_feedback` (Teacher-Student Protocol).
+5.  **Supervisor Interception**: The retrieved Action is a `supervisor.SupervisedAction`. `Execute()` is called (`internal/supervisor/supervisor.go`).
+6.  **Tracing**: `SupervisedAction` starts an OTel span `Action.myAction` automatically.
+7.  **Authorization**: `SupervisedAction` calls `engine.Authorize` (`internal/engine/solver.go`).
     *   Input is converted to facts via `ToFacts` (Struct) or `Flatten` (JSON).
     *   `runtime.ExecuteQuery` checks for `deny("Req")`.
 8.  **Execution**: If authorized, `GuardedAction` calls `inner.Execute()` (the Adapter).
     *   e.g., `MCPAction` calls `tool.RunRaw`.
-9.  **Validation**: `GuardedAction` calls `engine.Validate` (`internal/engine/solver.go`).
+9.  **Validation**: `SupervisedAction` calls `engine.Validate` (`internal/engine/solver.go`).
     *   Output is converted to facts.
     *   `runtime.ExecuteQuery` checks for `deny("Output")`.
-    *   If denied, queries `violation_msg(Msg)` to return a structured `PolicyViolationError`.
-10. **Steering**: `GuardedAction` calls `engine.EvaluateSteering`.
+    *   If denied, queries `violation_msg(Msg)` to return a structured `AlignmentError`.
+10. **Steering**: `SupervisedAction` calls `engine.EvaluateSteering`.
     *   Checks for `correction` (RETRY) or `next_step` (ROUTE).
 11. **Loop**: `runLoopInternal` receives the result.
     *   If `RETRY`: **Smart Retry** with exponential backoff (up to 3 times) and feedback injection via `SetFeedback`.
-    *   If `PolicyViolationError`: Catch error, set `mangle_feedback`, and RETRY (Teacher-Student).
+    *   If `AlignmentError`: Catch error, set `mangle_feedback`, and RETRY (Teacher-Student).
     *   If `ROUTE`: Loops again with new action.
     *   If `ALLOW`: Returns result to user.
 
@@ -277,6 +277,8 @@ The `mkit` CLI facilitates neuro-symbolic AI governance.
 | `semantic_feedback` | **Teacher-Student**, Real AI (Gemini), Structured Output, Auto-Correction |
 | `context_aware_rag` | **Context Awareness**, Knowledge Graph, Role-Based Access |
 ## 9. Changelog
+
+-   **2025-12-10**: **CSD Alignment (Vocabulary Update)**. Refactored `internal/guard` to `internal/supervisor`. Renamed `GuardedAction` to `SupervisedAction` and `Policy` concepts to `Blueprint`. Standardized errors to `AlignmentError` with `[INTERVENTION]` prefix. This aligns the codebase with the "Industrial Assembly Line" metaphor.
 
 -   **2025-12-09**: **Advanced AI Integration**. Added `adapters/ai/genkit.go` for generic Genkit model support. Updated `adapters/ai/utils.go` to use **Native Genkit Structured Output** (`genkit.GenerateData`) for `GenerateStruct[T]`, providing robust schema enforcement. Refactored `semantic_feedback` example to use real Gemini models.
 -   **2025-12-09**: **Context-Aware RAG**. Added `examples/context_aware_rag` demonstrating role-based knowledge filtering using N-Quads.
