@@ -41,5 +41,5 @@ func NewGemini(ctx context.Context, apiKey string, modelName string) (sdk.TextGe
 	// We rely on the implicit configuration of the googlegenai package via environment variables.
 	model := googlegenai.GoogleAIModel(gk, modelName)
 
-	return NewGenkitAdapter(model, gk), nil
+	return NewGenkitAdapter(model), nil
 }
