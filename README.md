@@ -134,6 +134,39 @@ Bridge external libraries into the kernel:
 *   **`mcp` Adapter**: Integrates Model Context Protocol (MCP) servers.
 *   **`extractor` Adapter**: Performs semantic extraction using LLMs.
 *   **`vector` Adapter**: Handles vector search and retrieval operations.
+*   **`resilience` Adapter**: Provides Circuit Breaker functionality for failure resilience.
+
+#### Resilience Adapter
+
+The `resilience` adapter provides a zero-dependency Circuit Breaker that prevents failure amplification.
+
+```go
+package main
+
+import (
+	"time"
+
+	"github.com/duynguyendang/manglekit/adapters/resilience"
+	"github.com/duynguyendang/manglekit/core"
+)
+
+func main() {
+	// Assume `myAction` is an existing core.Action (e.g., a Genkit action)
+	var myAction core.Action
+
+	// Configure the Circuit Breaker
+	config := resilience.CircuitBreakerConfig{
+		FailureThreshold: 5,                // Open circuit after 5 consecutive failures
+		ResetTimeout:     30 * time.Second, // Wait 30s before probing (Half-Open)
+	}
+
+	// Wrap the action
+	safeAction := resilience.NewCircuitBreaker(myAction, config)
+
+	// Use safeAction normally
+	// If myAction fails repeatedly, safeAction will fail-fast with resilience.ErrCircuitOpen
+}
+```
 
 ## Core Concepts
 
@@ -154,6 +187,7 @@ Bridge external libraries into the kernel:
 │   ├── extractor/      # Semantic extraction adapter
 │   ├── func/           # Native Go function wrapper
 │   ├── mcp/            # Model Context Protocol adapter
+│   ├── resilience/     # Circuit Breaker and resilience patterns
 │   └── vector/         # Vector/retrieval adapters
 ├── cmd/                # CLI tools and executables
 │   └── mkit/           # Manglekit CLI command tools
