@@ -114,7 +114,8 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	env := core.NewEnvelope(payload)
 	env.ContentType = action.Metadata().InputContentType
 
-	// Inject Feedback
+	// --- Phase 1: Context Injection ---
+	// 1.1 Inject Feedback (History & Last Hint)
 	if len(params.FeedbackHistory) > 0 {
 		env.Metadata[core.KeyPrevFeedback] = strings.Join(params.FeedbackHistory, "; ")
 	}
@@ -123,19 +124,28 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		env.Metadata["mangle_feedback"] = params.LastFeedback
 	}
 
-	// Inject History
+	// 1.2 Inject Chat History
 	if len(params.CurrentHistory) > 0 && params.MemoryMode != core.MemoryModeNone {
 		env.SetHistory(params.CurrentHistory)
 	}
 
-	// Inject Metadata
+	// 1.3 Inject Explicit Metadata
 	if params.Metadata != nil {
 		for k, v := range params.Metadata {
 			env.Metadata[k] = v
 		}
 	}
 
-	// 3. Execute
+	// 1.4 Inject Context Facts (e.g. User Role, Budget from sdk.WithFact)
+	// This ensures facts propagate to the Engine for Blueprint Checks.
+	if facts := ContextFacts(ctx); facts != nil {
+		for k, v := range facts {
+			env.Metadata[k] = v
+		}
+	}
+
+	// --- Phase 2: Blueprint Check (Pre-check) & Phase 3: Execution (Intuition) ---
+	// The Action.Execute wrapper handles the Pre-check (Policy) and the actual Genkit Execution.
 	result, err := action.Execute(ctx, env)
 	if err != nil {
 		var pve *core.AlignmentError
@@ -184,7 +194,8 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		}
 	}
 
-	// 6. Handle Decision
+	// --- Phase 4: Evaluation & Correction (Post-check) ---
+	// The Engine evaluates the result against the Blueprint and decides next steps (Retry/Route/Allow).
 	decision := result.Metadata[core.KeyDecision]
 	if c.logger != nil {
 		c.logger.Debug("RunLoop decision", "decision", decision, "action", actionName)
