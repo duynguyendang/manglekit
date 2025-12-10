@@ -199,7 +199,7 @@ func (e *PolicyEngine) LoadPolicy(policy string) error {
 
 // Authorize performs the Pre-Check phase of governance.
 // It checks if the input is allowed to proceed based on the loaded policies.
-// If the `deny(Req)` predicate is derived, it returns `core.ErrPolicyViolation`.
+// If the `deny(Req)` predicate is derived, it returns `core.ErrAlignment`.
 //
 // It automatically starts a tracing span (`Datalog.PreCheck`) and logs attributes.
 //
@@ -209,7 +209,7 @@ func (e *PolicyEngine) LoadPolicy(policy string) error {
 //   - input: The input envelope containing the payload and security labels.
 //
 // Returns:
-//   - core.ErrPolicyViolation if blocked, or nil if allowed.
+//   - core.ErrAlignment if blocked, or nil if allowed.
 func (e *PolicyEngine) Authorize(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
 	if e.tracer == nil {
 		return e.authorizeInternal(ctx, actionMeta, input)
@@ -294,9 +294,9 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 
 	if denied {
 		if e.logger != nil {
-			e.logger.Debug("policy violation detected", "action", actionMeta.Name)
+			e.logger.Debug("alignment issue detected", "action", actionMeta.Name)
 		}
-		return core.ErrPolicyViolation
+		return core.ErrAlignment
 	}
 
 	return nil
@@ -304,7 +304,7 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 
 // Validate performs the Post-Check phase of governance.
 // It checks if the output is allowed to be returned to the caller.
-// If the `deny(Output)` predicate is derived, it returns `core.ErrPolicyViolation`.
+// If the `deny(Output)` predicate is derived, it returns `core.ErrAlignment`.
 //
 // It automatically starts a tracing span (`Datalog.PostCheck`) and logs attributes.
 //
@@ -403,9 +403,9 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 		}
 
 		if violationMsg != "" {
-			return core.Envelope{}, &core.PolicyViolationError{Message: violationMsg}
+			return core.Envelope{}, &core.AlignmentError{Message: violationMsg}
 		}
-		return core.Envelope{}, core.ErrPolicyViolation
+		return core.Envelope{}, core.ErrAlignment
 	}
 
 	return output, nil

@@ -1,4 +1,4 @@
-package guard
+package supervisor
 
 import (
 	"context"
@@ -98,18 +98,18 @@ func (l *TestLogger) GetLogs() []string {
 	return append([]string{}, l.logs...)
 }
 
-func TestGuardedAction_Execute(t *testing.T) {
+func TestSupervisedAction_Execute(t *testing.T) {
 	// 1. Setup
 	eng := engine.New()
 	mock := &MockAction{}
-	guardedAction := New(mock, eng, "closed")
+	supervisedAction := New(mock, eng, "closed")
 
 	// 2. Create input
 	inputPayload := "hello world"
 	input := core.NewEnvelope(inputPayload)
 
 	// 3. Execute
-	output, err := guardedAction.Execute(context.Background(), input)
+	output, err := supervisedAction.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("Execute() returned an unexpected error: %v", err)
 	}
@@ -129,18 +129,18 @@ func TestGuardedAction_Execute(t *testing.T) {
 	}
 }
 
-func TestGuardedAction_LoggerContextInjection(t *testing.T) {
+func TestSupervisedAction_LoggerContextInjection(t *testing.T) {
 	// 1. Setup with a custom logger
 	testLogger := &TestLogger{}
 	eng := engine.NewWithObservability(nil, testLogger)
 	capturingAction := &LoggerCapturingAction{}
-	guardedAction := New(capturingAction, eng, "closed")
+	supervisedAction := New(capturingAction, eng, "closed")
 
 	// 2. Create input
 	input := core.NewEnvelope("test payload")
 
 	// 3. Execute
-	_, err := guardedAction.Execute(context.Background(), input)
+	_, err := supervisedAction.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("Execute() returned an unexpected error: %v", err)
 	}

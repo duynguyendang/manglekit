@@ -1,4 +1,4 @@
-package guard
+package supervisor
 
 import (
 	"context"
@@ -42,14 +42,14 @@ func TestTraceHierarchy(t *testing.T) {
 	// Create a simple test action
 	innerAction := &MockAction{}
 
-	// Wrap it with the guard
-	guardedAction := NewWithTracer(innerAction, eng, coreTracer, "closed")
+	// Wrap it with the supervisor
+	supervisedAction := NewWithTracer(innerAction, eng, coreTracer, "closed")
 
 	// Execute the action
 	ctx := context.Background()
 	input := core.NewEnvelope("test input")
 
-	_, err := guardedAction.Execute(ctx, input)
+	_, err := supervisedAction.Execute(ctx, input)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
@@ -101,16 +101,16 @@ func TestTraceHierarchy(t *testing.T) {
 
 // TestTraceHierarchyWithoutTracer verifies that execution works without a tracer
 func TestTraceHierarchyWithoutTracer(t *testing.T) {
-	// Create a guard without a tracer
+	// Create a supervisor without a tracer
 	eng := engine.New()
 	innerAction := &MockAction{}
-	guardedAction := New(innerAction, eng, "closed")
+	supervisedAction := New(innerAction, eng, "closed")
 
 	// Execute the action
 	ctx := context.Background()
 	input := core.NewEnvelope("test input")
 
-	_, err := guardedAction.Execute(ctx, input)
+	_, err := supervisedAction.Execute(ctx, input)
 	if err != nil {
 		t.Fatalf("Execute without tracer failed: %v", err)
 	}
@@ -139,16 +139,16 @@ func TestTraceErrorHandling(t *testing.T) {
 	eng := engine.NewWithObservability(coreTracer, core.NopLogger{})
 
 	// Create a failing action
-	innerAction := &FailingAction{err: core.ErrPolicyViolation}
+	innerAction := &FailingAction{err: core.ErrAlignment}
 
-	// Wrap it with the guard
-	guardedAction := NewWithTracer(innerAction, eng, coreTracer, "closed")
+	// Wrap it with the supervisor
+	supervisedAction := NewWithTracer(innerAction, eng, coreTracer, "closed")
 
 	// Execute the action
 	ctx := context.Background()
 	input := core.NewEnvelope("test input")
 
-	_, err := guardedAction.Execute(ctx, input)
+	_, err := supervisedAction.Execute(ctx, input)
 	if err == nil {
 		t.Fatal("expected execution to fail, but it succeeded")
 	}

@@ -12,13 +12,22 @@ import (
 // ClientOption configures the Manglekit Client during initialization.
 type ClientOption func(*Client)
 
-// WithPolicyPath specifies the file path to load Datalog rules from.
+// WithBlueprintPath specifies the file path to load Datalog rules from.
+// "Blueprint" is the new terminology for "Policy".
 //
 // Parameters:
-//   - path: A file path, directory path, or glob pattern containing policy files.
+//   - path: A file path to the .dl blueprint file.
+func WithBlueprintPath(path string) ClientOption {
+	return func(c *Client) {
+		c.blueprintPath = path
+	}
+}
+
+// WithPolicyPath specifies the file path to load Datalog rules from.
+// Deprecated: Use WithBlueprintPath instead.
 func WithPolicyPath(path string) ClientOption {
 	return func(c *Client) {
-		c.initialPolicyPath = path
+		c.blueprintPath = path
 	}
 }
 

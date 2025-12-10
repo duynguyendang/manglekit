@@ -6,22 +6,22 @@ import (
 )
 
 var (
-	// ErrPolicyViolation is returned when a policy blocks an action.
-	ErrPolicyViolation = errors.New("policy violation")
+	// ErrAlignment is returned when a blueprint alignment check blocks an action.
+	ErrAlignment = errors.New("alignment error")
 	// ErrSystemError is returned when an unexpected error occurs.
 	ErrSystemError = errors.New("system error")
 )
 
-// PolicyViolationError is a structured error that carries a specific violation message.
-// It wraps ErrPolicyViolation to ensure standard error matching works.
-type PolicyViolationError struct {
+// AlignmentError is a structured error that carries a specific intervention message.
+// It wraps ErrAlignment to ensure standard error matching works.
+type AlignmentError struct {
 	Message string
 }
 
-func (e *PolicyViolationError) Error() string {
-	return fmt.Sprintf("policy violation: %s", e.Message)
+func (e *AlignmentError) Error() string {
+	return fmt.Sprintf("[INTERVENTION]: %s", e.Message)
 }
 
-func (e *PolicyViolationError) Is(target error) bool {
-	return target == ErrPolicyViolation
+func (e *AlignmentError) Is(target error) bool {
+	return target == ErrAlignment
 }

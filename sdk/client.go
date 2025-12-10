@@ -13,8 +13,8 @@ import (
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine"
-	"github.com/duynguyendang/manglekit/internal/guard"
 	"github.com/duynguyendang/manglekit/internal/logger"
+	"github.com/duynguyendang/manglekit/internal/supervisor"
 	"github.com/duynguyendang/manglekit/internal/telemetry"
 )
 
@@ -41,8 +41,8 @@ type Client struct {
 	registry map[string]core.Action
 	// failureMode determines the system's resilience strategy ("open" or "closed").
 	failureMode string
-	// initialPolicyPath stores the path loaded at startup (for debugging/reloading).
-	initialPolicyPath string
+	// blueprintPath stores the path loaded at startup (for debugging/reloading).
+	blueprintPath string
 	// shutdownFunc is a cleanup function to stop exporters/tracers.
 	shutdownFunc func(context.Context) error
 	// llm is the plugged-in text generation backend.
@@ -78,9 +78,9 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	// Initialize Engine with observability
 	c.engine = engine.NewWithObservability(c.tracer, c.logger)
 
-	// Load policy from file if provided
-	if c.initialPolicyPath != "" {
-		content, err := os.ReadFile(c.initialPolicyPath)
+	// Load blueprint from file if provided
+	if c.blueprintPath != "" {
+		content, err := os.ReadFile(c.blueprintPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read policy file: %w", err)
 		}
@@ -232,7 +232,7 @@ func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientO
 	return c, nil
 }
 
-// Protect wraps a raw core.Action in a GuardedAction.
+// Protect wraps a raw core.Action in a SupervisedAction.
 // This applies the "Trace -> Authorize -> Execute -> Validate" governance lifecycle.
 // This is the core function of the Manglekit framework.
 //
@@ -243,9 +243,9 @@ func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientO
 //   - A new core.Action that enforces policies.
 func (c *Client) Protect(action core.Action) core.Action {
 	if c.tracer != nil {
-		return guard.NewWithTracer(action, c.engine, c.tracer, c.failureMode)
+		return supervisor.NewWithTracer(action, c.engine, c.tracer, c.failureMode)
 	}
-	return guard.New(action, c.engine, c.failureMode)
+	return supervisor.New(action, c.engine, c.failureMode)
 }
 
 func (c *Client) Engine() *engine.PolicyEngine {

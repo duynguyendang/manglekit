@@ -132,7 +132,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	// 3. Execute
 	result, err := action.Execute(ctx, env)
 	if err != nil {
-		var pve *core.PolicyViolationError
+		var pve *core.AlignmentError
 		if errors.As(err, &pve) {
 			if params.RetryCount >= DefaultMaxRetries {
 				return core.Envelope{}, fmt.Errorf("max retries exceeded: %w", err)
@@ -141,7 +141,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 			params.LastFeedback = pve.Message
 
 			if c.logger != nil {
-				c.logger.Warn("RunLoop: Policy Violation", "feedback", params.LastFeedback, "attempt", params.RetryCount)
+				c.logger.Warn("RunLoop: Blueprint Alignment Issue", "feedback", params.LastFeedback, "attempt", params.RetryCount)
 			}
 
 			// Context-aware Backoff
@@ -228,7 +228,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		return result, nil
 
 	case core.DecisionDeny:
-		return core.Envelope{}, fmt.Errorf("action denied by policy")
+		return core.Envelope{}, fmt.Errorf("action denied by blueprint")
 	}
 
 	// Should not reach here for standard decisions

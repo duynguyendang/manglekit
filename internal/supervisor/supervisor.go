@@ -1,4 +1,4 @@
-package guard
+package supervisor
 
 import (
 	"context"
@@ -23,7 +23,7 @@ import (
 //  3. Execute: Runs the inner action (e.g., calls the LLM).
 //  4. Validate: Checks Post-Check policies (e.g., "deny(Output)").
 //  5. Steering: Evaluates steering policies for routing or correction.
-type GuardedAction struct {
+type SupervisedAction struct {
 	inner       core.Action
 	engine      *engine.PolicyEngine
 	tracer      core.Tracer
@@ -39,8 +39,8 @@ type GuardedAction struct {
 //
 // Returns:
 //   - A new GuardedAction instance.
-func New(action core.Action, eng *engine.PolicyEngine, failureMode string) *GuardedAction {
-	return &GuardedAction{
+func New(action core.Action, eng *engine.PolicyEngine, failureMode string) *SupervisedAction {
+	return &SupervisedAction{
 		inner:       action,
 		engine:      eng,
 		tracer:      &core.NopTracer{},
@@ -58,11 +58,11 @@ func New(action core.Action, eng *engine.PolicyEngine, failureMode string) *Guar
 //
 // Returns:
 //   - A new GuardedAction instance.
-func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer core.Tracer, failureMode string) *GuardedAction {
+func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer core.Tracer, failureMode string) *SupervisedAction {
 	if tracer == nil {
 		tracer = &core.NopTracer{}
 	}
-	return &GuardedAction{
+	return &SupervisedAction{
 		inner:       action,
 		engine:      eng,
 		tracer:      tracer,
@@ -87,7 +87,7 @@ func NewWithTracer(action core.Action, eng *engine.PolicyEngine, tracer core.Tra
 //
 // Returns:
 //   - The result envelope (possibly modified by policy), or an error.
-func (g *GuardedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
+func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	// Auto-Tracing (Phase 5)
 	// We use the global OTel tracer "manglekit" to create spans automatically.
 	// This supersedes the legacy g.tracer usage for the main span,
@@ -108,8 +108,8 @@ func (g *GuardedAction) Execute(ctx context.Context, input core.Envelope) (core.
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		// Distinguish between Policy DENIAL and System ERROR
-		if g.isPolicyViolation(err) {
+		// Distinguish between Blueprint DENIAL and System ERROR
+		if g.isAlignmentIssue(err) {
 			span.SetAttributes(attribute.String("mangle.outcome", "DENIED"))
 		} else {
 			span.SetAttributes(attribute.String("mangle.outcome", "ERROR"))
@@ -124,24 +124,24 @@ func (g *GuardedAction) Execute(ctx context.Context, input core.Envelope) (core.
 	return result, nil
 }
 
-// isPolicyViolation checks if the error is a wrapped policy violation
-func (g *GuardedAction) isPolicyViolation(err error) bool {
-	return errors.Is(err, core.ErrPolicyViolation)
+// isAlignmentIssue checks if the error is a wrapped alignment check violation
+func (g *SupervisedAction) isAlignmentIssue(err error) bool {
+	return errors.Is(err, core.ErrAlignment)
 }
 
 // Metadata delegates to the inner action's Metadata method.
-// This allows the GuardedAction to transparently represent the underlying capability.
-func (g *GuardedAction) Metadata() core.ActionMetadata {
+// This allows the SupervisedAction to transparently represent the underlying capability.
+func (g *SupervisedAction) Metadata() core.ActionMetadata {
 	return g.inner.Metadata()
 }
 
 // shouldBlock determines if the action should be blocked based on the error and failure mode.
-func (g *GuardedAction) shouldBlock(err error) bool {
+func (g *SupervisedAction) shouldBlock(err error) bool {
 	if err == nil {
 		return false
 	}
-	// Always block on explicit policy violations
-	if errors.Is(err, core.ErrPolicyViolation) {
+	// Always block on explicit alignment issues
+	if errors.Is(err, core.ErrAlignment) {
 		return true
 	}
 	// If mode is "open" (Fail-Open), allow execution (return false)
@@ -156,7 +156,7 @@ func (g *GuardedAction) shouldBlock(err error) bool {
 // It receives the context with the active span so child spans can be created.
 // The logger is injected into the context here, ensuring all downstream code
 // can access it via core.LoggerFromContext(ctx).
-func (g *GuardedAction) executeInternal(ctx context.Context, input core.Envelope) (core.Envelope, error) {
+func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	// Inject the logger into the context for downstream access
 	ctx = core.ContextWithLogger(ctx, g.engine.Logger())
 
