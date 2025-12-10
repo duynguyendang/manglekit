@@ -139,7 +139,7 @@ func main() {
 	fmt.Println()
 
 	// Write the rule to a temporary file
-	tmpFile, err := os.CreateTemp("", "policy_*.dl")
+	tmpFile, err := os.CreateTemp("", "blueprint_*.dl")
 	if err != nil {
 		log.Error("Failed to create temp file", "error", err)
 		os.Exit(1)
@@ -156,7 +156,7 @@ func main() {
 	// Default is "closed" which blocks everything not explicitly allowed, which would fail valid tests.
 	verifierClient := manglekit.Must(manglekit.NewClient(
 		ctx,
-		manglekit.WithPolicyPath(tmpFile.Name()),
+		manglekit.WithBlueprintPath(tmpFile.Name()),
 		manglekit.WithFailMode("open"),
 	))
 
@@ -198,7 +198,7 @@ func main() {
 		_, err := verifyAction.Run(ctx, tc.transaction)
 
 		isDenied := false
-		var pve *core.PolicyViolationError
+		var pve *core.AlignmentError
 		if errors.As(err, &pve) {
 			isDenied = true
 		} else if err != nil {

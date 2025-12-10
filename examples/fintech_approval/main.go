@@ -23,7 +23,7 @@ func main() {
 	ctx := context.Background()
 	wd, _ := os.Getwd()
 
-	// Wrapper policy to enable "Governance Check" via Actions
+	// Wrapper blueprint to enable "Governance Check" via Actions
 	wrapperPolicy := `
 Decl user(Req, User).
 Decl eligible(User).
@@ -76,12 +76,12 @@ deny(Req) :- loan_id(Req, ID), deny(ID).
 
 	users := []string{"Alice", "Bob", "Charlie", "David", "Eve"}
 	for _, user := range users {
-		// Run Action. If denied, err will be PolicyViolation.
+		// Run Action. If denied, err will be AlignmentError.
 		_, err := checkAction.Run(ctx, CheckEligibility{User: user})
 		if err == nil {
 			fmt.Printf("✅ %s is eligible.\n", user)
 		} else {
-			// In Fail-Closed, any failure (including policy violation) is a denial.
+			// In Fail-Closed, any failure (including alignment error) is a denial.
 			fmt.Printf("❌ %s is NOT eligible (Blocked).\n", user)
 		}
 	}

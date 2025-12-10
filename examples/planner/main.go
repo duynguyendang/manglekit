@@ -14,24 +14,24 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// 1. Create a temporary policy file defining the subgoals
-	policyContent := `
+	// 1. Create a temporary blueprint file defining the subgoals
+	blueprintContent := `
 subgoal("process_payment", "check_balance", 1).
 subgoal("process_payment", "debit_account", 2).
 subgoal("process_payment", "notify_user", 3).
 `
-	tmpFile, err := os.CreateTemp("", "policy_*.dl")
+	tmpFile, err := os.CreateTemp("", "blueprint_*.dl")
 	if err != nil {
 		panic(err)
 	}
 	defer os.Remove(tmpFile.Name())
-	if _, err := tmpFile.WriteString(policyContent); err != nil {
+	if _, err := tmpFile.WriteString(blueprintContent); err != nil {
 		panic(err)
 	}
 	tmpFile.Close()
 
-	// 2. Initialize Client with Policy
-	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithPolicyPath(tmpFile.Name())))
+	// 2. Initialize Client with Blueprint
+	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithBlueprintPath(tmpFile.Name())))
 
 	// 3. Register Dummy Actions
 	registerDummy(client, "check_balance")

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -26,10 +27,10 @@ func main() {
 	// 1. Initialize Manglekit Client
 	ctx := context.Background()
 
-	// Use Facade. Load policy via option.
+	// Use Facade. Load blueprint via option.
 	client := manglekit.Must(manglekit.NewClient(
 		ctx,
-		manglekit.WithPolicyPath("examples/sre_guardrail/safety.dl"),
+		manglekit.WithBlueprintPath("examples/sre_guardrail/safety.dl"),
 	))
 
 	// 2. Define the high-risk operation
@@ -77,12 +78,13 @@ func main() {
 	if _, err := action.Run(ctx, reqB); err == nil {
 		log.Fatalf("Unexpected success for Case B (Should be blocked)")
 	} else {
-		// Expect PolicyViolation
-		var pve *core.PolicyViolationError
-		if ok := fmt.Errorf("%w", err); ok != nil {
-			_ = pve
+		// Expect AlignmentError
+		var pve *core.AlignmentError
+		if errors.As(err, &pve) {
+			logger.Warn("Blocked as expected", "error", err)
+		} else {
+			log.Fatalf("Expected AlignmentError but got: %v", err)
 		}
-		logger.Warn("Blocked as expected", "error", err)
 	}
 
 	// Case C: Denied Operation (Write in Production during Peak Hour)

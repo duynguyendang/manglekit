@@ -26,7 +26,7 @@ func testAction(ctx context.Context, req Request) (Response, error) {
 }
 
 func main() {
-	// 1. Create temporary policy and knowledge files
+	// 1. Create temporary blueprint and knowledge files
 	ttlContent := `
 @prefix ex: <http://ex/> .
 ex:User1 ex:status "banned" .
@@ -36,22 +36,22 @@ ex:User1 ex:status "banned" .
 	}
 	defer os.Remove("banned.ttl")
 
-	policyContent := `
+	blueprintContent := `
 Decl request_user(Req, User).
 Decl status(User, Status).
 deny(Req) :- request_user(Req, U), status(U, "banned").
 `
-	if err := os.WriteFile("policy.dl", []byte(policyContent), 0644); err != nil {
+	if err := os.WriteFile("blueprint.dl", []byte(blueprintContent), 0644); err != nil {
 		panic(err)
 	}
-	defer os.Remove("policy.dl")
+	defer os.Remove("blueprint.dl")
 
 	// 2. Configure Client
 	// Note: We use sdk.NewClientWithConfig here because the simplified Facade
 	// does not currently expose configuration for Knowledge Base paths.
 	cfg := &config.Config{
 		Policy: config.PolicyConfig{
-			Path: "policy.dl",
+			Path: "blueprint.dl",
 		},
 		Knowledge: config.KnowledgeConfig{
 			Path: "banned.ttl",

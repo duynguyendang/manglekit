@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
@@ -44,16 +45,16 @@ func main() {
 	Decl has_label(Req, Label).
 	deny(Req) :- has_label(Req, "secret").
 	`
-	err := os.WriteFile("taint_policy.dlog", []byte(policyContent), 0644)
+	err := os.WriteFile("taint_blueprint.dlog", []byte(policyContent), 0644)
 	if err != nil {
 		log.Fatalf("Failed to write policy file: %v", err)
 	}
-	defer os.Remove("taint_policy.dlog")
+	defer os.Remove("taint_blueprint.dlog")
 
-	// 1. Setup Client with Policy (replaces direct Engine usage)
+	// 1. Setup Client with Blueprint (replaces direct Engine usage)
 	client := manglekit.Must(manglekit.NewClient(
 		ctx,
-		manglekit.WithPolicyPath("taint_policy.dlog"),
+		manglekit.WithBlueprintPath("taint_blueprint.dlog"),
 		manglekit.WithFailMode("closed"),
 	))
 
@@ -82,19 +83,19 @@ func main() {
 
 	result1, err := guardedEcho.Execute(context.Background(), input1)
 	if err == nil {
-		fmt.Println("❌ Test Case 1 Failed: Expected policy violation, but got success.")
+		fmt.Println("❌ Test Case 1 Failed: Expected blueprint alignment issue, but got success.")
 		fmt.Printf("   Result ID: %v\n", result1.ID)
 	} else {
-		// core.ErrPolicyViolation might be wrapped
-		if errors.Is(err, core.ErrPolicyViolation) || fmt.Sprintf("%s", err) == "policy violation" {
+		// core.ErrAlignment might be wrapped
+		if errors.Is(err, core.ErrAlignment) || strings.Contains(err.Error(), "alignment issue") {
 			fmt.Println("✅ Test Case 1 Passed: Request blocked as expected due to 'secret' label propagation.")
 		} else {
 			// Check for wrapped error
-			var pve *core.PolicyViolationError
+			var pve *core.AlignmentError
 			if errors.As(err, &pve) {
 				fmt.Println("✅ Test Case 1 Passed: Request blocked as expected due to 'secret' label propagation.")
 			} else {
-				fmt.Printf("❌ Test Case 1 Failed: Expected ErrPolicyViolation, got: %v\n", err)
+				fmt.Printf("❌ Test Case 1 Failed: Expected ErrAlignment, got: %v\n", err)
 			}
 		}
 	}

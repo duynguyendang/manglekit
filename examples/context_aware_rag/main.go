@@ -13,10 +13,10 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// 1. Initialize Manglekit Client with Policy
-	// We load the policy which defines the logic rules.
+	// 1. Initialize Manglekit Client with Blueprint
+	// We load the blueprint which defines the logic rules.
 	client, err := sdk.NewClient(ctx,
-		sdk.WithPolicyPath("examples/context_aware_rag/policy.dl"),
+		sdk.WithBlueprintPath("examples/context_aware_rag/blueprint.dl"),
 	)
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)

@@ -58,7 +58,7 @@ func main() {
 
 	client := manglekit.Must(manglekit.NewClient(context.Background(),
 		sdk.WithStdoutTracer(),
-		manglekit.WithPolicyPath(policyPath),
+		manglekit.WithBlueprintPath(policyPath),
 	))
 	defer client.Shutdown(context.Background())
 
@@ -98,7 +98,7 @@ func main() {
 		duration := time.Since(start)
 		totalDuration += duration
 
-		discountApplied := (err == core.ErrPolicyViolation)
+		discountApplied := (err == core.ErrAlignment)
 
 		if i == 0 {
 			if discountApplied {

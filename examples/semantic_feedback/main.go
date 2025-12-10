@@ -63,10 +63,10 @@ func main() {
 	ctx := context.Background()
 
 	// Handle running from root or from subdirectory
-	policyPath := "examples/semantic_feedback/policy.dl"
+	policyPath := "examples/semantic_feedback/blueprint.dl"
 	if _, err := os.Stat(policyPath); os.IsNotExist(err) {
-		if _, err := os.Stat("policy.dl"); err == nil {
-			policyPath = "policy.dl"
+		if _, err := os.Stat("blueprint.dl"); err == nil {
+			policyPath = "blueprint.dl"
 		}
 	}
 
@@ -84,8 +84,8 @@ func main() {
 		log.Fatalf("Failed to initialize Gemini: %v", err)
 	}
 
-	// 2. Initialize Manglekit Client with the policy
-	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithPolicyPath(policyPath)))
+	// 2. Initialize Manglekit Client with the blueprint
+	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithBlueprintPath(policyPath)))
 
 	// 3. Register the Action
 	// Inject the REAL adapter into our Action
@@ -98,7 +98,7 @@ func main() {
 	fmt.Println("---------------------------------------------------------------")
 
 	// 4. Execute the loop
-	// We use ExecuteByName which handles the retry loop when PolicyViolationError occurs.
+	// We use ExecuteByName which handles the retry loop when AlignmentError occurs.
 	// We ask to "submit budget" which triggers the StubbornGenerator.
 	result, err := client.ExecuteByName(ctx, "stubborn_ai", "submit budget", manglekit.WithSessionID("demo-session"))
 	if err != nil {
