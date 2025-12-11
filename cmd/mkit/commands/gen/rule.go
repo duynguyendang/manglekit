@@ -48,7 +48,7 @@ var ruleCmd = &cobra.Command{
 
 		// Create a core.Action from the Genkit model using adapters/ai (dogfooding)
 		// This wraps the Genkit model with GenkitGenerator, then LLMAction, providing core.Action interface
-		adapter := adapterai.NewGenkitAdapter(genKitModel)
+		adapter := adapterai.NewGenkitAdapter(genKitModel, nil)
 		llmAction, err := adapterai.NewLLMAction(fmt.Sprintf("%s-%s", provider, model), adapter)
 		if err != nil {
 			return fmt.Errorf("failed to create Genkit action: %w", err)

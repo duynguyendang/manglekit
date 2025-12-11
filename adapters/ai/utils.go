@@ -8,6 +8,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
 )
 
 // GenerateStruct generates a type-safe response.
@@ -37,11 +38,11 @@ func GenerateStruct[T any](ctx context.Context, gen sdk.TextGenerator, sysPrompt
 			ai.NewUserMessage(ai.NewTextPart(effectiveUserPrompt)),
 		}
 
-		// Use native ai.Generate directly on the model
-		resp, err := ai.Generate(ctx, nil,
+		// Use native genkit.Generate directly on the model
+		resp, err := genkit.Generate(ctx, adapter.gk,
 			ai.WithModel(adapter.model),
 			ai.WithMessages(messages...),
-			ai.WithOutputType(result), // <--- Native Structured Output
+			ai.WithOutputType(new(T)), // <--- Native Structured Output
 		)
 
 		if err != nil {

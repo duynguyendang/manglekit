@@ -89,7 +89,7 @@ func main() {
 
 	// Clean initialization: Only the model is needed now.
 	// The adapter no longer requires the Genkit instance.
-	adapter := ai.NewGenkitAdapter(rawModel)
+	adapter := ai.NewGenkitAdapter(rawModel, gk)
 
 	// 2. Initialize Manglekit Client with the blueprint
 	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithBlueprintPath(blueprintPath)))

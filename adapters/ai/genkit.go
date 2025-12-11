@@ -5,23 +5,27 @@ import (
 
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
 )
 
 // genkitAdapter adapts the Firebase Genkit ai.Model interface to the Manglekit sdk.TextGenerator interface.
 type genkitAdapter struct {
 	model ai.Model
+	gk    *genkit.Genkit
 }
 
 // NewGenkitAdapter creates a new adapter from a pre-initialized Genkit model.
 //
 // Parameters:
-//   - model: The Genkit model instance (e.g., from googlegenai.GoogleAIModel).
+//   - model: The Genkit model instance.
+//   - gk: The Genkit runtime instance.
 //
 // Returns:
 //   - A sdk.TextGenerator implementation.
-func NewGenkitAdapter(model ai.Model) sdk.TextGenerator {
+func NewGenkitAdapter(model ai.Model, gk *genkit.Genkit) sdk.TextGenerator {
 	return &genkitAdapter{
 		model: model,
+		gk:    gk,
 	}
 }
 

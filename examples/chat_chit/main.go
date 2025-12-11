@@ -6,9 +6,11 @@ import (
 	"log"
 	"os"
 
-	"github.com/duynguyendang/manglekit/adapters/ai"
+	mangleai "github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/joho/godotenv"
 )
 
@@ -45,7 +47,7 @@ func (a *IntentExtractorAction) Execute(ctx context.Context, env core.Envelope) 
 	sysPrompt := "You are an intent classifier. Output specific JSON only: {\"topic\": \"...\", \"sentiment\": \"...\"}. " +
 		"Topics: billing, technical, general_inquiry. Sentiment: negative, neutral, positive."
 
-	analysis, err := ai.GenerateStruct[AnalysisResult](
+	analysis, err := mangleai.GenerateStruct[AnalysisResult](
 		ctx,
 		a.llm,
 		sysPrompt,
@@ -133,18 +135,29 @@ func main() {
 	}
 
 	// 2. Initialize Genkit (Perception)
-	// Using model 2.5-flash as requested (or falling back to what's available if that was just a name)
-	// We'll trust the user used "gemini-2.5-flash" successfully before, or we fallback to "gemini-1.5-flash"
-	// based on previous errors. Actually user said "Use 2.5-flash model".
-	// If it fails with 404, we might need to adjust, but let's try 1.5-flash for safety as it exists.
-	// Wait, the user edited main.go to use 2.5-flash and it worked? Step 187.
-	// Ah, Step 187 shows user changed it to "gemini-2.5-flash".
-	// Step 188 output shows "Result Payload: ...". So it worked!
-	// I will use "gemini-2.5-flash".
-	gemini, err := ai.NewGemini(ctx, "", "gemini-2.5-flash")
-	if err != nil {
-		log.Fatalf("Init Gemini failed: %v", err)
+	// We initialize the Google AI plugin directly here since the adapter helper is unavailable.
+	if os.Getenv("GOOGLE_API_KEY") == "" {
+		log.Fatal("GOOGLE_API_KEY is not set")
 	}
+
+	// Initialize Genkit with Google GenAI plugin
+	// Note: genkit.Init returns *Genkit (single value) and panics/logs on error?
+	// Or maybe it just constructs the registry.
+	g := genkit.Init(ctx,
+		genkit.WithPlugins(&googlegenai.GoogleAI{}),
+	)
+	if g == nil {
+		log.Fatal("Genkit Init failed (returned nil)")
+	}
+
+	// Use Google AI Model
+	model := googlegenai.GoogleAIModel(g, "gemini-2.5-flash")
+	if model == nil {
+		log.Fatal("Model gemini-2.5-flash not found")
+	}
+
+	// Create the Manglekit TextGenerator adapter
+	gemini := mangleai.NewGenkitAdapter(model, g)
 
 	// 3. Register Actions
 	intentExtractor := &IntentExtractorAction{llm: gemini}

@@ -115,7 +115,7 @@ func main() {
 	retrieverAction := vector.NewGenkitRetrieverAction("rag-retriever", mockGenkitRetriever, nil)
 
 	// Create generic LLM Action using Genkit Adapter
-	genkitAdapter := ai.NewGenkitAdapter(mockGenkitModel)
+	genkitAdapter := ai.NewGenkitAdapter(mockGenkitModel, nil)
 	llmAction, err := ai.NewLLMAction("rag-llm", genkitAdapter)
 	if err != nil {
 		log.Error("Failed to create Genkit LLM action", "error", err)
