@@ -23,7 +23,7 @@ func TestActionReflection(t *testing.T) {
 	require.NoError(t, err)
 	tmpFile.Close()
 
-	client, err := NewClient(context.Background(), WithPolicyPath(tmpFile.Name()))
+	client, err := NewClient(context.Background(), WithBlueprintPath(tmpFile.Name()))
 	require.NoError(t, err)
 
 	handler := func(ctx context.Context, in ReflectReq) (ReflectRes, error) {
