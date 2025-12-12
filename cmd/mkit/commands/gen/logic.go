@@ -38,7 +38,7 @@ func ValidatePolicySyntax(datalog string) error {
 }
 
 // GenerateWithFeedback orchestrates the Teacher-Student protocol.
-func GenerateWithFeedback(ctx context.Context, gen sdk.TextGenerator, userReq string, domainVocab []string, schema *inductor.SchemaHint) (*GeneratedPolicy, error) {
+func GenerateWithFeedback(ctx context.Context, gen sdk.TextGenerator, userReq string, domainVocab []string, schema *inductor.SchemaHint, iclContent string) (*GeneratedPolicy, error) {
 	// 1. Construct System Prompt
 	factsList := ""
 	for _, f := range domainVocab {
@@ -84,6 +84,14 @@ Your task is to translate natural language requirements into strict, compilable 
 ### Domain Vocabulary:
 %s
 %s
+### 4. Code Style Reference (Golden Rules)
+The following are verified Manglekit Datalog examples.
+Pay close attention to how 'json_link' is used for nested objects and how predicates are declared.
+
+--- BEGIN REFERENCE ---
+%s
+--- END REFERENCE ---
+
 ### Syntax Rules:
 1. Use 'Decl name(Arg1, Arg2, ...).' to declare predicates. 
    - CRITICAL: Do NOT use '.Decl', '.decl', or 'decl'. MUST be 'Decl' (Case-sensitive, no dot).
@@ -95,7 +103,7 @@ Your task is to translate natural language requirements into strict, compilable 
 6. Variables start with uppercase (e.g., P, Amount).
 7. Do NOT use aggregation (max, count) unless absolutely necessary.
 
-Output JSON only: {"datalog_content": "...", "explanation": "..."}`, factsList, autoVocab)
+Output JSON only: {"datalog_content": "...", "explanation": "..."}`, factsList, autoVocab, iclContent)
 
 	currentReq := userReq
 	var lastErr error
