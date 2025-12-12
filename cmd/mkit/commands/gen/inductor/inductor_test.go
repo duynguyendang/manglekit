@@ -90,9 +90,50 @@ func TestInferFromFile_JSONNested(t *testing.T) {
 	}
 }
 
+func TestInferFromFile_JSONArrays(t *testing.T) {
+	content := `{
+		"deployment": {
+			"env_vars": ["SECRET", "HOST"],
+			"servers": [
+				{"ip": "1.2.3.4", "region": "us-east"}
+			]
+		}
+	}`
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test_arrays.json")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	hint, err := InferFromFile(path)
+	if err != nil {
+		t.Fatalf("InferFromFile failed: %v", err)
+	}
+
+	expectedKeys := []string{
+		"deployment.env_vars (array of string)",
+		"deployment.servers[].ip (string)",
+		"deployment.servers[].region (string)",
+	}
+
+	for _, expected := range expectedKeys {
+		found := false
+		for _, actual := range hint.JsonKeys {
+			if actual == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing expected key hint: %s. Found: %v", expected, hint.JsonKeys)
+		}
+	}
+}
+
 func TestInferFromFile_Graph(t *testing.T) {
 	content := `<http://s> <http://p> <http://o> .
-_:b1 <http://q> "lit" .`
+_:b1 <http://q> "lit" .
+<http://s> <http://schema.org/my-prop> "val" .`
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.nq")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
@@ -108,26 +149,22 @@ _:b1 <http://q> "lit" .`
 		t.Errorf("expected graph, got %s", hint.FileType)
 	}
 
-	expectedDecl1 := "Decl <http://p>(S, O)."
-	expectedDecl2 := "Decl <http://q>(S, O)."
-
-	foundP := false
-	foundQ := false
+	expectedDecls := map[string]bool{
+		"Decl p(S, O).":       false,
+		"Decl q(S, O).":       false,
+		"Decl my_prop(S, O).": false,
+	}
 
 	for _, d := range hint.Declarations {
-		if d == expectedDecl1 {
-			foundP = true
-		}
-		if d == expectedDecl2 {
-			foundQ = true
+		if _, exists := expectedDecls[d]; exists {
+			expectedDecls[d] = true
 		}
 	}
 
-	if !foundP {
-		t.Errorf("missing declaration for <http://p>")
-	}
-	if !foundQ {
-		t.Errorf("missing declaration for <http://q>")
+	for decl, found := range expectedDecls {
+		if !found {
+			t.Errorf("missing declaration: %s", decl)
+		}
 	}
 }
 

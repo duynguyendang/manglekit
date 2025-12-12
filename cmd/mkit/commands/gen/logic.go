@@ -22,7 +22,7 @@ type GeneratedPolicy struct {
 }
 
 // ValidatePolicySyntax checks if the generated Datalog code is valid using the Mangle engine.
-func ValidatePolicySyntax(datalog string) error {
+func ValidatePolicySyntax(datalog, schemaDeclarations string) error {
 	// Initialize a runtime.
 	eng := engine.NewMangleRuntime()
 
@@ -31,7 +31,7 @@ func ValidatePolicySyntax(datalog string) error {
 	// We also strictly declare 'deny' as it is the expected output interface.
 	stdDecls := resources.GetStdLib()
 	denyDecl := "Decl deny(Source, Reason) ."
-	fullProgram := stdDecls + "\n" + denyDecl + "\n" + datalog
+	fullProgram := stdDecls + "\n" + denyDecl + "\n" + schemaDeclarations + "\n" + datalog
 
 	// Attempt to parse and compile the policy
 	return eng.LoadFromSource(fullProgram)
@@ -62,11 +62,15 @@ The data uses these predicates. Use them directly:
 			autoVocab = fmt.Sprintf(`
 ### Auto-Detected JSON Structure (Path -> Type):
 %s
-### Handling Nested Paths:
-If a key has a dot (e.g., "deployment.replicas"), you MUST use 'json_link' to traverse:
-Example for "deployment.replicas":
-json_link(Root, "deployment", DeployNode),
-json_num(DeployNode, "replicas", Value).
+### Handling Nested & Array Paths:
+1. **Dot Notation** ("deployment.replicas"): Use 'json_link' to traverse objects.
+   json_link(Root, "deployment", DeployNode), json_num(DeployNode, "replicas", Val).
+
+2. **Object Arrays** ("servers[].ip"): Use 'json_link' to list, then 'json_link' with '_' (wildcard) to iterate items.
+   json_link(Root, "servers", List), json_link(List, _, Server), json_str(Server, "ip", IP).
+
+3. **Primitive Arrays** ("env_vars (array of string)"): Use 'json_link' to list, then 'json_str' with '_' to iterate values.
+   json_link(Root, "env_vars", List), json_str(List, _, "TargetValue").
 `, keys)
 		}
 	}
@@ -123,7 +127,11 @@ Output JSON only: {"datalog_content": "...", "explanation": "..."}`, factsList, 
 		}
 
 		// Step C (Validation)
-		if err := ValidatePolicySyntax(policy.DatalogContent); err != nil {
+		schemaDeclsVal := ""
+		if schema != nil && len(schema.Declarations) > 0 {
+			schemaDeclsVal = strings.Join(schema.Declarations, "\n")
+		}
+		if err := ValidatePolicySyntax(policy.DatalogContent, schemaDeclsVal); err != nil {
 			lastErr = err
 			// Step D (Decision) - Update feedback
 			feedback := err.Error()

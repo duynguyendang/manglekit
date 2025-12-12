@@ -78,8 +78,18 @@ func walkJSON(prefix string, data map[string]any, keys *[]string) {
 			walkJSON(fullKey, val, keys)
 		case []any:
 			if len(val) > 0 {
-				if m, ok := val[0].(map[string]any); ok {
-					walkJSON(fullKey, m, keys)
+				first := val[0]
+				if m, ok := first.(map[string]any); ok {
+					walkJSON(fullKey+"[]", m, keys)
+				} else {
+					switch first.(type) {
+					case string:
+						*keys = append(*keys, fmt.Sprintf("%s (array of string)", fullKey))
+					case float64:
+						*keys = append(*keys, fmt.Sprintf("%s (array of number)", fullKey))
+					case bool:
+						*keys = append(*keys, fmt.Sprintf("%s (array of boolean)", fullKey))
+					}
 				}
 			}
 		case float64:
@@ -126,15 +136,17 @@ func parseGraph(path string) (*SchemaHint, error) {
 
 		matches := re.FindStringSubmatch(line)
 		if len(matches) > 1 {
-			pred := matches[1]
+			rawPred := matches[1]
 			// Check if we already have it
-			if !predicates[pred] {
-				predicates[pred] = true
-				// Convert <http://example.org/pred> to Decl statement
+			if !predicates[rawPred] {
+				predicates[rawPred] = true
+
+				// Sanitize the predicate
+				sanitized := SanitizePredicate(rawPred)
+
+				// Convert to Decl statement
 				// We assume standard Mangle decl: Decl predicate(S, O).
-				// We use the full URI as the predicate name if it's enclosed in <>.
-				// Mangle supports <URI>(Arg1, Arg2).
-				decl := fmt.Sprintf("Decl %s(S, O).", pred)
+				decl := fmt.Sprintf("Decl %s(S, O).", sanitized)
 				hint.Declarations = append(hint.Declarations, decl)
 			}
 		} else {
@@ -152,4 +164,29 @@ func parseGraph(path string) (*SchemaHint, error) {
 	}
 
 	return hint, nil
+}
+
+// SanitizePredicate cleans up N-Quads predicates.
+// Input: <http://example.org/total_cost>
+// Output: total_cost
+func SanitizePredicate(raw string) string {
+	// 1. Remove < >
+	s := strings.Trim(raw, "<>")
+
+	// 2. Get last part of URL/URN
+	// We look for the last occurrence of /, #, or :
+	if idx := strings.LastIndexAny(s, "/#:"); idx != -1 {
+		s = s[idx+1:]
+	}
+
+	// 3. Replace invalid chars (e.g. '-') with '_'
+	// Datalog identifiers must match [a-zA-Z_][a-zA-Z0-9_]*
+	// We replace common separators first
+	s = strings.ReplaceAll(s, "-", "_")
+	s = strings.ReplaceAll(s, ".", "_")
+
+	// Remove any remaining invalid characters (naive approach)
+	// Or just trust the simple replacement for now.
+
+	return s
 }
