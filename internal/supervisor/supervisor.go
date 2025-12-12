@@ -184,6 +184,19 @@ func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envel
 		logger.Warn("engine failed but Fail-Open active. Proceeding.", "error", err)
 	}
 
+	// [NEW] Dynamic Configuration Injection
+	config, err := g.engine.GetActionConfig(ctx, input)
+	if err != nil {
+		logger.Warn("failed to retrieve action config", "error", err)
+	} else if len(config) > 0 {
+		if input.Metadata == nil {
+			input.Metadata = make(map[string]string)
+		}
+		for k, v := range config {
+			input.Metadata[core.PrefixPromptConfig+k] = v
+		}
+	}
+
 	// 3. Context Propagation: Pass the Gene
 	// Propagate the current input ID as the new parent for the inner action
 	childCtx := core.WithParentID(ctx, input.ID.String())

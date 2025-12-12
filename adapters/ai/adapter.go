@@ -55,6 +55,14 @@ func (a *LLMAction) Execute(ctx context.Context, input core.Envelope) (core.Enve
 		prompt += fmt.Sprintf("\n\n[SYSTEM WARNING]: Your previous attempt failed. Reason: '%s'. Please correct your output to satisfy this rule.", feedback)
 	}
 
+	// Inject dynamic config into context
+	for k, v := range input.Metadata {
+		// Justification: We specifically look for "prompt." prefix injected by Supervisor
+		if len(k) > len(core.PrefixPromptConfig) && k[:len(core.PrefixPromptConfig)] == core.PrefixPromptConfig {
+			ctx = sdk.WithFact(ctx, k, v)
+		}
+	}
+
 	resp, err := a.generator.Complete(ctx, prompt)
 	if err != nil {
 		return core.Envelope{}, fmt.Errorf("llm generation failed: %w", err)

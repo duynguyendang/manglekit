@@ -32,14 +32,15 @@ func TestDualModeInput(t *testing.T) {
 		require.NoError(t, err)
 		f.Close()
 
-		err = e.LoadFromPath(f.Name())
+		// Load raw policy string instead of from file
+		err = e.LoadPolicy(policy)
 		require.NoError(t, err)
 
 		env := core.NewEnvelope(User{Age: 18})
 		// Default is TypeStruct
 
 		err = e.Authorize(context.Background(), core.ActionMetadata{Name: "test"}, env)
-		assert.ErrorIs(t, err, core.ErrPolicyViolation)
+		assert.ErrorIs(t, err, core.ErrAlignment)
 	})
 
 	// Scenario B: Dynamic Mode (JSON)
@@ -55,14 +56,8 @@ func TestDualModeInput(t *testing.T) {
 			json_link("Req", "user", U),
 			json_num(U, "age", 20).
 		`
-		f, err := os.CreateTemp("", "policy_dynamic_*.dl")
-		require.NoError(t, err)
-		defer os.Remove(f.Name())
-		_, err = f.WriteString(policy)
-		require.NoError(t, err)
-		f.Close()
-
-		err = e.LoadFromPath(f.Name())
+		// Load raw policy string instead of from file
+		err := e.LoadPolicy(policy)
 		require.NoError(t, err)
 
 		// Input: JSON map
@@ -75,6 +70,6 @@ func TestDualModeInput(t *testing.T) {
 		env.ContentType = core.TypeJSON
 
 		err = e.Authorize(context.Background(), core.ActionMetadata{Name: "test-dynamic"}, env)
-		assert.ErrorIs(t, err, core.ErrPolicyViolation)
+		assert.ErrorIs(t, err, core.ErrAlignment)
 	})
 }
