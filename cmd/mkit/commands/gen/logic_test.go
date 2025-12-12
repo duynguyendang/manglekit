@@ -32,8 +32,9 @@ func TestGenerateWithFeedback_PromptConstruction(t *testing.T) {
 	ctx := context.Background()
 	userReq := "Deny users who are not VIPs"
 	domainVocab := []string{"is_vip(User)", "is_admin(User)"}
+	iclContent := "Decl is_foo(R)."
 
-	_, err := GenerateWithFeedback(ctx, mockGen, userReq, domainVocab, nil)
+	_, err := GenerateWithFeedback(ctx, mockGen, userReq, domainVocab, nil, iclContent)
 	if err != nil {
 		t.Fatalf("GenerateWithFeedback failed: %v", err)
 	}
@@ -70,5 +71,13 @@ func TestGenerateWithFeedback_PromptConstruction(t *testing.T) {
 	// Verify User Request is passed through
 	if !strings.Contains(combinedPrompt, userReq) {
 		t.Errorf("User prompt mismatch. Expected to contain %q, got %q", userReq, combinedPrompt)
+	}
+
+	// Verify ICL Content Injection
+	if !strings.Contains(combinedPrompt, "### 4. Code Style Reference (Golden Rules)") {
+		t.Errorf("System prompt missing '### 4. Code Style Reference' section")
+	}
+	if !strings.Contains(combinedPrompt, iclContent) {
+		t.Errorf("System prompt missing injected ICL content")
 	}
 }

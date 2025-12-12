@@ -22,6 +22,7 @@ var (
 	desc     string
 	vocab    []string
 	sample   string
+	iclFlag  string
 )
 
 var ruleCmd = &cobra.Command{
@@ -102,8 +103,14 @@ var ruleCmd = &cobra.Command{
 			fmt.Printf("Detected schema from %s (%s)\n", sample, schema.FileType)
 		}
 
+		// 3. Prepare ICL
+		iclContent, err := GetICLContent(iclFlag)
+		if err != nil {
+			return fmt.Errorf("failed to load ICL content: %w", err)
+		}
+
 		// 3. Execute
-		result, err := GenerateWithFeedback(ctx, adapter, finalPrompt, vocab, schema)
+		result, err := GenerateWithFeedback(ctx, adapter, finalPrompt, vocab, schema, iclContent)
 		if err != nil {
 			return fmt.Errorf("generation failed: %w", err)
 		}
@@ -125,6 +132,7 @@ func init() {
 	ruleCmd.Flags().StringSliceVar(&vocab, "vocab", []string{}, "Domain vocabulary (e.g., predicates like is_vip(User))")
 	ruleCmd.Flags().StringSliceVar(&vocab, "facts", []string{}, "Alias for --vocab")
 	ruleCmd.Flags().StringVar(&sample, "sample", "", "Path to a sample file (.json, .nq, .nt, .ttl) to infer schema")
+	ruleCmd.Flags().StringVar(&iclFlag, "icl", "", "Path to a custom Datalog example file (optional). Defaults to built-in golden rules.")
 
 	ruleCmd.MarkFlagRequired("model")
 
