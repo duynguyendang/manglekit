@@ -6,6 +6,7 @@ import (
 	"os"
 
 	adapterai "github.com/duynguyendang/manglekit/adapters/ai"
+	"github.com/duynguyendang/manglekit/cmd/mkit/commands/gen/inductor"
 	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
@@ -20,6 +21,7 @@ var (
 	prompt   string
 	desc     string
 	vocab    []string
+	sample   string
 )
 
 var ruleCmd = &cobra.Command{
@@ -90,8 +92,18 @@ var ruleCmd = &cobra.Command{
 			return fmt.Errorf("either --prompt or --desc must be provided")
 		}
 
+		var schema *inductor.SchemaHint
+		if sample != "" {
+			var err error
+			schema, err = inductor.InferFromFile(sample)
+			if err != nil {
+				return fmt.Errorf("failed to infer schema from sample file: %w", err)
+			}
+			fmt.Printf("Detected schema from %s (%s)\n", sample, schema.FileType)
+		}
+
 		// 3. Execute
-		result, err := GenerateWithFeedback(ctx, adapter, finalPrompt, vocab)
+		result, err := GenerateWithFeedback(ctx, adapter, finalPrompt, vocab, schema)
 		if err != nil {
 			return fmt.Errorf("generation failed: %w", err)
 		}
@@ -112,6 +124,7 @@ func init() {
 	ruleCmd.Flags().StringVar(&desc, "desc", "", "The natural language policy description (alias for --prompt)")
 	ruleCmd.Flags().StringSliceVar(&vocab, "vocab", []string{}, "Domain vocabulary (e.g., predicates like is_vip(User))")
 	ruleCmd.Flags().StringSliceVar(&vocab, "facts", []string{}, "Alias for --vocab")
+	ruleCmd.Flags().StringVar(&sample, "sample", "", "Path to a sample file (.json, .nq, .nt, .ttl) to infer schema")
 
 	ruleCmd.MarkFlagRequired("model")
 

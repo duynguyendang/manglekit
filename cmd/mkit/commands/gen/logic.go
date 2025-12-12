@@ -3,9 +3,11 @@ package gen
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/duynguyendang/manglekit/adapters/ai"
+	"github.com/duynguyendang/manglekit/cmd/mkit/commands/gen/inductor"
 	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/duynguyendang/manglekit/internal/engine/resources"
 	"github.com/duynguyendang/manglekit/sdk"
@@ -36,12 +38,36 @@ func ValidatePolicySyntax(datalog string) error {
 }
 
 // GenerateWithFeedback orchestrates the Teacher-Student protocol.
-func GenerateWithFeedback(ctx context.Context, gen sdk.TextGenerator, userReq string, domainVocab []string) (*GeneratedPolicy, error) {
+func GenerateWithFeedback(ctx context.Context, gen sdk.TextGenerator, userReq string, domainVocab []string, schema *inductor.SchemaHint) (*GeneratedPolicy, error) {
 	// 1. Construct System Prompt
-	// We build a template-based prompt manually here.
 	factsList := ""
 	for _, f := range domainVocab {
 		factsList += "- " + f + "\n"
+	}
+
+	autoVocab := ""
+	if schema != nil {
+		if schema.FileType == "graph" {
+			// For Graph: "Decl is_vip(S, O)."
+			// We format declarations as a list
+			decls := strings.Join(schema.Declarations, "\n")
+			autoVocab = fmt.Sprintf(`
+### Auto-Detected Vocabulary (Graph):
+The data uses these predicates. Use them directly:
+%s
+`, decls)
+		} else if schema.FileType == "json" {
+			// For JSON: "amount (number)", "desc (string)"
+			keys := strings.Join(schema.JsonKeys, "\n")
+			autoVocab = fmt.Sprintf(`
+### Auto-Detected Vocabulary (JSON):
+The input is JSON. Use the Manglekit Standard Library to access these keys:
+%s
+    Examples:
+    - For 'amount', use: json_num(Req, "amount", Val).
+    - For 'desc', use: json_str(Req, "desc", Val).
+`, keys)
+		}
 	}
 
 	systemPrompt := fmt.Sprintf(`You are a Senior Knowledge Engineer specializing in Google Mangle Datalog.
@@ -55,7 +81,7 @@ Your task is to translate natural language requirements into strict, compilable 
 
 ### Domain Vocabulary:
 %s
-
+%s
 ### Syntax Rules:
 1. You MUST declare every predicate using 'Decl name(Arg1, Arg2, ...).' where Arg1, Arg2, etc. MUST start with an Uppercase letter (e.g., Decl amount(Source, Val).).
 2. Prioritize using the Domain Vocabulary over raw json_xxx predicates if available.
@@ -64,7 +90,7 @@ Your task is to translate natural language requirements into strict, compilable 
 5. Variables start with uppercase (e.g., P, Amount).
 6. Do NOT use aggregation (max, count) unless absolutely necessary.
 
-Output JSON only: {"datalog_content": "...", "explanation": "..."}`, factsList)
+Output JSON only: {"datalog_content": "...", "explanation": "..."}`, factsList, autoVocab)
 
 	currentReq := userReq
 	var lastErr error
@@ -75,10 +101,6 @@ Output JSON only: {"datalog_content": "...", "explanation": "..."}`, factsList)
 		policy, err := ai.GenerateStruct[GeneratedPolicy](ctx, gen, systemPrompt, currentReq)
 		if err != nil {
 			// If generation itself fails (e.g. network), we probably shouldn't blindly retry unless it's transient.
-			// But sticking to the protocol, maybe we just fail or retry.
-			// Let's assume we retry if it's a generation error too, or just fail.
-			// The instructions say "If validation fails...".
-			// If GenerateStruct fails, it might be JSON parsing error, so maybe retryable.
 			lastErr = err
 			// Feedback for JSON error
 			feedback := fmt.Sprintf("Generation failed: %v", err)
