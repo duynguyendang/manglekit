@@ -45,6 +45,51 @@ func TestInferFromFile_JSON(t *testing.T) {
 	}
 }
 
+func TestInferFromFile_JSONNested(t *testing.T) {
+	content := `{
+		"meta": {
+			"id": "123",
+			"active": true
+		},
+		"deployment": {
+			"replicas": 3,
+			"resources": {
+				"cpu": 1.5
+			}
+		}
+	}`
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test_nested.json")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	hint, err := InferFromFile(path)
+	if err != nil {
+		t.Fatalf("InferFromFile failed: %v", err)
+	}
+
+	expectedKeys := []string{
+		"meta.id (string)",
+		"meta.active (boolean)",
+		"deployment.replicas (number)",
+		"deployment.resources.cpu (number)",
+	}
+
+	for _, expected := range expectedKeys {
+		found := false
+		for _, actual := range hint.JsonKeys {
+			if actual == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing expected key hint: %s. Found: %v", expected, hint.JsonKeys)
+		}
+	}
+}
+
 func TestInferFromFile_Graph(t *testing.T) {
 	content := `<http://s> <http://p> <http://o> .
 _:b1 <http://q> "lit" .`

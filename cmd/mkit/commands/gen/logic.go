@@ -60,12 +60,13 @@ The data uses these predicates. Use them directly:
 			// For JSON: "amount (number)", "desc (string)"
 			keys := strings.Join(schema.JsonKeys, "\n")
 			autoVocab = fmt.Sprintf(`
-### Auto-Detected Vocabulary (JSON):
-The input is JSON. Use the Manglekit Standard Library to access these keys:
+### Auto-Detected JSON Structure (Path -> Type):
 %s
-    Examples:
-    - For 'amount', use: json_num(Req, "amount", Val).
-    - For 'desc', use: json_str(Req, "desc", Val).
+### Handling Nested Paths:
+If a key has a dot (e.g., "deployment.replicas"), you MUST use 'json_link' to traverse:
+Example for "deployment.replicas":
+json_link(Root, "deployment", DeployNode),
+json_num(DeployNode, "replicas", Value).
 `, keys)
 		}
 	}
@@ -77,18 +78,22 @@ Your task is to translate natural language requirements into strict, compilable 
 - json_num(Source, Key, Value)  // Int/Float fields
 - json_str(Source, Key, Value)  // String fields
 - json_bool(Source, Key, Value) // Boolean fields
-- deny(Source, Reason)          // Main policy output
+- json_link(Parent, Key, Child) // Nested objects
+- deny(Source, Reason)          // Main policy output (Do NOT redeclare this)
 
 ### Domain Vocabulary:
 %s
 %s
 ### Syntax Rules:
-1. You MUST declare every predicate using 'Decl name(Arg1, Arg2, ...).' where Arg1, Arg2, etc. MUST start with an Uppercase letter (e.g., Decl amount(Source, Val).).
-2. Prioritize using the Domain Vocabulary over raw json_xxx predicates if available.
-3. If mapping raw JSON, prefer creating a "Helper Predicate" first (e.g., amount(R, V) :- json_num...) to keep the deny rule clean.
-4. Strings must be double-quoted.
-5. Variables start with uppercase (e.g., P, Amount).
-6. Do NOT use aggregation (max, count) unless absolutely necessary.
+1. Use 'Decl name(Arg1, Arg2, ...).' to declare predicates. 
+   - CRITICAL: Do NOT use '.Decl', '.decl', or 'decl'. MUST be 'Decl' (Case-sensitive, no dot).
+   - Args MUST start with Uppercase (e.g., Decl amount(Source, Val).).
+2. Do NOT redeclare 'deny'. It is already declared.
+3. Prioritize using the Domain Vocabulary over raw json_xxx predicates if available.
+4. If mapping raw JSON, prefer creating a "Helper Predicate" first (e.g., amount(R, V) :- json_num...) to keep the deny rule clean.
+5. Strings must be double-quoted.
+6. Variables start with uppercase (e.g., P, Amount).
+7. Do NOT use aggregation (max, count) unless absolutely necessary.
 
 Output JSON only: {"datalog_content": "...", "explanation": "..."}`, factsList, autoVocab)
 
@@ -114,8 +119,9 @@ Output JSON only: {"datalog_content": "...", "explanation": "..."}`, factsList, 
 			lastErr = err
 			// Step D (Decision) - Update feedback
 			feedback := err.Error()
+			fmt.Printf("DEBUG: Validation failed for Datalog:\n%s\nError: %s\n", policy.DatalogContent, feedback)
 			// Step A (Prompting) - Update prompt for next iteration
-			currentReq = fmt.Sprintf("%s\n\n[SYSTEM CORRECTION]: Previous attempt invalid.\nError: %s\nFix syntax immediately.", userReq, feedback)
+			currentReq = fmt.Sprintf("%s\n\n[SYSTEM CORRECTION]: Previous attempt invalid.\nError: %s\nCheck your decl syntax. Do NOT use .Decl or .decl.", userReq, feedback)
 
 			// Sleep briefly
 			time.Sleep(500 * time.Millisecond)

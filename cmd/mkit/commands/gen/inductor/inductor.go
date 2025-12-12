@@ -62,18 +62,34 @@ func parseJSON(path string) (*SchemaHint, error) {
 		return hint, nil // Empty hint but valid file type detected
 	}
 
-	for k, v := range targetMap {
-		switch v.(type) {
+	walkJSON("", targetMap, &hint.JsonKeys)
+	return hint, nil
+}
+
+func walkJSON(prefix string, data map[string]any, keys *[]string) {
+	for k, v := range data {
+		fullKey := k
+		if prefix != "" {
+			fullKey = prefix + "." + k
+		}
+
+		switch val := v.(type) {
+		case map[string]any:
+			walkJSON(fullKey, val, keys)
+		case []any:
+			if len(val) > 0 {
+				if m, ok := val[0].(map[string]any); ok {
+					walkJSON(fullKey, m, keys)
+				}
+			}
 		case float64:
-			hint.JsonKeys = append(hint.JsonKeys, fmt.Sprintf("%s (number)", k))
+			*keys = append(*keys, fmt.Sprintf("%s (number)", fullKey))
 		case string:
-			hint.JsonKeys = append(hint.JsonKeys, fmt.Sprintf("%s (string)", k))
+			*keys = append(*keys, fmt.Sprintf("%s (string)", fullKey))
 		case bool:
-			hint.JsonKeys = append(hint.JsonKeys, fmt.Sprintf("%s (boolean)", k))
+			*keys = append(*keys, fmt.Sprintf("%s (boolean)", fullKey))
 		}
 	}
-
-	return hint, nil
 }
 
 func parseGraph(path string) (*SchemaHint, error) {

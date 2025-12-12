@@ -33,7 +33,7 @@ func TestGenerateWithFeedback_PromptConstruction(t *testing.T) {
 	userReq := "Deny users who are not VIPs"
 	domainVocab := []string{"is_vip(User)", "is_admin(User)"}
 
-	_, err := GenerateWithFeedback(ctx, mockGen, userReq, domainVocab)
+	_, err := GenerateWithFeedback(ctx, mockGen, userReq, domainVocab, nil)
 	if err != nil {
 		t.Fatalf("GenerateWithFeedback failed: %v", err)
 	}
