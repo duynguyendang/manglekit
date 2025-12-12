@@ -22,15 +22,23 @@ var EvalCmd = &cobra.Command{
 	Use:   "eval",
 	Short: "Evaluate a Datalog query against policy and data",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Validation
+		if dataPath == "" && knowledgePath == "" {
+			return fmt.Errorf("must provide either --data (JSON) or --facts/--knowledge (Graph)")
+		}
+
 		// 1. Read Files
 		policyBytes, err := os.ReadFile(policyPath)
 		if err != nil {
 			return fmt.Errorf("failed to read policy file: %w", err)
 		}
 
-		dataBytes, err := os.ReadFile(dataPath)
-		if err != nil {
-			return fmt.Errorf("failed to read data file: %w", err)
+		var dataBytes []byte
+		if dataPath != "" {
+			dataBytes, err = os.ReadFile(dataPath)
+			if err != nil {
+				return fmt.Errorf("failed to read data file: %w", err)
+			}
 		}
 
 		// 2. Initialize Engine
@@ -46,17 +54,13 @@ var EvalCmd = &cobra.Command{
 
 		// 4. Load Knowledge (Optional)
 		if knowledgePath != "" {
-			kFile, err := os.Open(knowledgePath)
-			if err != nil {
-				return fmt.Errorf("failed to open knowledge file: %w", err)
-			}
-			defer kFile.Close()
-
-			loader := knowledge.NewNQuadsLoader()
-			facts, err := loader.Parse(kFile)
+			// Using the new Graph Loader that supports .nq and .ttl
+			triples, err := knowledge.ParseGraphFile(knowledgePath)
 			if err != nil {
 				return fmt.Errorf("failed to parse knowledge base: %w", err)
 			}
+
+			facts := knowledge.TriplesToFacts(triples)
 
 			if err := e.LoadFacts(facts); err != nil {
 				return fmt.Errorf("failed to load knowledge facts: %w", err)
@@ -64,20 +68,22 @@ var EvalCmd = &cobra.Command{
 		}
 
 		// 5. Inject Data
-		var data any
-		if err := json.Unmarshal(dataBytes, &data); err != nil {
-			return fmt.Errorf("failed to parse data JSON: %w", err)
-		}
+		if dataPath != "" {
+			var data any
+			if err := json.Unmarshal(dataBytes, &data); err != nil {
+				return fmt.Errorf("failed to parse data JSON: %w", err)
+			}
 
-		// Flatten the data into facts
-		// "input" is used as the root ID for the data
-		dataFacts, err := engine.Flatten("input", data)
-		if err != nil {
-			return fmt.Errorf("failed to flatten data: %w", err)
-		}
+			// Flatten the data into facts
+			// "input" is used as the root ID for the data
+			dataFacts, err := engine.Flatten("input", data)
+			if err != nil {
+				return fmt.Errorf("failed to flatten data: %w", err)
+			}
 
-		if err := e.LoadFacts(dataFacts); err != nil {
-			return fmt.Errorf("failed to load data facts: %w", err)
+			if err := e.LoadFacts(dataFacts); err != nil {
+				return fmt.Errorf("failed to load data facts: %w", err)
+			}
 		}
 
 		// 6. Execute Query
@@ -109,10 +115,10 @@ func init() {
 	EvalCmd.Flags().StringVarP(&policyPath, "policy", "p", "", "Path to the .dl file")
 	EvalCmd.MarkFlagRequired("policy")
 
-	EvalCmd.Flags().StringVarP(&dataPath, "data", "d", "", "Path to the .json input file")
-	EvalCmd.MarkFlagRequired("data")
+	EvalCmd.Flags().StringVarP(&dataPath, "data", "d", "", "Path to the .json input file. Optional if --knowledge is provided.")
 
-	EvalCmd.Flags().StringVarP(&knowledgePath, "knowledge", "k", "", "Path to the .nq or .nt knowledge base")
+	EvalCmd.Flags().StringVarP(&knowledgePath, "knowledge", "k", "", "Path to the .nq, .nt, or .ttl knowledge base")
+	EvalCmd.Flags().StringVar(&knowledgePath, "facts", "", "Alias for --knowledge")
 
 	EvalCmd.Flags().StringVarP(&queryString, "query", "q", "", "The Datalog query to execute")
 	EvalCmd.MarkFlagRequired("query")

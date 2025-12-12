@@ -168,6 +168,47 @@ _:b1 <http://q> "lit" .
 	}
 }
 
+func TestInferFromFile_Turtle(t *testing.T) {
+	content := `
+	@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+	<http://example.org/alice> a foaf:Person ;
+	    foaf:name "Alice" ;
+	    foaf:knows <http://example.org/bob> .
+	`
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.ttl")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	hint, err := InferFromFile(path)
+	if err != nil {
+		t.Fatalf("InferFromFile failed: %v", err)
+	}
+
+	if hint.FileType != "graph" {
+		t.Errorf("expected graph, got %s", hint.FileType)
+	}
+
+	expectedDecls := map[string]bool{
+		"Decl type(S, O).":  false,
+		"Decl name(S, O).":  false,
+		"Decl knows(S, O).": false,
+	}
+
+	for _, d := range hint.Declarations {
+		if _, exists := expectedDecls[d]; exists {
+			expectedDecls[d] = true
+		}
+	}
+
+	for decl, found := range expectedDecls {
+		if !found {
+			t.Errorf("missing declaration: %s", decl)
+		}
+	}
+}
+
 func TestInferFromFile_Unsupported(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.txt")

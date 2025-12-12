@@ -23,11 +23,128 @@ func InferFromFile(path string) (*SchemaHint, error) {
 	switch ext {
 	case ".json":
 		return parseJSON(path)
-	case ".nq", ".nt", ".ttl":
+	case ".nq", ".nt":
 		return parseGraph(path)
+	case ".ttl":
+		return parseTurtle(path)
 	default:
 		return nil, fmt.Errorf("unsupported file type: %s", ext)
 	}
+}
+
+func parseTurtle(path string) (*SchemaHint, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	content := string(b)
+
+	// Remove comments
+	lines := strings.Split(content, "\n")
+	var cleanLines []string
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "#") || strings.HasPrefix(l, "@prefix") || strings.HasPrefix(l, "@base") {
+			continue
+		}
+		cleanLines = append(cleanLines, l)
+	}
+	content = strings.Join(cleanLines, " ")
+
+	// Tokenize
+	// We do a naive split by whitespace, but we must handle punctuation attached to words.
+	// For simplicity in this inductor, we assume standard spacing or we replace some punctuation.
+	// We'll trust strings.Fields which splits by space.
+	// To be safer, let's pad punctuation with spaces.
+	content = strings.ReplaceAll(content, ";", " ; ")
+	content = strings.ReplaceAll(content, ".", " . ")
+	content = strings.ReplaceAll(content, ",", " , ")
+
+	tokens := strings.Fields(content)
+
+	hint := &SchemaHint{FileType: "graph"}
+	predicates := make(map[string]bool)
+
+	// State Machine
+	const (
+		StateSubject   = 0
+		StatePredicate = 1
+		StateObject    = 2
+	)
+	state := StateSubject
+
+	for _, token := range tokens {
+		if token == "" {
+			continue
+		}
+
+		// Handle Punctuation transitions
+		if token == "." {
+			state = StateSubject
+			continue
+		}
+		if token == ";" {
+			state = StatePredicate
+			continue
+		}
+		if token == "," {
+			state = StateObject // Next is another object for same predicate
+			continue
+		}
+
+		switch state {
+		case StateSubject:
+			// Ignore Subject
+			state = StatePredicate
+
+		case StatePredicate:
+			// CAPTURE Predicate
+			// Ignore if it looks like a string literal start (though usually predicates aren't literals)
+			if strings.HasPrefix(token, "\"") {
+				// Unexpected, but let's just move on
+				state = StateObject
+				continue
+			}
+
+			// Sanitize
+			sanitized := SanitizePredicate(token)
+			if sanitized != "" && sanitized != "_" {
+				if !predicates[sanitized] {
+					predicates[sanitized] = true
+					decl := fmt.Sprintf("Decl %s(S, O).", sanitized)
+					hint.Declarations = append(hint.Declarations, decl)
+				}
+			}
+			state = StateObject
+
+		case StateObject:
+			// Ignore Object
+			// Stay in StateObject until punctuation changes state
+			// But since we are token by token, we just wait for next punctuation or if it's a list, the punctuation handler above catches ","
+			// Wait, if we have "S P O .", O is token. Next is ".".
+			// If we have "S P O ;", O is token. Next is ";".
+			// So we just consume the object here.
+			// But what if the object is "literal string with spaces"?
+			// Our naive tokenizer split by space destroys string literals.
+			// This is a limitation of this simple inductor.
+			// However, for *schema induction*, we rarely care about the object values unless we are aggressive.
+			// We only care about predicates found in State 1.
+			// So even if "Hello World" becomes "Hello", "World", the state machine might get confused.
+			// "S P "Hello" "World" ." -> S(0) P(CAPTURE) Hello(2) World(2? No, loop).
+			// If we assume O is one token, then "World" would be seen as "." or start of next triple?
+			// Actually, "Hello" puts us in Object state. "World" would be processed as... wait, we need to stay in proper flow.
+			// If we are in StateObject, and we encounter "World" (not punctuation), what is it?
+			// It implies the previous object didn't finish, OR we are lost.
+			// Let's try to just stay in StateObject?
+			// But if we encounter the next S?
+			// "S P O . S2 P2 O2"
+			// O -> . (StateSubject) -> S2 (StatePredicate) ... works.
+			// The issue is only multi-token objects.
+			// We can just ignore *everything* until we hit punctuation.
+		}
+	}
+
+	return hint, nil
 }
 
 func parseJSON(path string) (*SchemaHint, error) {
@@ -170,10 +287,15 @@ func parseGraph(path string) (*SchemaHint, error) {
 // Input: <http://example.org/total_cost>
 // Output: total_cost
 func SanitizePredicate(raw string) string {
+	// Handle Turtle shorthand "a" -> "type"
+	if raw == "a" {
+		return "type"
+	}
+
 	// 1. Remove < >
 	s := strings.Trim(raw, "<>")
 
-	// 2. Get last part of URL/URN
+	// 2. Get last part of URL/URN or QName
 	// We look for the last occurrence of /, #, or :
 	if idx := strings.LastIndexAny(s, "/#:"); idx != -1 {
 		s = s[idx+1:]
@@ -184,9 +306,6 @@ func SanitizePredicate(raw string) string {
 	// We replace common separators first
 	s = strings.ReplaceAll(s, "-", "_")
 	s = strings.ReplaceAll(s, ".", "_")
-
-	// Remove any remaining invalid characters (naive approach)
-	// Or just trust the simple replacement for now.
 
 	return s
 }
