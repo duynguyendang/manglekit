@@ -6,8 +6,11 @@ import (
 	"os"
 
 	adapterai "github.com/duynguyendang/manglekit/adapters/ai"
+	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"github.com/openai/openai-go/option"
 	"github.com/spf13/cobra"
 )
 
@@ -25,27 +28,53 @@ var ruleCmd = &cobra.Command{
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		if provider != "google" {
-			return fmt.Errorf("unsupported LLM provider: %s. supported: google", provider)
+		var rawModel genkitai.Model
+		var gk *genkit.Genkit
+
+		if provider == "google" {
+			apiKey := os.Getenv("GOOGLE_GENAI_API_KEY")
+			if apiKey == "" {
+				apiKey = os.Getenv("GOOGLE_API_KEY")
+			}
+			if apiKey == "" {
+				return fmt.Errorf("GOOGLE_GENAI_API_KEY or GOOGLE_API_KEY environment variable is required")
+			}
+			gai := &googlegenai.GoogleAI{APIKey: apiKey}
+			gk = genkit.Init(ctx, genkit.WithPlugins(gai))
+			rawModel = googlegenai.GoogleAIModel(gk, model)
+		} else if provider == "openai" {
+			apiKey := os.Getenv("OPENAI_API_KEY")
+			if apiKey == "" {
+				return fmt.Errorf("OPENAI_API_KEY environment variable is required")
+			}
+			baseURL := os.Getenv("OPENAI_BASE_URL")
+
+			oai := &openai.OpenAI{APIKey: apiKey}
+			if baseURL != "" {
+				oai.Opts = []option.RequestOption{option.WithBaseURL(baseURL)}
+			}
+
+			gk = genkit.Init(ctx, genkit.WithPlugins(oai))
+			rawModel = oai.Model(gk, model)
+
+			// If model is not found (e.g. custom OpenRouter/LocalAI model), define it dynamically
+			if rawModel == nil {
+				rawModel = oai.DefineModel(model, genkitai.ModelOptions{
+					Label: model,
+					Supports: &genkitai.ModelSupports{
+						Multiturn:  true,
+						SystemRole: true,
+						Tools:      false,
+						Media:      false,
+					},
+				})
+			}
+		} else {
+			return fmt.Errorf("unsupported LLM provider: %s. supported: google, openai", provider)
 		}
 
-		apiKey := os.Getenv("GOOGLE_GENAI_API_KEY")
-		if apiKey == "" {
-			apiKey = os.Getenv("GOOGLE_API_KEY")
-		}
-		if apiKey == "" {
-			return fmt.Errorf("GOOGLE_GENAI_API_KEY or GOOGLE_API_KEY environment variable is required")
-		}
-
-		// 1. Initialize Genkit
-		// Using the pattern from examples/semantic_feedback/main.go
-		gai := &googlegenai.GoogleAI{APIKey: apiKey}
-		gk := genkit.Init(ctx, genkit.WithPlugins(gai))
-
-		// Use googlegenai.GoogleAIModel to get the model instance
-		rawModel := googlegenai.GoogleAIModel(gk, model)
 		if rawModel == nil {
-			return fmt.Errorf("model %s not found in googlegenai plugin", model)
+			return fmt.Errorf("model %s not found in provider %s", model, provider)
 		}
 
 		adapter := adapterai.NewGenkitAdapter(rawModel, gk)
@@ -69,8 +98,8 @@ var ruleCmd = &cobra.Command{
 }
 
 func init() {
-	ruleCmd.Flags().StringVar(&provider, "provider", "google", "LLM Provider (e.g., google)")
-	ruleCmd.Flags().StringVar(&model, "model", "", "Model name to use for generation (e.g., gemini-2.0-flash)")
+	ruleCmd.Flags().StringVar(&provider, "provider", "google", "LLM Provider (e.g., google, openai)")
+	ruleCmd.Flags().StringVar(&model, "model", "", "Model name to use for generation (e.g., gemini-2.0-flash, gpt-4o)")
 	ruleCmd.Flags().StringVar(&prompt, "prompt", "", "The natural language policy description")
 
 	ruleCmd.MarkFlagRequired("model")
