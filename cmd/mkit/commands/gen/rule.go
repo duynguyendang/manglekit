@@ -19,7 +19,7 @@ var (
 	model    string
 	prompt   string
 	desc     string
-	facts    []string
+	vocab    []string
 )
 
 var ruleCmd = &cobra.Command{
@@ -81,9 +81,6 @@ var ruleCmd = &cobra.Command{
 
 		adapter := adapterai.NewGenkitAdapter(rawModel, gk)
 
-		// 2. Prepare Context (Known Facts)
-		// facts var is already populated by flags
-
 		// Determine prompt
 		finalPrompt := prompt
 		if desc != "" {
@@ -94,7 +91,7 @@ var ruleCmd = &cobra.Command{
 		}
 
 		// 3. Execute
-		result, err := GenerateWithFeedback(ctx, adapter, finalPrompt, facts)
+		result, err := GenerateWithFeedback(ctx, adapter, finalPrompt, vocab)
 		if err != nil {
 			return fmt.Errorf("generation failed: %w", err)
 		}
@@ -113,7 +110,8 @@ func init() {
 	ruleCmd.Flags().StringVar(&model, "model", "", "Model name to use for generation (e.g., gemini-2.0-flash, gpt-4o)")
 	ruleCmd.Flags().StringVar(&prompt, "prompt", "", "The natural language policy description")
 	ruleCmd.Flags().StringVar(&desc, "desc", "", "The natural language policy description (alias for --prompt)")
-	ruleCmd.Flags().StringSliceVar(&facts, "facts", []string{}, "List of known facts/schema elements (e.g. \"amount\", \"user_role\")")
+	ruleCmd.Flags().StringSliceVar(&vocab, "vocab", []string{}, "Domain vocabulary (e.g., predicates like is_vip(User))")
+	ruleCmd.Flags().StringSliceVar(&vocab, "facts", []string{}, "Alias for --vocab")
 
 	ruleCmd.MarkFlagRequired("model")
 

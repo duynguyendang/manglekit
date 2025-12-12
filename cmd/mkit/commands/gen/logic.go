@@ -36,11 +36,11 @@ func ValidatePolicySyntax(datalog string) error {
 }
 
 // GenerateWithFeedback orchestrates the Teacher-Student protocol.
-func GenerateWithFeedback(ctx context.Context, gen sdk.TextGenerator, userReq string, knownFacts []string) (*GeneratedPolicy, error) {
+func GenerateWithFeedback(ctx context.Context, gen sdk.TextGenerator, userReq string, domainVocab []string) (*GeneratedPolicy, error) {
 	// 1. Construct System Prompt
 	// We build a template-based prompt manually here.
 	factsList := ""
-	for _, f := range knownFacts {
+	for _, f := range domainVocab {
 		factsList += "- " + f + "\n"
 	}
 
@@ -53,15 +53,16 @@ Your task is to translate natural language requirements into strict, compilable 
 - json_bool(Source, Key, Value) // Boolean fields
 - deny(Source, Reason)          // Main policy output
 
-### Schema / Context (Hints):
+### Domain Vocabulary:
 %s
 
 ### Syntax Rules:
 1. You MUST declare every predicate using 'Decl name(Arg1, Arg2, ...).' where Arg1, Arg2, etc. MUST start with an Uppercase letter (e.g., Decl amount(Source, Val).).
-2. If the hints are JSON field names, prefer using json_num/str/bool or define a wrapper predicate with a Decl.
-3. Strings must be double-quoted.
-4. Variables start with uppercase (e.g., P, Amount).
-5. Do NOT use aggregation (max, count) unless absolutely necessary.
+2. Prioritize using the Domain Vocabulary over raw json_xxx predicates if available.
+3. If mapping raw JSON, prefer creating a "Helper Predicate" first (e.g., amount(R, V) :- json_num...) to keep the deny rule clean.
+4. Strings must be double-quoted.
+5. Variables start with uppercase (e.g., P, Amount).
+6. Do NOT use aggregation (max, count) unless absolutely necessary.
 
 Output JSON only: {"datalog_content": "...", "explanation": "..."}`, factsList)
 
