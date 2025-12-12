@@ -99,6 +99,10 @@ scan_mode: exhaustive
 │   ├── fintech_approval/
 │   ├── kernel_knowledge_demo/
 │   ├── lineage_demo/
+│   ├── openrouter_demo/     # NEW: OpenRouter/LocalAI Example
+│   │   ├── README.md
+│   │   ├── blueprint.dl
+│   │   └── main.go
 │   ├── planner/
 │   ├── policy-copilot/
 │   ├── rag_flow/
