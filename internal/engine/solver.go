@@ -237,8 +237,27 @@ func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope)
 		facts = append(facts, atom)
 	}
 
-	// Execute query: action_config(Key, Value)
-	err = e.runtime.QueryWithSolutions(facts, "action_config(Key, Value)", func(solution map[string]any) error {
+	// Inject Metadata facts: meta(Key, Value) and attempt(N)
+	for k, v := range input.Metadata {
+		safeK := escapeString(k)
+		safeV := escapeString(v)
+		// meta("key", "val")
+		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
+		if atom, err := parse.Atom(metaFact); err == nil {
+			facts = append(facts, atom)
+		}
+
+		// attempt(N) from retry_count
+		if k == "retry_count" {
+			attemptFact := fmt.Sprintf("attempt(%s)", v)
+			if atom, err := parse.Atom(attemptFact); err == nil {
+				facts = append(facts, atom)
+			}
+		}
+	}
+
+	// Execute query: config(Key, Value)
+	err = e.runtime.QueryWithSolutions(facts, "config(Key, Value)", func(solution map[string]any) error {
 		key, kOk := solution["Key"].(string)
 		val, vOk := solution["Value"].(string)
 		if kOk && vOk {
@@ -351,6 +370,25 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 		facts = append(facts, atom)
 	}
 
+	// Inject Metadata facts: meta(Key, Value) and attempt(N)
+	for k, v := range input.Metadata {
+		safeK := escapeString(k)
+		safeV := escapeString(v)
+		// meta("key", "val")
+		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
+		if atom, err := parse.Atom(metaFact); err == nil {
+			facts = append(facts, atom)
+		}
+
+		// attempt(N) from retry_count
+		if k == "retry_count" {
+			attemptFact := fmt.Sprintf("attempt(%s)", v)
+			if atom, err := parse.Atom(attemptFact); err == nil {
+				facts = append(facts, atom)
+			}
+		}
+	}
+
 	// Execute the deny(Req) query
 	denied, err := e.runtime.ExecuteQuery(facts, fmt.Sprintf(`deny("%s")`, core.EntityInput))
 	if err != nil {
@@ -456,6 +494,18 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 		facts = append(facts, atom)
 	}
 
+	// Inject Metadata facts: meta(Key, Value) and attempt(N)
+	for k, v := range output.Metadata {
+		safeK := escapeString(k)
+		safeV := escapeString(v)
+		// meta("key", "val")
+		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
+		if atom, err := parse.Atom(metaFact); err == nil {
+			facts = append(facts, atom)
+		}
+		// Output validation might not need attempt(N) but consistent context is good
+	}
+
 	// Execute the deny(Output) query for post-check validation
 	denied, err := e.runtime.ExecuteQuery(facts, fmt.Sprintf(`deny("%s")`, core.EntityOutput))
 	if err != nil {
@@ -538,9 +588,43 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 		facts = append(facts, atom)
 	}
 
+	// Inject Metadata facts: meta(Key, Value) and attempt(N)
+	for k, v := range input.Metadata {
+		safeK := escapeString(k)
+		safeV := escapeString(v)
+		// meta("key", "val")
+		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
+		if atom, err := parse.Atom(metaFact); err == nil {
+			facts = append(facts, atom)
+		}
+
+		// attempt(N) from retry_count
+		if k == "retry_count" {
+			attemptFact := fmt.Sprintf("attempt(%s)", v)
+			if atom, err := parse.Atom(attemptFact); err == nil {
+				facts = append(facts, atom)
+			}
+		}
+	}
+
 	// 1. Check Correction (Retry)
-	// Query: correction("Req", Hint)
-	_ = e.runtime.QueryWithSolutions(facts, fmt.Sprintf(`correction("%s", Hint)`, core.EntityInput), func(solution map[string]any) error {
+	// Query: retry(Hint) - Simplified from correction(Req, Hint) as context is implicit in facts
+	// Wait, the instruction says: Change query `correction(..., Hint)` -> `retry(..., Hint)`.
+	// The ellipses imply arguments might be preserved or changed.
+	// But `retry` declaration is `Decl retry(Feedback).` (Arity 1).
+	// `correction` was `Decl correction(Feedback).` (Arity 1) in std.dl, but code used `correction("Req", Hint)` (Arity 2).
+	// Let's look at `std.dl` old content. The old content wasn't shown fully, but I overwrote it.
+	// My new `std.dl` has `Decl retry(Feedback).`. Arity 1.
+	// So the query must be `retry(Hint)`.
+	// The old code used `correction("%s", Hint)` with EntityInput.
+	// If the rule head was `correction(Hint) :- ...` then `correction("Req", Hint)` would fail unless arity matched.
+	// Mangle is strict. If `Decl correction(Feedback)` was arity 1, then `correction("Req", Hint)` would be invalid query if strict, or maybe "Req" was ignored?
+	// Actually, `std.dl` before update likely had `Decl correction(Entity, Feedback)` or `Decl correction(Feedback)`?
+	// The prompt says: `Decl retry(Feedback). % Was: correction`.
+	// And `EvaluateSteering` logic: `Change query correction(..., Hint) -> retry(..., Hint)`.
+	// Given `Decl retry(Feedback)`, I must query `retry(Hint)`.
+
+	_ = e.runtime.QueryWithSolutions(facts, "retry(Hint)", func(solution map[string]any) error {
 		if hint, ok := solution["Hint"].(string); ok {
 			decision = core.DecisionRetry
 			metadata[core.KeyFeedback] = hint
@@ -555,8 +639,8 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 	}
 
 	// 2. Check Routing
-	// Query: next_step("Req", Target)
-	_ = e.runtime.QueryWithSolutions(facts, fmt.Sprintf(`next_step("%s", Target)`, core.EntityInput), func(solution map[string]any) error {
+	// Query: route(Target) - Corresponding to Decl route(NextStep).
+	_ = e.runtime.QueryWithSolutions(facts, "route(Target)", func(solution map[string]any) error {
 		if target, ok := solution["Target"].(string); ok {
 			decision = core.DecisionRoute
 			metadata[core.KeyNextStep] = target

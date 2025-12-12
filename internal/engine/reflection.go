@@ -29,10 +29,20 @@ func ToFacts(id string, input any) ([]string, error) {
 //
 // Format:
 //
-//	has_label("entityID", "label_value")
+//	label("label_value")
+//  Note: In v2.0, we simplified this to just the label, as context is implied by the execution scope.
+//  Wait, the original was has_label(ID, Label). The instruction says `label(Tag)`.
+//  Usually context injection like `label(Tag)` means `label(Tag)` is a fact about the current context.
+//  But `LabelsToFacts` takes an EntityID.
+//  If I change it to `label(Tag)`, I lose the EntityID association unless `label` is arity 1.
+//  The instruction says `Decl label(Tag).`. Arity 1.
+//  So it seems we are moving to context-implicit predicates for the current entity?
+//  Or maybe `label(Tag)` is just for the current input?
+//  The `Authorize` function checks `deny(Req)`. Rules like `deny(Req) :- label("secret").` work if `label` is global/contextual.
+//  So I will produce `label("val")` instead of `has_label("id", "val")`.
 //
 // Parameters:
-//   - entityID: The unique identifier for the entity.
+//   - entityID: The unique identifier for the entity. (Ignored in v2 vocabulary for label, but kept for API compat)
 //   - labels: A slice of security label strings.
 //
 // Returns:
@@ -44,14 +54,13 @@ func LabelsToFacts(entityID string, labels []string) ([]string, error) {
 		facts = make([]string, 0, len(labels))
 	}
 
-	safeID := escapeString(entityID)
+	// entityID is ignored in v2 vocabulary
+	// safeID := escapeString(entityID)
 
-	for _, label := range labels {
+	for _, l := range labels {
 		var sb strings.Builder
-		sb.WriteString("has_label(\"")
-		sb.WriteString(safeID)
-		sb.WriteString("\", \"")
-		sb.WriteString(escapeString(label))
+		sb.WriteString("label(\"")
+		sb.WriteString(escapeString(l))
 		sb.WriteString("\")")
 		facts = append(facts, sb.String())
 	}
