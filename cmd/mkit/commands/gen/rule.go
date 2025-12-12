@@ -18,6 +18,8 @@ var (
 	provider string
 	model    string
 	prompt   string
+	desc     string
+	facts    []string
 )
 
 var ruleCmd = &cobra.Command{
@@ -80,10 +82,19 @@ var ruleCmd = &cobra.Command{
 		adapter := adapterai.NewGenkitAdapter(rawModel, gk)
 
 		// 2. Prepare Context (Known Facts)
-		knownFacts := []string{}
+		// facts var is already populated by flags
+
+		// Determine prompt
+		finalPrompt := prompt
+		if desc != "" {
+			finalPrompt = desc
+		}
+		if finalPrompt == "" {
+			return fmt.Errorf("either --prompt or --desc must be provided")
+		}
 
 		// 3. Execute
-		result, err := GenerateWithFeedback(ctx, adapter, prompt, knownFacts)
+		result, err := GenerateWithFeedback(ctx, adapter, finalPrompt, facts)
 		if err != nil {
 			return fmt.Errorf("generation failed: %w", err)
 		}
@@ -101,9 +112,10 @@ func init() {
 	ruleCmd.Flags().StringVar(&provider, "provider", "google", "LLM Provider (e.g., google, openai)")
 	ruleCmd.Flags().StringVar(&model, "model", "", "Model name to use for generation (e.g., gemini-2.0-flash, gpt-4o)")
 	ruleCmd.Flags().StringVar(&prompt, "prompt", "", "The natural language policy description")
+	ruleCmd.Flags().StringVar(&desc, "desc", "", "The natural language policy description (alias for --prompt)")
+	ruleCmd.Flags().StringSliceVar(&facts, "facts", []string{}, "List of known facts/schema elements (e.g. \"amount\", \"user_role\")")
 
 	ruleCmd.MarkFlagRequired("model")
-	ruleCmd.MarkFlagRequired("prompt")
 
 	GenCmd.AddCommand(ruleCmd)
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/gen"
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/inspect"
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/kg"
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +30,7 @@ func Execute() {
 }
 
 func main() {
+	_ = godotenv.Load()
 	gen.AddCommands(rootCmd)
 	inspect.AddCommands(rootCmd)
 	kg.AddCommands(rootCmd)

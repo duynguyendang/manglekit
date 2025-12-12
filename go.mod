@@ -10,6 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/knakk/rdf v0.0.0-20190304171630-8521bf4c5042
+	github.com/openai/openai-go v1.8.2
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.38.0
@@ -44,7 +45,6 @@ require (
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mark3labs/mcp-go v0.29.0 // indirect
 	github.com/mbleigh/raymond v0.0.0-20250414171441-6b3a58ab9e0a // indirect
-	github.com/openai/openai-go v1.8.2 // indirect
 	github.com/piprate/json-gold v0.3.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/pquerna/cachecontrol v0.0.0-20180517163645-1555304b9b35 // indirect

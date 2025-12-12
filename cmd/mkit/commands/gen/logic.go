@@ -7,6 +7,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/internal/engine"
+	"github.com/duynguyendang/manglekit/internal/engine/resources"
 	"github.com/duynguyendang/manglekit/sdk"
 )
 
@@ -21,17 +22,17 @@ type GeneratedPolicy struct {
 // ValidatePolicySyntax checks if the generated Datalog code is valid using the Mangle engine.
 func ValidatePolicySyntax(datalog string) error {
 	// Initialize a runtime.
-	// Note: We use NewMangleRuntime() as per current codebase.
-	// The prompt mentioned engine.New() loading std.dl automatically.
-	// We will assume NewMangleRuntime is what is intended or we need to proceed with it.
-	// If std.dl is needed for basic syntax check, it might be fine without it unless
-	// the validator checks for undefined predicates that are in std.dl.
-	// For now, we just check if it compiles.
 	eng := engine.NewMangleRuntime()
 
+	// Prepend standard declarations to the validator so usages of std lib don't fail.
+	// We use the single source of truth from internal/engine/resources.
+	// We also strictly declare 'deny' as it is the expected output interface.
+	stdDecls := resources.GetStdLib()
+	denyDecl := "Decl deny(Source, Reason) ."
+	fullProgram := stdDecls + "\n" + denyDecl + "\n" + datalog
+
 	// Attempt to parse and compile the policy
-	// This catches syntax errors, undefined predicates (that are not declared), and stratum issues.
-	return eng.LoadFromSource(datalog)
+	return eng.LoadFromSource(fullProgram)
 }
 
 // GenerateWithFeedback orchestrates the Teacher-Student protocol.
@@ -52,14 +53,15 @@ Your task is to translate natural language requirements into strict, compilable 
 - json_bool(Source, Key, Value) // Boolean fields
 - deny(Source, Reason)          // Main policy output
 
-### Domain Vocabulary (Existing Facts):
+### Schema / Context (Hints):
 %s
 
 ### Syntax Rules:
-1. Every new predicate MUST be declared using 'Decl name(Type, ...).'.
-2. Strings must be double-quoted.
-3. Variables start with uppercase (e.g., P, Amount).
-4. Do NOT use aggregation (max, count) unless absolutely necessary.
+1. You MUST declare every predicate using 'Decl name(Arg1, Arg2, ...).' where Arg1, Arg2, etc. MUST start with an Uppercase letter (e.g., Decl amount(Source, Val).).
+2. If the hints are JSON field names, prefer using json_num/str/bool or define a wrapper predicate with a Decl.
+3. Strings must be double-quoted.
+4. Variables start with uppercase (e.g., P, Amount).
+5. Do NOT use aggregation (max, count) unless absolutely necessary.
 
 Output JSON only: {"datalog_content": "...", "explanation": "..."}`, factsList)
 
