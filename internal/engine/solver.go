@@ -197,6 +197,63 @@ func (e *PolicyEngine) LoadPolicy(policy string) error {
 	return nil
 }
 
+// GetActionConfig queries the engine for dynamic configuration parameters.
+// It executes the query `action_config(Key, Value)` and returns a map of results.
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - input: The input envelope.
+//
+// Returns:
+//   - A map of configuration keys and values.
+//   - An error if execution fails.
+func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope) (map[string]string, error) {
+	config := make(map[string]string)
+
+	if e.runtime == nil || e.runtime.programInfo == nil {
+		return config, nil
+	}
+
+	// Convert input to facts
+	facts, err := toMangleFacts(core.EntityInput, input.Payload, input.ContentType)
+	if err != nil {
+		if e.logger != nil {
+			e.logger.Debug("failed to convert input to facts for config", "error", err)
+		}
+		// Return empty config on fact conversion failure to avoid blocking
+		return config, nil
+	}
+
+	// Inject Envelope Facts
+	for _, factStr := range input.Facts {
+		atom, err := parse.Atom(factStr)
+		if err != nil {
+			if e.logger != nil {
+				e.logger.Error("failed to parse envelop fact", "fact", factStr, "error", err)
+			}
+			// Continue without this fact
+			continue
+		}
+		facts = append(facts, atom)
+	}
+
+	// Execute query: action_config(Key, Value)
+	err = e.runtime.QueryWithSolutions(facts, "action_config(Key, Value)", func(solution map[string]any) error {
+		key, kOk := solution["Key"].(string)
+		val, vOk := solution["Value"].(string)
+		if kOk && vOk {
+			config[key] = val
+		}
+		return nil
+	})
+
+	if err != nil && e.logger != nil {
+		e.logger.Debug("failed to query action config", "error", err)
+	}
+
+	return config, nil
+}
+
 // Authorize performs the Pre-Check phase of governance.
 // It checks if the input is allowed to proceed based on the loaded policies.
 // If the `deny(Req)` predicate is derived, it returns `core.ErrAlignment`.

@@ -33,6 +33,9 @@ const (
 
 	// KeyHistory stores serialized chat history.
 	KeyHistory = "manglekit_history"
+
+	// PrefixPromptConfig is the prefix for metadata keys that configure the LLM prompt.
+	PrefixPromptConfig = "prompt."
 )
 
 // Standard Decision Values

@@ -14,3 +14,7 @@ Decl quad(S, P, O, G) .
 % 3. Standard Helpers
 Decl triple(S, P, O) .
 triple(S, P, O) :- quad(S, P, O, _).
+
+% 4. Dynamic Action Configuration
+% Defines dynamic configuration for the AI action
+Decl action_config(Key, Value) .

@@ -23,8 +23,8 @@ func TestPolicyEngine_AuthorizeWithSimpleDenyRule(t *testing.T) {
 	ctx := context.Background()
 	err := engine.Authorize(ctx, core.ActionMetadata{Name: "test_action"}, input)
 
-	if err != core.ErrPolicyViolation {
-		t.Errorf("expected ErrPolicyViolation, got %v", err)
+	if err != core.ErrAlignment {
+		t.Errorf("expected ErrAlignment, got %v", err)
 	}
 }
 
