@@ -1,20 +1,10 @@
-% --- Manglekit Standard Library ---
-% Auto-loaded on engine startup.
+% Standard System Predicates
+Decl deny(Reason).
+Decl route(NextStep).       % Was: next_step
+Decl retry(Feedback).       % Was: correction
+Decl config(Key, Value).    % Was: action_config
 
-% 1. Dynamic JSON Input (from engine.Flatten)
-Decl json_str(Parent, Key, Val) .
-Decl json_num(Parent, Key, Val) .
-Decl json_bool(Parent, Key, Val) .
-Decl json_link(Parent, Key, Child) .
-Decl json_null(Parent, Key) .
-
-% 2. Knowledge Base Input (from N-Quads/N-Triples)
-Decl quad(S, P, O, G) .
-
-% 3. Standard Helpers
-Decl triple(S, P, O) .
-triple(S, P, O) :- quad(S, P, O, _).
-
-% 4. Dynamic Action Configuration
-% Defines dynamic configuration for the AI action
-Decl action_config(Key, Value) .
+% Context Predicates
+Decl attempt(N).            % Was: retry_count (if applicable)
+Decl meta(Key, Value).      % Was: metadata
+Decl label(Tag).            % Was: has_label

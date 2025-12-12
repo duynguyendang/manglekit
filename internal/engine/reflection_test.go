@@ -38,8 +38,8 @@ func TestToFacts(t *testing.T) {
 		`username("test", "John Doe")`,
 		`location_street("test", "123 Main St")`,
 		`location_city("test", "Anytown")`,
-		`tags("test", "alpha")`,
-		`tags("test", "beta")`,
+		`tags("test", "0", "alpha")`,
+		`tags("test", "1", "beta")`,
 		`data("test", "id", 123)`,
 		`data("test", "isAdmin", "true")`,
 	}
@@ -63,9 +63,9 @@ func TestLabelsToFacts(t *testing.T) {
 	entityID := "req\"1"
 
 	expected := []string{
-		`has_label("req\"1", "secret")`,
-		`has_label("req\"1", "pii")`,
-		`has_label("req\"1", "complex\"label\\")`,
+		`label("secret")`,
+		`label("pii")`,
+		`label("complex\"label\\")`,
 	}
 
 	facts, err := LabelsToFacts(entityID, labels)

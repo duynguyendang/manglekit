@@ -24,3 +24,11 @@ Decl is_admin(R).
 is_admin(R) :-
     json_link(R, "roles", List),
     json_str(List, _, "admin").    % The '_' matches any index in the array
+
+% Pattern 4: Steering (Retry with Feedback)
+% Logic: If execution fails (attempt > 0) and validation fails, retry with Chain-of-Thought
+route("escalation_agent") :-
+    attempt(N), N > 2.
+
+config("prompt.strategy", "cot") :-
+    attempt(N), N > 0.
