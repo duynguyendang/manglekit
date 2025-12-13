@@ -1,10 +1,45 @@
-% Standard System Predicates
-Decl deny(Reason).
-Decl route(NextStep).       % Was: next_step
-Decl retry(Feedback).       % Was: correction
-Decl config(Key, Value).    % Was: action_config
+% --- Manglekit Standard Library (v2.0) ---
+% Auto-loaded on engine startup.
 
-% Context Predicates
-Decl attempt(N).            % Was: retry_count (if applicable)
-Decl meta(Key, Value).      % Was: metadata
-Decl label(Tag).            % Was: has_label
+% ==========================================
+% 1. DATA REFLECTION (DO NOT REMOVE)
+% These predicates allow the engine to read JSON inputs and Graph data.
+% ==========================================
+
+% JSON Primitives (Flattened)
+Decl json_str(Parent, Key, Val).
+Decl json_num(Parent, Key, Val).
+Decl json_bool(Parent, Key, Val).
+Decl json_link(Parent, Key, Child).
+Decl json_null(Parent, Key).
+
+% Knowledge Graph Primitives (N-Quads/Triples)
+Decl quad(S, P, O, G).
+Decl triple(S, P, O).
+triple(S, P, O) :- quad(S, P, O, _).
+
+% ========================================== % 2. SYSTEM CONTROL (Standard Vocabulary) % ==========================================
+
+% Arity 1: Global/Single-Context (JSON) 
+Decl deny(Reason). 
+Decl route(NextStep). 
+Decl retry(Feedback).
+
+% Arity 2: Entity-Specific (Graph/Batch) 
+% Allows pinning the decision to a specific node (Entity). 
+Decl deny(Entity, Reason). 
+Decl route(Entity, NextStep). 
+Decl retry(Entity, Feedback).
+
+% Config is always Key-Value (Arity 2) or Entity-Key-Value (Arity 3) 
+Decl config(Key, Value). 
+Decl config(Entity, Key, Value).
+
+% ==========================================
+% 3. CONTEXT INJECTION
+% These predicates are injected by the runtime environment.
+% ==========================================
+
+Decl attempt(N).            % Current retry count (0, 1, 2...).
+Decl meta(Key, Value).      % Envelope metadata (e.g., user_id, session_id).
+Decl label(Tag).            % Security taint labels (e.g., "pii", "unsafe").
