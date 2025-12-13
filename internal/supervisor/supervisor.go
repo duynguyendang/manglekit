@@ -2,7 +2,9 @@ package supervisor
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine"
@@ -109,11 +111,46 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 		span.SetStatus(codes.Error, err.Error())
 		// Distinguish between Blueprint DENIAL and System ERROR
 		if g.isAlignmentIssue(err) {
+			span.SetAttributes(core.AttrPolicyOutcome.String("deny"))
+			var alignErr *core.AlignmentError
+			if errors.As(err, &alignErr) {
+				span.SetAttributes(core.AttrPolicyReason.String(alignErr.Message))
+				if alignErr.RuleID != "" {
+					span.SetAttributes(core.AttrPolicyRuleID.String(alignErr.RuleID))
+				}
+			} else {
+				span.SetAttributes(core.AttrPolicyReason.String(err.Error()))
+			}
+			// Legacy attribute for backward compatibility
 			span.SetAttributes(attribute.String("mangle.outcome", "DENIED"))
 		} else {
 			span.SetAttributes(attribute.String("mangle.outcome", "ERROR"))
 		}
 		return core.Envelope{}, err
+	}
+
+	// Success Path: Determine outcome (Allow/Route/Retry)
+	decision := result.Metadata[core.KeyDecision]
+	switch decision {
+	case core.DecisionRetry:
+		span.SetAttributes(core.AttrPolicyOutcome.String("retry"))
+		if hint, ok := result.Metadata[core.KeyFeedback]; ok {
+			span.SetAttributes(core.AttrPolicyReason.String(hint))
+		}
+	case core.DecisionRoute:
+		span.SetAttributes(core.AttrPolicyOutcome.String("route"))
+		if target, ok := result.Metadata[core.KeyNextStep]; ok {
+			span.SetAttributes(core.AttrPolicyTarget.String(target))
+		}
+	default:
+		span.SetAttributes(core.AttrPolicyOutcome.String("allow"))
+	}
+
+	// Inject Retry Count if present
+	if attemptStr, ok := input.Metadata["retry_count"]; ok {
+		if n, err := strconv.Atoi(attemptStr); err == nil {
+			span.SetAttributes(core.AttrPolicyAttempt.Int(n))
+		}
 	}
 
 	span.SetAttributes(

@@ -400,10 +400,31 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 	}
 
 	if denied {
+		// Teacher-Student Protocol: Try to extract a human-readable violation message and rule ID
+		var violationMsg, ruleID string
+
+		// Query: violation_msg(Msg)
+		_ = e.runtime.QueryWithSolutions(facts, "violation_msg(Msg)", func(solution map[string]any) error {
+			if msg, ok := solution["Msg"].(string); ok {
+				violationMsg = msg
+				return fmt.Errorf("found") // Stop searching
+			}
+			return nil
+		})
+
+		// Query: violation_rule(ID)
+		_ = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
+			if id, ok := solution["ID"].(string); ok {
+				ruleID = id
+				return fmt.Errorf("found") // Stop searching
+			}
+			return nil
+		})
+
 		if e.logger != nil {
-			e.logger.Debug("alignment issue detected", "action", actionMeta.Name)
+			e.logger.Debug("alignment issue detected", "action", actionMeta.Name, "msg", violationMsg, "rule_id", ruleID)
 		}
-		return core.ErrAlignment
+		return &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
 	}
 
 	return nil
@@ -517,10 +538,10 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 	}
 
 	if denied {
-		// Teacher-Student Protocol: Try to extract a human-readable violation message
+		// Teacher-Student Protocol: Try to extract a human-readable violation message and rule ID
+		var violationMsg, ruleID string
+
 		// Query: violation_msg(Msg)
-		var violationMsg string
-		// We reuse the facts which already contain the Output payload
 		_ = e.runtime.QueryWithSolutions(facts, "violation_msg(Msg)", func(solution map[string]any) error {
 			if msg, ok := solution["Msg"].(string); ok {
 				violationMsg = msg
@@ -529,14 +550,20 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 			return nil
 		})
 
+		// Query: violation_rule(ID)
+		_ = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
+			if id, ok := solution["ID"].(string); ok {
+				ruleID = id
+				return fmt.Errorf("found") // Stop searching
+			}
+			return nil
+		})
+
 		if e.logger != nil {
-			e.logger.Debug("post-check validation violation detected", "action", actionMeta.Name, "violation_msg", violationMsg)
+			e.logger.Debug("post-check validation violation detected", "action", actionMeta.Name, "msg", violationMsg, "rule_id", ruleID)
 		}
 
-		if violationMsg != "" {
-			return core.Envelope{}, &core.AlignmentError{Message: violationMsg}
-		}
-		return core.Envelope{}, core.ErrAlignment
+		return core.Envelope{}, &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
 	}
 
 	return output, nil

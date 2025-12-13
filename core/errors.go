@@ -16,14 +16,22 @@ var (
 // It wraps ErrAlignment to ensure standard error matching works.
 type AlignmentError struct {
 	Message string
+	RuleID  string
 }
 
 func (e *AlignmentError) Error() string {
+	if e.RuleID != "" {
+		return fmt.Sprintf("[ALIGNMENT INTERVENTION] [%s]: %s", e.RuleID, e.Message)
+	}
 	return fmt.Sprintf("[ALIGNMENT INTERVENTION]: %s", e.Message)
 }
 
 func (e *AlignmentError) Is(target error) bool {
 	return target == ErrAlignment
+}
+
+func (e *AlignmentError) Unwrap() error {
+	return ErrAlignment
 }
 
 // IsAlignmentError checks if the error is an AlignmentError.
