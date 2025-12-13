@@ -2,7 +2,7 @@
 context_type: full_source_dump
 project: manglekit
 language: go
-last_updated: 2025-11-28
+last_updated: 2025-11-29
 scan_mode: exhaustive
 ---
 
@@ -84,6 +84,7 @@ scan_mode: exhaustive
 │   ├── logger_test.go
 │   ├── memory.go
 │   ├── state.go
+│   ├── telemetry.go
 │   ├── tracer.go
 │   └── types.go
 ├── docs # Documentation & Architecture Records
@@ -546,14 +547,22 @@ var (
 // It wraps ErrAlignment to ensure standard error matching works.
 type AlignmentError struct {
 	Message string
+	RuleID  string
 }
 
 func (e *AlignmentError) Error() string {
+	if e.RuleID != "" {
+		return fmt.Sprintf("[ALIGNMENT INTERVENTION] [%s]: %s", e.RuleID, e.Message)
+	}
 	return fmt.Sprintf("[ALIGNMENT INTERVENTION]: %s", e.Message)
 }
 
 func (e *AlignmentError) Is(target error) bool {
 	return target == ErrAlignment
+}
+
+func (e *AlignmentError) Unwrap() error {
+	return ErrAlignment
 }
 
 // IsAlignmentError checks if the error is an AlignmentError.
@@ -637,6 +646,28 @@ const (
 	OutcomeAllowed = "ALLOWED"
 	OutcomeDenied  = "DENIED"
 	OutcomeSuccess = "success"
+)
+```
+
+## core/telemetry.go
+```go
+package core
+
+import "go.opentelemetry.io/otel/attribute"
+
+// Observability & Trace Attributes
+// These attributes are used to enrich OpenTelemetry spans with Manglekit policy decisions.
+const (
+	// High-level Outcome
+	AttrPolicyOutcome = attribute.Key("policy.outcome") // "allow", "deny", "route", "retry"
+
+	// Details
+	AttrPolicyReason = attribute.Key("policy.reason")  // e.g. "Budget Exceeded"
+	AttrPolicyTarget = attribute.Key("policy.target")  // e.g. "tool_calculator"
+	AttrPolicyRuleID = attribute.Key("policy.rule_id") // (Optional) If available
+
+	// Retry/Loop info
+	AttrPolicyAttempt = attribute.Key("policy.attempt") // e.g. 1, 2
 )
 ```
 
@@ -1458,7 +1489,9 @@ package supervisor
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine"
@@ -1565,11 +1598,46 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 		span.SetStatus(codes.Error, err.Error())
 		// Distinguish between Blueprint DENIAL and System ERROR
 		if g.isAlignmentIssue(err) {
+			span.SetAttributes(core.AttrPolicyOutcome.String("deny"))
+			var alignErr *core.AlignmentError
+			if errors.As(err, &alignErr) {
+				span.SetAttributes(core.AttrPolicyReason.String(alignErr.Message))
+				if alignErr.RuleID != "" {
+					span.SetAttributes(core.AttrPolicyRuleID.String(alignErr.RuleID))
+				}
+			} else {
+				span.SetAttributes(core.AttrPolicyReason.String(err.Error()))
+			}
+			// Legacy attribute for backward compatibility
 			span.SetAttributes(attribute.String("mangle.outcome", "DENIED"))
 		} else {
 			span.SetAttributes(attribute.String("mangle.outcome", "ERROR"))
 		}
 		return core.Envelope{}, err
+	}
+
+	// Success Path: Determine outcome (Allow/Route/Retry)
+	decision := result.Metadata[core.KeyDecision]
+	switch decision {
+	case core.DecisionRetry:
+		span.SetAttributes(core.AttrPolicyOutcome.String("retry"))
+		if hint, ok := result.Metadata[core.KeyFeedback]; ok {
+			span.SetAttributes(core.AttrPolicyReason.String(hint))
+		}
+	case core.DecisionRoute:
+		span.SetAttributes(core.AttrPolicyOutcome.String("route"))
+		if target, ok := result.Metadata[core.KeyNextStep]; ok {
+			span.SetAttributes(core.AttrPolicyTarget.String(target))
+		}
+	default:
+		span.SetAttributes(core.AttrPolicyOutcome.String("allow"))
+	}
+
+	// Inject Retry Count if present
+	if attemptStr, ok := input.Metadata["retry_count"]; ok {
+		if n, err := strconv.Atoi(attemptStr); err == nil {
+			span.SetAttributes(core.AttrPolicyAttempt.Int(n))
+		}
 	}
 
 	span.SetAttributes(
@@ -2831,10 +2899,31 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 	}
 
 	if denied {
+		// Teacher-Student Protocol: Try to extract a human-readable violation message and rule ID
+		var violationMsg, ruleID string
+
+		// Query: violation_msg(Msg)
+		_ = e.runtime.QueryWithSolutions(facts, "violation_msg(Msg)", func(solution map[string]any) error {
+			if msg, ok := solution["Msg"].(string); ok {
+				violationMsg = msg
+				return fmt.Errorf("found") // Stop searching
+			}
+			return nil
+		})
+
+		// Query: violation_rule(ID)
+		_ = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
+			if id, ok := solution["ID"].(string); ok {
+				ruleID = id
+				return fmt.Errorf("found") // Stop searching
+			}
+			return nil
+		})
+
 		if e.logger != nil {
-			e.logger.Debug("alignment issue detected", "action", actionMeta.Name)
+			e.logger.Debug("alignment issue detected", "action", actionMeta.Name, "msg", violationMsg, "rule_id", ruleID)
 		}
-		return core.ErrAlignment
+		return &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
 	}
 
 	return nil
@@ -2936,10 +3025,10 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 	}
 
 	if denied {
-		// Teacher-Student Protocol: Try to extract a human-readable violation message
+		// Teacher-Student Protocol: Try to extract a human-readable violation message and rule ID
+		var violationMsg, ruleID string
+
 		// Query: violation_msg(Msg)
-		var violationMsg string
-		// We reuse the facts which already contain the Output payload
 		_ = e.runtime.QueryWithSolutions(facts, "violation_msg(Msg)", func(solution map[string]any) error {
 			if msg, ok := solution["Msg"].(string); ok {
 				violationMsg = msg
@@ -2948,14 +3037,20 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 			return nil
 		})
 
+		// Query: violation_rule(ID)
+		_ = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
+			if id, ok := solution["ID"].(string); ok {
+				ruleID = id
+				return fmt.Errorf("found") // Stop searching
+			}
+			return nil
+		})
+
 		if e.logger != nil {
-			e.logger.Debug("post-check validation violation detected", "action", actionMeta.Name, "violation_msg", violationMsg)
+			e.logger.Debug("post-check validation violation detected", "action", actionMeta.Name, "msg", violationMsg, "rule_id", ruleID)
 		}
 
-		if violationMsg != "" {
-			return core.Envelope{}, &core.AlignmentError{Message: violationMsg}
-		}
-		return core.Envelope{}, core.ErrAlignment
+		return core.Envelope{}, &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
 	}
 
 	return output, nil
@@ -3380,4 +3475,9 @@ func applyDefaults(cfg *Config) {
 
 #### 6. CHANGELOG
 
+*   **2025-11-29**: Added Rich Telemetry.
+    *   Created `core/telemetry.go` for policy attributes.
+    *   Updated `core/errors.go` to include `RuleID` in `AlignmentError`.
+    *   Updated `internal/supervisor/supervisor.go` to inject detailed attributes into spans.
+    *   Updated `internal/engine/solver.go` to query `violation_rule` and populate `RuleID`.
 *   **2025-11-28**: Full Context Resync. Exhaustive scan of `cmd/`, `internal/`, `sdk/`, `adapters/`, `core/`, and `config/`. Updated file map, component analysis, critical path documentation, and source code dump.
