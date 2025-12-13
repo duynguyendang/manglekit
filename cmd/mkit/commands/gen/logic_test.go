@@ -57,6 +57,11 @@ func TestGenerateWithFeedback_PromptConstruction(t *testing.T) {
 		t.Errorf("System prompt missing vocab item 'is_admin(User)'")
 	}
 
+	// 2.5 Check for Telemetry
+	if !strings.Contains(combinedPrompt, "### Telemetry & Compliance (MANDATORY):") {
+		t.Errorf("System prompt missing '### Telemetry & Compliance (MANDATORY):' section")
+	}
+
 	// 3. Check for specific instructions
 	expectedInstr1 := "Prioritize using the Domain Vocabulary over raw json_xxx predicates if available."
 	if !strings.Contains(combinedPrompt, expectedInstr1) {
