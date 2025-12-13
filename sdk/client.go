@@ -46,7 +46,7 @@ type Client struct {
 	// shutdownFunc is a cleanup function to stop exporters/tracers.
 	shutdownFunc func(context.Context) error
 	// llm is the plugged-in text generation backend.
-	llm TextGenerator
+	llm core.TextGenerator
 }
 
 // NewClient initializes a new Manglekit Client with the provided options.

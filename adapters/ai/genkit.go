@@ -4,12 +4,11 @@ import (
 	"context"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 )
 
-// genkitAdapter adapts the Firebase Genkit ai.Model interface to the Manglekit sdk.TextGenerator interface.
+// genkitAdapter adapts the Firebase Genkit ai.Model interface to the Manglekit core.TextGenerator interface.
 type genkitAdapter struct {
 	model ai.Model
 	gk    *genkit.Genkit
@@ -22,8 +21,8 @@ type genkitAdapter struct {
 //   - gk: The Genkit runtime instance.
 //
 // Returns:
-//   - A sdk.TextGenerator implementation.
-func NewGenkitAdapter(model ai.Model, gk *genkit.Genkit) sdk.TextGenerator {
+//   - A core.TextGenerator implementation.
+func NewGenkitAdapter(model ai.Model, gk *genkit.Genkit) core.TextGenerator {
 	return &genkitAdapter{
 		model: model,
 		gk:    gk,
@@ -35,7 +34,7 @@ func (g *genkitAdapter) Complete(ctx context.Context, prompt string) (string, er
 	var messages []*ai.Message
 
 	// Dynamic Prompt Configuration
-	facts := sdk.ContextFacts(ctx)
+	facts := core.ContextFacts(ctx)
 	systemPrompt := ""
 	if facts != nil {
 		if val, ok := facts[core.PrefixPromptConfig+"tone"]; ok {
