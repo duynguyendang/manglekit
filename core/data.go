@@ -4,6 +4,28 @@ import (
 	"context"
 )
 
+// --- Knowledge (RAG) ---
+
+type Document struct {
+	ID       string
+	Content  string
+	Metadata map[string]any
+	Score    float32
+}
+
+// VectorStore abstracts Semantic Search.
+type VectorStore interface {
+	Search(ctx context.Context, collection string, vector []float32, k int) ([]Document, error)
+	Upsert(ctx context.Context, collection string, docs []Document) error
+}
+
+// FactLoader loads external data (Graph/RDF) into the Engine.
+type FactLoader interface {
+	LoadFacts(ctx context.Context, source string) ([]string, error)
+}
+
+// --- Memory (State) ---
+
 // MemoryMode defines the persistence strategy for conversation state.
 type MemoryMode string
 
@@ -16,38 +38,14 @@ const (
 	MemoryModePersist MemoryMode = "persist"
 )
 
-// ChatMessage represents a single unit of communication in a chat session.
-// This is a core type used by MemoryStore implementations.
-type ChatMessage struct {
-	// Role is the speaker (e.g., "user", "model").
-	Role string `json:"role"`
-	// Content is the message text.
-	Content string `json:"content"`
-}
-
 // MemoryStore defines the interface for persistent storage of chat history.
 // Implementations can be anything from in-memory maps to Redis or SQL databases.
 type MemoryStore interface {
 	// Read retrieves the chat history for a given session.
-	//
-	// Parameters:
-	//   - ctx: Context for cancellation.
-	//   - sessionID: The unique identifier for the session.
-	//
-	// Returns:
-	//   - A slice of ChatMessages, or an error if retrieval fails.
-	Read(ctx context.Context, sessionID string) ([]ChatMessage, error)
+	Read(ctx context.Context, sessionID string) ([]Message, error)
 
 	// Write saves the chat history for a given session.
-	//
-	// Parameters:
-	//   - ctx: Context for cancellation.
-	//   - sessionID: The unique identifier for the session.
-	//   - msgs: The slice of ChatMessages to store.
-	//
-	// Returns:
-	//   - An error if the write fails.
-	Write(ctx context.Context, sessionID string, msgs []ChatMessage) error
+	Write(ctx context.Context, sessionID string, msgs []Message) error
 }
 
 // NoOpStore is a no-op implementation of MemoryStore for stateless mode.
@@ -55,7 +53,7 @@ type MemoryStore interface {
 type NoOpStore struct{}
 
 // Read returns nil, nil (empty history).
-func (n NoOpStore) Read(_ context.Context, _ string) ([]ChatMessage, error) { return nil, nil }
+func (n NoOpStore) Read(_ context.Context, _ string) ([]Message, error) { return nil, nil }
 
 // Write returns nil (successful no-op).
-func (n NoOpStore) Write(_ context.Context, _ string, _ []ChatMessage) error { return nil }
+func (n NoOpStore) Write(_ context.Context, _ string, _ []Message) error { return nil }
