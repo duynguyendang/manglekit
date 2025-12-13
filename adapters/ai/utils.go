@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 )
@@ -14,11 +14,11 @@ import (
 // GenerateStruct generates a type-safe response.
 // It prioritizes Native Genkit Structured Output if available.
 
-func GenerateStruct[T any](ctx context.Context, gen sdk.TextGenerator, sysPrompt string, userReq string) (T, error) {
+func GenerateStruct[T any](ctx context.Context, gen core.TextGenerator, sysPrompt string, userReq string) (T, error) {
 	var result T
 
 	// 1. Prepare Inputs
-	facts := sdk.ContextFacts(ctx)
+	facts := core.ContextFacts(ctx)
 	feedbackSuffix := ""
 	// Retrieve feedback injected by Manglekit Core
 	if feedback, ok := facts["mangle_feedback"]; ok && feedback != "" {

@@ -1,23 +1,28 @@
-package sdk
+package core
 
-import (
-	"context"
+import "context"
 
-	"github.com/duynguyendang/manglekit/core"
-)
+type factsKeyType struct{}
+
+var factsKey = factsKeyType{}
 
 // WithFact injects a key-value pair into the context.
 // These facts are automatically extracted by the Reflector and made available
 // to Datalog policies (e.g., user_role, system_mode).
-//
-// Deprecated: Use core.WithFact instead. This wrapper exists for backward compatibility.
 func WithFact(ctx context.Context, key, value string) context.Context {
-	return core.WithFact(ctx, key, value)
+	m := ContextFacts(ctx)
+	newM := make(map[string]string, len(m)+1)
+	for k, v := range m {
+		newM[k] = v
+	}
+	newM[key] = value
+	return context.WithValue(ctx, factsKey, newM)
 }
 
 // ContextFacts retrieves all injected facts from the context.
-//
-// Deprecated: Use core.ContextFacts instead. This wrapper exists for backward compatibility.
 func ContextFacts(ctx context.Context) map[string]string {
-	return core.ContextFacts(ctx)
+	if m, ok := ctx.Value(factsKey).(map[string]string); ok {
+		return m
+	}
+	return nil
 }

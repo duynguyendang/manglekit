@@ -77,8 +77,8 @@ func WithMemory(store core.MemoryStore) ClientOption {
 // (e.g., via Genkit) and passes it to the SDK.
 //
 // Parameters:
-//   - gen: A TextGenerator implementation (e.g., adapters.ai.NewGenkitAdapter(model)).
-func WithLLM(gen TextGenerator) ClientOption {
+//   - gen: A core.TextGenerator implementation (e.g., adapters.ai.NewGenkitAdapter(model)).
+func WithLLM(gen core.TextGenerator) ClientOption {
 	return func(c *Client) {
 		if gen != nil {
 			c.llm = gen
