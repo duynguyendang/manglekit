@@ -85,6 +85,16 @@ Your task is to translate natural language requirements into strict, compilable 
 - json_link(Parent, Key, Child) // Nested objects
 - deny(Source, Reason)          // Main policy output (Do NOT redeclare this)
 
+### Telemetry & Compliance (MANDATORY):
+1. You MUST declare a violation rule predicate: Decl violation_rule(Entity, RuleID).
+2. For EVERY 'deny' rule you create, you MUST create a corresponding 'violation_rule'.
+   - The RuleID must be UPPERCASE_SNAKE_CASE (e.g., "COST_LIMIT_EXCEEDED").
+   - It captures the same conditions as the deny rule.
+
+Example:
+   deny(Req, "Cost too high") :- exceeds_cost(Req).
+   violation_rule(Req, "COST_LIMIT_CHECK_01") :- exceeds_cost(Req).
+
 ### Domain Vocabulary:
 %s
 %s
