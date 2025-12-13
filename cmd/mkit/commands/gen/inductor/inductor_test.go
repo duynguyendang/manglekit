@@ -3,6 +3,7 @@ package inductor
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -149,21 +150,24 @@ _:b1 <http://q> "lit" .
 		t.Errorf("expected graph, got %s", hint.FileType)
 	}
 
-	expectedDecls := map[string]bool{
-		"Decl p(S, O).":       false,
-		"Decl q(S, O).":       false,
-		"Decl my_prop(S, O).": false,
+	// Updated expectations: The output now includes sample comments.
+	// We just check if the declaration starts with the expected string.
+	expectedDecls := []string{
+		"Decl p(S, O).",
+		"Decl q(S, O).",
+		"Decl my_prop(S, O).",
 	}
 
-	for _, d := range hint.Declarations {
-		if _, exists := expectedDecls[d]; exists {
-			expectedDecls[d] = true
+	for _, expected := range expectedDecls {
+		found := false
+		for _, decl := range hint.Declarations {
+			if strings.HasPrefix(decl, expected) {
+				found = true
+				break
+			}
 		}
-	}
-
-	for decl, found := range expectedDecls {
 		if !found {
-			t.Errorf("missing declaration: %s", decl)
+			t.Errorf("missing declaration starting with: %s. Got: %v", expected, hint.Declarations)
 		}
 	}
 }
@@ -190,21 +194,22 @@ func TestInferFromFile_Turtle(t *testing.T) {
 		t.Errorf("expected graph, got %s", hint.FileType)
 	}
 
-	expectedDecls := map[string]bool{
-		"Decl type(S, O).":  false,
-		"Decl name(S, O).":  false,
-		"Decl knows(S, O).": false,
+	expectedDecls := []string{
+		"Decl type(S, O).",
+		"Decl name(S, O).",
+		"Decl knows(S, O).",
 	}
 
-	for _, d := range hint.Declarations {
-		if _, exists := expectedDecls[d]; exists {
-			expectedDecls[d] = true
+	for _, expected := range expectedDecls {
+		found := false
+		for _, decl := range hint.Declarations {
+			if strings.HasPrefix(decl, expected) {
+				found = true
+				break
+			}
 		}
-	}
-
-	for decl, found := range expectedDecls {
 		if !found {
-			t.Errorf("missing declaration: %s", decl)
+			t.Errorf("missing declaration starting with: %s. Got: %v", expected, hint.Declarations)
 		}
 	}
 }
