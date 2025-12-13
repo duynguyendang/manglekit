@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/duynguyendang/manglekit/adapters/knowledge"
 	"github.com/duynguyendang/manglekit/internal/engine"
@@ -45,14 +46,7 @@ var EvalCmd = &cobra.Command{
 		// New() now auto-loads std.dl, so no manual declaration fixes needed!
 		e := engine.New()
 
-		// 3. Load Policy
-		if err := e.LoadPolicy(string(policyBytes)); err != nil {
-			// This might still error if the user uses non-standard predicates without declaring them,
-			// but json_str, quad etc are now covered.
-			return fmt.Errorf("failed to load policy: %w", err)
-		}
-
-		// 4. Load Knowledge (Optional)
+		// 3. Process Knowledge (Facts) First to Extract Schema
 		if knowledgePath != "" {
 			// Using the new Graph Loader that supports .nq and .ttl
 			triples, err := knowledge.ParseGraphFile(knowledgePath)
@@ -60,14 +54,40 @@ var EvalCmd = &cobra.Command{
 				return fmt.Errorf("failed to parse knowledge base: %w", err)
 			}
 
-			facts := knowledge.TriplesToFacts(triples)
+			// Extract Schema Declarations
+			preds := knowledge.GetPredicates(triples)
+			if len(preds) > 0 {
+				var decls []string
+				for _, p := range preds {
+					// Default to binary declaration: Decl p(Subject, Object).
+					decls = append(decls, fmt.Sprintf("Decl %s(S, O).", p))
+				}
+				schemaBlock := strings.Join(decls, "\n")
 
+				// Load Declarations BEFORE Policy
+				if err := e.LoadPolicy(schemaBlock); err != nil {
+					return fmt.Errorf("failed to inject schema declarations: %w", err)
+				}
+				fmt.Printf("Injected %d schema declarations.\n", len(preds))
+			}
+
+			// Load Facts
+			facts := knowledge.TriplesToFacts(triples)
 			if err := e.LoadFacts(facts); err != nil {
 				return fmt.Errorf("failed to load knowledge facts: %w", err)
 			}
+			fmt.Printf("Loaded %d knowledge facts.\n", len(facts))
 		}
 
-		// 5. Inject Data
+		// 4. Load Policy (User Policy)
+		// Now that Decls are present (if any), loading the policy should succeed.
+		if err := e.LoadPolicy(string(policyBytes)); err != nil {
+			// This might still error if the user uses non-standard predicates without declaring them,
+			// but json_str, quad etc are now covered.
+			return fmt.Errorf("failed to load policy: %w", err)
+		}
+
+		// 5. Inject Data (JSON)
 		if dataPath != "" {
 			var data any
 			if err := json.Unmarshal(dataBytes, &data); err != nil {

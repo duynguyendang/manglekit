@@ -30,6 +30,19 @@ func ParseGraphFile(path string) ([]Triple, error) {
 	}
 }
 
+// GetPredicates extracts unique predicates from a slice of triples.
+func GetPredicates(triples []Triple) []string {
+	seen := make(map[string]bool)
+	var preds []string
+	for _, t := range triples {
+		if !seen[t.Predicate] {
+			seen[t.Predicate] = true
+			preds = append(preds, t.Predicate)
+		}
+	}
+	return preds
+}
+
 // parseNQuads parses N-Quads/N-Triples using regex.
 func parseNQuads(path string) ([]Triple, error) {
 	f, err := os.Open(path)
@@ -43,13 +56,6 @@ func parseNQuads(path string) ([]Triple, error) {
 
 	// Regex: Capture Subject (URI/BNode), Predicate (URI), Object (URI/BNode/Literal)
 	// Simplified: S P O .
-	// ^\s*(<[^>]+>|_:[^\s]+)\s+(<[^>]+>)\s+(.*)\s+\.
-	// Note: N-Quads has optional Graph G. We ignore G for now.
-	// Actually, matching O is tricky because of literals with spaces.
-	// But N-Quads usually escape inner quotes.
-	// Let's use a simpler heuristic of splitting by space but respecting quotes?
-	// Or stick to the regex we used for Schema Inductor but expand to capture S and O.
-
 	// <subject> <predicate> <object> .
 	re := regexp.MustCompile(`^\s*(<[^>]+>|_:[^\s]+)\s+(<[^>]+>)\s+(.*)\s+\.`)
 
