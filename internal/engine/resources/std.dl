@@ -43,3 +43,6 @@ Decl config(Entity, Key, Value).
 Decl attempt(N).            % Current retry count (0, 1, 2...).
 Decl meta(Key, Value).      % Envelope metadata (e.g., user_id, session_id).
 Decl label(Tag).            % Security taint labels (e.g., "pii", "unsafe").
+
+% Telemetry Predicate (Arity 2: Entity, RuleID)
+Decl violation_rule(Entity, RuleID).
