@@ -8,6 +8,7 @@ import (
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/gen"
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/inspect"
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/kg"
+	"github.com/duynguyendang/manglekit/cmd/mkit/commands/serve"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
@@ -36,5 +37,6 @@ func main() {
 	inspect.AddCommands(rootCmd)
 	kg.AddCommands(rootCmd)
 	eval.AddCommands(rootCmd)
+	serve.AddCommands(rootCmd)
 	Execute()
 }
