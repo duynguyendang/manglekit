@@ -72,7 +72,14 @@ type SQLGenerator struct{}
 
 func (a *SQLGenerator) Execute(ctx context.Context, env core.Envelope) (core.Envelope, error) {
 	// Check previous feedback
-	feedback := env.Metadata[core.KeyPrevFeedback]
+	feedback := ""
+	if v, ok := env.Metadata[core.KeyPrevFeedback]; ok {
+		if s, ok := v.(string); ok {
+			feedback = s
+		} else {
+			feedback = fmt.Sprintf("%v", v)
+		}
+	}
 
 	sql := "SELECT * FROM users; DROP TABLE users;" // Default bad
 	if strings.Contains(feedback, "Do not use DROP") {

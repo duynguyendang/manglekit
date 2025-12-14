@@ -23,7 +23,7 @@ type AnalysisResult struct {
 // IntentExtractorAction is the "Perception Layer" (Right Brain).
 // It uses Genkit (LLM) to convert unstructured text -> structured intent.
 type IntentExtractorAction struct {
-	llm sdk.TextGenerator
+	llm core.TextGenerator
 }
 
 func (a *IntentExtractorAction) Metadata() core.ActionMetadata {

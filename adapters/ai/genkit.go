@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/ai"
@@ -31,6 +32,15 @@ func NewGenkitAdapter(model ai.Model, gk *genkit.Genkit) core.TextGenerator {
 
 // Complete generates text using the underlying Genkit model.
 func (g *genkitAdapter) Complete(ctx context.Context, prompt string) (string, error) {
+	resp, err := g.Generate(ctx, prompt)
+	if err != nil {
+		return "", err
+	}
+	return resp.Text, nil
+}
+
+// Generate implements the core.TextGenerator interface using Genkit.
+func (g *genkitAdapter) Generate(ctx context.Context, prompt string, opts ...core.GenerateOption) (*core.LLMResponse, error) {
 	var messages []*ai.Message
 
 	// Dynamic Prompt Configuration
@@ -67,8 +77,26 @@ func (g *genkitAdapter) Complete(ctx context.Context, prompt string) (string, er
 
 	resp, err := g.model.Generate(ctx, req, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return resp.Text(), nil
+	// Extract token usage if available
+	usage := make(map[string]int)
+	if resp.Usage != nil {
+		usage["prompt"] = int(resp.Usage.InputTokens)
+		usage["completion"] = int(resp.Usage.OutputTokens)
+		usage["total"] = int(resp.Usage.TotalTokens)
+	}
+
+	return &core.LLMResponse{
+		Text:  resp.Text(),
+		Usage: usage,
+	}, nil
+}
+
+// Stream implements the core.TextGenerator interface.
+// Currently returns error as streaming is not fully adapted here.
+func (g *genkitAdapter) Stream(ctx context.Context, prompt string) (<-chan string, error) {
+	// Simple non-streaming fallback or error
+	return nil, fmt.Errorf("streaming not implemented in genkit adapter yet")
 }

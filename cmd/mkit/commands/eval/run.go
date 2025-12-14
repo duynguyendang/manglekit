@@ -65,7 +65,7 @@ var EvalCmd = &cobra.Command{
 				schemaBlock := strings.Join(decls, "\n")
 
 				// Load Declarations BEFORE Policy
-				if err := e.LoadPolicy(schemaBlock); err != nil {
+				if err := e.LoadPolicy(cmd.Context(), schemaBlock); err != nil {
 					return fmt.Errorf("failed to inject schema declarations: %w", err)
 				}
 				fmt.Printf("Injected %d schema declarations.\n", len(preds))
@@ -81,7 +81,7 @@ var EvalCmd = &cobra.Command{
 
 		// 4. Load Policy (User Policy)
 		// Now that Decls are present (if any), loading the policy should succeed.
-		if err := e.LoadPolicy(string(policyBytes)); err != nil {
+		if err := e.LoadPolicy(cmd.Context(), string(policyBytes)); err != nil {
 			// This might still error if the user uses non-standard predicates without declaring them,
 			// but json_str, quad etc are now covered.
 			return fmt.Errorf("failed to load policy: %w", err)

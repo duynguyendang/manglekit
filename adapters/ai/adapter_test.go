@@ -21,6 +21,17 @@ func (m *mockTextGenerator) Complete(ctx context.Context, prompt string) (string
 	return m.response, nil
 }
 
+func (m *mockTextGenerator) Generate(ctx context.Context, prompt string, opts ...core.GenerateOption) (*core.LLMResponse, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &core.LLMResponse{Text: m.response}, nil
+}
+
+func (m *mockTextGenerator) Stream(ctx context.Context, prompt string) (<-chan string, error) {
+	return nil, nil
+}
+
 func TestLLMAction_Execute_Success(t *testing.T) {
 	generator := &mockTextGenerator{response: "Generated response"}
 	action, err := NewLLMAction("test-llm", generator)

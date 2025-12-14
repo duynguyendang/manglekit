@@ -22,7 +22,7 @@ type BudgetResponse struct {
 
 // BudgetAction wraps the generator to provide a concrete Manglekit Action.
 type BudgetAction struct {
-	gen sdk.TextGenerator
+	gen core.TextGenerator
 }
 
 func (a *BudgetAction) Execute(ctx context.Context, env core.Envelope) (core.Envelope, error) {
@@ -30,7 +30,12 @@ func (a *BudgetAction) Execute(ctx context.Context, env core.Envelope) (core.Env
 
 	// Transfer Metadata (Feedback) to Context Facts so GenerateStruct can find it
 	if feedback, ok := env.Metadata["mangle_feedback"]; ok {
-		ctx = sdk.WithFact(ctx, "mangle_feedback", feedback)
+		// Ensure string type for WithFact
+		if s, ok := feedback.(string); ok {
+			ctx = sdk.WithFact(ctx, "mangle_feedback", s)
+		} else {
+			ctx = sdk.WithFact(ctx, "mangle_feedback", fmt.Sprintf("%v", feedback))
+		}
 	}
 
 	// PROMPT ENGINEERING:

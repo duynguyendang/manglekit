@@ -48,7 +48,17 @@ func main() {
 	employeeFacts := []string{fmt.Sprintf("request_role(%q)", "employee")}
 
 	// Execute Query: result(Status)
-	results, err := client.Engine().Query(ctx, employeeFacts, "result(Status)")
+	// We need to cast Evaluator to Queryable interface locally
+	type Queryable interface {
+		Query(ctx context.Context, facts []string, queryStr string) ([]map[string]string, error)
+	}
+
+	eng, ok := client.Engine().(Queryable)
+	if !ok {
+		log.Fatalf("Engine does not support Query")
+	}
+
+	results, err := eng.Query(ctx, employeeFacts, "result(Status)")
 	if err != nil {
 		log.Fatalf("Query failed: %v", err)
 	}
@@ -62,7 +72,7 @@ func main() {
 	executiveFacts := []string{fmt.Sprintf("request_role(%q)", "executive")}
 
 	// Execute Query: result(Status)
-	resultsExec, err := client.Engine().Query(ctx, executiveFacts, "result(Status)")
+	resultsExec, err := eng.Query(ctx, executiveFacts, "result(Status)")
 	if err != nil {
 		log.Fatalf("Query failed: %v", err)
 	}

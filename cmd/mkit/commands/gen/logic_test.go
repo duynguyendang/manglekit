@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // MockGenerator captures the prompt and returns a dummy response
@@ -15,17 +15,20 @@ type MockGenerator struct {
 
 func (m *MockGenerator) Complete(ctx context.Context, prompt string) (string, error) {
 	m.CapturedPrompt = prompt
-	// Return a valid JSON response with VALID Datalog.
-	// We must declare 'input' or use a dummy fact if we use it,
-	// OR just use standard library predicates which are pre-declared.
-	// `deny` is declared in ValidatePolicySyntax.
-	// Let's use a trivial valid rule: "deny(Source, Reason) :- json_bool(Source, "foo", "bar")."
-	// (json_bool is in stdlib).
 	return `{"datalog_content": "deny(S, \"test\") :- json_bool(S, \"foo\", \"bar\").", "explanation": "test"}`, nil
 }
 
-// Ensure MockGenerator satisfies sdk.TextGenerator
-var _ sdk.TextGenerator = &MockGenerator{}
+func (m *MockGenerator) Generate(ctx context.Context, prompt string, opts ...core.GenerateOption) (*core.LLMResponse, error) {
+	m.CapturedPrompt = prompt
+	return &core.LLMResponse{Text: `{"datalog_content": "deny(S, \"test\") :- json_bool(S, \"foo\", \"bar\").", "explanation": "test"}`}, nil
+}
+
+func (m *MockGenerator) Stream(ctx context.Context, prompt string) (<-chan string, error) {
+	return nil, nil
+}
+
+// Ensure MockGenerator satisfies core.TextGenerator
+var _ core.TextGenerator = &MockGenerator{}
 
 func TestGenerateWithFeedback_PromptConstruction(t *testing.T) {
 	mockGen := &MockGenerator{}

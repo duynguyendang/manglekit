@@ -8,9 +8,9 @@ import (
 
 	"github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/gen/inductor"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/duynguyendang/manglekit/internal/engine/resources"
-	"github.com/duynguyendang/manglekit/sdk"
 )
 
 // GeneratedPolicy represents the structured response from the LLM.
@@ -38,7 +38,7 @@ func ValidatePolicySyntax(datalog, schemaDeclarations string) error {
 }
 
 // GenerateWithFeedback orchestrates the Teacher-Student protocol.
-func GenerateWithFeedback(ctx context.Context, gen sdk.TextGenerator, userReq string, domainVocab []string, schema *inductor.SchemaHint, iclContent string) (*GeneratedPolicy, error) {
+func GenerateWithFeedback(ctx context.Context, gen core.TextGenerator, userReq string, domainVocab []string, schema *inductor.SchemaHint, iclContent string) (*GeneratedPolicy, error) {
 	// 1. Construct System Prompt
 	factsList := ""
 	for _, f := range domainVocab {

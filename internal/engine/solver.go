@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -141,7 +142,7 @@ func (e *PolicyEngine) LoadFacts(facts []string) error {
 	return e.runtime.LoadFacts(facts)
 }
 
-// RegisterActionMetadata injects metadata about a registered action into the Datalog runtime.
+// RegisterAction injects metadata about a registered action into the Datalog runtime.
 // It generates facts that describe the action's interface, enabling the Planner to reason about it.
 //
 // Generated Facts:
@@ -154,7 +155,7 @@ func (e *PolicyEngine) LoadFacts(facts []string) error {
 //
 // Returns:
 //   - An error if fact loading fails.
-func (e *PolicyEngine) RegisterActionMetadata(meta core.ActionMetadata) error {
+func (e *PolicyEngine) RegisterAction(meta core.ActionMetadata) error {
 	var facts []string
 	safeName := escapeString(meta.Name)
 
@@ -175,11 +176,12 @@ func (e *PolicyEngine) RegisterActionMetadata(meta core.ActionMetadata) error {
 // This decouples the engine from file I/O.
 //
 // Parameters:
+//   - ctx: The execution context (unused in current implementation but required by interface).
 //   - policy: The Datalog rules as a string.
 //
 // Returns:
 //   - An error if parsing or loading fails.
-func (e *PolicyEngine) LoadPolicy(policy string) error {
+func (e *PolicyEngine) LoadPolicy(ctx context.Context, policy string) error {
 	if policy == "" {
 		return nil
 	}
@@ -195,6 +197,26 @@ func (e *PolicyEngine) LoadPolicy(policy string) error {
 	}
 
 	return nil
+}
+
+// Assess implements the core.Evaluator interface.
+// It performs a high-level assessment of the input, mapping Authorize logic to a Decision.
+func (e *PolicyEngine) Assess(ctx context.Context, input core.Envelope) (core.Decision, error) {
+	// Simple mapping: use empty metadata for generic assessment
+	err := e.Authorize(ctx, core.ActionMetadata{}, input)
+	if err != nil {
+		// If authorization fails, it's a DENY
+		var alignErr *core.AlignmentError
+		if errors.As(err, &alignErr) {
+			return core.Decision{
+				Outcome: core.DecisionDeny,
+				Reasons: []string{alignErr.Message},
+				Meta:    map[string]string{"rule_id": alignErr.RuleID},
+			}, nil
+		}
+		return core.Decision{Outcome: core.DecisionDeny, Reasons: []string{err.Error()}}, err
+	}
+	return core.Decision{Outcome: core.DecisionAllow}, nil
 }
 
 // GetActionConfig queries the engine for dynamic configuration parameters.
@@ -239,8 +261,12 @@ func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope)
 
 	// Inject Metadata facts: meta(Key, Value) and attempt(N)
 	for k, v := range input.Metadata {
+		// Ensure k is string
 		safeK := escapeString(k)
-		safeV := escapeString(v)
+		// Ensure v is string or convertible to string
+		vStr := fmt.Sprintf("%v", v)
+		safeV := escapeString(vStr)
+
 		// meta("key", "val")
 		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
 		if atom, err := parse.Atom(metaFact); err == nil {
@@ -249,7 +275,7 @@ func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope)
 
 		// attempt(N) from retry_count
 		if k == "retry_count" {
-			attemptFact := fmt.Sprintf("attempt(%s)", v)
+			attemptFact := fmt.Sprintf("attempt(%s)", vStr)
 			if atom, err := parse.Atom(attemptFact); err == nil {
 				facts = append(facts, atom)
 			}
@@ -373,7 +399,8 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 	// Inject Metadata facts: meta(Key, Value) and attempt(N)
 	for k, v := range input.Metadata {
 		safeK := escapeString(k)
-		safeV := escapeString(v)
+		vStr := fmt.Sprintf("%v", v)
+		safeV := escapeString(vStr)
 		// meta("key", "val")
 		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
 		if atom, err := parse.Atom(metaFact); err == nil {
@@ -382,7 +409,7 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 
 		// attempt(N) from retry_count
 		if k == "retry_count" {
-			attemptFact := fmt.Sprintf("attempt(%s)", v)
+			attemptFact := fmt.Sprintf("attempt(%s)", vStr)
 			if atom, err := parse.Atom(attemptFact); err == nil {
 				facts = append(facts, atom)
 			}
@@ -518,7 +545,8 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 	// Inject Metadata facts: meta(Key, Value) and attempt(N)
 	for k, v := range output.Metadata {
 		safeK := escapeString(k)
-		safeV := escapeString(v)
+		vStr := fmt.Sprintf("%v", v)
+		safeV := escapeString(vStr)
 		// meta("key", "val")
 		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
 		if atom, err := parse.Atom(metaFact); err == nil {
@@ -618,7 +646,8 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 	// Inject Metadata facts: meta(Key, Value) and attempt(N)
 	for k, v := range input.Metadata {
 		safeK := escapeString(k)
-		safeV := escapeString(v)
+		vStr := fmt.Sprintf("%v", v)
+		safeV := escapeString(vStr)
 		// meta("key", "val")
 		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
 		if atom, err := parse.Atom(metaFact); err == nil {
@@ -627,7 +656,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 
 		// attempt(N) from retry_count
 		if k == "retry_count" {
-			attemptFact := fmt.Sprintf("attempt(%s)", v)
+			attemptFact := fmt.Sprintf("attempt(%s)", vStr)
 			if atom, err := parse.Atom(attemptFact); err == nil {
 				facts = append(facts, atom)
 			}
