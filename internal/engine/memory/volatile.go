@@ -11,11 +11,11 @@ import (
 // It is used for ephemeral storage that does not persist beyond the process or instance.
 type VolatileStore struct {
 	mu   sync.RWMutex
-	data map[string][]core.ChatMessage
+	data map[string][]core.Message
 }
 
 // Read retrieves the chat history for a given session.
-func (s *VolatileStore) Read(ctx context.Context, sessionID string) ([]core.ChatMessage, error) {
+func (s *VolatileStore) Read(ctx context.Context, sessionID string) ([]core.Message, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -27,21 +27,21 @@ func (s *VolatileStore) Read(ctx context.Context, sessionID string) ([]core.Chat
 	if !ok {
 		return nil, nil
 	}
-	dst := make([]core.ChatMessage, len(src))
+	dst := make([]core.Message, len(src))
 	copy(dst, src)
 	return dst, nil
 }
 
 // Write saves the chat history for a given session.
-func (s *VolatileStore) Write(ctx context.Context, sessionID string, msgs []core.ChatMessage) error {
+func (s *VolatileStore) Write(ctx context.Context, sessionID string, msgs []core.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.data == nil {
-		s.data = make(map[string][]core.ChatMessage)
+		s.data = make(map[string][]core.Message)
 	}
 
-	dst := make([]core.ChatMessage, len(msgs))
+	dst := make([]core.Message, len(msgs))
 	copy(dst, msgs)
 	s.data[sessionID] = dst
 	return nil

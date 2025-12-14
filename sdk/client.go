@@ -28,7 +28,7 @@ const (
 // Applications should create a single Client instance and reuse it.
 type Client struct {
 	// engine is the internal Policy Engine responsible for Datalog evaluation.
-	engine *engine.PolicyEngine
+	engine core.Evaluator
 	// tracer is the Manglekit core.Tracer wrapper.
 	tracer core.Tracer
 	// otelTracer is the raw OpenTelemetry tracer instance.
@@ -84,7 +84,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to read blueprint file: %w", err)
 		}
-		if err := c.engine.LoadPolicy(string(content)); err != nil {
+		if err := c.engine.LoadPolicy(ctx, string(content)); err != nil {
 			return nil, err
 		}
 	}
@@ -132,7 +132,7 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 		if err != nil {
 			return nil, fmt.Errorf("failed to read policy file %q: %w", cfg.Policy.Path, err)
 		}
-		if err := c.engine.LoadPolicy(string(content)); err != nil {
+		if err := c.engine.LoadPolicy(ctx, string(content)); err != nil {
 			return nil, fmt.Errorf("failed to load policy from %q: %w", cfg.Policy.Path, err)
 		}
 	}
@@ -204,6 +204,23 @@ func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientO
 		return nil, err
 	}
 
+	// 1. Load Actions from Config
+	for name, actCfg := range cfg.Actions {
+		action, err := NewActionFromConfig(name, actCfg)
+		if err != nil {
+			// Log warning but don't fail entire client load? Or fail?
+			// Config usually implies "desired state", so failure is critical.
+			c.logger.Warn("failed to load action from config", "name", name, "error", err)
+			continue
+		}
+		// Register it (Metadata Name might need update if factory didn't set it)
+		c.RegisterAction(name, action)
+	}
+
+	// 2. Load Engine (If config specifies policy path)
+	// Handled in NewClientWithConfig already, but if we needed specific re-init:
+	// if cfg.Policy.Path != "" { ... }
+
 	// Load MCP Actions
 	if len(cfg.MCP) > 0 {
 		for _, mcpCfg := range cfg.MCP {
@@ -244,7 +261,7 @@ func (c *Client) Supervise(action core.Action) core.Action {
 	return supervisor.NewSupervisedAction(action, c.engine, c.failureMode)
 }
 
-func (c *Client) Engine() *engine.PolicyEngine {
+func (c *Client) Engine() core.Evaluator {
 	return c.engine
 }
 
@@ -288,7 +305,7 @@ func NewDefault() (*Client, error) {
 func (c *Client) RegisterAction(name string, action core.Action) {
 	c.registry[name] = action
 	if c.engine != nil {
-		if err := c.engine.RegisterActionMetadata(action.Metadata()); err != nil {
+		if err := c.engine.RegisterAction(action.Metadata()); err != nil {
 			c.logger.Warn("failed to register action metadata to engine", "action", name, "error", err)
 		}
 	}

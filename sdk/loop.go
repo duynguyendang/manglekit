@@ -74,8 +74,8 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 		decision := result.Metadata[core.KeyDecision]
 		if decision == core.DecisionRoute {
 			// Update flow for next loop
-			next := result.Metadata[core.KeyNextStep]
-			if next == "" {
+			next, ok := result.Metadata[core.KeyNextStep].(string)
+			if !ok || next == "" {
 				return core.Envelope{}, fmt.Errorf("route decision missing next_step")
 			}
 
@@ -180,7 +180,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		userContent := safelyStringify(payload)
 		assistContent := safelyStringify(result.Payload)
 
-		newExchange := []core.ChatMessage{
+		newExchange := []core.Message{
 			{Role: "user", Content: userContent},
 			{Role: "assistant", Content: assistContent},
 		}

@@ -11,13 +11,22 @@ type Action interface {
 	Metadata() ActionMetadata
 }
 
+// GenerateOption is a functional option for text generation.
+type GenerateOption func(o any)
+
+// LLMResponse contains the generated text and token usage metadata.
+type LLMResponse struct {
+	Text  string
+	Usage map[string]int
+}
+
 // TextGenerator abstracts the LLM.
 type TextGenerator interface {
 	// Complete generates text from a prompt.
 	Complete(ctx context.Context, prompt string) (string, error)
 
 	// Generate generates text with options.
-	Generate(ctx context.Context, prompt string, opts ...any) (string, error)
+	Generate(ctx context.Context, prompt string, opts ...GenerateOption) (*LLMResponse, error)
 
 	// Stream generates a stream of text.
 	Stream(ctx context.Context, prompt string) (<-chan string, error)

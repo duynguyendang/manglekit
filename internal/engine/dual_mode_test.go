@@ -33,7 +33,7 @@ func TestDualModeInput(t *testing.T) {
 		f.Close()
 
 		// Load raw policy string instead of from file
-		err = e.LoadPolicy(policy)
+		err = e.LoadPolicy(context.Background(), policy)
 		require.NoError(t, err)
 
 		env := core.NewEnvelope(User{Age: 18})
@@ -57,7 +57,7 @@ func TestDualModeInput(t *testing.T) {
 			json_num(U, "age", 20).
 		`
 		// Load raw policy string instead of from file
-		err := e.LoadPolicy(policy)
+		err := e.LoadPolicy(context.Background(), policy)
 		require.NoError(t, err)
 
 		// Input: JSON map

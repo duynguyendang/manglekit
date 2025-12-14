@@ -47,6 +47,32 @@ func (o *OTelSpan) Error(err error) {
 	o.span.RecordError(err)
 }
 
+// RecordError records an error in the span.
+// This implements the core.Span interface.
+func (o *OTelSpan) RecordError(err error) {
+	o.span.RecordError(err)
+}
+
+// SetStatus sets the status of the span.
+func (o *OTelSpan) SetStatus(code string, msg string) {
+	// Map string code to OTel code if needed, but core.Span uses strings for flexibility
+	// For OTel, we typically use codes.Error or codes.Ok
+	if code == "error" || code == "ERROR" {
+		o.span.SetStatus(codes.Error, msg)
+	} else if code == "ok" || code == "OK" {
+		o.span.SetStatus(codes.Ok, msg)
+	} else {
+		o.span.SetStatus(codes.Unset, msg)
+	}
+}
+
+// SetAttributes sets multiple attributes.
+func (o *OTelSpan) SetAttributes(attributes map[string]any) {
+	for k, v := range attributes {
+		o.SetAttr(k, v)
+	}
+}
+
 // SetAttr sets a key-value attribute on the span.
 // It converts interface{} values to appropriate OTel attribute types.
 func (o *OTelSpan) SetAttr(key string, value interface{}) {

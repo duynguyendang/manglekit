@@ -58,7 +58,8 @@ func (a *LLMAction) Execute(ctx context.Context, input core.Envelope) (core.Enve
 	for k, v := range input.Metadata {
 		// Justification: We specifically look for "prompt." prefix injected by Supervisor
 		if len(k) > len(core.PrefixPromptConfig) && k[:len(core.PrefixPromptConfig)] == core.PrefixPromptConfig {
-			ctx = core.WithFact(ctx, k, v)
+			vStr := fmt.Sprintf("%v", v)
+			ctx = core.WithFact(ctx, k, vStr)
 		}
 	}
 

@@ -99,7 +99,7 @@ type ExecutionParams struct {
 
 	// State fields (Managed by ExecuteSingleStep/Loop)
 	Store           core.MemoryStore   `json:"-"` // Internal store reference
-	CurrentHistory  []core.ChatMessage `json:"history,omitempty"`
+	CurrentHistory  []core.Message     `json:"history,omitempty"`
 	FeedbackHistory []string           `json:"feedback_history,omitempty"`
 	LastFeedback    string             `json:"last_feedback,omitempty"`
 	RetryCount      int                `json:"retry_count,omitempty"`

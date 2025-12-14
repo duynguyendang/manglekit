@@ -13,7 +13,7 @@ func TestVolatileStore(t *testing.T) {
 	ctx := context.Background()
 
 	// Write
-	msgs := []core.ChatMessage{{Role: "user", Content: "hello"}}
+	msgs := []core.Message{{Role: "user", Content: "hello"}}
 	if err := store.Write(ctx, "session1", msgs); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}

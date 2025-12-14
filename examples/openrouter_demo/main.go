@@ -9,7 +9,6 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk"
 	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/compat_oai/openai"
@@ -19,7 +18,7 @@ import (
 
 // SimpleChatAction wraps the generator to provide a concrete Manglekit Action.
 type SimpleChatAction struct {
-	gen sdk.TextGenerator
+	gen core.TextGenerator
 }
 
 func (a *SimpleChatAction) Execute(ctx context.Context, env core.Envelope) (core.Envelope, error) {
