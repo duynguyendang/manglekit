@@ -12,8 +12,23 @@ type SlogAdapter struct {
 }
 
 func NewDefault() core.Logger {
+	return New("info")
+}
+
+func New(level string) core.Logger {
+	var l slog.Level
+	switch level {
+	case "debug":
+		l = slog.LevelDebug
+	case "warn":
+		l = slog.LevelWarn
+	case "error":
+		l = slog.LevelError
+	default:
+		l = slog.LevelInfo
+	}
 	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: l,
 	})
 	return &SlogAdapter{
 		logger: slog.New(handler),
