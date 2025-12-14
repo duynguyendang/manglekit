@@ -93,7 +93,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 }
 
 // NewClientWithConfig initializes a Client using a loaded Config object.
-// This is useful when configuration is deserialized from a file or external source.
+// It performs full wiring: Engine, Policy, Knowledge, and Actions.
 //
 // Parameters:
 //   - ctx: The context.
@@ -103,8 +103,13 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 // Returns:
 //   - A pointer to the Client, or an error.
 func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error) {
-	// Initialize logger (use default for now)
-	log := logger.NewDefault()
+	// Initialize logger
+	var log core.Logger
+	if cfg != nil && cfg.Observability.LogLevel != "" {
+		log = logger.New(cfg.Observability.LogLevel)
+	} else {
+		log = logger.NewDefault()
+	}
 
 	// Create client with loaded configuration
 	c := &Client{
@@ -126,8 +131,12 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 	// Initialize Engine with observability
 	c.engine = engine.NewWithObservability(c.tracer, c.logger)
 
-	// Load policy from the configured path
-	if cfg != nil && cfg.Policy.Path != "" {
+	if cfg == nil {
+		return c, nil
+	}
+
+	// 1. Load Policy
+	if cfg.Policy.Path != "" {
 		content, err := os.ReadFile(cfg.Policy.Path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read policy file %q: %w", cfg.Policy.Path, err)
@@ -137,8 +146,8 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 		}
 	}
 
-	// Load knowledge from the configured path
-	if cfg != nil && cfg.Knowledge.Path != "" {
+	// 2. Load Knowledge
+	if cfg.Knowledge.Path != "" {
 		path := cfg.Knowledge.Path
 		var facts []string
 		var err error
@@ -166,23 +175,50 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 		}
 	}
 
-	// Set failure mode from config
-	if cfg != nil && cfg.FailureMode != "" {
+	// 3. Hydrate Actions
+	if len(cfg.Actions) > 0 {
+		actions, err := HydrateActions(cfg.Actions)
+		if err != nil {
+			return nil, err
+		}
+		for _, action := range actions {
+			// Register it
+			c.RegisterAction(action.Metadata().Name, action)
+		}
+	}
+
+	// 4. Load MCP Actions
+	if len(cfg.MCP) > 0 {
+		for _, mcpCfg := range cfg.MCP {
+			loader := mcpAdapter.NewLoader(mcpCfg).WithLogger(c.logger)
+			actions, err := loader.Load(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("critical tool '%s' failed to load: %w", mcpCfg.Name, err)
+			}
+
+			for _, action := range actions {
+				safeAction := c.Supervise(action)
+				c.RegisterAction(safeAction.Metadata().Name, safeAction)
+				c.logger.Info("Discovered MCP Tool", "name", safeAction.Metadata().Name)
+			}
+		}
+	}
+
+	// Set failure mode
+	if cfg.FailureMode != "" {
 		c.failureMode = cfg.FailureMode
 	}
 
 	// Log configuration loaded successfully
-	if cfg != nil {
-		c.logger.Info("Manglekit client initialized with config",
-			"service_name", cfg.Observability.ServiceName,
-			"observability_enabled", cfg.Observability.Enabled,
-			"failure_mode", c.failureMode)
-	}
+	c.logger.Info("Manglekit client initialized with config",
+		"service_name", cfg.Observability.ServiceName,
+		"observability_enabled", cfg.Observability.Enabled,
+		"failure_mode", c.failureMode)
 
 	return c, nil
 }
 
-// NewClientFromConfig initializes a Client by loading configuration from a YAML file.
+// NewClientFromFile initializes a Client by loading configuration from a YAML file.
 // It supports environment variable expansion in the config file.
 //
 // Parameters:
@@ -192,57 +228,19 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 //
 // Returns:
 //   - A pointer to the Client, or an error.
-func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientOption) (*Client, error) {
+func NewClientFromFile(ctx context.Context, configPath string, opts ...ClientOption) (*Client, error) {
 	// Load configuration from file
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	c, err := NewClientWithConfig(ctx, cfg, opts...)
-	if err != nil {
-		return nil, err
-	}
+	return NewClientWithConfig(ctx, cfg, opts...)
+}
 
-	// 1. Load Actions from Config
-	for name, actCfg := range cfg.Actions {
-		action, err := NewActionFromConfig(name, actCfg)
-		if err != nil {
-			// Log warning but don't fail entire client load? Or fail?
-			// Config usually implies "desired state", so failure is critical.
-			c.logger.Warn("failed to load action from config", "name", name, "error", err)
-			continue
-		}
-		// Register it (Metadata Name might need update if factory didn't set it)
-		c.RegisterAction(name, action)
-	}
-
-	// 2. Load Engine (If config specifies policy path)
-	// Handled in NewClientWithConfig already, but if we needed specific re-init:
-	// if cfg.Policy.Path != "" { ... }
-
-	// Load MCP Actions
-	if len(cfg.MCP) > 0 {
-		for _, mcpCfg := range cfg.MCP {
-			loader := mcpAdapter.NewLoader(mcpCfg).WithLogger(c.logger)
-			actions, err := loader.Load(ctx)
-			if err != nil {
-				// Because loader.Load now handles Soft Failure internally (returning nil error),
-				// any error returned here implies FailOnStartup=true or a critical loader error.
-				return nil, fmt.Errorf("critical tool '%s' failed to load: %w", mcpCfg.Name, err)
-			}
-
-			for _, action := range actions {
-				// Supervise It
-				safeAction := c.Supervise(action)
-				// Register It
-				c.RegisterAction(safeAction.Metadata().Name, safeAction)
-				c.logger.Info("Discovered MCP Tool", "name", safeAction.Metadata().Name)
-			}
-		}
-	}
-
-	return c, nil
+// NewClientFromConfig is a wrapper for NewClientWithConfig to match user requirements.
+func NewClientFromConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error) {
+	return NewClientWithConfig(ctx, cfg, opts...)
 }
 
 // Supervise wraps a raw core.Action in a SupervisedAction.
