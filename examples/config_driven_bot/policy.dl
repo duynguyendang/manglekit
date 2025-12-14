@@ -1,0 +1,2 @@
+% Route request to chat_agent using standard v2.0 vocabulary (route/1)
+route("chat_agent").

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestNewClientFromConfig(t *testing.T) {
+func TestNewClientFromFile(t *testing.T) {
 	// Create a temporary config file that does not require loading a policy
 	// (policy.path is empty, so no policy file loading is attempted)
 	configContent := `
@@ -27,9 +27,9 @@ observability:
 	}
 	configFile.Close()
 
-	// Test NewClientFromConfig
+	// Test NewClientFromFile
 	ctx := context.Background()
-	client, err := NewClientFromConfig(ctx, configFile.Name())
+	client, err := NewClientFromFile(ctx, configFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to create client from config: %v", err)
 	}
@@ -52,7 +52,7 @@ observability:
 	}
 }
 
-func TestNewClientFromConfig_WithEnvironmentVariables(t *testing.T) {
+func TestNewClientFromFile_WithEnvironmentVariables(t *testing.T) {
 	// Set environment variables
 	os.Setenv("SERVICE_NAME", "env-test-service")
 	os.Setenv("LOG_LEVEL", "debug")
@@ -80,9 +80,9 @@ observability:
 	}
 	configFile.Close()
 
-	// Test NewClientFromConfig with environment variable expansion
+	// Test NewClientFromFile with environment variable expansion
 	ctx := context.Background()
-	client, err := NewClientFromConfig(ctx, configFile.Name())
+	client, err := NewClientFromFile(ctx, configFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to create client from config: %v", err)
 	}
@@ -93,15 +93,15 @@ observability:
 	}
 }
 
-func TestNewClientFromConfig_FileNotFound(t *testing.T) {
+func TestNewClientFromFile_FileNotFound(t *testing.T) {
 	ctx := context.Background()
-	_, err := NewClientFromConfig(ctx, "/nonexistent/path/to/config.yaml")
+	_, err := NewClientFromFile(ctx, "/nonexistent/path/to/config.yaml")
 	if err == nil {
 		t.Error("Expected error for non-existent config file, got nil")
 	}
 }
 
-func TestNewClientFromConfig_InvalidPolicyPath(t *testing.T) {
+func TestNewClientFromFile_InvalidPolicyPath(t *testing.T) {
 	// Create a temporary config file with invalid policy path
 	configContent := `
 policy:
@@ -123,9 +123,9 @@ observability:
 	}
 	configFile.Close()
 
-	// Test NewClientFromConfig with invalid policy path
+	// Test NewClientFromFile with invalid policy path
 	ctx := context.Background()
-	_, err = NewClientFromConfig(ctx, configFile.Name())
+	_, err = NewClientFromFile(ctx, configFile.Name())
 	if err == nil {
 		t.Error("Expected error for invalid policy path, got nil")
 	}
