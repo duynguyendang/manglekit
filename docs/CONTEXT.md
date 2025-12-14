@@ -2,7 +2,7 @@
 context_type: full_source_dump
 project: manglekit
 language: go
-last_updated: 2025-11-29
+last_updated: 2025-11-30
 scan_mode: exhaustive
 ---
 
@@ -56,8 +56,10 @@ scan_mode: exhaustive
 │       │   │   └── run.go
 │       │   ├── gen
 │       │   │   ├── inductor
+│       │   │   │   ├── graph.go
 │       │   │   │   ├── inductor.go
-│       │   │   │   └── inductor_test.go
+│       │   │   │   ├── inductor_test.go
+│       │   │   │   └── topology_test.go
 │       │   │   ├── logic.go
 │       │   │   ├── logic_test.go
 │       │   │   ├── resources.go
@@ -75,16 +77,16 @@ scan_mode: exhaustive
 │   ├── loader_test.go
 │   └── schema.go
 ├── core # Interfaces & Contracts (The "Kernel")
-│   ├── action.go
-│   ├── constants.go
+│   ├── context_facts.go
 │   ├── context_lineage.go
-│   ├── envelope.go
+│   ├── data.go
 │   ├── errors.go
+│   ├── governance.go
+│   ├── infra.go
 │   ├── logger.go
 │   ├── logger_test.go
-│   ├── memory.go
+│   ├── logic.go
 │   ├── state.go
-│   ├── telemetry.go
 │   ├── tracer.go
 │   └── types.go
 ├── docs # Documentation & Architecture Records
@@ -98,6 +100,7 @@ scan_mode: exhaustive
 │   ├── LOGGING.md
 │   ├── Mangle-quickstart.md
 │   ├── TRACING.md
+│   ├── VOCABULARY.md
 │   └── reports
 │       ├── CONFIG_LOADER_MIGRATION_SUMMARY.md
 │       ├── IMPLEMENTATION_CHECKLIST.md
@@ -110,47 +113,20 @@ scan_mode: exhaustive
 │   ├── AGENTS.md
 │   ├── README.md
 │   ├── chat_chit
-│   │   ├── main.go
-│   │   └── protocol.dl
 │   ├── context_aware_rag
-│   │   ├── blueprint.dl
-│   │   ├── knowledge_base.nq
-│   │   └── main.go
 │   ├── dynamic_pricing
-│   │   ├── inventory.csv
-│   │   ├── main.go
-│   │   └── pricing.dl
 │   ├── extractor_demo
-│   │   └── main.go
 │   ├── fintech_approval
-│   │   ├── credit.dl
-│   │   ├── data.ttl
-│   │   └── main.go
 │   ├── kernel_knowledge_demo
-│   │   └── main.go
 │   ├── lineage_demo
-│   │   └── main.go
 │   ├── openrouter_demo
-│   │   ├── README.md
-│   │   ├── blueprint.dl
-│   │   └── main.go
 │   ├── planner
-│   │   └── main.go
 │   ├── policy-copilot
-│   │   └── main.go
 │   ├── rag_flow
-│   │   └── main.go
 │   ├── semantic_feedback
-│   │   ├── blueprint.dl
-│   │   └── main.go
 │   ├── sre_guardrail
-│   │   ├── main.go
-│   │   └── safety.dl
 │   ├── steering
-│   │   ├── blueprint.dl
-│   │   └── main.go
 │   └── taint_demo
-│       └── main.go
 ├── go.mod
 ├── go.sum
 ├── internal # Internal Implementation Details
@@ -203,7 +179,6 @@ scan_mode: exhaustive
 ├── mangle.yaml
 ├── manglekit.go # Public Facade
 └── sdk # Developer SDK & Steering Loop
-    ├── action_test.go
     ├── client.go
     ├── client_execute.go
     ├── config_loader.go
@@ -211,43 +186,34 @@ scan_mode: exhaustive
     ├── executor.go
     ├── generics.go
     ├── helpers.go
-    ├── integration_test.go
-    ├── interfaces.go
-    ├── loader_ext.go
     ├── loop.go
     ├── options.go
-    ├── options_ext.go
-    ├── planner.go
-    ├── policy_generator.go
-    ├── policy_generator_test.go
-    ├── reflection_test.go
-    ├── tracing.go
-    └── types.go
+    └── policy_generator.go
 ```
 
 #### 3. COMPONENT ANALYSIS (The Logic)
 
 **Engine (`internal/engine`)**
-*   **Key Structs:** `PolicyEngine`, `MangleRuntime`, `PolicyConfig`.
+*   **Key Structs:** `PolicyEngine` (Solver), `MangleRuntime` (Wrapper), `Evaluator` (Single Rule).
 *   **Responsibilities:**
     *   Manages the lifecycle of the Google Mangle Datalog runtime.
     *   Loads policies from strings/files (`Load`, `LoadFromSource`).
     *   Performs `Authorize` (Pre-Check) and `Validate` (Post-Check) using Datalog queries.
-    *   Evaluates `Steering` logic (Correction/Routing).
+    *   Evaluates `Steering` logic (Correction/Routing/Retry).
     *   Handles Reflection (`ToFacts`) and Flattening (`Flatten`) to convert Go structs/JSON to Datalog facts.
     *   Injects security labels as facts for taint tracking.
 
 **SDK (`sdk`)**
-*   **Key Structs:** `Client`, `Runnable[In, Out]`, `ExecutionParams`.
+*   **Key Structs:** `Client`, `Generator` (Policy Copilot), `ExecutionParams`.
 *   **Responsibilities:**
     *   Provides the high-level API for users (`NewClient`, `ExecuteByName`).
     *   Manages the "Steering Loop" (`ExecuteByName` -> `runLoopInternal`) which handles retries, routing, and feedback.
     *   Registers Actions (`RegisterAction`) and routes execution.
     *   Manages Context injection (Logger, Tracer, Facts).
-    *   Implements the Facade pattern via `manglekit` package.
+    *   Implements the "Policy Copilot" (`policy_generator.go`) for LLM-based rule generation.
 
 **Adapters (`adapters`)**
-*   **Key Structs:** `LLMAction`, `MCPAction`, `CircuitBreaker`.
+*   **Key Structs:** `genkitAdapter` (AI), `MCPAction`, `CircuitBreaker`.
 *   **Responsibilities:**
     *   Wraps external capabilities (Genkit, MCP, Functions) into the `core.Action` interface.
     *   Handles protocol translation (e.g., JSON -> Envelope).
@@ -271,6 +237,12 @@ scan_mode: exhaustive
     *   Loads configuration from YAML files with environment variable expansion.
     *   Defines the schema for system configuration.
 
+**CLI (`cmd/mkit`)**
+*   **Key Commands:** `mkit gen rule` (Rule Generation), `mkit inspect`.
+*   **Responsibilities:**
+    *   Provides developer tooling.
+    *   Implements Neuro-Symbolic Feedback Loop for rule generation (`cmd/mkit/commands/gen/logic.go`).
+
 #### 4. CRITICAL PATH & DATA (The Flow)
 
 **Execution Flow (`ExecuteByName`)**
@@ -285,7 +257,7 @@ scan_mode: exhaustive
         *   **Run:** Inner Action executes (e.g., calls LLM).
         *   **Taint:** Propagates labels.
         *   **Validate:** `Engine.Validate` checks `deny(Output)`.
-        *   **Steering:** `Engine.EvaluateSteering` checks `correction/next_step`.
+        *   **Steering:** `Engine.EvaluateSteering` checks `retry(Hint)` or `route(Target)`.
 4.  **Decision Handling:**
     *   **RETRY:** If Steering returns `RETRY` (or `AlignmentError` occurs), Loop increments retry count, sleeps (backoff), and retries with feedback.
     *   **ROUTE:** If Steering returns `ROUTE`, Loop switches current action to `next_step` and continues.
@@ -299,189 +271,89 @@ scan_mode: exhaustive
     *   `value(ID, Field, Value)`: Reflection of payload.
     *   `has_label(ID, Label)`: Taint tags.
     *   `action_operation(ID, OpName)`: Context.
-    *   `correction(ID, Hint)`, `next_step(ID, Target)`: Steering signals.
+    *   `retry(Hint)`, `route(Target)`: Steering signals.
 
 #### 5. SOURCE CODE DUMP
 
-## core/action.go
-```go
-package core
-
-import "context"
-
-// ActionMetadata provides metadata about an action.
-// It is used for routing, observability, and debugging.
-type ActionMetadata struct {
-	// Name is the unique identifier for the action (e.g., "generate-content").
-	Name string
-	// Type describes the category of the action (e.g., "llm", "tool", "rag").
-	Type string
-	// InputContentType specifies the expected input format (Struct or JSON).
-	InputContentType ContentType
-	// InputType is the string name of the Go input type (e.g., "StockReq").
-	InputType string
-	// OutputType is the string name of the Go output type (e.g., "StockRes").
-	OutputType string
-	// IsDynamic indicates if the input type is generic (e.g., map[string]any or JSON).
-	IsDynamic bool
-}
-
-// Action defines the interface for a unit of work in the Manglekit system.
-// Any component that processes data (LLMs, databases, external APIs) must implement this interface.
-type Action interface {
-	// Execute performs the action's logic.
-	//
-	// It accepts a context for cancellation/timeout and an input Envelope containing the data.
-	// It returns a new Envelope containing the result or an error if execution failed.
-	Execute(ctx context.Context, input Envelope) (Envelope, error)
-
-	// Metadata returns the action's metadata, including its name and type.
-	Metadata() ActionMetadata
-}
-```
-
-## core/envelope.go
+## core/types.go
 ```go
 package core
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/google/uuid"
 )
 
-// Envelope struct defines a standard communication structure used across Manglekit.
-// It encapsulates data, metadata, and security context (taint labels) to ensure
-// safe and traceable propagation through the system.
-type Envelope struct {
-	// ID is the unique identifier for this specific data envelope.
-	ID uuid.UUID
-	// Payload is the actual data being transported (e.g., a string, a struct, or a map).
-	Payload any
-	// Metadata stores key-value pairs for control plane signaling (e.g., decision, latency).
-	Metadata map[string]string
-	// SecurityLabels holds taint tags (e.g., "secret", "pii") for information flow control.
-	SecurityLabels []string
-	// Facts holds structured logical facts extracted from the payload (e.g., "topic(billing)").
-	// These are fed directly into the Logic Engine for reasoning.
-	Facts []string
-	// ContentType indicates whether the payload is a Struct or JSON.
-	ContentType ContentType
-}
+// --- CONSTANTS: The Ubiquitous Language ---
 
-// NewEnvelope creates a new envelope with the provided payload.
-// It initializes a new UUID, an empty metadata map, and an empty list of security labels.
-//
-// Parameters:
-//   - payload: The data to be wrapped in the envelope.
-//
-// Returns:
-//   - A new Envelope instance.
-func NewEnvelope(payload any) Envelope {
-	return Envelope{
-		ID:             uuid.New(),
-		Payload:        payload,
-		Metadata:       make(map[string]string),
-		SecurityLabels: []string{},
-		ContentType:    TypeStruct, // Default to Typed Mode
-	}
-}
+// Standard Metadata Keys used for Control Plane signaling.
+const (
+	// Governance & Routing
+	KeyDecision     = "manglekit.decision"   // Values: "ALLOW", "DENY", "RETRY", "ROUTE"
+	KeyFeedback     = "manglekit.feedback"   // Human/LLM readable reason
+	KeyPrevFeedback = "prev_feedback"        // Loopback for retry
+	KeyNextStep     = "manglekit.next_step"  // Next action routing
 
-// SetMeta sets a value in the envelope's metadata map.
-//
-// Parameters:
-//   - k: The metadata key (e.g., core.KeyDecision).
-//   - v: The metadata value.
-func (e *Envelope) SetMeta(k, v string) {
-	if e.Metadata == nil {
-		e.Metadata = make(map[string]string)
-	}
-	e.Metadata[k] = v
-}
+	// Risk & Analysis
+	KeyRiskScore = "manglekit.risk_score" // 0-100
 
-// GetMeta retrieves a value from the envelope's metadata map.
-//
-// Parameters:
-//   - k: The metadata key to retrieve.
-//
-// Returns:
-//   - The value associated with the key, or an empty string if not found.
-func (e *Envelope) GetMeta(k string) {
-	if e.Metadata == nil {
-		return ""
-	}
-	return e.Metadata[k]
-}
+	// Performance & Observability
+	KeyLatencyMs = "manglekit.latency_ms"
+	KeyTraceID   = "manglekit.trace_id"
+	KeyModel     = "manglekit.model"
+	KeyHistory   = "manglekit_history"
 
-// SetFeedback injects the "Teacher's" feedback into metadata
-func (e *Envelope) SetFeedback(msg string) {
-	if e.Metadata == nil {
-		e.Metadata = make(map[string]string)
-	}
-	e.Metadata["manglekit.feedback"] = msg
-}
+	// Configuration
+	PrefixPromptConfig = "prompt."
+)
 
-// GetFeedback retrieves the feedback for the "Student" (AI/Logic)
-func (e *Envelope) GetFeedback() string {
-	if e.Metadata == nil {
-		return ""
-	}
-	return e.Metadata["manglekit.feedback"]
-}
+// Standard Decision Values
+const (
+	DecisionAllow = "ALLOW"
+	DecisionDeny  = "DENY"
+	DecisionRetry = "RETRY"
+	DecisionRoute = "ROUTE"
+)
 
-// AddLabel adds a security label to the envelope if it does not already exist.
-// This is used for taint tracking (e.g., marking data as "secret").
-//
-// Parameters:
-//   - label: The security label string to add.
-func (e *Envelope) AddLabel(label string) {
-	if !e.HasLabel(label) {
-		e.SecurityLabels = append(e.SecurityLabels, label)
-	}
-}
+// Datalog System Constants
+const (
+	EntityInput  = "Req"    // ID for Input Envelope
+	EntityOutput = "Output" // ID for Output Envelope
+)
 
-// HasLabel checks for the existence of a specific security label on the envelope.
-//
-// Parameters:
-//   - label: The security label to check for.
-//
-// Returns:
-//   - true if the label exists, false otherwise.
-func (e *Envelope) HasLabel(label string) bool {
-	for _, l := range e.SecurityLabels {
-		if l == label {
-			return true
-		}
-	}
-	return false
-}
+// Observability & Trace Attributes
+const (
+	// Span Names
+	SpanPreCheck  = "Datalog.PreCheck"
+	SpanPostCheck = "Datalog.PostCheck"
 
-// MergeLabels appends distinct labels from another source (e.g., another Envelope) to this one.
-//
-// Parameters:
-//   - other: A slice of label strings to merge.
-func (e *Envelope) MergeLabels(other []string) {
-	for _, l := range other {
-		e.AddLabel(l)
-	}
-}
+	// Attribute Keys
+	AttrPolicyName   = "policy.name"
+	AttrPolicyType   = "policy.type"
+	AttrDecisionType = "decision.type"
+	AttrOutcome      = "outcome"       // "ALLOWED", "DENIED"
+	AttrLabels       = "mangle.labels" // Taint Propagation
+	AttrActionName   = "action.name"
+	AttrActionType   = "action.type"
 
-// SetHistory serializes a list of chat messages into the envelope's metadata.
-// This is used to persist conversation context across stateless executions.
-//
-// Parameters:
-//   - msgs: The slice of ChatMessage objects to serialize.
-func (e *Envelope) SetHistory(msgs []ChatMessage) {
-	b, err := json.Marshal(msgs)
-	if err == nil {
-		e.SetMeta(KeyHistory, string(b))
-	}
-}
-```
+	// Telemetry specific (legacy/compatibility)
+	AttrPolicyOutcome = "policy.outcome"
+	AttrPolicyReason  = "policy.reason"
+	AttrPolicyTarget  = "policy.target"
+	AttrPolicyRuleID  = "policy.rule_id"
+	AttrPolicyAttempt = "policy.attempt"
+)
 
-## core/types.go
-```go
-package core
+// Outcome Values (for Tracing)
+const (
+	OutcomeAllowed = "ALLOWED"
+	OutcomeDenied  = "DENIED"
+	OutcomeSuccess = "success"
+)
+
+// --- STRUCTS ---
 
 // ContentType defines the nature of the data payload.
 type ContentType string
@@ -496,181 +368,252 @@ const (
 	TypeJSON ContentType = "JSON"
 )
 
+// Envelope: The unified data container.
+type Envelope struct {
+	// ID is the unique identifier for this specific data envelope.
+	ID uuid.UUID `json:"id"`
+	// Payload is the actual data being transported.
+	// Note: Field name preserved as Payload for compatibility, tagged as "data".
+	Payload any `json:"data"`
+	// Metadata stores key-value pairs for control plane signaling.
+	Metadata map[string]any `json:"metadata,omitempty"`
+	// Error stores any error encountered during processing.
+	Error error `json:"error,omitempty"`
+
+	// SecurityLabels holds taint tags (e.g., "secret", "pii") for information flow control.
+	SecurityLabels []string `json:"security_labels,omitempty"`
+	// Facts holds structured logical facts extracted from the payload.
+	Facts []string `json:"facts,omitempty"`
+	// ContentType indicates whether the payload is a Struct or JSON.
+	ContentType ContentType `json:"content_type,omitempty"`
+}
+
+// NewEnvelope creates a new envelope with the provided payload.
+func NewEnvelope(payload any) Envelope {
+	return Envelope{
+		ID:             uuid.New(),
+		Payload:        payload,
+		Metadata:       make(map[string]any),
+		SecurityLabels: []string{},
+		ContentType:    TypeStruct, // Default to Typed Mode
+	}
+}
+
+// SetMeta sets a value in the envelope's metadata map.
+func (e *Envelope) SetMeta(k string, v any) {
+	if e.Metadata == nil {
+		e.Metadata = make(map[string]any)
+	}
+	e.Metadata[k] = v
+}
+
+// GetMeta retrieves a value from the envelope's metadata map as a string.
+// If the value is not a string, it returns an empty string (or simple string representation).
+func (e *Envelope) GetMeta(k string) string {
+	if e.Metadata == nil {
+		return ""
+	}
+	v, ok := e.Metadata[k]
+	if !ok {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+// SetFeedback injects the "Teacher's" feedback into metadata
+func (e *Envelope) SetFeedback(msg string) {
+	e.SetMeta(KeyFeedback, msg)
+}
+
+// GetFeedback retrieves the feedback for the "Student" (AI/Logic)
+func (e *Envelope) GetFeedback() string {
+	return e.GetMeta(KeyFeedback)
+}
+
+// AddLabel adds a security label to the envelope if it does not already exist.
+func (e *Envelope) AddLabel(label string) {
+	if !e.HasLabel(label) {
+		e.SecurityLabels = append(e.SecurityLabels, label)
+	}
+}
+
+// HasLabel checks for the existence of a specific security label on the envelope.
+func (e *Envelope) HasLabel(label string) bool {
+	for _, l := range e.SecurityLabels {
+		if l == label {
+			return true
+		}
+	}
+	return false
+}
+
+// MergeLabels appends distinct labels from another source to this one.
+func (e *Envelope) MergeLabels(other []string) {
+	for _, l := range other {
+		e.AddLabel(l)
+	}
+}
+
+// SetHistory serializes a list of chat messages into the envelope's metadata.
+func (e *Envelope) SetHistory(msgs []Message) {
+	b, err := json.Marshal(msgs)
+	if err == nil {
+		e.SetMeta(KeyHistory, string(b))
+	}
+}
+
+// Decision: Structured result from the Policy Engine.
+type Decision struct {
+	Outcome string            // Matches DecisionAllow, DecisionDeny, etc.
+	Target  string            // Used if Outcome == DecisionRoute
+	Reasons []string          // Explanations
+	Meta    map[string]string // Side-channel data (risk scores, latency budget)
+}
+
+// ConfigEvent: For Hot-Swap mechanisms.
+type ConfigEvent struct {
+	Key     string
+	Content []byte
+	Type    string
+}
+
+// ActionMetadata provides metadata about an action.
+type ActionMetadata struct {
+	// Name is the unique identifier for the action.
+	Name string
+	// Type describes the category of the action.
+	Type string
+	// InputContentType specifies the expected input format.
+	InputContentType ContentType
+	// InputType is the string name of the Go input type.
+	InputType string
+	// OutputType is the string name of the Go output type.
+	OutputType string
+	// IsDynamic indicates if the input type is generic.
+	IsDynamic bool
+}
+
 // Message represents a single message in a conversation flow.
-// It is used for both input queries and system responses in chat-based interactions.
 type Message struct {
-	// Role indicates the sender of the message (e.g., "user", "assistant", "system").
+	// Role indicates the sender of the message.
 	Role string `json:"role"`
 	// Content is the textual body of the message.
 	Content string `json:"content"`
 }
 
 // ConversationHistory represents a sequence of messages in a dialogue.
-// It is often serialized and stored in state or metadata to maintain context.
 type ConversationHistory struct {
 	// Messages is the ordered list of messages in the conversation.
 	Messages []Message `json:"messages"`
 }
 
-// Query represents a structured user request containing text and optional metadata.
+// Query represents a structured user request.
 type Query struct {
-	// Text is the primary natural language query from the user.
-	Text string `json:"text"`
-	// Meta contains additional arbitrary data associated with the query.
+	Text string         `json:"text"`
 	Meta map[string]any `json:"meta,omitempty"`
 }
 
-// Answer represents a structured system response containing text and optional metadata.
+// Answer represents a structured system response.
 type Answer struct {
-	// Text is the primary natural language response generated by the system.
-	Text string `json:"text"`
-	// Meta contains additional arbitrary data associated with the response.
+	Text string         `json:"text"`
 	Meta map[string]any `json:"meta,omitempty"`
 }
 ```
 
-## core/errors.go
+## core/logic.go
 ```go
 package core
 
-import (
-	"errors"
-	"fmt"
-)
+import "context"
 
-var (
-	// ErrAlignment is returned when a blueprint alignment check blocks an action.
-	ErrAlignment = errors.New("alignment error")
-	// ErrSystemError is returned when an unexpected error occurs.
-	ErrSystemError = errors.New("system error")
-)
+// Action defines the interface for a unit of work in the Manglekit system.
+type Action interface {
+	// Execute performs the action's logic.
+	Execute(ctx context.Context, input Envelope) (Envelope, error)
 
-// AlignmentError is a structured error that carries a specific intervention message.
-// It wraps ErrAlignment to ensure standard error matching works.
-type AlignmentError struct {
-	Message string
-	RuleID  string
+	// Metadata returns the action's metadata.
+	Metadata() ActionMetadata
 }
 
-func (e *AlignmentError) Error() string {
-	if e.RuleID != "" {
-		return fmt.Sprintf("[ALIGNMENT INTERVENTION] [%s]: %s", e.RuleID, e.Message)
-	}
-	return fmt.Sprintf("[ALIGNMENT INTERVENTION]: %s", e.Message)
+// GenerateOption is a functional option for text generation.
+type GenerateOption func(o any)
+
+// LLMResponse contains the generated text and token usage metadata.
+type LLMResponse struct {
+	Text  string
+	Usage map[string]int
 }
 
-func (e *AlignmentError) Is(target error) bool {
-	return target == ErrAlignment
+// TextGenerator abstracts the LLM.
+type TextGenerator interface {
+	// Complete generates text from a prompt.
+	Complete(ctx context.Context, prompt string) (string, error)
+
+	// Generate generates text with options.
+	Generate(ctx context.Context, prompt string, opts ...GenerateOption) (*LLMResponse, error)
+
+	// Stream generates a stream of text.
+	Stream(ctx context.Context, prompt string) (<-chan string, error)
 }
 
-func (e *AlignmentError) Unwrap() error {
-	return ErrAlignment
-}
-
-// IsAlignmentError checks if the error is an AlignmentError.
-func IsAlignmentError(err error) bool {
-	return errors.Is(err, ErrAlignment)
+// Extractor converts raw text into structured data.
+type Extractor interface {
+	Extract(ctx context.Context, input string, schema any) error
 }
 ```
 
-## core/constants.go
+## core/governance.go
 ```go
 package core
 
-// Standard Metadata Keys used for Control Plane signaling.
-// These keys allow decoupled components (Validator, Router, LLM) to understand
-// the state and intent of the data flow.
-const (
-	// KeyDecision indicates the governance outcome.
-	// Values: "ALLOW", "DENY", "RETRY", "ROUTE".
-	KeyDecision = "manglekit.decision"
+import "context"
 
-	// KeyFeedback provides human/machine-readable reasons for the decision.
-	// Useful for LLM Self-Correction loops.
-	KeyFeedback = "manglekit.feedback"
+// Evaluator: The Mangle Logic Engine.
+// It defines the contract for policy execution, validation, and steering.
+type Evaluator interface {
+	// Assess evaluates the policy for a given input (General purpose).
+	Assess(ctx context.Context, input Envelope) (Decision, error)
 
-	// KeyPrevFeedback is used to inject feedback into the next input.
-	KeyPrevFeedback = "prev_feedback"
+	// Authorize performs the Pre-Check phase (input validation).
+	Authorize(ctx context.Context, actionMeta ActionMetadata, input Envelope) error
 
-	// KeyNextStep provides the name of the next action to route to.
-	KeyNextStep = "manglekit.next_step"
+	// Validate performs the Post-Check phase (output validation).
+	Validate(ctx context.Context, actionMeta ActionMetadata, output Envelope) (Envelope, error)
 
-	// KeyRiskScore indicates the calculated risk level (0-100).
-	// Populated by Risk Engines or Pre-Check rules.
-	KeyRiskScore = "manglekit.risk_score"
+	// EvaluateSteering determines the next step (Retry/Route) based on the output.
+	EvaluateSteering(ctx context.Context, input Envelope) (string, map[string]string, error)
 
-	// KeyLatencyMs records the execution time of the action in milliseconds.
-	KeyLatencyMs = "manglekit.latency_ms"
+	// LoadPolicy loads policy rules from a source string or file content.
+	LoadPolicy(ctx context.Context, source string) error
 
-	// KeyTraceID stores the distributed trace ID for correlation.
-	KeyTraceID = "manglekit.trace_id"
+	// LoadFacts injects dynamic facts into the engine.
+	LoadFacts(facts []string) error
 
-	// KeyModel stores the name of the model used (if applicable).
-	KeyModel = "manglekit.model"
+	// RegisterAction registers action metadata for discovery/planning.
+	RegisterAction(meta ActionMetadata) error
 
-	// KeyHistory stores serialized chat history.
-	KeyHistory = "manglekit_history"
-)
+	// Logger returns the engine's logger.
+	Logger() Logger
+}
 
-// Standard Decision Values
-const (
-	DecisionAllow = "ALLOW"
-	DecisionDeny  = "DENY"
-	DecisionRetry = "RETRY"
-	DecisionRoute = "ROUTE"
-)
+// PreProcessor: Fast/Stateless checks (CEL/Expr).
+type PreProcessor interface {
+	Process(ctx context.Context, input Envelope) (map[string]any, error)
+}
 
-// Datalog System Constants
-const (
-	// Entity IDs used during Reflection/Querying
-	EntityInput  = "Req"    // The ID representing the Input Envelope
-	EntityOutput = "Output" // The ID representing the Output Envelope
-)
+// RiskEngine: specialized interface for calculating risk.
+type RiskEngine interface {
+	CalculateRisk(ctx context.Context, input Envelope) (float64, error)
+}
 
-// Observability & Trace Attributes
-const (
-	// Span Names
-	SpanPreCheck  = "Datalog.PreCheck"
-	SpanPostCheck = "Datalog.PostCheck"
-
-	// Attribute Keys
-	AttrPolicyName   = "policy.name"
-	AttrPolicyType   = "policy.type"
-	AttrDecisionType = "decision.type"
-	AttrOutcome      = "outcome"       // "ALLOWED", "DENIED"
-	AttrLabels       = "mangle.labels" // For Taint Propagation
-	AttrActionName   = "action.name"
-	AttrActionType   = "action.type"
-)
-
-// Outcome Values (for Tracing)
-const (
-	OutcomeAllowed = "ALLOWED"
-	OutcomeDenied  = "DENIED"
-	OutcomeSuccess = "success"
-)
-```
-
-## core/telemetry.go
-```go
-package core
-
-import "go.opentelemetry.io/otel/attribute"
-
-// Observability & Trace Attributes
-// These attributes are used to enrich OpenTelemetry spans with Manglekit policy decisions.
-const (
-	// High-level Outcome
-	AttrPolicyOutcome = attribute.Key("policy.outcome") // "allow", "deny", "route", "retry"
-
-	// Details
-	AttrPolicyReason = attribute.Key("policy.reason")  // e.g. "Budget Exceeded"
-	AttrPolicyTarget = attribute.Key("policy.target")  // e.g. "tool_calculator"
-	AttrPolicyRuleID = attribute.Key("policy.rule_id") // (Optional) If available
-
-	// Retry/Loop info
-	AttrPolicyAttempt = attribute.Key("policy.attempt") // e.g. 1, 2
-)
+// ResourceMonitor: Cost & Rate Limiting.
+type ResourceMonitor interface {
+	CountTokens(ctx context.Context, text string) (int, error)
+	CheckBudget(ctx context.Context, key string, cost int) (bool, error)
+}
 ```
 
 ## sdk/client.go
@@ -705,7 +648,7 @@ const (
 // Applications should create a single Client instance and reuse it.
 type Client struct {
 	// engine is the internal Policy Engine responsible for Datalog evaluation.
-	engine *engine.PolicyEngine
+	engine core.Evaluator
 	// tracer is the Manglekit core.Tracer wrapper.
 	tracer core.Tracer
 	// otelTracer is the raw OpenTelemetry tracer instance.
@@ -723,7 +666,7 @@ type Client struct {
 	// shutdownFunc is a cleanup function to stop exporters/tracers.
 	shutdownFunc func(context.Context) error
 	// llm is the plugged-in text generation backend.
-	llm TextGenerator
+	llm core.TextGenerator
 }
 
 // NewClient initializes a new Manglekit Client with the provided options.
@@ -761,7 +704,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to read blueprint file: %w", err)
 		}
-		if err := c.engine.LoadPolicy(string(content)); err != nil {
+		if err := c.engine.LoadPolicy(ctx, string(content)); err != nil {
 			return nil, err
 		}
 	}
@@ -809,7 +752,7 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 		if err != nil {
 			return nil, fmt.Errorf("failed to read policy file %q: %w", cfg.Policy.Path, err)
 		}
-		if err := c.engine.LoadPolicy(string(content)); err != nil {
+		if err := c.engine.LoadPolicy(ctx, string(content)); err != nil {
 			return nil, fmt.Errorf("failed to load policy from %q: %w", cfg.Policy.Path, err)
 		}
 	}
@@ -881,6 +824,19 @@ func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientO
 		return nil, err
 	}
 
+	// 1. Load Actions from Config
+	for name, actCfg := range cfg.Actions {
+		action, err := NewActionFromConfig(name, actCfg)
+		if err != nil {
+			// Log warning but don't fail entire client load? Or fail?
+			// Config usually implies "desired state", so failure is critical.
+			c.logger.Warn("failed to load action from config", "name", name, "error", err)
+			continue
+		}
+		// Register it (Metadata Name might need update if factory didn't set it)
+		c.RegisterAction(name, action)
+	}
+
 	// Load MCP Actions
 	if len(cfg.MCP) > 0 {
 		for _, mcpCfg := range cfg.MCP {
@@ -921,7 +877,7 @@ func (c *Client) Supervise(action core.Action) core.Action {
 	return supervisor.NewSupervisedAction(action, c.engine, c.failureMode)
 }
 
-func (c *Client) Engine() *engine.PolicyEngine {
+func (c *Client) Engine() core.Evaluator {
 	return c.engine
 }
 
@@ -965,7 +921,7 @@ func NewDefault() (*Client, error) {
 func (c *Client) RegisterAction(name string, action core.Action) {
 	c.registry[name] = action
 	if c.engine != nil {
-		if err := c.engine.RegisterActionMetadata(action.Metadata()); err != nil {
+		if err := c.engine.RegisterAction(action.Metadata()); err != nil {
 			c.logger.Warn("failed to register action metadata to engine", "action", name, "error", err)
 		}
 	}
@@ -977,177 +933,6 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		return c.shutdownFunc(ctx)
 	}
 	return nil
-}
-```
-
-## sdk/types.go
-```go
-package sdk
-
-import (
-	"github.com/duynguyendang/manglekit/core"
-)
-
-// Re-export core types for convenience
-
-// ActionMetadata provides metadata about an action.
-type ActionMetadata = core.ActionMetadata
-
-// Envelope is the standard communication structure for actions.
-type Envelope = core.Envelope
-
-// NewEnvelope creates a new envelope with the given payload.
-// This is a convenience re-export of core.NewEnvelope.
-func NewEnvelope(payload any) Envelope {
-	return core.NewEnvelope(payload)
-}
-```
-
-## sdk/options.go
-```go
-package sdk
-
-import (
-	"time"
-
-	"go.opentelemetry.io/otel/trace"
-
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/telemetry"
-)
-
-// ClientOption configures the Manglekit Client during initialization.
-type ClientOption func(*Client)
-
-// WithBlueprintPath specifies the file path to load Datalog rules from.
-// "Blueprint" is the new terminology for "Policy".
-//
-// Parameters:
-//   - path: A file path to the .dl blueprint file.
-func WithBlueprintPath(path string) ClientOption {
-	return func(c *Client) {
-		c.blueprintPath = path
-	}
-}
-
-// WithFailMode sets the resilience strategy for the client.
-//
-// Parameters:
-//   - mode: "open" (allow execution on error) or "closed" (block execution on error).
-func WithFailMode(mode string) ClientOption {
-	return func(c *Client) {
-		c.failureMode = mode
-	}
-}
-
-// WithLogger sets a custom logger for the client.
-//
-// Parameters:
-//   - l: A core.Logger implementation.
-func WithLogger(l core.Logger) ClientOption {
-	return func(c *Client) {
-		if l != nil {
-			c.logger = l
-		}
-	}
-}
-
-// WithTracerProvider configures the OpenTelemetry tracer provider.
-// This enables Manglekit to emit spans to your existing tracing infrastructure.
-//
-// Parameters:
-//   - tp: The OpenTelemetry TracerProvider.
-func WithTracerProvider(tp trace.TracerProvider) ClientOption {
-	return func(c *Client) {
-		if tp != nil {
-			otelTracer := tp.Tracer(TracerName)
-			c.otelTracer = otelTracer
-			c.tracer = telemetry.NewOTelTracer(otelTracer)
-		}
-	}
-}
-
-// WithMemory configures a custom persistence store for chat history.
-//
-// Parameters:
-//   - store: A core.MemoryStore implementation (e.g., Redis backed).
-func WithMemory(store core.MemoryStore) ClientOption {
-	return func(c *Client) {
-		if store != nil {
-			c.memory = store
-		}
-	}
-}
-
-// WithLLM configures the AI backend for the client.
-// This supports the "Explicit AI Adapter" pattern where the application initializes the model
-// (e.g., via Genkit) and passes it to the SDK.
-//
-// Parameters:
-//   - gen: A TextGenerator implementation (e.g., adapters.ai.NewGenkitAdapter(model)).
-func WithLLM(gen TextGenerator) ClientOption {
-	return func(c *Client) {
-		if gen != nil {
-			c.llm = gen
-		}
-	}
-}
-
-// ExecutionParams holds the configuration for a specific execution run.
-type ExecutionParams struct {
-	// SessionID is the unique identifier for a conversation/session.
-	SessionID string
-	// MemoryMode determines how chat history is handled (None, Transient, Persist).
-	MemoryMode core.MemoryMode
-	// Metadata contains additional context to be injected into the execution envelope.
-	Metadata map[string]string
-	// Timeout (unused currently) specifies the max duration for the execution.
-	Timeout time.Duration
-
-	// State fields (Managed by ExecuteSingleStep/Loop)
-	Store           core.MemoryStore   `json:"-"` // Internal store reference
-	CurrentHistory  []core.ChatMessage `json:"history,omitempty"`
-	FeedbackHistory []string           `json:"feedback_history,omitempty"`
-	LastFeedback    string             `json:"last_feedback,omitempty"`
-	RetryCount      int                `json:"retry_count,omitempty"`
-}
-
-// ExecuteOption configures a single execution call (e.g., ExecuteByName).
-type ExecuteOption func(*ExecutionParams)
-
-// WithSessionID activates persistent stateful mode for the execution.
-// It links the execution to a specific session history.
-//
-// Parameters:
-//   - id: The session identifier.
-func WithSessionID(id string) ExecuteOption {
-	return func(p *ExecutionParams) {
-		p.SessionID = id
-		p.MemoryMode = core.MemoryModePersist
-	}
-}
-
-// WithTransientMemory activates in-memory stateful mode.
-// History is tracked for the duration of the loop/process but not persisted.
-func WithTransientMemory() ExecuteOption {
-	return func(p *ExecutionParams) {
-		p.MemoryMode = core.MemoryModeTransient
-	}
-}
-
-// WithMetadata injects custom key-value pairs into the execution envelope's metadata.
-// This is useful for passing context like "user_id" or "source" to the policy engine.
-//
-// Parameters:
-//   - key: The metadata key.
-//   - value: The metadata value.
-func WithMetadata(key, value string) ExecuteOption {
-	return func(p *ExecutionParams) {
-		if p.Metadata == nil {
-			p.Metadata = make(map[string]string)
-		}
-		p.Metadata[key] = value
-	}
 }
 ```
 
@@ -1229,8 +1014,8 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 		decision := result.Metadata[core.KeyDecision]
 		if decision == core.DecisionRoute {
 			// Update flow for next loop
-			next := result.Metadata[core.KeyNextStep]
-			if next == "" {
+			next, ok := result.Metadata[core.KeyNextStep].(string)
+			if !ok || next == "" {
 				return core.Envelope{}, fmt.Errorf("route decision missing next_step")
 			}
 
@@ -1335,7 +1120,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		userContent := safelyStringify(payload)
 		assistContent := safelyStringify(result.Payload)
 
-		newExchange := []core.ChatMessage{
+		newExchange := []core.Message{
 			{Role: "user", Content: userContent},
 			{Role: "assistant", Content: assistContent},
 		}
@@ -1432,1172 +1217,13 @@ func (c *Client) backoff(ctx context.Context, retryCount int) error {
 }
 ```
 
-## sdk/executor.go
-```go
-package sdk
-
-import (
-	"context"
-	"fmt"
-
-	"github.com/duynguyendang/manglekit/core"
-)
-
-// ExecutePlan executes a generated plan sequentially.
-// It chains the output of one step as the input to the next.
-//
-// Parameters:
-//   - ctx: The execution context.
-//   - steps: The ordered list of steps to execute.
-//   - initialInput: The input envelope for the first step.
-//
-// Returns:
-//   - The final output envelope.
-//   - An error if any step fails.
-func (c *Client) ExecutePlan(ctx context.Context, steps []PlanStep, initialInput core.Envelope) (core.Envelope, error) {
-	currentEnvelope := initialInput
-
-	for i, step := range steps {
-		if c.logger != nil {
-			c.logger.Info("Executing plan step", "step", i+1, "total", len(steps), "action", step.ActionName)
-		}
-
-		// Execute the action by name
-		// We extract the payload from the current envelope to pass as input.
-		// ExecuteByName will wrap it in a new Envelope, preserving metadata if we handle it correctly.
-		// However, ExecuteByName takes `input any`. It doesn't take an Envelope.
-		// But it returns an Envelope.
-		// We should propagate metadata.
-		// `ExecuteByName` internally creates `NewEnvelope(input)`.
-		// It accepts `opts ...ExecuteOption`.
-		// We can pass metadata via `WithMetadata`.
-
-		result, err := c.ExecuteByName(ctx, step.ActionName, currentEnvelope.Payload, WithMetadataMap(currentEnvelope.Metadata))
-		if err != nil {
-			return core.Envelope{}, fmt.Errorf("step %d (%s) failed: %w", i+1, step.ActionName, err)
-		}
-
-		// Pass output to next step
-		currentEnvelope = result
-	}
-
-	return currentEnvelope, nil
-}
-```
-
-## internal/supervisor/supervisor.go
-```go
-package supervisor
-
-import (
-	"context"
-	"errors"
-	"fmt"
-	"strconv"
-
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/engine"
-
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-)
-
-// SupervisedAction is a decorator that wraps any `core.Action` to enforce governance blueprints.
-// It implements the standard "Trace -> Authorize -> Execute -> Validate" lifecycle.
-//
-// Lifecycle:
-//  1. Trace: Starts an OpenTelemetry span for the operation.
-//  2. Authorize: Checks Pre-Check blueprints (e.g., "deny(Req)").
-//  3. Execute: Runs the inner action (e.g., calls the LLM).
-//  4. Validate: Checks Post-Check blueprints (e.g., "deny(Output)").
-//  5. Steering: Evaluates steering blueprints for routing or correction.
-type SupervisedAction struct {
-	inner       core.Action
-	engine      *engine.PolicyEngine
-	tracer      core.Tracer
-	failureMode string
-}
-
-// NewSupervisedAction creates a new SupervisedAction with default settings (no tracing).
-//
-// Parameters:
-//   - action: The inner action to supervise.
-//   - eng: The policy engine to use for governance.
-//   - failureMode: The resilience strategy ("open" or "closed").
-//
-// Returns:
-//   - A new SupervisedAction instance.
-func NewSupervisedAction(action core.Action, eng *engine.PolicyEngine, failureMode string) *SupervisedAction {
-	return &SupervisedAction{
-		inner:       action,
-		engine:      eng,
-		tracer:      &core.NopTracer{},
-		failureMode: failureMode,
-	}
-}
-
-// NewSupervisedActionWithTracer creates a new SupervisedAction with tracing enabled.
-//
-// Parameters:
-//   - action: The inner action to supervise.
-//   - eng: The policy engine.
-//   - tracer: The tracer implementation.
-//   - failureMode: "open" (log only on system error) or "closed" (block on system error).
-//
-// Returns:
-//   - A new SupervisedAction instance.
-func NewSupervisedActionWithTracer(action core.Action, eng *engine.PolicyEngine, tracer core.Tracer, failureMode string) *SupervisedAction {
-	if tracer == nil {
-		tracer = &core.NopTracer{}
-	}
-	return &SupervisedAction{
-		inner:       action,
-		engine:      eng,
-		tracer:      tracer,
-		failureMode: failureMode,
-	}
-}
-
-// Execute runs the supervised action, orchestrating the full governance lifecycle.
-//
-// It performs the following steps:
-//  1. Starts a span.
-//  2. Injects the logger into the context.
-//  3. Runs Authorize(). If it fails, execution halts (unless Fail-Open).
-//  4. Runs the inner Action.Execute().
-//  5. Propagates taint labels from input to output.
-//  6. Runs Validate(). If it fails, the result is blocked.
-//  7. Runs EvaluateSteering() to determine next steps (Retry/Route).
-//
-// Parameters:
-//   - ctx: The execution context.
-//   - input: The data envelope.
-//
-// Returns:
-//   - The result envelope (possibly modified by blueprint), or an error.
-func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	// Auto-Tracing (Phase 5)
-	// We use the global OTel tracer "manglekit" to create spans automatically.
-	// This supersedes the legacy g.tracer usage for the main span,
-	// ensuring consistent observability without user configuration.
-	tracer := otel.Tracer("manglekit")
-	meta := g.inner.Metadata()
-
-	ctx, span := tracer.Start(ctx, fmt.Sprintf("Action.%s", meta.Name),
-		trace.WithAttributes(
-			attribute.String("mangle.action_name", meta.Name),
-			attribute.String("mangle.action_type", string(meta.Type)),
-			attribute.String("mangle.input_id", input.ID.String()),
-		),
-	)
-	defer span.End()
-
-	result, err := g.executeInternal(ctx, input)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		// Distinguish between Blueprint DENIAL and System ERROR
-		if g.isAlignmentIssue(err) {
-			span.SetAttributes(core.AttrPolicyOutcome.String("deny"))
-			var alignErr *core.AlignmentError
-			if errors.As(err, &alignErr) {
-				span.SetAttributes(core.AttrPolicyReason.String(alignErr.Message))
-				if alignErr.RuleID != "" {
-					span.SetAttributes(core.AttrPolicyRuleID.String(alignErr.RuleID))
-				}
-			} else {
-				span.SetAttributes(core.AttrPolicyReason.String(err.Error()))
-			}
-			// Legacy attribute for backward compatibility
-			span.SetAttributes(attribute.String("mangle.outcome", "DENIED"))
-		} else {
-			span.SetAttributes(attribute.String("mangle.outcome", "ERROR"))
-		}
-		return core.Envelope{}, err
-	}
-
-	// Success Path: Determine outcome (Allow/Route/Retry)
-	decision := result.Metadata[core.KeyDecision]
-	switch decision {
-	case core.DecisionRetry:
-		span.SetAttributes(core.AttrPolicyOutcome.String("retry"))
-		if hint, ok := result.Metadata[core.KeyFeedback]; ok {
-			span.SetAttributes(core.AttrPolicyReason.String(hint))
-		}
-	case core.DecisionRoute:
-		span.SetAttributes(core.AttrPolicyOutcome.String("route"))
-		if target, ok := result.Metadata[core.KeyNextStep]; ok {
-			span.SetAttributes(core.AttrPolicyTarget.String(target))
-		}
-	default:
-		span.SetAttributes(core.AttrPolicyOutcome.String("allow"))
-	}
-
-	// Inject Retry Count if present
-	if attemptStr, ok := input.Metadata["retry_count"]; ok {
-		if n, err := strconv.Atoi(attemptStr); err == nil {
-			span.SetAttributes(core.AttrPolicyAttempt.Int(n))
-		}
-	}
-
-	span.SetAttributes(
-		attribute.String("mangle.outcome", "ALLOWED"),
-		attribute.String("mangle.output_id", result.ID.String()),
-	)
-	return result, nil
-}
-
-// isAlignmentIssue checks if the error is a wrapped alignment check violation
-func (g *SupervisedAction) isAlignmentIssue(err error) bool {
-	return core.IsAlignmentError(err)
-}
-
-// Metadata delegates to the inner action's Metadata method.
-// This allows the SupervisedAction to transparently represent the underlying capability.
-func (g *SupervisedAction) Metadata() core.ActionMetadata {
-	return g.inner.Metadata()
-}
-
-// shouldBlock determines if the action should be blocked based on the error and failure mode.
-func (g *SupervisedAction) shouldBlock(err error) bool {
-	if err == nil {
-		return false
-	}
-	// Always block on explicit alignment issues
-	if core.IsAlignmentError(err) {
-		return true
-	}
-	// If mode is "open" (Fail-Open), allow execution (return false)
-	// Otherwise (default/closed), block execution (return true)
-	if g.failureMode == "open" {
-		return false
-	}
-	return true
-}
-
-// executeInternal contains the actual execution logic.
-// It receives the context with the active span so child spans can be created.
-// The logger is injected into the context here, ensuring all downstream code
-// can access it via core.LoggerFromContext(ctx).
-func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	// Inject the logger into the context for downstream access
-	ctx = core.ContextWithLogger(ctx, g.engine.Logger())
-
-	logger := core.LoggerFromContext(ctx)
-	meta := g.inner.Metadata()
-	logger.Info("Action started",
-		"action", meta.Name,
-		"input_id", input.ID.String(),
-	)
-
-	// 1. Ingestion: Link Input to Parent (Tracing only)
-	if parentID, ok := core.GetParentID(ctx); ok {
-		g.engine.RecordLineage(ctx, input.ID.String(), parentID)
-	}
-
-	// 2. Pre-Check: Authorization
-	if err := g.engine.Authorize(ctx, g.inner.Metadata(), input); err != nil {
-		if g.shouldBlock(err) {
-			logger.Warn("authorization failed",
-				core.AttrActionName, meta.Name,
-				"error", err.Error(),
-			)
-			return core.Envelope{}, fmt.Errorf("authorization failed: %w", err)
-		}
-		// Fail-Open
-		logger.Warn("engine failed but Fail-Open active. Proceeding.", "error", err)
-	}
-
-	// 3. Context Propagation: Pass the Gene
-	// Propagate the current input ID as the new parent for the inner action
-	childCtx := core.WithParentID(ctx, input.ID.String())
-
-	// 4. Execution: Run inner action
-	result, err := g.inner.Execute(childCtx, input)
-	if err != nil {
-		logger.Error("action execution failed",
-			core.AttrActionName, meta.Name,
-			"error", err.Error(),
-		)
-		return core.Envelope{}, fmt.Errorf("action execution failed: %w", err)
-	}
-
-	// 5. Propagation: Output inherits Input's security labels
-	if len(input.SecurityLabels) > 0 {
-		result.MergeLabels(input.SecurityLabels)
-	}
-
-	// 6. Linking: Link Output to Input (Tracing only)
-	g.engine.RecordLineage(ctx, result.ID.String(), input.ID.String())
-	if result.Metadata == nil {
-		result.Metadata = make(map[string]string)
-	}
-	result.Metadata["derived_from"] = input.ID.String()
-
-	// 7. Post-Check: Validation
-	validatedResult, err := g.engine.Validate(ctx, g.inner.Metadata(), result)
-	if err != nil {
-		if g.shouldBlock(err) {
-			logger.Warn("validation failed",
-				"action", meta.Name,
-				"error", err.Error(),
-			)
-			return core.Envelope{}, fmt.Errorf("validation failed: %w", err)
-		}
-		// Fail-Open: use result as validatedResult
-		logger.Warn("engine validation failed but Fail-Open active. Proceeding.", "error", err)
-		validatedResult = result
-	}
-
-	// 8. Steering: Evaluate next steps (Correction/Routing)
-	decision, steeringMeta, err := g.engine.EvaluateSteering(ctx, validatedResult)
-	if err != nil {
-		logger.Warn("steering evaluation failed",
-			"action", meta.Name,
-			"error", err.Error(),
-		)
-		return core.Envelope{}, fmt.Errorf("steering evaluation failed: %w", err)
-	}
-
-	// Stamp metadata
-	if validatedResult.Metadata == nil {
-		validatedResult.Metadata = make(map[string]string)
-	}
-	validatedResult.Metadata[core.KeyDecision] = decision
-	for k, v := range steeringMeta {
-		validatedResult.Metadata[k] = v
-	}
-
-	logger.Info("Action completed",
-		"action", meta.Name,
-		"result", "success", // Simplified as per doc
-	)
-
-	return validatedResult, nil
-}
-```
-
-## internal/engine/runtime.go
-```go
-package engine
-
-import (
-	"errors"
-	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
-	"sync"
-
-	"github.com/google/mangle/analysis"
-	"github.com/google/mangle/ast"
-	"github.com/google/mangle/engine"
-	"github.com/google/mangle/factstore"
-	"github.com/google/mangle/parse"
-)
-
-// MangleRuntime encapsulates the Google Mangle Datalog engine.
-type MangleRuntime struct {
-	mu sync.RWMutex
-
-	// State fields (protected by mu)
-	programInfo   *analysis.ProgramInfo
-	strata        []analysis.Nodeset
-	predToStratum map[ast.PredicateSym]int
-	baseFactStore factstore.SimpleInMemoryStore
-	ruleUnits     []parse.SourceUnit
-	ready         bool // Flag to indicate if the runtime is initialized
-}
-
-// NewMangleRuntime initializes a new, empty MangleRuntime.
-func NewMangleRuntime() *MangleRuntime {
-	return &MangleRuntime{
-		predToStratum: make(map[ast.PredicateSym]int),
-		baseFactStore: factstore.NewSimpleInMemoryStore(),
-		ready:         false,
-	}
-}
-
-// Load loads Datalog rules and facts from the specified path.
-// CRITICAL CHANGE: This REPLACES the current program state.
-func (r *MangleRuntime) Load(path string) error {
-	if path == "" {
-		return fmt.Errorf("path cannot be empty")
-	}
-
-	// 1. Resolve files (I/O) - No lock needed yet
-	files, err := resolveFiles(path)
-	if err != nil {
-		return fmt.Errorf("failed to resolve path: %w", err)
-	}
-
-	var ruleFiles, factFiles []string
-	for _, file := range files {
-		switch {
-		case isRuleFile(file):
-			ruleFiles = append(ruleFiles, file)
-		case isFactFile(file):
-			factFiles = append(factFiles, file)
-		}
-	}
-
-	if len(ruleFiles) == 0 && len(factFiles) == 0 {
-		return fmt.Errorf("no .dlog or fact files found in %s", path)
-	}
-
-	// 2. Parse and Build State (Local Variables)
-	// We build everything locally to ensure atomicity. If parsing fails,
-	// the existing runtime state remains untouched.
-	var newRuleUnits []parse.SourceUnit
-	edbDeclarations := make(map[ast.PredicateSym]ast.Decl)
-
-	// Parse Rules
-	for _, ruleFile := range ruleFiles {
-		unit, err := parseRuleFile(ruleFile)
-		if err != nil {
-			return fmt.Errorf("failed to parse rule file %s: %w", ruleFile, err)
-		}
-		newRuleUnits = append(newRuleUnits, unit)
-	}
-
-	// Parse Facts and build Base Store
-	newBaseStore := factstore.NewSimpleInMemoryStore()
-	for _, factFile := range factFiles {
-		unit, err := parseRuleFile(factFile)
-		if err != nil {
-			return fmt.Errorf("failed to parse fact file %s: %w", factFile, err)
-		}
-		for _, clause := range unit.Clauses {
-			if len(clause.Premises) == 0 {
-				newBaseStore.Add(clause.Head)
-			}
-		}
-	}
-
-	// 3. Analyze and Stratify (CPU Intensive)
-	programInfo, err := analysis.Analyze(newRuleUnits, edbDeclarations)
-	if err != nil {
-		return fmt.Errorf("failed to analyze program: %w", err)
-	}
-
-	strata, predToStratum, err := analysis.Stratify(analysis.Program{
-		EdbPredicates: programInfo.EdbPredicates,
-		IdbPredicates: programInfo.IdbPredicates,
-		Rules:         programInfo.Rules,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to stratify program: %w", err)
-	}
-
-	// 4. Initial Evaluation (Validation)
-	// We run this on the local store to ensure the program doesn't crash on init.
-	if _, err := engine.EvalStratifiedProgramWithStats(programInfo, strata, predToStratum, newBaseStore); err != nil {
-		return fmt.Errorf("failed to evaluate base program: %w", err)
-	}
-
-	// 5. Atomic Swap (Critical Section)
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.ruleUnits = newRuleUnits
-	r.baseFactStore = newBaseStore
-	r.programInfo = programInfo
-	r.strata = strata
-	r.predToStratum = predToStratum
-	r.ready = true
-
-	return nil
-}
-
-// LoadFromSource parses and loads a full Datalog program from a string.
-// REPLACES current state.
-func (r *MangleRuntime) LoadFromSource(source string) error {
-	if source == "" {
-		return fmt.Errorf("source cannot be empty")
-	}
-
-	cleaned := cleanSource(source)
-	unit, err := parse.Unit(strings.NewReader(cleaned))
-	if err != nil {
-		return fmt.Errorf("failed to parse source: %w", err)
-	}
-
-	// Local state build
-	newRuleUnits := []parse.SourceUnit{unit}
-	edbDeclarations := make(map[ast.PredicateSym]ast.Decl)
-
-	programInfo, err := analysis.Analyze(newRuleUnits, edbDeclarations)
-	if err != nil {
-		return fmt.Errorf("failed to analyze program: %w", err)
-	}
-
-	strata, predToStratum, err := analysis.Stratify(analysis.Program{
-		EdbPredicates: programInfo.EdbPredicates,
-		IdbPredicates: programInfo.IdbPredicates,
-		Rules:         programInfo.Rules,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to stratify program: %w", err)
-	}
-
-	// Create new store (resetting old facts if this is a full reload)
-	newBaseStore := factstore.NewSimpleInMemoryStore()
-
-	// Atomic Swap
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.ruleUnits = newRuleUnits
-	r.baseFactStore = newBaseStore
-	r.programInfo = programInfo
-	r.strata = strata
-	r.predToStratum = predToStratum
-	r.ready = true
-
-	// Evaluate with empty base store
-	if err := r.evaluate(r.baseFactStore); err != nil {
-		return fmt.Errorf("failed to evaluate program: %w", err)
-	}
-
-	return nil
-}
-
-// LoadFacts injects a list of raw Datalog fact strings into the runtime's base knowledge.
-func (r *MangleRuntime) LoadFacts(facts []string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	for _, factStr := range facts {
-		atom, err := parse.Atom(factStr)
-		if err != nil {
-			return fmt.Errorf("failed to parse fact '%s': %w", factStr, err)
-		}
-		r.baseFactStore.Add(atom)
-	}
-
-	if r.ready {
-		if err := r.evaluate(r.baseFactStore); err != nil {
-			return fmt.Errorf("failed to evaluate program with new facts: %w", err)
-		}
-	}
-	return nil
-}
-
-// LoadFromString parses and loads a full Datalog program provided as a string.
-// IMPORTANT: This REPLACES the current program state.
-func (r *MangleRuntime) LoadFromString(rule string) error {
-	return r.LoadFromSource(rule)
-}
-
-// AddPolicy adds new rules to the existing program state (Incremental Loading).
-func (r *MangleRuntime) AddPolicy(source string) error {
-	if source == "" {
-		return nil
-	}
-
-	cleaned := cleanSource(source)
-	unit, err := parse.Unit(strings.NewReader(cleaned))
-	if err != nil {
-		return fmt.Errorf("failed to parse source: %w", err)
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// Append to existing rules
-	newRuleUnits := make([]parse.SourceUnit, len(r.ruleUnits)+1)
-	copy(newRuleUnits, r.ruleUnits)
-	newRuleUnits[len(r.ruleUnits)] = unit
-
-	// Re-Analyze
-	edbDeclarations := make(map[ast.PredicateSym]ast.Decl)
-	programInfo, err := analysis.Analyze(newRuleUnits, edbDeclarations)
-	if err != nil {
-		return fmt.Errorf("failed to analyze combined program: %w", err)
-	}
-
-	strata, predToStratum, err := analysis.Stratify(analysis.Program{
-		EdbPredicates: programInfo.EdbPredicates,
-		IdbPredicates: programInfo.IdbPredicates,
-		Rules:         programInfo.Rules,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to stratify combined program: %w", err)
-	}
-
-	// Update State
-	r.ruleUnits = newRuleUnits
-	r.programInfo = programInfo
-	r.strata = strata
-	r.predToStratum = predToStratum
-	r.ready = true
-
-	// Re-evaluate base facts with new rules
-	if err := r.evaluate(r.baseFactStore); err != nil {
-		return fmt.Errorf("failed to evaluate combined program: %w", err)
-	}
-
-	return nil
-}
-
-// ExecuteQuery runs a boolean Datalog query.
-func (r *MangleRuntime) ExecuteQuery(facts []ast.Atom, queryStr string) (bool, error) {
-	r.mu.RLock()
-	// Check readiness under lock
-	if !r.ready {
-		r.mu.RUnlock()
-		return false, fmt.Errorf("runtime not initialized")
-	}
-
-	// 1. Snapshot the state needed for evaluation
-	// We copy the base store to avoid contaminating the global state with request-scoped facts.
-	// Note: This is O(N) where N is base facts.
-	workingStore := factstore.NewSimpleInMemoryStore()
-	workingStore.Merge(r.baseFactStore)
-
-	// Capture pointers to analysis structures (they are read-only during eval)
-	pInfo := r.programInfo
-	strata := r.strata
-	pStratum := r.predToStratum
-
-	r.mu.RUnlock() // Release lock early to allow concurrent evaluations
-
-	// 2. Add temporary facts
-	for _, fact := range facts {
-		workingStore.Add(fact)
-	}
-
-	// 3. Evaluate (Expensive part, runs without blocking main lock)
-	if _, err := engine.EvalStratifiedProgramWithStats(pInfo, strata, pStratum, workingStore); err != nil {
-		return false, fmt.Errorf("evaluation failed: %w", err)
-	}
-
-	// 4. Check result
-	queryAtom, err := parse.Atom(queryStr)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse query '%s': %w", queryStr, err)
-	}
-
-	return workingStore.Contains(queryAtom), nil
-}
-
-// QueryWithSolutions executes a query and invokes callback for solutions.
-func (r *MangleRuntime) QueryWithSolutions(facts []ast.Atom, queryStr string, onSolution func(map[string]any) error) error {
-	r.mu.RLock()
-	if !r.ready {
-		r.mu.RUnlock()
-		return fmt.Errorf("runtime not initialized")
-	}
-
-	workingStore := factstore.NewSimpleInMemoryStore()
-	workingStore.Merge(r.baseFactStore)
-	pInfo := r.programInfo
-	strata := r.strata
-	pStratum := r.predToStratum
-	r.mu.RUnlock()
-
-	for _, fact := range facts {
-		workingStore.Add(fact)
-	}
-
-	if _, err := engine.EvalStratifiedProgramWithStats(pInfo, strata, pStratum, workingStore); err != nil {
-		return fmt.Errorf("evaluation failed: %w", err)
-	}
-
-	queryAtom, err := parse.Atom(queryStr)
-	if err != nil {
-		return fmt.Errorf("failed to parse query '%s': %w", queryStr, err)
-	}
-
-	q := ast.NewQuery(queryAtom.Predicate)
-
-	return workingStore.GetFacts(q, func(factAtom ast.Atom) error {
-		// Manual Unification
-		if len(factAtom.Args) != len(queryAtom.Args) {
-			return nil
-		}
-
-		solution := make(map[string]any)
-		match := true
-
-		for i, queryArg := range queryAtom.Args {
-			if v, isVar := queryArg.(ast.Variable); isVar {
-				// It's a variable, capture the value
-				valStr, err := constantToString(factAtom.Args[i])
-				if err != nil {
-					return fmt.Errorf("error converting term: %w", err)
-				}
-				solution[v.Symbol] = valStr
-			} else {
-				// It's a constant, check equality
-				if !queryArg.Equals(factAtom.Args[i]) {
-					match = false
-					break
-				}
-			}
-		}
-
-		if match {
-			return onSolution(solution)
-		}
-		return nil
-	})
-}
-
-// evaluate helper (internal use only, assumes lock is held or local store)
-func (r *MangleRuntime) evaluate(store factstore.FactStore) error {
-	_, err := engine.EvalStratifiedProgramWithStats(r.programInfo, r.strata, r.predToStratum, store)
-	return err
-}
-
-// --- Helper Functions ---
-
-func isRuleFile(p string) bool {
-	return strings.HasSuffix(p, ".dlog") || strings.HasSuffix(p, ".dl")
-}
-
-func isFactFile(p string) bool {
-	return strings.HasSuffix(p, ".facts") ||
-		strings.HasSuffix(p, ".fact") ||
-		strings.HasSuffix(p, ".edb") ||
-		strings.HasSuffix(p, ".data")
-}
-
-func cleanSource(raw string) string {
-	// Strip UTF-8 BOM
-	if strings.HasPrefix(raw, "\xef\xbb\xbf") {
-		raw = raw[3:]
-	}
-
-	// Normalize line endings
-	s := strings.ReplaceAll(raw, "\r\n", "\n")
-	lines := strings.Split(s, "\n")
-	kept := lines[:0]
-
-	for _, ln := range lines {
-		trimLn := strings.TrimSpace(ln)
-
-		// 1. Skip empty lines
-		if trimLn == "" {
-			continue
-		}
-
-		// 2. Skip full line comments
-		if strings.HasPrefix(trimLn, "%") || strings.HasPrefix(trimLn, "//") {
-			continue
-		}
-
-		// 3. Handle inline comments while respecting quotes
-		// We iterate through the string to find the start of a comment that is NOT inside a string.
-		commentIdx := -1
-		inQuote := false
-		for i := 0; i < len(ln); i++ {
-			char := ln[i]
-			if char == '"' {
-				// Handle escaped quotes if necessary, though Datalog usually implies simple escaping?
-				// For now, toggle state. strictly speaking, we should check for backslash.
-				escaped := false
-				if i > 0 && ln[i-1] == '\\' {
-					escaped = true
-				}
-				if !escaped {
-					inQuote = !inQuote
-				}
-			}
-
-			if !inQuote {
-				// Check for %
-				if char == '%' {
-					commentIdx = i
-					break
-				}
-				// Check for //
-				if char == '/' && i+1 < len(ln) && ln[i+1] == '/' {
-					commentIdx = i
-					break
-				}
-			}
-		}
-
-		if commentIdx >= 0 {
-			ln = ln[:commentIdx]
-		}
-
-		if strings.TrimSpace(ln) == "" {
-			continue
-		}
-
-		kept = append(kept, ln)
-	}
-	return strings.Join(kept, "\n")
-}
-
-func parseRuleFile(file string) (parse.SourceUnit, error) {
-	b, err := os.ReadFile(file)
-	if err != nil {
-		return parse.SourceUnit{}, fmt.Errorf("could not open rule file %s: %w", file, err)
-	}
-	cleaned := cleanSource(string(b))
-	unit, err := parse.Unit(strings.NewReader(cleaned))
-	if err != nil {
-		return parse.SourceUnit{}, fmt.Errorf("could not parse rule file %s: %w", file, err)
-	}
-	return unit, nil
-}
-
-func constantToString(term ast.BaseTerm) (string, error) {
-	if c, ok := term.(ast.Constant); ok {
-		if v, err := c.StringValue(); err == nil {
-			return v, nil
-		}
-		if v, err := c.NameValue(); err == nil {
-			return v, nil
-		}
-		if v, err := c.NumberValue(); err == nil {
-			return fmt.Sprintf("%d", v), nil
-		}
-		return "", fmt.Errorf("unsupported constant type: %v", c.Type)
-	}
-	return fmt.Sprintf("%v", term), nil
-}
-
-// resolveFiles remains the same as your original implementation...
-func resolveFiles(path string) ([]string, error) {
-	info, err := os.Stat(path)
-	switch {
-	case err == nil:
-		if info.IsDir() {
-			return collectFiles(path)
-		}
-		return []string{path}, nil
-	case errors.Is(err, fs.ErrNotExist):
-		if hasMeta(path) {
-			matches, globErr := filepath.Glob(path)
-			if globErr != nil {
-				return nil, fmt.Errorf("path globbing failed for %q: %w", path, globErr)
-			}
-			if len(matches) == 0 {
-				return nil, fmt.Errorf("no files matched %q", path)
-			}
-			var files []string
-			for _, match := range matches {
-				resolved, err := resolveFiles(match)
-				if err != nil {
-					return nil, fmt.Errorf("failed to resolve glob match %q: %w", match, err)
-				}
-				files = append(files, resolved...)
-			}
-			sort.Strings(files)
-			return files, nil
-		}
-		return nil, fmt.Errorf("failed to stat path %q: %w", path, err)
-	default:
-		return nil, fmt.Errorf("failed to stat path %q: %w", path, err)
-	}
-}
-
-func collectFiles(root string) ([]string, error) {
-	var files []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		files = append(files, path)
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to walk directory %q: %w", root, err)
-	}
-	sort.Strings(files)
-	return files, nil
-}
-
-func hasMeta(path string) bool {
-	return strings.ContainsAny(path, "*?[")
-}
-```
-
-## internal/engine/reflection.go
-```go
-package engine
-
-import (
-	"fmt"
-	"reflect"
-	"strings"
-)
-
-// ToFacts converts a Go data structure into Mangle Datalog facts.
-// It is the entry point for turning runtime objects into logic predicates.
-func ToFacts(id string, input any) ([]string, error) {
-	if input == nil {
-		return nil, nil
-	}
-	var facts []string
-	v := reflect.ValueOf(input)
-
-	// Track visited pointers to prevent infinite recursion (Cycles)
-	visited := make(map[uintptr]bool)
-
-	if err := toFactsRecursive(id, "", v, &facts, visited); err != nil {
-		return nil, err
-	}
-	return facts, nil
-}
-
-// LabelsToFacts converts a slice of security label strings into Mangle Datalog facts.
-// This is used for propagating taint information (e.g., "secret", "pii") into the policy engine.
-//
-// Format:
-//
-//	has_label("entityID", "label_value")
-//
-// Parameters:
-//   - entityID: The unique identifier for the entity.
-//   - labels: A slice of security label strings.
-//
-// Returns:
-//   - A slice of Datalog fact strings.
-//   - An error if conversion fails (unlikely, mostly wrapper around string formatting).
-func LabelsToFacts(entityID string, labels []string) ([]string, error) {
-	var facts []string
-	if len(labels) > 0 {
-		facts = make([]string, 0, len(labels))
-	}
-
-	safeID := escapeString(entityID)
-
-	for _, label := range labels {
-		var sb strings.Builder
-		sb.WriteString("has_label(\"")
-		sb.WriteString(safeID)
-		sb.WriteString("\", \"")
-		sb.WriteString(escapeString(label))
-		sb.WriteString("\")")
-		facts = append(facts, sb.String())
-	}
-	return facts, nil
-}
-
-// escapeString escapes special characters to ensure the resulting string
-// is a valid Mangle string constant.
-func escapeString(s string) string {
-	var sb strings.Builder
-	sb.Grow(len(s))
-	for i := 0; i < len(s); i++ {
-		b := s[i]
-		switch b {
-		case '\\', '"':
-			sb.WriteByte('\\')
-			sb.WriteByte(b)
-		case '\n':
-			sb.WriteString("\\n")
-		case '\r':
-			sb.WriteString("\\r")
-		case '\t':
-			sb.WriteString("\\t")
-		default:
-			if b < 32 {
-				// Replace other control characters to avoid breaking the parser
-				sb.WriteByte(' ')
-			} else {
-				sb.WriteByte(b)
-			}
-		}
-	}
-	return sb.String()
-}
-
-func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited map[uintptr]bool, args ...string) error {
-	if !v.IsValid() {
-		return nil
-	}
-
-	// 1. Dereference Interfaces
-	for v.Kind() == reflect.Interface {
-		if v.IsNil() {
-			return nil
-		}
-		v = v.Elem()
-	}
-
-	// 2. Cycle Detection (Ptr, Map, Slice) & Dereference Ptr
-	k := v.Kind()
-	if k == reflect.Ptr || k == reflect.Map || k == reflect.Slice {
-		if v.IsNil() {
-			return nil
-		}
-		ptr := v.Pointer()
-		if visited[ptr] {
-			return nil // Cycle detected
-		}
-		visited[ptr] = true
-		defer delete(visited, ptr) // Stack-based tracking to allow DAGs but prevent loops
-	}
-
-	if k == reflect.Ptr {
-		v = v.Elem()
-	}
-
-	// 3. Switch on Kind
-	switch v.Kind() {
-	case reflect.Struct:
-		t := v.Type()
-		for i := 0; i < v.NumField(); i++ {
-			field := v.Field(i)
-			structField := t.Field(i)
-
-			// Skip unexported fields
-			if !structField.IsExported() {
-				continue
-			}
-
-			// [CRITICAL FIX] Explicitly handle ignore tags first
-			tag := structField.Tag.Get("mangle")
-			if tag == "-" {
-				continue // Ignore immediately
-			}
-
-			jsonTag := structField.Tag.Get("json")
-			// Check json:"-" or json:"-,omitempty"
-			if jsonTag == "-" || strings.HasPrefix(jsonTag, "-,") {
-				continue // Ignore immediately
-			}
-
-			// Determine Field Name
-			fieldName := tag
-			if fieldName == "" {
-				if jsonTag != "" {
-					parts := strings.Split(jsonTag, ",")
-					fieldName = parts[0]
-				}
-			}
-			if fieldName == "" {
-				fieldName = strings.ToLower(structField.Name)
-			}
-
-			// Handle Embedded (Anonymous) Fields
-			// Strategy: Flatten if anonymous AND untagged
-			newPath := path
-			isAnonymousUntagged := structField.Anonymous && tag == "" && structField.Tag.Get("json") == ""
-
-			if !isAnonymousUntagged {
-				if newPath != "" {
-					newPath = newPath + "_" + fieldName
-				} else {
-					newPath = fieldName
-				}
-			}
-
-			if err := toFactsRecursive(id, newPath, field, facts, visited, args...); err != nil {
-				return err
-			}
-		}
-
-	case reflect.Map:
-		for _, key := range v.MapKeys() {
-			val := v.MapIndex(key)
-			keyStr := fmt.Sprintf("%v", key.Interface())
-
-			// Append key to args
-			newArgs := make([]string, len(args)+1)
-			copy(newArgs, args)
-			newArgs[len(args)] = keyStr
-
-			if err := toFactsRecursive(id, path, val, facts, visited, newArgs...); err != nil {
-				return err
-			}
-		}
-
-	case reflect.Slice, reflect.Array:
-		for i := 0; i < v.Len(); i++ {
-			// Include index to preserve association and order
-			idxStr := fmt.Sprintf("%d", i)
-			newArgs := make([]string, len(args)+1)
-			copy(newArgs, args)
-			newArgs[len(args)] = idxStr
-
-			if err := toFactsRecursive(id, path, v.Index(i), facts, visited, newArgs...); err != nil {
-				return err
-			}
-		}
-
-	default:
-		// primitive handling
-		generatePrimitiveFact(id, path, v, facts, args...)
-	}
-	return nil
-}
-
-// generatePrimitiveFact creates the final Datalog string: predicate("id", "arg", value).
-func generatePrimitiveFact(id, path string, v reflect.Value, facts *[]string, args ...string) {
-	var strVal string
-	var isNumeric bool
-
-	switch v.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		strVal = fmt.Sprintf("%d", v.Int())
-		isNumeric = true
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		strVal = fmt.Sprintf("%d", v.Uint())
-		isNumeric = true
-	case reflect.Float32, reflect.Float64:
-		strVal = fmt.Sprintf("%g", v.Float()) // Use %g to preserve significant digits
-		isNumeric = true
-	case reflect.Bool:
-		strVal = fmt.Sprintf("%v", v.Bool())
-	default:
-		strVal = fmt.Sprintf("%v", v.Interface())
-	}
-
-	predicate := path
-	if predicate == "" {
-		predicate = "value"
-	}
-
-	// Helper to escape strings (Must ensure this exists in file)
-	safeID := escapeString(id)
-
-	var sb strings.Builder
-	sb.WriteString(predicate)
-	sb.WriteByte('(')
-	sb.WriteByte('"')
-	sb.WriteString(safeID)
-	sb.WriteByte('"')
-
-	for _, arg := range args {
-		sb.WriteString(", \"")
-		sb.WriteString(escapeString(arg))
-		sb.WriteByte('"')
-	}
-
-	sb.WriteString(", ")
-	if isNumeric {
-		sb.WriteString(strVal)
-	} else {
-		sb.WriteByte('"')
-		sb.WriteString(escapeString(strVal))
-		sb.WriteByte('"')
-	}
-	sb.WriteByte(')')
-
-	*facts = append(*facts, sb.String())
-}
-```
-
 ## internal/engine/solver.go
 ```go
 package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -2737,7 +1363,7 @@ func (e *PolicyEngine) LoadFacts(facts []string) error {
 	return e.runtime.LoadFacts(facts)
 }
 
-// RegisterActionMetadata injects metadata about a registered action into the Datalog runtime.
+// RegisterAction injects metadata about a registered action into the Datalog runtime.
 // It generates facts that describe the action's interface, enabling the Planner to reason about it.
 //
 // Generated Facts:
@@ -2750,7 +1376,7 @@ func (e *PolicyEngine) LoadFacts(facts []string) error {
 //
 // Returns:
 //   - An error if fact loading fails.
-func (e *PolicyEngine) RegisterActionMetadata(meta core.ActionMetadata) error {
+func (e *PolicyEngine) RegisterAction(meta core.ActionMetadata) error {
 	var facts []string
 	safeName := escapeString(meta.Name)
 
@@ -2771,11 +1397,12 @@ func (e *PolicyEngine) RegisterActionMetadata(meta core.ActionMetadata) error {
 // This decouples the engine from file I/O.
 //
 // Parameters:
+//   - ctx: The execution context (unused in current implementation but required by interface).
 //   - policy: The Datalog rules as a string.
 //
 // Returns:
 //   - An error if parsing or loading fails.
-func (e *PolicyEngine) LoadPolicy(policy string) error {
+func (e *PolicyEngine) LoadPolicy(ctx context.Context, policy string) error {
 	if policy == "" {
 		return nil
 	}
@@ -2791,6 +1418,106 @@ func (e *PolicyEngine) LoadPolicy(policy string) error {
 	}
 
 	return nil
+}
+
+// Assess implements the core.Evaluator interface.
+// It performs a high-level assessment of the input, mapping Authorize logic to a Decision.
+func (e *PolicyEngine) Assess(ctx context.Context, input core.Envelope) (core.Decision, error) {
+	// Simple mapping: use empty metadata for generic assessment
+	err := e.Authorize(ctx, core.ActionMetadata{}, input)
+	if err != nil {
+		// If authorization fails, it's a DENY
+		var alignErr *core.AlignmentError
+		if errors.As(err, &alignErr) {
+			return core.Decision{
+				Outcome: core.DecisionDeny,
+				Reasons: []string{alignErr.Message},
+				Meta:    map[string]string{"rule_id": alignErr.RuleID},
+			}, nil
+		}
+		return core.Decision{Outcome: core.DecisionDeny, Reasons: []string{err.Error()}}, err
+	}
+	return core.Decision{Outcome: core.DecisionAllow}, nil
+}
+
+// GetActionConfig queries the engine for dynamic configuration parameters.
+// It executes the query `action_config(Key, Value)` and returns a map of results.
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - input: The input envelope.
+//
+// Returns:
+//   - A map of configuration keys and values.
+//   - An error if execution fails.
+func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope) (map[string]string, error) {
+	config := make(map[string]string)
+
+	if e.runtime == nil || e.runtime.programInfo == nil {
+		return config, nil
+	}
+
+	// Convert input to facts
+	facts, err := toMangleFacts(core.EntityInput, input.Payload, input.ContentType)
+	if err != nil {
+		if e.logger != nil {
+			e.logger.Debug("failed to convert input to facts for config", "error", err)
+		}
+		// Return empty config on fact conversion failure to avoid blocking
+		return config, nil
+	}
+
+	// Inject Envelope Facts
+	for _, factStr := range input.Facts {
+		atom, err := parse.Atom(factStr)
+		if err != nil {
+			if e.logger != nil {
+				e.logger.Error("failed to parse envelop fact", "fact", factStr, "error", err)
+			}
+			// Continue without this fact
+			continue
+		}
+		facts = append(facts, atom)
+	}
+
+	// Inject Metadata facts: meta(Key, Value) and attempt(N)
+	for k, v := range input.Metadata {
+		// Ensure k is string
+		safeK := escapeString(k)
+		// Ensure v is string or convertible to string
+		vStr := fmt.Sprintf("%v", v)
+		safeV := escapeString(vStr)
+
+		// meta("key", "val")
+		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
+		if atom, err := parse.Atom(metaFact); err == nil {
+			facts = append(facts, atom)
+		}
+
+		// attempt(N) from retry_count
+		if k == "retry_count" {
+			attemptFact := fmt.Sprintf("attempt(%s)", vStr)
+			if atom, err := parse.Atom(attemptFact); err == nil {
+				facts = append(facts, atom)
+			}
+		}
+	}
+
+	// Execute query: config(Key, Value)
+	err = e.runtime.QueryWithSolutions(facts, "config(Key, Value)", func(solution map[string]any) error {
+		key, kOk := solution["Key"].(string)
+		val, vOk := solution["Value"].(string)
+		if kOk && vOk {
+			config[key] = val
+		}
+		return nil
+	})
+
+	if err != nil && e.logger != nil {
+		e.logger.Debug("failed to query action config", "error", err)
+	}
+
+	return config, nil
 }
 
 // Authorize performs the Pre-Check phase of governance.
@@ -2888,6 +1615,26 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 			return fmt.Errorf("envelope fact parsing error: %w", err)
 		}
 		facts = append(facts, atom)
+	}
+
+	// Inject Metadata facts: meta(Key, Value) and attempt(N)
+	for k, v := range input.Metadata {
+		safeK := escapeString(k)
+		vStr := fmt.Sprintf("%v", v)
+		safeV := escapeString(vStr)
+		// meta("key", "val")
+		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
+		if atom, err := parse.Atom(metaFact); err == nil {
+			facts = append(facts, atom)
+		}
+
+		// attempt(N) from retry_count
+		if k == "retry_count" {
+			attemptFact := fmt.Sprintf("attempt(%s)", vStr)
+			if atom, err := parse.Atom(attemptFact); err == nil {
+				facts = append(facts, atom)
+			}
+		}
 	}
 
 	// Execute the deny(Req) query
@@ -3104,9 +1851,29 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 		facts = append(facts, atom)
 	}
 
+	// Inject Metadata facts: meta(Key, Value) and attempt(N)
+	for k, v := range input.Metadata {
+		safeK := escapeString(k)
+		vStr := fmt.Sprintf("%v", v)
+		safeV := escapeString(vStr)
+		// meta("key", "val")
+		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
+		if atom, err := parse.Atom(metaFact); err == nil {
+			facts = append(facts, atom)
+		}
+
+		// attempt(N) from retry_count
+		if k == "retry_count" {
+			attemptFact := fmt.Sprintf("attempt(%s)", vStr)
+			if atom, err := parse.Atom(attemptFact); err == nil {
+				facts = append(facts, atom)
+			}
+		}
+	}
+
 	// 1. Check Correction (Retry)
-	// Query: correction("Req", Hint)
-	_ = e.runtime.QueryWithSolutions(facts, fmt.Sprintf(`correction("%s", Hint)`, core.EntityInput), func(solution map[string]any) error {
+	// Query: retry(Hint)
+	_ = e.runtime.QueryWithSolutions(facts, "retry(Hint)", func(solution map[string]any) error {
 		if hint, ok := solution["Hint"].(string); ok {
 			decision = core.DecisionRetry
 			metadata[core.KeyFeedback] = hint
@@ -3121,8 +1888,8 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 	}
 
 	// 2. Check Routing
-	// Query: next_step("Req", Target)
-	_ = e.runtime.QueryWithSolutions(facts, fmt.Sprintf(`next_step("%s", Target)`, core.EntityInput), func(solution map[string]any) error {
+	// Query: route(Target)
+	_ = e.runtime.QueryWithSolutions(facts, "route(Target)", func(solution map[string]any) error {
 		if target, ok := solution["Target"].(string); ok {
 			decision = core.DecisionRoute
 			metadata[core.KeyNextStep] = target
@@ -3256,222 +2023,431 @@ func toMangleFacts(entityID string, input any, contentType core.ContentType) ([]
 }
 ```
 
-## manglekit.go
+## internal/supervisor/supervisor.go
 ```go
-package manglekit
+package supervisor
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strconv"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/duynguyendang/manglekit/internal/engine"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
-// --- Aliases ---
-type Client = sdk.Client
-type ClientOption = sdk.ClientOption
-type ExecuteOption = sdk.ExecuteOption
-
-// --- Facade Functions ---
-
-// NewClient initializes the client with defaults.
-// It implements the "Batteries Included" philosophy by leveraging SDK defaults.
-func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
-	return sdk.NewClient(ctx, opts...)
+// SupervisedAction is a decorator that wraps any `core.Action` to enforce governance blueprints.
+// It implements the standard "Trace -> Authorize -> Execute -> Validate" lifecycle.
+//
+// Lifecycle:
+//  1. Trace: Starts an OpenTelemetry span for the operation.
+//  2. Authorize: Checks Pre-Check blueprints (e.g., "deny(Req)").
+//  3. Execute: Runs the inner action (e.g., calls the LLM).
+//  4. Validate: Checks Post-Check blueprints (e.g., "deny(Output)").
+//  5. Steering: Evaluates steering blueprints for routing or correction.
+type SupervisedAction struct {
+	inner       core.Action
+	engine      core.Evaluator
+	tracer      core.Tracer
+	failureMode string
 }
 
-// Must helper for panic-on-error initialization
-func Must(c *Client, err error) *Client {
-	return sdk.Must(c, err)
+// NewSupervisedAction creates a new SupervisedAction with default settings (no tracing).
+//
+// Parameters:
+//   - action: The inner action to supervise.
+//   - eng: The policy engine (evaluator) to use for governance.
+//   - failureMode: The resilience strategy ("open" or "closed").
+//
+// Returns:
+//   - A new SupervisedAction instance.
+func NewSupervisedAction(action core.Action, eng core.Evaluator, failureMode string) *SupervisedAction {
+	return &SupervisedAction{
+		inner:       action,
+		engine:      eng,
+		tracer:      &core.NopTracer{},
+		failureMode: failureMode,
+	}
 }
 
-// Define is the public entry point for creating Actions
-func Define[In any, Out any](
-	c *Client,
-	name string,
-	handler func(context.Context, In) (Out, error),
-) *sdk.Runnable[In, Out] {
-	return sdk.Define(c, name, handler)
+// NewSupervisedActionWithTracer creates a new SupervisedAction with tracing enabled.
+//
+// Parameters:
+//   - action: The inner action to supervise.
+//   - eng: The policy engine (evaluator).
+//   - tracer: The tracer implementation.
+//   - failureMode: "open" (log only on system error) or "closed" (block on system error).
+//
+// Returns:
+//   - A new SupervisedAction instance.
+func NewSupervisedActionWithTracer(action core.Action, eng core.Evaluator, tracer core.Tracer, failureMode string) *SupervisedAction {
+	if tracer == nil {
+		tracer = &core.NopTracer{}
+	}
+	return &SupervisedAction{
+		inner:       action,
+		engine:      eng,
+		tracer:      tracer,
+		failureMode: failureMode,
+	}
 }
 
-// --- Option Wrappers ---
-func WithBlueprintPath(path string) ClientOption { return sdk.WithBlueprintPath(path) }
+// Execute runs the supervised action, orchestrating the full governance lifecycle.
+//
+// It performs the following steps:
+//  1. Starts a span.
+//  2. Injects the logger into the context.
+//  3. Runs Authorize(). If it fails, execution halts (unless Fail-Open).
+//  4. Runs the inner Action.Execute().
+//  5. Propagates taint labels from input to output.
+//  6. Runs Validate(). If it fails, the result is blocked.
+//  7. Runs EvaluateSteering() to determine next steps (Retry/Route).
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - input: The data envelope.
+//
+// Returns:
+//   - The result envelope (possibly modified by blueprint), or an error.
+func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
+	// Auto-Tracing (Phase 5)
+	// We use the global OTel tracer "manglekit" to create spans automatically.
+	// This supersedes the legacy g.tracer usage for the main span,
+	// ensuring consistent observability without user configuration.
+	tracer := otel.Tracer("manglekit")
+	meta := g.inner.Metadata()
 
-// Deprecated: Use WithBlueprintPath instead.
-func WithPolicyPath(path string) ClientOption        { return sdk.WithBlueprintPath(path) }
-func WithFailMode(mode string) ClientOption          { return sdk.WithFailMode(mode) }
-func WithLogger(l core.Logger) ClientOption          { return sdk.WithLogger(l) }
-func WithMemory(store core.MemoryStore) ClientOption { return sdk.WithMemory(store) }
+	ctx, span := tracer.Start(ctx, fmt.Sprintf("Action.%s", meta.Name),
+		trace.WithAttributes(
+			attribute.String("mangle.action_name", meta.Name),
+			attribute.String("mangle.action_type", string(meta.Type)),
+			attribute.String("mangle.input_id", input.ID.String()),
+		),
+	)
+	defer span.End()
 
-func WithSessionID(id string) ExecuteOption        { return sdk.WithSessionID(id) }
-func WithTransientMemory() ExecuteOption           { return sdk.WithTransientMemory() }
-func WithMetadata(key, value string) ExecuteOption { return sdk.WithMetadata(key, value) }
+	result, err := g.executeInternal(ctx, input)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		// Distinguish between Blueprint DENIAL and System ERROR
+		if g.isAlignmentIssue(err) {
+			span.SetAttributes(attribute.String(core.AttrPolicyOutcome, "deny"))
+			var alignErr *core.AlignmentError
+			if errors.As(err, &alignErr) {
+				span.SetAttributes(attribute.String(core.AttrPolicyReason, alignErr.Message))
+				if alignErr.RuleID != "" {
+					span.SetAttributes(attribute.String(core.AttrPolicyRuleID, alignErr.RuleID))
+				}
+			} else {
+				span.SetAttributes(attribute.String(core.AttrPolicyReason, err.Error()))
+			}
+			// Legacy attribute for backward compatibility
+			span.SetAttributes(attribute.String("mangle.outcome", "DENIED"))
+		} else {
+			span.SetAttributes(attribute.String("mangle.outcome", "ERROR"))
+		}
+		return core.Envelope{}, err
+	}
+
+	// Success Path: Determine outcome (Allow/Route/Retry)
+	decision := result.Metadata[core.KeyDecision]
+	switch decision {
+	case core.DecisionRetry:
+		span.SetAttributes(attribute.String(core.AttrPolicyOutcome, "retry"))
+		if hint, ok := result.Metadata[core.KeyFeedback]; ok {
+			if s, ok := hint.(string); ok {
+				span.SetAttributes(attribute.String(core.AttrPolicyReason, s))
+			}
+		}
+	case core.DecisionRoute:
+		span.SetAttributes(attribute.String(core.AttrPolicyOutcome, "route"))
+		if target, ok := result.Metadata[core.KeyNextStep]; ok {
+			if s, ok := target.(string); ok {
+				span.SetAttributes(attribute.String(core.AttrPolicyTarget, s))
+			}
+		}
+	default:
+		span.SetAttributes(attribute.String(core.AttrPolicyOutcome, "allow"))
+	}
+
+	// Inject Retry Count if present
+	if attemptVal, ok := input.Metadata["retry_count"]; ok {
+		// handle both string and int
+		if s, ok := attemptVal.(string); ok {
+			if n, err := strconv.Atoi(s); err == nil {
+				span.SetAttributes(attribute.Int(core.AttrPolicyAttempt, n))
+			}
+		} else if n, ok := attemptVal.(int); ok {
+			span.SetAttributes(attribute.Int(core.AttrPolicyAttempt, n))
+		}
+	}
+
+	span.SetAttributes(
+		attribute.String("mangle.outcome", "ALLOWED"),
+		attribute.String("mangle.output_id", result.ID.String()),
+	)
+	return result, nil
+}
+
+// isAlignmentIssue checks if the error is a wrapped alignment check violation
+func (g *SupervisedAction) isAlignmentIssue(err error) bool {
+	return core.IsAlignmentError(err)
+}
+
+// Metadata delegates to the inner action's Metadata method.
+// This allows the SupervisedAction to transparently represent the underlying capability.
+func (g *SupervisedAction) Metadata() core.ActionMetadata {
+	return g.inner.Metadata()
+}
+
+// shouldBlock determines if the action should be blocked based on the error and failure mode.
+func (g *SupervisedAction) shouldBlock(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Always block on explicit alignment issues
+	if core.IsAlignmentError(err) {
+		return true
+	}
+	// If mode is "open" (Fail-Open), allow execution (return false)
+	// Otherwise (default/closed), block execution (return true)
+	if g.failureMode == "open" {
+		return false
+	}
+	return true
+}
+
+// executeInternal contains the actual execution logic.
+// It receives the context with the active span so child spans can be created.
+// The logger is injected into the context here, ensuring all downstream code
+// can access it via core.LoggerFromContext(ctx).
+func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envelope) (core.Envelope, error) {
+	// Inject the logger into the context for downstream access
+	ctx = core.ContextWithLogger(ctx, g.engine.Logger())
+
+	logger := core.LoggerFromContext(ctx)
+	meta := g.inner.Metadata()
+	logger.Info("Action started",
+		"action", meta.Name,
+		"input_id", input.ID.String(),
+	)
+
+	// 1. Ingestion: Link Input to Parent (Tracing only)
+	// if parentID, ok := core.GetParentID(ctx); ok {
+	// 	// Evaluator doesn't support RecordLineage directly.
+	// 	// g.engine.RecordLineage(ctx, input.ID.String(), parentID)
+	// }
+
+	// 2. Pre-Check: Authorization
+	if err := g.engine.Authorize(ctx, g.inner.Metadata(), input); err != nil {
+		if g.shouldBlock(err) {
+			logger.Warn("authorization failed",
+				core.AttrActionName, meta.Name,
+				"error", err.Error(),
+			)
+			return core.Envelope{}, fmt.Errorf("authorization failed: %w", err)
+		}
+		// Fail-Open
+		logger.Warn("engine failed but Fail-Open active. Proceeding.", "error", err)
+	}
+
+	// [NEW] Dynamic Configuration Injection
+	// NOTE: core.Evaluator currently does not expose GetActionConfig.
+	// We might need to cast or add it to interface if critical.
+	// For now, if engine is *engine.PolicyEngine, we can use it.
+	if pe, ok := g.engine.(*engine.PolicyEngine); ok {
+		config, err := pe.GetActionConfig(ctx, input)
+		if err != nil {
+			logger.Warn("failed to retrieve action config", "error", err)
+		} else if len(config) > 0 {
+			if input.Metadata == nil {
+			input.Metadata = make(map[string]any)
+			}
+			for k, v := range config {
+				input.Metadata[core.PrefixPromptConfig+k] = v
+			}
+		}
+	}
+
+	// 3. Context Propagation: Pass the Gene
+	// Propagate the current input ID as the new parent for the inner action
+	childCtx := core.WithParentID(ctx, input.ID.String())
+
+	// 4. Execution: Run inner action
+	result, err := g.inner.Execute(childCtx, input)
+	if err != nil {
+		logger.Error("action execution failed",
+			core.AttrActionName, meta.Name,
+			"error", err.Error(),
+		)
+		return core.Envelope{}, fmt.Errorf("action execution failed: %w", err)
+	}
+
+	// 5. Propagation: Output inherits Input's security labels
+	if len(input.SecurityLabels) > 0 {
+		result.MergeLabels(input.SecurityLabels)
+	}
+
+	// 6. Linking: Link Output to Input (Tracing only)
+	// g.engine.RecordLineage(ctx, result.ID.String(), input.ID.String())
+	if result.Metadata == nil {
+		result.Metadata = make(map[string]any)
+	}
+	result.Metadata["derived_from"] = input.ID.String()
+
+	// 7. Post-Check: Validation
+	validatedResult, err := g.engine.Validate(ctx, g.inner.Metadata(), result)
+	if err != nil {
+		if g.shouldBlock(err) {
+			logger.Warn("validation failed",
+				"action", meta.Name,
+				"error", err.Error(),
+			)
+			return core.Envelope{}, fmt.Errorf("validation failed: %w", err)
+		}
+		// Fail-Open: use result as validatedResult
+		logger.Warn("engine validation failed but Fail-Open active. Proceeding.", "error", err)
+		validatedResult = result
+	}
+
+	// 8. Steering: Evaluate next steps (Correction/Routing)
+	decision, steeringMeta, err := g.engine.EvaluateSteering(ctx, validatedResult)
+	if err != nil {
+		logger.Warn("steering evaluation failed",
+			"action", meta.Name,
+			"error", err.Error(),
+		)
+		return core.Envelope{}, fmt.Errorf("steering evaluation failed: %w", err)
+	}
+
+	// Stamp metadata
+	if validatedResult.Metadata == nil {
+		validatedResult.Metadata = make(map[string]any)
+	}
+	validatedResult.Metadata[core.KeyDecision] = decision
+	for k, v := range steeringMeta {
+		validatedResult.Metadata[k] = v
+	}
+
+	logger.Info("Action completed",
+		"action", meta.Name,
+		"result", "success", // Simplified as per doc
+	)
+
+	return validatedResult, nil
+}
 ```
 
-## config/schema.go
+## adapters/ai/genkit.go
 ```go
-package config
-
-// Config is the root configuration structure for Manglekit.
-// It maps to the YAML configuration file and defines all settings for the system.
-type Config struct {
-	// Policy configuration for the Datalog engine.
-	Policy PolicyConfig `yaml:"policy" mapstructure:"policy"`
-
-	// FailureMode determines how the system behaves when the policy engine or guard fails.
-	// - "closed" (Default): Blocks the action (returns error).
-	// - "open": Allows the action to proceed (logs warning).
-	FailureMode string `yaml:"failure_mode" mapstructure:"failure_mode"`
-
-	// Observability configuration (Logging and Tracing).
-	Observability ObservabilityConfig `yaml:"observability" mapstructure:"observability"`
-
-	// Actions defines pre-configured actions that can be referenced by name.
-	// This maps action names to their configuration.
-	Actions map[string]ActionConfig `yaml:"actions" mapstructure:"actions"`
-
-	// MCP defines a list of Model Context Protocol servers to connect to.
-	MCP []MCPServerConfig `yaml:"mcp" mapstructure:"mcp"`
-
-	// Knowledge configuration for static RDF facts.
-	Knowledge KnowledgeConfig `yaml:"knowledge" mapstructure:"knowledge"`
-}
-
-const (
-	// FailureModeClosed ensures the system blocks on governance errors.
-	FailureModeClosed = "closed"
-	// FailureModeOpen allows the system to proceed (fail-open) on governance errors.
-	FailureModeOpen = "open"
-)
-
-// KnowledgeConfig settings for loading static knowledge bases.
-type KnowledgeConfig struct {
-	// Path to the RDF Turtle (.ttl) file containing static facts.
-	Path string `yaml:"path" mapstructure:"path"`
-}
-
-// PolicyConfig settings for the Datalog Policy Engine.
-type PolicyConfig struct {
-	// Path to the Datalog policy source file (.dl or .dlog) or directory.
-	Path string `yaml:"path" mapstructure:"path"`
-
-	// EvaluationTimeout is the max duration (in seconds) for rule evaluation.
-	EvaluationTimeout int `yaml:"evaluation_timeout,omitempty" mapstructure:"evaluation_timeout"`
-}
-
-// ObservabilityConfig settings for telemetry.
-type ObservabilityConfig struct {
-	// Enabled toggles all observability features.
-	Enabled bool `yaml:"enabled" mapstructure:"enabled"`
-
-	// ServiceName is the application name used in traces and logs.
-	ServiceName string `yaml:"service_name,omitempty" mapstructure:"service_name"`
-
-	// LogLevel sets the minimum log severity ("debug", "info", "warn", "error").
-	LogLevel string `yaml:"log_level,omitempty" mapstructure:"log_level"`
-
-	// OTLPEndpoint is the URL of the OpenTelemetry collector (gRPC/HTTP).
-	OTLPEndpoint string `yaml:"otlp_endpoint,omitempty" mapstructure:"otlp_endpoint"`
-}
-
-// ActionConfig defines a static action configuration.
-type ActionConfig struct {
-	// Type identifies the kind of action (e.g., "llm", "retriever").
-	Type string `yaml:"type" mapstructure:"type"`
-
-	// Provider specifies the implementation provider (e.g., "google", "openai").
-	Provider string `yaml:"provider" mapstructure:"provider"`
-
-	// FailOnStartup determines if the application should crash if this action fails to load.
-	FailOnStartup bool `yaml:"fail_on_startup" mapstructure:"fail_on_startup"`
-
-	// Options contains arbitrary provider-specific settings.
-	Options map[string]interface{} `yaml:"options" mapstructure:"options"`
-}
-
-// MCPServerConfig defines how to connect to an MCP server.
-type MCPServerConfig struct {
-	// Name is a unique identifier for this MCP server connection.
-	Name string `yaml:"name" mapstructure:"name"`
-	// Transport specifies the connection method: "stdio" or "sse".
-	Transport string `yaml:"transport" mapstructure:"transport"`
-	// Command is the executable command (for stdio) or URL (for sse).
-	Command string `yaml:"command" mapstructure:"command"`
-	// Args are command-line arguments (for stdio).
-	Args []string `yaml:"args" mapstructure:"args"`
-	// Env specifies environment variables for the process (for stdio).
-	Env []string `yaml:"env" mapstructure:"env"`
-	// FailOnStartup determines if the application should crash if this server fails to connect.
-	FailOnStartup bool `yaml:"fail_on_startup" mapstructure:"fail_on_startup"`
-	// Tools lists expected tool names for resilience.
-	// If the server fails to connect, these tools will be registered as "Unhealthy"
-	// so the agent knows they exist but are unavailable.
-	Tools []string `yaml:"tools" mapstructure:"tools"`
-}
-```
-
-## config/loader.go
-```go
-package config
+package ai
 
 import (
+	"context"
 	"fmt"
-	"io"
-	"os"
 
-	"gopkg.in/yaml.v3"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
 )
 
-// Load reads a YAML configuration file from the given path and returns a Config object.
-// It also expands environment variables in the YAML content.
-// This function ports the legacy loading logic to the new architecture.
+// genkitAdapter adapts the Firebase Genkit ai.Model interface to the Manglekit core.TextGenerator interface.
+type genkitAdapter struct {
+	model ai.Model
+	gk    *genkit.Genkit
+}
+
+// NewGenkitAdapter creates a new adapter from a pre-initialized Genkit model.
 //
-// Environment variable expansion supports the standard ${VAR_NAME} syntax.
-// Example: ${API_KEY} will be replaced with the value of the API_KEY environment variable.
-func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+// Parameters:
+//   - model: The Genkit model instance.
+//   - gk: The Genkit runtime instance.
+//
+// Returns:
+//   - A core.TextGenerator implementation.
+func NewGenkitAdapter(model ai.Model, gk *genkit.Genkit) core.TextGenerator {
+	return &genkitAdapter{
+		model: model,
+		gk:    gk,
+	}
+}
+
+// Complete generates text using the underlying Genkit model.
+func (g *genkitAdapter) Complete(ctx context.Context, prompt string) (string, error) {
+	resp, err := g.Generate(ctx, prompt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file %q: %w", path, err)
+		return "", err
 	}
-	return ParseConfig(data)
+	return resp.Text, nil
 }
 
-// ParseConfig unmarshals a byte slice into a Config object.
-// It also expands environment variables in the YAML content before unmarshaling.
-func ParseConfig(data []byte) (*Config, error) {
-	// Expand environment variables in the YAML content
-	expandedContent := []byte(os.ExpandEnv(string(data)))
+// Generate implements the core.TextGenerator interface using Genkit.
+func (g *genkitAdapter) Generate(ctx context.Context, prompt string, opts ...core.GenerateOption) (*core.LLMResponse, error) {
+	var messages []*ai.Message
 
-	var cfg Config
-	if err := yaml.Unmarshal(expandedContent, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal YAML: %w", err)
+	// Dynamic Prompt Configuration
+	facts := core.ContextFacts(ctx)
+	systemPrompt := ""
+	if facts != nil {
+		if val, ok := facts[core.PrefixPromptConfig+"tone"]; ok {
+			systemPrompt += "\n[INSTRUCTION]: Maintain a " + val + " tone."
+		}
+		if val, ok := facts[core.PrefixPromptConfig+"strategy"]; ok && val == "cot" {
+			systemPrompt += "\n[STRATEGY]: Think step-by-step."
+		}
 	}
 
-	// Apply defaults
-	applyDefaults(&cfg)
+	if systemPrompt != "" {
+		messages = append(messages, &ai.Message{
+			Role:    ai.RoleSystem,
+			Content: []*ai.Part{ai.NewTextPart(systemPrompt)},
+		})
+	}
 
-	return &cfg, nil
-}
+	messages = append(messages, &ai.Message{
+		Role:    ai.RoleUser,
+		Content: []*ai.Part{ai.NewTextPart(prompt)},
+	})
 
-// LoadFromReader reads a YAML configuration from the provided reader and returns a Config object.
-// It also expands environment variables in the YAML content.
-func LoadFromReader(r io.Reader) (*Config, error) {
-	content, err := io.ReadAll(r)
+	req := &ai.ModelRequest{
+		Messages: messages,
+		// Output describes the desired response format.
+		Output: &ai.ModelOutputConfig{
+			Format: ai.OutputFormatJSON,
+		},
+	}
+
+	resp, err := g.model.Generate(ctx, req, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read from reader: %w", err)
+		return nil, err
 	}
-	return ParseConfig(content)
+
+	// Extract token usage if available
+	usage := make(map[string]int)
+	if resp.Usage != nil {
+		usage["prompt"] = int(resp.Usage.InputTokens)
+		usage["completion"] = int(resp.Usage.OutputTokens)
+		usage["total"] = int(resp.Usage.TotalTokens)
+	}
+
+	return &core.LLMResponse{
+		Text:  resp.Text(),
+		Usage: usage,
+	}, nil
 }
 
-// applyDefaults applies sensible defaults to the configuration if not already set.
-func applyDefaults(cfg *Config) {
-	if cfg.Observability.ServiceName == "" {
-		cfg.Observability.ServiceName = "manglekit-app"
-	}
-
-	if cfg.Observability.LogLevel == "" {
-		cfg.Observability.LogLevel = "info"
-	}
+// Stream implements the core.TextGenerator interface.
+// Currently returns error as streaming is not fully adapted here.
+func (g *genkitAdapter) Stream(ctx context.Context, prompt string) (<-chan string, error) {
+	// Simple non-streaming fallback or error
+	return nil, fmt.Errorf("streaming not implemented in genkit adapter yet")
 }
 ```
 
@@ -3612,6 +2588,10 @@ func (c *Client) Execute(ctx context.Context, input core.Envelope, opts ...Execu
 
 #### 6. CHANGELOG
 
+*   **2025-11-30**: Full Repository Exhaustive Scan.
+    *   Updated File Map to reflect current directory structure (removed `core/action.go`, `core/constants.go`, added `core/logic.go`, `core/data.go`, `core/governance.go`, `internal/resources`, etc.).
+    *   Updated Component Analysis to include `internal/resources` and CLI tools.
+    *   Updated Source Code Dump with critical files: `core/types.go`, `core/logic.go`, `core/governance.go`, `sdk/client.go`, `sdk/loop.go`, `internal/engine/solver.go`, `internal/supervisor/supervisor.go`, `internal/engine/reflection.go`.
 *   **2025-12-14**: Low-Code Gateway Implementation.
     *   Implemented `sdk/config_loader.go` for `HydrateActions`.
     *   Updated `sdk/client.go` to support `NewClientFromConfig` (Config Struct) and `NewClientFromFile` (Path).
@@ -3619,8 +2599,3 @@ func (c *Client) Execute(ctx context.Context, input core.Envelope, opts ...Execu
     *   Added `examples/config_driven_bot` demonstrating YAML+Datalog bot configuration.
     *   Aligned `internal/logger` with Config LogLevel.
 *   **2025-11-29**: Added Rich Telemetry.
-    *   Created `core/telemetry.go` for policy attributes.
-    *   Updated `core/errors.go` to include `RuleID` in `AlignmentError`.
-    *   Updated `internal/supervisor/supervisor.go` to inject detailed attributes into spans.
-    *   Updated `internal/engine/solver.go` to query `violation_rule` and populate `RuleID`.
-*   **2025-11-28**: Full Context Resync. Exhaustive scan of `cmd/`, `internal/`, `sdk/`, `adapters/`, `core/`, and `config/`. Updated file map, component analysis, critical path documentation, and source code dump.
