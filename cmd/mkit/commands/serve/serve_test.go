@@ -16,7 +16,7 @@ import (
 type DummyAction struct{}
 
 func (d *DummyAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	input.SetMeta(core.KeyDecision, core.DecisionAllow)
+	input.SetMeta(core.KeyDecision, core.DecisionProceed)
 	// Change state to stop routing loop
 	input.SetMeta("state", "done")
 	return input, nil

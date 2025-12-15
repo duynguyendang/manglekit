@@ -12,7 +12,7 @@ import (
 // Standard Metadata Keys used for Control Plane signaling.
 const (
 	// Governance & Routing
-	KeyDecision     = "manglekit.decision"  // Values: "ALLOW", "DENY", "RETRY", "ROUTE"
+	KeyDecision     = "manglekit.decision"  // Values: "PROCEED", "INFEASIBLE", "RETRY", "ROUTE"
 	KeyFeedback     = "manglekit.feedback"  // Human/LLM readable reason
 	KeyPrevFeedback = "prev_feedback"       // Loopback for retry
 	KeyNextStep     = "manglekit.next_step" // Next action routing
@@ -32,29 +32,30 @@ const (
 
 // Standard Decision Values
 const (
-	DecisionAllow = "ALLOW"
-	DecisionDeny  = "DENY"
-	DecisionRetry = "RETRY"
-	DecisionRoute = "ROUTE"
+	DecisionProceed    = "PROCEED"    // Formerly "ALLOW"
+	DecisionInfeasible = "INFEASIBLE" // Formerly "DENY"
+	DecisionRetry      = "RETRY"
+	DecisionRoute      = "ROUTE"
 )
 
 // Datalog System Constants
 const (
-	EntityInput  = "Req"    // ID for Input Envelope
-	EntityOutput = "Output" // ID for Output Envelope
+	EntityInput    = "Req"          // ID for Input Envelope
+	EntityOutput   = "Output"       // ID for Output Envelope
+	PredInfeasible = "infeasible"   // Predicate for blocking execution
 )
 
 // Observability & Trace Attributes
 const (
 	// Span Names
-	SpanPreCheck  = "Datalog.PreCheck"
-	SpanPostCheck = "Datalog.PostCheck"
+	SpanPreCheck  = "Datalog.Assess"  // Formerly "Datalog.PreCheck"
+	SpanPostCheck = "Datalog.Reflect" // Formerly "Datalog.PostCheck"
 
 	// Attribute Keys
 	AttrPolicyName   = "policy.name"
 	AttrPolicyType   = "policy.type"
 	AttrDecisionType = "decision.type"
-	AttrOutcome      = "outcome"       // "ALLOWED", "DENIED"
+	AttrOutcome      = "outcome"       // "PROCEED", "INFEASIBLE"
 	AttrLabels       = "mangle.labels" // Taint Propagation
 	AttrActionName   = "action.name"
 	AttrActionType   = "action.type"
@@ -64,9 +65,9 @@ const (
 
 // Outcome Values (for Tracing)
 const (
-	OutcomeAllowed = "ALLOWED"
-	OutcomeDenied  = "DENIED"
-	OutcomeSuccess = "success"
+	OutcomeProceed    = "PROCEED"    // Formerly "ALLOWED"
+	OutcomeInfeasible = "INFEASIBLE" // Formerly "DENIED"
+	OutcomeSuccess    = "success"
 )
 
 // --- STRUCTS ---
@@ -183,7 +184,7 @@ func (e *Envelope) SetHistory(msgs []Message) {
 
 // Decision: Structured result from the Policy Engine.
 type Decision struct {
-	Outcome string            // Matches DecisionAllow, DecisionDeny, etc.
+	Outcome string            // Matches DecisionProceed, DecisionInfeasible, etc.
 	Target  string            // Used if Outcome == DecisionRoute
 	Reasons []string          // Explanations
 	Meta    map[string]string // Side-channel data (risk scores, latency budget)
