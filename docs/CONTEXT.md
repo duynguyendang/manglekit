@@ -179,8 +179,10 @@ scan_mode: exhaustive
 ├── mangle.yaml
 ├── manglekit.go # Public Facade
 ├── providers # Standard Plugins
-│   └── google
-│       └── gemini.go
+│   ├── google
+│   │   └── gemini.go
+│   └── openrouter
+│       └── client.go
 └── sdk # Developer SDK & Steering Loop
     ├── client.go
     ├── client_execute.go
@@ -828,7 +830,7 @@ func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientO
 
 	// 1. Load Actions from Config
 	for name, actCfg := range cfg.Actions {
-		action, err := NewActionFromConfig(name, actCfg)
+		action, err := NewActionFromConfig(ctx, name, actCfg)
 		if err != nil {
 			// Log warning but don't fail entire client load? Or fail?
 			// Config usually implies "desired state", so failure is critical.
@@ -2385,11 +2387,11 @@ import (
 
 // HydrateActions iterates through the configuration and instantiates the defined actions.
 // It acts as a high-level factory for converting config maps into executable core.Actions.
-func HydrateActions(actions map[string]config.ActionConfig) ([]core.Action, error) {
+func HydrateActions(ctx context.Context, actions map[string]config.ActionConfig) ([]core.Action, error) {
 	var hydrated []core.Action
 
 	for name, cfg := range actions {
-		action, err := NewActionFromConfig(name, cfg)
+		action, err := NewActionFromConfig(ctx, name, cfg)
 		if err != nil {
 			// We log/return error. Returning error stops the boot, which is usually safer for config correctness.
 			return nil, fmt.Errorf("failed to hydrate action %q: %w", name, err)
@@ -2400,32 +2402,29 @@ func HydrateActions(actions map[string]config.ActionConfig) ([]core.Action, erro
 }
 
 // NewActionFromConfig creates a new Action instance based on the provided configuration.
-func NewActionFromConfig(name string, cfg config.ActionConfig) (core.Action, error) {
+func NewActionFromConfig(ctx context.Context, name, cfg config.ActionConfig) (core.Action, error) {
 	switch cfg.Type {
 	case "llm":
-		return createLLMAction(name, cfg)
+		return createLLMAction(ctx, name, cfg)
 	default:
 		return nil, fmt.Errorf("unsupported action type: %s", cfg.Type)
 	}
 }
 
-func createLLMAction(name string, cfg config.ActionConfig) (core.Action, error) {
-	// 1. Check if we can support the real provider
-	// For this task, we support a fallback to Mock if API keys are missing.
-
-	// Real Genkit hydration would go here.
-	// E.g., if cfg.Provider == "google" && os.Getenv("GOOGLE_GENAI_API_KEY") != "" { ... }
-
-	// For "Low-Code Gateway" task, we default to Mock to ensure wiring test passes.
-	// We only log a warning if we are falling back when a specific provider was requested.
-
-	if cfg.Provider != "mock" {
-		// In a real implementation, we would try to init the provider.
-		// Here we fallback.
-		// fmt.Printf("⚠️  Warning: Provider '%s' not fully integrated in config loader yet. Falling back to Mock for '%s'.\n", cfg.Provider, name)
+func createLLMAction(ctx context.Context, name string, cfg config.ActionConfig) (core.Action, error) {
+	// 1. Try to find a registered provider
+	factory, err := GetProvider(cfg.Provider)
+	if err == nil {
+		return factory(ctx, name, cfg)
 	}
 
-	return createMockLLMAction(name, cfg)
+	// 2. Fallback for Mock (Built-in)
+	if cfg.Provider == "mock" {
+		return createMockLLMAction(name, cfg)
+	}
+
+	// 3. Error if not found
+	return nil, fmt.Errorf("failed to create action '%s': %w (Did you forget to call sdk.RegisterProvider in main?)", name, err)
 }
 
 func createMockLLMAction(name string, cfg config.ActionConfig) (core.Action, error) {
@@ -2507,6 +2506,10 @@ func (c *Client) Execute(ctx context.Context, input core.Envelope, opts ...Execu
 
 #### 6. CHANGELOG
 
+*   **2025-12-15**: Multi-Provider Architecture (FOP).
+    *   Refactored `providers/google` to use Functional Options Pattern.
+    *   Added `providers/openrouter` for OpenAI-compatible APIs (OpenRouter, Groq).
+    *   Verified standardized `Register/New` pattern across providers.
 *   **2025-12-15**: Full Repository Exhaustive Scan.
     *   Updated File Map to reflect current directory structure (removed `core/action.go`, `core/constants.go`, added `core/logic.go`, `core/data.go`, `core/governance.go`, `internal/resources`, etc.).
     *   Updated Component Analysis to include `internal/resources` and CLI tools.
