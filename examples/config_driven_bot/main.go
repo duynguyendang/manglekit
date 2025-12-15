@@ -38,7 +38,7 @@ func main() {
 		}
 
 		// Resolve Model
-		modelName := "gemini-1.5-flash"
+		modelName := "gemini-2.5-flash"
 		if m, ok := cfg.Options["model"].(string); ok {
 			modelName = m
 		}
