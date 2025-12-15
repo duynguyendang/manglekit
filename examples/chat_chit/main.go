@@ -7,7 +7,6 @@ import (
 	"os"
 
 	mangleai "github.com/duynguyendang/manglekit/adapters/ai"
-	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/providers/google"
 	"github.com/duynguyendang/manglekit/sdk"
@@ -140,15 +139,8 @@ func main() {
 		log.Fatal("GOOGLE_API_KEY is not set")
 	}
 
-	// Create config for the generator
-	genConfig := config.ActionConfig{
-		Options: map[string]interface{}{
-			"model": "gemini-2.5-flash",
-		},
-	}
-
 	// Create the Manglekit TextGenerator adapter via provider
-	gemini, err := google.NewGenerator(ctx, genConfig)
+	gemini, err := google.New(ctx, google.WithModel("gemini-2.5-flash"))
 	if err != nil {
 		log.Fatalf("Failed to initialize google provider: %v", err)
 	}

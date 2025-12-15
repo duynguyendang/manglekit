@@ -1,9 +1,9 @@
 actions:
   chat_agent:
     type: "llm"
-    provider: "google"
+    provider: "openrouter"
     options:
-      model: "gemini-2.5-flash"
+      model: "liquid/lfm-40b"
       prompt: "You are Mangle. Answer briefly."
 policy:
   path: "./examples/config_driven_bot/policy.dl"

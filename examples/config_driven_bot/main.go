@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/duynguyendang/manglekit/providers/google"
+	"github.com/duynguyendang/manglekit/providers/openrouter"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/joho/godotenv"
 )
@@ -16,12 +17,11 @@ func main() {
 
 	// 1. Register Standard Plugins
 	google.Register()
+	openrouter.Register()
 
 	// 2. Create Client
-	// The SDK will now find "google" in its registry automatically.
-	// We use the path relative to repo root as per previous example behavior,
-	// or "mangle.yaml" if running from the directory.
-    // The previous code used "examples/config_driven_bot/mangle.yaml".
+	// The SDK will now find the configured provider ("openrouter" or "google") in its registry.
+	// We use "examples/config_driven_bot/mangle.yaml" assuming running from repo root.
 	client, err := sdk.NewClientFromFile(context.Background(), "examples/config_driven_bot/mangle.yaml")
 	if err != nil {
 		log.Fatalf("Client Init Failed: %v", err)
