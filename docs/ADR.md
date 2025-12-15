@@ -1,186 +1,207 @@
+# ADR — Manglekit Architecture Masterplan
 
-# ADR — Consolidated Architecture Decisions for Manglekit Core
+**Project:** Manglekit Core
+**Status:** Live Document
+**Version:** v1.1 (Consolidated)
+**Last Updated:** 2025-12-15
 
-**Status:** Accepted  
-**Scope:** Core SDK (Kernel, Guard, Engine, Adapters)  
-**Period:** Oct 2025 – Nov 2025  
-**Audience:** Core maintainers, provider/orchestrator authors, contributors  
-**Last Updated:** 2025-11-27
+## 1\. Architecture Roadmap (The Shift)
 
----
+This table illustrates the evolution from the legacy "Builder/DI" pattern to the modern "Composition/Plugin" architecture.
 
-## Quick Reference
+| ID | Title | Era | Status | Replaces/Evolves |
+|----|-------|-----|--------|------------------|
+| **1** | [Config-First & Declarative Strategy](https://www.google.com/search?q=%23adr-1-config-first--declarative-strategy) | Foundation | Accepted | N/A |
+| **2** | [Observability-Native Lifecycle](https://www.google.com/search?q=%23adr-2-observability-native-lifecycle) | Foundation | Accepted | N/A |
+| **3** | [Universal Context Propagation](https://www.google.com/search?q=%23adr-3-universal-context-propagation) | Foundation | Accepted | N/A |
+| **4** | [Composition-Based Governance Kernel](https://www.google.com/search?q=%23adr-4-composition-based-governance-kernel) | Renaissance (v1.0) | Accepted | *Old ADR 4 (Generic Builder)* |
+| **5** | [Domain-Driven Core Abstractions](https://www.google.com/search?q=%23adr-5-domain-driven-core-abstractions) | Expansion (v1.1) | Accepted | *Legacy `core/*` structure* |
+| **6** | [Hybrid "Low-Code" Gateway Pattern](https://www.google.com/search?q=%23adr-6-hybrid-low-code-gateway-pattern) | Expansion (v1.1) | Accepted | *Old ADR 10 (Dual-Path)* |
+| **7** | [Decoupled Provider Registry (Plugins)](https://www.google.com/search?q=%23adr-7-decoupled-provider-registry-plugins) | Expansion (v1.1) | Accepted | *Old ADR 7 (Per-Kind Handlers)* |
+| **8** | [Functional Options for Providers](https://www.google.com/search?q=%23adr-8-functional-options-for-providers) | Expansion (v1.1) | Accepted | *Old ADR 11 (DependencyResolver)* |
+| **9** | [Strict Dependency Inversion in Governance](https://www.google.com/search?q=%23adr-9-strict-dependency-inversion-in-governance) | Expansion (v1.1) | Accepted | *N/A (Fix)* |
+| **10** | [Architectural Boundaries Enforcement](https://www.google.com/search?q=%23adr-10-architectural-boundaries-enforcement) | Process | Accepted | *Old ADR 8 (Static Rules)* |
+| **11** | [Dual-Tier Testing Strategy](https://www.google.com/search?q=%23adr-11-dual-tier-testing-strategy) | Process | Accepted | *Old ADR 6 (Testing)* |
 
-| ADR | Title | Status | Key Decision |
-|-----|-------|--------|--------------|
-| 1 | Config-First & Declarative Architecture | Accepted | YAML/ENV are first-class inputs; config→builder bridge decouples parsing from construction |
-| 2 | Observability & Lifecycle as First-Class | Accepted | Unified logging/observability contracts; graceful shutdown for all resources |
-| 3 | Context Propagation Throughout SDK | Accepted | `context.Context` mandatory across all factories and runtime calls |
-| 4 | Generic, Type-Safe Registry & Builder | **Superseded** | (Replaced by ADR 12) One generic registry; providers self-identify via Options type |
-| 5 | Orchestrator Modernization | **Superseded** | (Replaced by ADR 12) Refactor into stage-based pipeline consuming typed `Resolved` dependencies |
-| 6 | Testing & DX Uplift | Accepted | Increase coverage; adopt typed factories and `Resolved` in tests |
-| 7 | Per-Kind Handlers and Typed DI Enforcement | **Superseded** | (Replaced by ADR 12) Strict separation: handlers encapsulate build logic |
-| 8 | Static Architecture Rules & Tooling | Accepted | Codify layering, registration, DI, and observability rules via static checks |
-| 9 | Remediation Plan for Current Gaps | Completed | Verified compliance with ADR R14; marked "Builder Leaking into Handler" as resolved |
-| 10 | Dual-Path Build Architecture | **Superseded** | (Replaced by ADR 12) Support both `sdk.Load()` and `sdk.NewBuilder()` |
-| 11 | DependencyResolver Pattern | **Superseded** | (Replaced by ADR 12) Handlers delegate dependency resolution to resolvers |
-| 12 | **Universal AI Governance Kernel** | **Accepted** | **Complete Re-Architecture**: Replace Builder/Registry with Client/Guard/Engine composition. |
+-----
 
----
+## I. The Foundation (Immutable Principles)
 
-## Table of Contents
+*These decisions established the bedrock of the system and remain active.*
 
-1. [Universal AI Governance Kernel (ADR 12)](#universal-ai-governance-kernel-adr-12)nance-kernel-adr-12)
-2. [Foundation Layer (ADRs 1–3)](#foundation-layer)
-3. [Legacy Architecture (ADRs 4–5, 7, 10-11)](#legacy-architecture-superseded)
-4. [Enforcement & Refinement (ADRs 6–8)](#enforcement--refinement)
-5. [Appendix: Status & Remediation (ADR 9)](#appendix-status--remediation)
+### ADR 1: Config-First & Declarative Strategy
 
----
-
-## Universal AI Governance Kernel (ADR 12)
-
-### ADR 12: Universal AI Governance Kernel
-
-#### Status
-Accepted (v1.0)
-
-#### Context
-The v0.x architecture (ADRs 4, 5, 7, 10, 11) relied on a complex "Builder/Registry" pattern. While it provided type safety, it suffered from:
-1.  **High Cognitive Load**: Developers had to understand Handlers, Factories, Resolvers, and the Registry just to add a simple component.
-2.  **Rigidity**: The "Build Order" was hard-coded, making it difficult to create custom pipelines.
-3.  **Conflation**: The Builder mixed *configuration parsing* with *object construction*.
-4.  **Vendor Lock-in**: The framework felt like a "walled garden" where everything had to be a registered provider.
-
-#### Decision
-**Abandon the Builder/Registry pattern entirely.** Move to a **Composition-based** architecture centered on the **Guarded Action**.
-
-1.  **The Kernel (`manglekit.Client`)**: A lightweight coordinator that holds the Policy Engine and Observability stack.
-2.  **The Guard (`Protect()`)**: A single API that wraps *any* `core.Action` with governance (Trace -> AuthZ -> Exec -> Validate).
-3.  **Universal Adapters**: Instead of "Providers", we have simple adapters that convert external libraries (Genkit, native Go functions) into `core.Action`.
-4.  **Logic Engine**: A dedicated subsystem (`engine`) for Datalog reasoning and reflection.
-
-#### Rationale
-*   **Simplicity**: "Wrap, Don't Build." The framework no longer constructs your objects; it governs them.
-*   **Flexibility**: Users can bring any execution engine (Genkit, LangChain, raw HTTP) and simply wrap it.
-*   **Separation of Concerns**:
-    *   **User**: Constructs the object (e.g., `genkit.NewModel`).
-    *   **Manglekit**: Wraps it (`client.Protect(model)`).
-*   **Zero-Config Reflection**: The new `core/reflection` engine allows governance over arbitrary Go structs without manual mapping.
-
-#### Consequences
-*   **Deleted**: `Builder`, `Registry`, `ComponentHandler`, `Factory` interfaces.
-*   **Introduced**: `Client`, `GuardedAction`, `MangleRuntime`.
-*   **Supersedes**: ADRs 4, 5, 7, 10, 11 are now obsolete history.
-
----
-
-## Foundation Layer
-
-### ADR 1: Config-First & Declarative Architecture
-
-#### Context
+**Context:**
 Early versions mixed runtime construction with ad-hoc configuration.
+**Decision:**
+Configuration (YAML/ENV) is a first-class citizen. System behavior must be definable declaratively.
+**Rationale:**
+Allows "Manglekit as a Service" deployments where artifacts are immutable.
+**Consequences:**
+The `config` package is a foundational dependency.
 
-#### Decision
-Adopt a **config-first** stance: YAML/ENV are first-class inputs.
+### ADR 2: Observability-Native Lifecycle
 
-#### Status
-**Retained**. The `config` package still loads YAML, but instead of feeding a Builder, it configures the `Client` (Policy path, Observability settings).
+**Context:**
+AI applications are non-deterministic; resource leaks (goroutines/connections) were common.
+**Decision:**
+Observability and Lifecycle are mandatory.
 
----
+  * **Trace:** Every Action emits spans.
+  * **Log:** Unified `core.Logger` via Context.
+  * **Close:** Graceful shutdown via `ResourceCloser`.
+    **Rationale:**
+    "If it's not traced, it didn't happen." Essential for debugging AI policies.
 
-### ADR 2: Observability & Lifecycle as First-Class
+### ADR 3: Universal Context Propagation
 
-#### Context
-Resource leaks and inconsistent logging.
+**Context:**
+Request-scoped data (Trace ID, Cancellation) was lost across async boundaries.
+**Decision:**
+`context.Context` is mandatory as the first argument of every API.
+**Rationale:**
+Ensures distributed tracing continuity and proper timeout handling.
 
-#### Decision
-Unify logging/observability contracts and implement graceful shutdown.
+-----
 
-#### Status
-**Retained**. `core.Logger` and `core.Tracer` are central to the `Client` and `GuardedAction`.
+## II. The Renaissance (v1.0 - The Kernel Shift)
 
----
+*This era marks the move from a complex "Dependency Injection Framework" to a lightweight "Composition" model.*
 
-### ADR 3: Context Propagation Throughout SDK
+### ADR 4: Composition-Based Governance Kernel
 
-#### Context
-APIs ignored `context.Context`.
+*(Supersedes Legacy ADR 4: Generic Type-Safe Registry & Builder)*
 
-#### Decision
-Make `context.Context` explicit and mandatory.
+**Context:**
+The v0.x architecture (Legacy ADR 4) used a massive "Generic Builder" and "DIAPI" to construct graphs. This created high cognitive load; adding a component required writing Handlers, Factories, and DI logic. The system was too rigid.
+**Decision:**
+**Abandon the monolithic Builder Pattern.** Adopt a **Composition Root** pattern.
 
-#### Status
-**Retained**. `Execute(ctx, ...)` is the standard signature.
+1.  **Client:** A lightweight coordinator.
+2.  **Guard:** A `Supervise(action)` method that wraps *any* implementation with governance (Trace -\> AuthZ -\> Exec -\> Validate).
+3.  **Engine:** A dedicated Datalog runtime.
+    **Rationale:**
 
----
+<!-- end list -->
 
-## Legacy Architecture (Superseded)
+  * **Simplicity:** "Wrap, Don't Build." The framework governs objects instantiated by the user (or factory), rather than trying to be a "God Builder".
+  * **Flexibility:** Users can bring any library (Genkit, LangChain) and simply wrap it.
+    **Consequences:**
+  * **Deleted:** `builder` package, `diapi` package.
+  * **Introduced:** `sdk.Client`, `supervisor.SupervisedAction`.
 
-*The following ADRs describe the v0.x "Builder/Registry" architecture. They are kept for historical context but are no longer active in v1.0.*
+-----
 
-### ADR 4: Generic, Type-Safe Registry & Builder (Superseded)
-**Replaced by ADR 12.** The Registry and Builder have been removed in favor of direct composition.
+## III. The Expansion (v1.1 - Low Code & Modularity)
 
-### ADR 5: Orchestrator Modernization (Superseded)
-**Replaced by ADR 12.** Orchestrators are now just `core.Action` implementations that chain other Actions. The "Sandwich" pattern is now a legacy implementation detail, not a framework constraint.
+*This era introduces the "Gateway" capabilities to support YAML-driven bots without compromising the clean kernel.*
 
-### ADR 7: Per-Kind Handlers and Typed DI Enforcement (Superseded)
-**Replaced by ADR 12.** Dependency Injection is now the user's responsibility (standard Go constructor injection). The framework no longer manages DI.
+### ADR 5: Domain-Driven Core Abstractions
 
-### ADR 10: Dual-Path Build Architecture (Superseded)
-**Replaced by ADR 12.** There is now only one path: Initialize `Client`, then `Protect()` your actions.
+**Context:**
+The `core` package became a "junk drawer" of mixed logic and interfaces (`action.go`, `memory.go`, `constants.go`), causing circular dependencies.
+**Decision:**
+Refactor `core` into 5 strict domain files containing **only Interfaces and Types**:
 
-### ADR 11: DependencyResolver Pattern (Superseded)
-**Replaced by ADR 12.** Complex resolution logic is no longer needed as users construct their own dependencies.
+1.  `types.go`: Vocabulary (Constants, Envelope).
+2.  `logic.go`: Execution Contracts (AI/Actions).
+3.  `data.go`: Storage Contracts.
+4.  `governance.go`: Policy Contracts.
+5.  `infra.go`: Observability Contracts.
+    **Rationale:**
+    Creates a stable "Ubiquitous Language". Separates *Definitions* from *Implementations*.
 
----
+### ADR 6: Hybrid "Low-Code" Gateway Pattern
 
-## Enforcement & Refinement
+*(Evolved from Legacy ADR 10: Dual-Path Build)*
 
-### ADR 6: Testing & DX Uplift
+**Context:**
+ADR 4 optimized for "Pro-Code" (Go devs). However, Ops teams require defining Bot topology via `mangle.yaml` without writing code.
+**Decision:**
+Implement a **Dual-Mode Initialization Strategy**:
 
-#### Context
-Brittle tests.
+1.  **Pro-Code:** `sdk.NewClient()` + Manual `RegisterAction()`.
+2.  **Low-Code:** `sdk.NewClientFromConfig()` which uses a **Factory Layer** (`sdk/config_loader.go`) to hydrate actions from YAML.
+    **Rationale:**
+    Balances flexibility for developers with ease-of-use for operators.
+    **Consequences:**
+    The SDK now contains logic to map YAML strings to Go structs via the Registry (ADR 7).
 
-#### Decision
-Increase test coverage; adopt typed contracts.
+### ADR 7: Decoupled Provider Registry (Plugins)
 
-#### Status
-**Retained**. Testing against `core.Action` interface is the standard.
+*(Supersedes Legacy ADR 7: Per-Kind Handlers)*
 
----
+**Context:**
+To support ADR 6, the SDK initially hard-coded dependencies (e.g., `googleai`) in the loader. This violated OCP and bloated the SDK. Legacy ADR 7's "Handlers" were too complex and coupled to the Builder.
+**Decision:**
+Adopt a **Registry Pattern** with **External Providers**.
 
-### ADR 8: Static Architecture Rules & Tooling
+  * **SDK:** Exposes `sdk.RegisterProvider()`.
+  * **Providers:** (`providers/google`, `providers/openai`) register themselves at runtime.
+    **Rationale:**
+  * **Zero-Bloat:** SDK core has no heavy AI dependencies.
+  * **Extensibility:** Users can write custom providers without modifying SDK.
+    **Consequences:**
+    Users must explicitly import providers in `main.go` (e.g., `google.Register()`).
 
-#### Context
-Need to keep codebase aligned.
+### ADR 8: Functional Options for Providers
 
-#### Decision
-Codify rules via static checks.
+*(Supersedes Legacy ADR 11: DependencyResolver)*
 
-#### Status
-**Retained**, but rules updated to reflect v1.0 architecture (e.g., "No Builder" rule).
+**Context:**
+Legacy ADR 11 tried to resolve complex dependencies via a "Resolver" pattern. This was over-engineered. Providers just need flexible configuration.
+**Decision:**
+Use the **Functional Options Pattern (FOP)** for all Provider Constructors.
 
----
+  * **Pattern:** `New(ctx, opts...)`
+  * **Adapter:** Each provider implements a `NewGenerator` to map YAML to Options.
+    **Rationale:**
+  * **Type Safety:** Go developers get explicit options (`WithModel`).
+  * **Cleanliness:** Separates the "YAML mapping" logic from the "Instance creation" logic.
 
-## Appendix: Status & Remediation
+### ADR 9: Strict Dependency Inversion in Governance
 
-### ADR 9: Remediation Plan for Current Gaps (Completed)
+**Context:**
+The `SupervisedAction` (App Layer) was casting `core.Evaluator` to `*engine.PolicyEngine` (Implementation) to access `GetActionConfig`, coupling the layers.
+**Decision:**
+Promote `GetActionConfig` to the `core.Evaluator` interface.
+**Rationale:**
+High-level modules must not depend on low-level modules. Enables mocking of config logic.
 
-#### Context
-Addressed v0.x gaps (Builder leaking, etc.).
+-----
 
-#### Status
-**Completed** (Historical).
+## IV. The Guardrails (Process & Quality)
 
----
+### ADR 10: Architectural Boundaries Enforcement
 
-## Resulting System (v1.0 Snapshot)
+*(Replaces Legacy ADR 8)*
+**Context:**
+To maintain the integrity of ADR 5 & 7, we must prevent dependency leaking.
+**Decision:**
+Enforce strict import rules:
 
-*   **Kernel**: `manglekit.Client` (Policy + Observability).
-*   **Guard**: `GuardedAction` (The "Sandwich" of governance).
-*   **Engine**: `MangleRuntime` (Datalog) + `Reflector` (Go Structs -> Facts).
-*   **Adapters**: `adapters/ai`, `adapters/func`, `adapters/vector`.
-*   **Config**: YAML loads policy/observability, not component wiring.
+1.  **Core:** MUST NOT import `sdk`, `internal`, or `providers`.
+2.  **SDK:** MUST NOT import `providers` or specific AI libraries.
+3.  **Providers:** CAN import `sdk` (to register) and `core`.
+
+### ADR 11: Dual-Tier Testing Strategy
+
+*(Replaces Legacy ADR 6)*
+**Context:**
+With the Hybrid Gateway (ADR 6), unit tests are not enough.
+**Decision:**
+Adopt two tiers:
+
+1.  **Unit Tests:** Test logic using Mocks (Pro-Code path).
+2.  **Integration Tests:** Test the full pipeline by loading a real `mangle.yaml` (Low-Code path).
+
+-----
+
+## V. Appendix: Superseded Concepts (The Graveyard)
+
+*The following concepts from the legacy architecture (v0.x) are deprecated and removed:*
+
+  * **Generic Builder (`diapi`):** Removed. Replaced by `sdk.Client` composition.
+  * **Component Handlers:** Removed. Replaced by `providers/` packages.
+  * **DependencyResolver:** Removed. Replaced by FOP Adapters.
+  * **Typed Resolved Structs:** Removed. The SDK now relies on dynamic `core.Envelope` passing rather than rigid compile-time structs for pipeline stages.
