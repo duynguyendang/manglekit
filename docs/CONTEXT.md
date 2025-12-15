@@ -1549,125 +1549,20 @@ func (e *PolicyEngine) Authorize(ctx context.Context, actionMeta core.ActionMeta
 
 // authorizeInternal executes the core authorization logic.
 func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
-	if e.runtime == nil || e.runtime.programInfo == nil {
-		return nil // No runtime or program loaded, allow by default
-	}
+	var extraFacts []ast.Atom
 
-	// Convert the input payload to Mangle facts
-	facts, err := toMangleFacts(core.EntityInput, input.Payload, input.ContentType)
-	if err != nil {
-		if e.logger != nil {
-			e.logger.Debug("failed to convert input to facts", "error", err)
-		}
-		// Return actual error to allow Fail-Open handling
-		return fmt.Errorf("fact conversion error: %w", err)
-	}
-
-	// Inject Action Metadata facts
-	// action_operation("Req", "Name")
+	// Inject Action Metadata facts: action_operation("Req", "Name")
 	if actionMeta.Name != "" {
 		safeName := core.EntityInput
 		safeOp := actionMeta.Name
 		opFactStr := fmt.Sprintf("action_operation(\"%s\", \"%s\")", escapeString(safeName), escapeString(safeOp))
 		opAtom, err := parse.Atom(opFactStr)
 		if err == nil {
-			facts = append(facts, opAtom)
+			extraFacts = append(extraFacts, opAtom)
 		}
 	}
 
-	// Generate facts for security labels using safe helper
-	labelFacts, err := LabelsToFacts(core.EntityInput, input.SecurityLabels)
-	if err != nil {
-		if e.logger != nil {
-			e.logger.Error("failed to generate label facts", "error", err)
-		}
-		// Return actual error to allow Fail-Open handling
-		return fmt.Errorf("label conversion error: %w", err)
-	}
-
-	for _, factStr := range labelFacts {
-		atom, err := parse.Atom(factStr)
-		if err != nil {
-			if e.logger != nil {
-				e.logger.Error("failed to parse label fact", "fact", factStr, "error", err)
-			}
-			// Return actual error
-			return fmt.Errorf("label parsing error: %w", err)
-		}
-		facts = append(facts, atom)
-	}
-
-	// [NEW] Inject Explicit Facts from Envelope
-	for _, factStr := range input.Facts {
-		atom, err := parse.Atom(factStr)
-		if err != nil {
-			if e.logger != nil {
-				e.logger.Error("failed to parse envelop fact", "fact", factStr, "error", err)
-			}
-			return fmt.Errorf("envelope fact parsing error: %w", err)
-		}
-		facts = append(facts, atom)
-	}
-
-	// Inject Metadata facts: meta(Key, Value) and attempt(N)
-	for k, v := range input.Metadata {
-		safeK := escapeString(k)
-		vStr := fmt.Sprintf("%v", v)
-		safeV := escapeString(vStr)
-		// meta("key", "val")
-		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
-		if atom, err := parse.Atom(metaFact); err == nil {
-			facts = append(facts, atom)
-		}
-
-		// attempt(N) from retry_count
-		if k == "retry_count" {
-			attemptFact := fmt.Sprintf("attempt(%s)", vStr)
-			if atom, err := parse.Atom(attemptFact); err == nil {
-				facts = append(facts, atom)
-			}
-		}
-	}
-
-	// Execute the deny(Req) query
-	denied, err := e.runtime.ExecuteQuery(facts, fmt.Sprintf(`deny("%s")`, core.EntityInput))
-	if err != nil {
-		if e.logger != nil {
-			e.logger.Debug("policy evaluation failed", "error", err)
-		}
-		// Return actual error to allow Fail-Open handling
-		return fmt.Errorf("policy evaluation error: %w", err)
-	}
-
-	if denied {
-		// Teacher-Student Protocol: Try to extract a human-readable violation message and rule ID
-		var violationMsg, ruleID string
-
-		// Query: violation_msg(Msg)
-		_ = e.runtime.QueryWithSolutions(facts, "violation_msg(Msg)", func(solution map[string]any) error {
-			if msg, ok := solution["Msg"].(string); ok {
-				violationMsg = msg
-				return fmt.Errorf("found") // Stop searching
-			}
-			return nil
-		})
-
-		// Query: violation_rule(ID)
-		_ = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
-			if id, ok := solution["ID"].(string); ok {
-				ruleID = id
-				return fmt.Errorf("found") // Stop searching
-			}
-			return nil
-		})
-
-		if e.logger != nil {
-			e.logger.Debug("alignment issue detected", "action", actionMeta.Name, "msg", violationMsg, "rule_id", ruleID)
-		}
-		return &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
-	}
-
-	return nil
+	return e.evaluateGate(ctx, actionMeta.Name, core.EntityInput, input, `deny("%s")`, extraFacts...)
 }
 
 // Validate performs the Post-Check phase of governance.
@@ -1707,66 +1602,94 @@ func (e *PolicyEngine) Validate(ctx context.Context, actionMeta core.ActionMetad
 
 // validateInternal executes the core validation logic.
 func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
+	err := e.evaluateGate(ctx, actionMeta.Name, core.EntityOutput, output, `deny("%s")`)
+	if err != nil {
+		return core.Envelope{}, err
+	}
+	return output, nil
+}
+
+// evaluateGate centralizes the logic for "Check -> Deny -> Explain".
+// It is used by both Authorize (Pre-Check) and Validate (Post-Check).
+func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, entityID string, env core.Envelope, queryTemplate string, extraFacts ...ast.Atom) error {
 	if e.runtime == nil || e.runtime.programInfo == nil {
-		return output, nil // No runtime or program loaded, allow by default
+		return nil // No runtime or program loaded, allow by default
 	}
 
-	// Convert the output payload to Mangle facts
-	facts, err := toMangleFacts(core.EntityOutput, output.Payload, output.ContentType)
+	// 1. ToFacts: Convert Payload
+	facts, err := toMangleFacts(entityID, env.Payload, env.ContentType)
 	if err != nil {
 		if e.logger != nil {
-			e.logger.Debug("failed to convert output to facts", "error", err)
+			e.logger.Debug("failed to convert payload to facts", "error", err)
 		}
-		// Return actual error to allow Fail-Open handling
-		return core.Envelope{}, fmt.Errorf("fact conversion error: %w", err)
+		// Return actual error to allow Fail-Open handling if configured upstream
+		return fmt.Errorf("fact conversion error: %w", err)
 	}
 
-	// Generate facts for security labels using safe helper
-	labelFacts, err := LabelsToFacts(core.EntityOutput, output.SecurityLabels)
+	// 2. Inject Extra Facts (e.g. Action Operation)
+	facts = append(facts, extraFacts...)
+
+	// 3. Inject Labels
+	labelFacts, err := LabelsToFacts(entityID, env.SecurityLabels)
 	if err != nil {
 		if e.logger != nil {
 			e.logger.Error("failed to generate label facts", "error", err)
 		}
-		// Return actual error
-		return core.Envelope{}, fmt.Errorf("label conversion error: %w", err)
+		return fmt.Errorf("label conversion error: %w", err)
 	}
-
-	for _, factStr := range labelFacts {
-		atom, err := parse.Atom(factStr)
+	for _, f := range labelFacts {
+		atom, err := parse.Atom(f)
 		if err != nil {
 			if e.logger != nil {
-				e.logger.Error("failed to parse label fact", "fact", factStr, "error", err)
+				e.logger.Error("failed to parse label fact", "fact", f, "error", err)
 			}
-			// Return actual error
-			return core.Envelope{}, fmt.Errorf("label parsing error: %w", err)
+			return fmt.Errorf("label parsing error: %w", err)
 		}
 		facts = append(facts, atom)
 	}
 
-	// [NEW] Inject Explicit Facts from Envelope
-	for _, factStr := range output.Facts {
-		atom, err := parse.Atom(factStr)
+	// 4. Inject Explicit Facts from Envelope
+	for _, f := range env.Facts {
+		atom, err := parse.Atom(f)
 		if err != nil {
 			if e.logger != nil {
-				e.logger.Error("failed to parse envelop fact", "fact", factStr, "error", err)
+				e.logger.Error("failed to parse envelop fact", "fact", f, "error", err)
 			}
-			return core.Envelope{}, fmt.Errorf("envelope fact parsing error: %w", err)
+			return fmt.Errorf("envelope fact parsing error: %w", err)
 		}
 		facts = append(facts, atom)
 	}
 
-	// Execute the deny(Output) query for post-check validation
-	denied, err := e.runtime.ExecuteQuery(facts, fmt.Sprintf(`deny("%s")`, core.EntityOutput))
+	// 5. Inject Metadata
+	for k, v := range env.Metadata {
+		safeK := escapeString(k)
+		vStr := fmt.Sprintf("%v", v)
+		safeV := escapeString(vStr)
+		// meta("key", "val")
+		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
+		if atom, err := parse.Atom(metaFact); err == nil {
+			facts = append(facts, atom)
+		}
+		// attempt(N) from retry_count
+		if k == "retry_count" {
+			attemptFact := fmt.Sprintf("attempt(%s)", vStr)
+			if atom, err := parse.Atom(attemptFact); err == nil {
+				facts = append(facts, atom)
+			}
+		}
+	}
+
+	// 6. Run Query (deny(EntityID))
+	denied, err := e.runtime.ExecuteQuery(facts, fmt.Sprintf(queryTemplate, entityID))
 	if err != nil {
 		if e.logger != nil {
-			e.logger.Debug("post-check validation failed", "error", err)
+			e.logger.Debug("policy evaluation failed", "error", err)
 		}
-		// Return actual error to allow Fail-Open handling
-		return core.Envelope{}, fmt.Errorf("policy evaluation error: %w", err)
+		return fmt.Errorf("policy evaluation error: %w", err)
 	}
 
 	if denied {
-		// Teacher-Student Protocol: Try to extract a human-readable violation message and rule ID
+		// Teacher-Student Protocol: Extract violation message and rule ID
 		var violationMsg, ruleID string
 
 		// Query: violation_msg(Msg)
@@ -1788,13 +1711,12 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 		})
 
 		if e.logger != nil {
-			e.logger.Debug("post-check validation violation detected", "action", actionMeta.Name, "msg", violationMsg, "rule_id", ruleID)
+			e.logger.Debug("gate violation detected", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
 		}
-
-		return core.Envelope{}, &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
+		return &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
 	}
 
-	return output, nil
+	return nil
 }
 
 // EvaluateSteering executes "Steering Policies" which determine what to do next.
