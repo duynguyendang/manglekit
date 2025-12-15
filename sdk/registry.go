@@ -36,3 +36,29 @@ func GetProvider(name string) (ProviderFactory, error) {
 	}
 	return factory, nil
 }
+
+// MemoryFactory defines the constructor for memory providers.
+type MemoryFactory func(ctx context.Context, cfg config.MemoryConfig) (core.AgentMemory, error)
+
+var (
+	memoryRegistryMu sync.RWMutex
+	memoryRegistry   = make(map[string]MemoryFactory)
+)
+
+// RegisterMemoryProvider allows plugins to register memory backends (e.g., "qdrant", "simple").
+func RegisterMemoryProvider(name string, factory MemoryFactory) {
+	memoryRegistryMu.Lock()
+	defer memoryRegistryMu.Unlock()
+	memoryRegistry[name] = factory
+}
+
+// GetMemoryProvider retrieves a registered memory factory.
+func GetMemoryProvider(name string) (MemoryFactory, error) {
+	memoryRegistryMu.RLock()
+	defer memoryRegistryMu.RUnlock()
+	factory, ok := memoryRegistry[name]
+	if !ok {
+		return nil, fmt.Errorf("memory provider '%s' is not registered", name)
+	}
+	return factory, nil
+}

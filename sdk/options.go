@@ -45,6 +45,18 @@ func WithLogger(l core.Logger) ClientOption {
 	}
 }
 
+// WithAgentMemory configures the semantic memory (RAG) provider.
+//
+// Parameters:
+//   - mem: A core.AgentMemory implementation.
+func WithAgentMemory(mem core.AgentMemory) ClientOption {
+	return func(c *Client) {
+		if mem != nil {
+			c.agentMemory = mem
+		}
+	}
+}
+
 // WithTracerProvider configures the OpenTelemetry tracer provider.
 // This enables Manglekit to emit spans to your existing tracing infrastructure.
 //
