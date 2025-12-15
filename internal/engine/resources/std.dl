@@ -24,14 +24,14 @@ triple(S, P, O) :- quad(S, P, O, _).
 
 % Arity 1: Global/Single-Context (JSON) 
 Decl deny(Reason). 
-Decl infeasible(Reason).
+Decl halt(Reason).
 Decl route(NextStep). 
 Decl retry(Feedback).
 
 % Arity 2: Entity-Specific (Graph/Batch) 
 % Allows pinning the decision to a specific node (Entity). 
 Decl deny(Entity, Reason). 
-Decl infeasible(Entity, Reason).
+Decl halt(Entity, Reason).
 Decl route(Entity, NextStep). 
 Decl retry(Entity, Feedback).
 
@@ -40,8 +40,8 @@ Decl config(Key, Value).
 Decl config(Entity, Key, Value).
 
 % Semantic Alias for backward compatibility
-infeasible(Reason) :- deny(Reason).
-infeasible(Entity, Reason) :- deny(Entity, Reason).
+halt(Reason) :- deny(Reason).
+halt(Entity, Reason) :- deny(Entity, Reason).
 
 % ==========================================
 % 3. CONTEXT INJECTION

@@ -12,7 +12,7 @@ import (
 // Standard Metadata Keys used for Control Plane signaling.
 const (
 	// Governance & Routing
-	KeyDecision     = "manglekit.decision"  // Values: "PROCEED", "INFEASIBLE", "RETRY", "ROUTE"
+	KeyDecision     = "manglekit.decision"  // Values: "PROCEED", "HALT", "RETRY", "ROUTE"
 	KeyFeedback     = "manglekit.feedback"  // Human/LLM readable reason
 	KeyPrevFeedback = "prev_feedback"       // Loopback for retry
 	KeyNextStep     = "manglekit.next_step" // Next action routing
@@ -25,6 +25,8 @@ const (
 	KeyTraceID   = "manglekit.trace_id"
 	KeyModel     = "manglekit.model"
 	KeyHistory   = "manglekit_history"
+	KeyContext   = "manglekit.context" // RAG data injected here
+	KeySummary   = "manglekit.summary" // Conversation summary
 
 	// Configuration
 	PrefixPromptConfig = "prompt."
@@ -32,17 +34,17 @@ const (
 
 // Standard Decision Values
 const (
-	DecisionProceed    = "PROCEED"    // Formerly "ALLOW"
-	DecisionInfeasible = "INFEASIBLE" // Formerly "DENY"
-	DecisionRetry      = "RETRY"
-	DecisionRoute      = "ROUTE"
+	DecisionProceed = "PROCEED" // Formerly "ALLOW"
+	DecisionHalt    = "HALT"    // Formerly "DENY"
+	DecisionRetry   = "RETRY"
+	DecisionRoute   = "ROUTE"
 )
 
 // Datalog System Constants
 const (
-	EntityInput    = "Req"          // ID for Input Envelope
-	EntityOutput   = "Output"       // ID for Output Envelope
-	PredInfeasible = "infeasible"   // Predicate for blocking execution
+	EntityInput  = "Req"    // ID for Input Envelope
+	EntityOutput = "Output" // ID for Output Envelope
+	PredHalt     = "halt"   // Predicate for blocking execution
 )
 
 // Observability & Trace Attributes
@@ -50,12 +52,13 @@ const (
 	// Span Names
 	SpanPreCheck  = "Datalog.Assess"  // Formerly "Datalog.PreCheck"
 	SpanPostCheck = "Datalog.Reflect" // Formerly "Datalog.PostCheck"
+	SpanMemory    = "Mangle.Recall"   // RAG lookup
 
 	// Attribute Keys
 	AttrPolicyName   = "policy.name"
 	AttrPolicyType   = "policy.type"
 	AttrDecisionType = "decision.type"
-	AttrOutcome      = "outcome"       // "PROCEED", "INFEASIBLE"
+	AttrOutcome      = "outcome"       // "PROCEED", "HALT"
 	AttrLabels       = "mangle.labels" // Taint Propagation
 	AttrActionName   = "action.name"
 	AttrActionType   = "action.type"
@@ -65,9 +68,9 @@ const (
 
 // Outcome Values (for Tracing)
 const (
-	OutcomeProceed    = "PROCEED"    // Formerly "ALLOWED"
-	OutcomeInfeasible = "INFEASIBLE" // Formerly "DENIED"
-	OutcomeSuccess    = "success"
+	OutcomeProceed = "PROCEED" // Formerly "ALLOWED"
+	OutcomeHalt    = "HALT"    // Formerly "DENIED"
+	OutcomeSuccess = "success"
 )
 
 // --- STRUCTS ---
@@ -184,7 +187,7 @@ func (e *Envelope) SetHistory(msgs []Message) {
 
 // Decision: Structured result from the Policy Engine.
 type Decision struct {
-	Outcome string            // Matches DecisionProceed, DecisionInfeasible, etc.
+	Outcome string            // Matches DecisionProceed, DecisionHalt, etc.
 	Target  string            // Used if Outcome == DecisionRoute
 	Reasons []string          // Explanations
 	Meta    map[string]string // Side-channel data (risk scores, latency budget)
@@ -231,6 +234,13 @@ type ConversationHistory struct {
 type Query struct {
 	Text string         `json:"text"`
 	Meta map[string]any `json:"meta,omitempty"`
+}
+
+// Document represents a snippet of knowledge/memory.
+type Document struct {
+	Content  string         `json:"content"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+	Score    float32        `json:"score,omitempty"` // Re-ranking score
 }
 
 // Answer represents a structured system response.

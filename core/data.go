@@ -6,13 +6,6 @@ import (
 
 // --- Knowledge (RAG) ---
 
-type Document struct {
-	ID       string
-	Content  string
-	Metadata map[string]any
-	Score    float32
-}
-
 // VectorStore abstracts Semantic Search.
 type VectorStore interface {
 	Search(ctx context.Context, collection string, vector []float32, k int) ([]Document, error)

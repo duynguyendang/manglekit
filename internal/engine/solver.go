@@ -210,12 +210,12 @@ func (e *PolicyEngine) AssessPlan(ctx context.Context, input core.Envelope) (cor
 		var alignErr *core.AlignmentError
 		if errors.As(err, &alignErr) {
 			return core.Decision{
-				Outcome: core.DecisionInfeasible,
+				Outcome: core.DecisionHalt,
 				Reasons: []string{alignErr.Message},
 				Meta:    map[string]string{"rule_id": alignErr.RuleID},
 			}, nil
 		}
-		return core.Decision{Outcome: core.DecisionInfeasible, Reasons: []string{err.Error()}}, err
+		return core.Decision{Outcome: core.DecisionHalt, Reasons: []string{err.Error()}}, err
 	}
 	return core.Decision{Outcome: core.DecisionProceed}, nil
 }
@@ -472,13 +472,13 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 	}
 
 	// 6. Run Query
-	// Priority 1: infeasible(Entity, Reason)
+	// Priority 1: halt(Entity, Reason)
 	var violationMsg, ruleID string
 	var blocked bool
 
-	// Query: infeasible(Entity, Reason)
-	queryInfeasible := fmt.Sprintf("%s(\"%s\", Reason)", core.PredInfeasible, entityID)
-	err = e.runtime.QueryWithSolutions(facts, queryInfeasible, func(solution map[string]any) error {
+	// Query: halt(Entity, Reason)
+	queryHalt := fmt.Sprintf("%s(\"%s\", Reason)", core.PredHalt, entityID)
+	err = e.runtime.QueryWithSolutions(facts, queryHalt, func(solution map[string]any) error {
 		if reason, ok := solution["Reason"].(string); ok {
 			violationMsg = reason
 			blocked = true
@@ -499,7 +499,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		})
 
 		if e.logger != nil {
-			e.logger.Debug("gate violation detected (infeasible)", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
+			e.logger.Debug("gate violation detected (halt)", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
 		}
 		return &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
 	}
