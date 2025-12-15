@@ -8,7 +8,9 @@ This document defines the reserved predicates (keywords) and standard configurat
 
 | Predicate | Signature | Role | Behavior |
 | --- | --- | --- | --- |
-| **`deny`** | `deny(Reason)` | **Blocking** | Stops execution immediately. Returns an `AlignmentError` with the `Reason`. |
+| **`deny`** | `deny(Entity)` | **Blocking** | Stops execution immediately. Marks the `Entity` (Req/Output) as denied. |
+| **`violation_msg`** | `violation_msg(Msg)` | **Error** | Provides the human-readable reason for the denial. |
+| **`violation_rule`** | `violation_rule(ID)` | **Observability** | Provides the specific Rule ID that caused the denial. |
 | **`route`** | `route(NextStep)` | **Steering** | Completes the current step and routes execution to `NextStep` (Action Name). *Replaces legacy `next_step`.* |
 | **`retry`** | `retry(Feedback)` | **Correction** | Triggers a self-correction loop. Sends `Feedback` to the AI and retries the current action. *Replaces legacy `correction`.* |
 | **`config`** | `config(Key, Value)` | **Config** | Injects dynamic configuration into the Action's context. *Mapped to `action_config` in code.* |
@@ -54,6 +56,7 @@ This document defines the reserved predicates (keywords) and standard configurat
 | **`meta`** | `meta(Key, Val)` | Metadata from the Envelope (e.g., User ID, Session ID). |
 | **`attempt`** | `attempt(N)` | Current retry count (starts at 0). Useful for escalating logic on failures. |
 | **`label`** | `label(Tag)` | Security taint labels (e.g., `label("pii")`). |
+| **`action_operation`** | `action_operation(Entity, Name)` | The name of the action being governed. Allows rules to target specific actions (e.g., `action_operation("Req", "chat_agent")`). |
 
 ---
 

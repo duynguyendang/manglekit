@@ -2,7 +2,7 @@
 context_type: full_source_dump
 project: manglekit
 language: go
-last_updated: 2025-11-30
+last_updated: 2025-12-15
 scan_mode: exhaustive
 ---
 
@@ -224,12 +224,13 @@ scan_mode: exhaustive
 *   **Responsibilities:**
     *   Implements the "Universal Guarded Action" (UGA) pattern.
     *   Decorates any `core.Action` with:
-        1.  **Tracing:** Auto-starts OpenTelemetry spans.
+        1.  **Trace:** Auto-starts OpenTelemetry spans (`manglekit` tracer).
         2.  **Authorization:** Calls `Engine.Authorize`.
-        3.  **Execution:** Invokes the inner action.
-        4.  **Taint Propagation:** Merges input labels to output.
-        5.  **Validation:** Calls `Engine.Validate`.
-        6.  **Steering:** Calls `Engine.EvaluateSteering`.
+        3.  **Config Injection:** Dynamically injects config from facts (`GetActionConfig`).
+        4.  **Execution:** Invokes the inner action with propagated context.
+        5.  **Taint Propagation:** Merges input labels to output.
+        6.  **Validation:** Calls `Engine.Validate`.
+        7.  **Steering:** Calls `Engine.EvaluateSteering`.
 
 **Config (`config`)**
 *   **Key Structs:** `Config`, `PolicyConfig`, `ObservabilityConfig`.
@@ -252,10 +253,12 @@ scan_mode: exhaustive
     *   Resolves `core.Action` from registry (typically a `SupervisedAction`).
     *   Creates `core.Envelope` and injects Metadata (Feedback, History, Facts).
     *   **Supervisor (`SupervisedAction.Execute`):**
-        *   **Trace:** Starts span.
+        *   **Trace:** Auto-starts span using global `manglekit` tracer.
         *   **AuthZ:** `Engine.Authorize` checks `deny(Req)`.
+        *   **Config:** `Engine.GetActionConfig` injects dynamic parameters (e.g. system prompt).
+        *   **Context:** Propagates `parent_id` for lineage.
         *   **Run:** Inner Action executes (e.g., calls LLM).
-        *   **Taint:** Propagates labels.
+        *   **Taint:** Propagates labels from input to output.
         *   **Validate:** `Engine.Validate` checks `deny(Output)`.
         *   **Steering:** `Engine.EvaluateSteering` checks `retry(Hint)` or `route(Target)`.
 4.  **Decision Handling:**
@@ -577,6 +580,9 @@ type Evaluator interface {
 
 	// EvaluateSteering determines the next step (Retry/Route) based on the output.
 	EvaluateSteering(ctx context.Context, input Envelope) (string, map[string]string, error)
+
+	// GetActionConfig queries the engine for dynamic configuration parameters.
+	GetActionConfig(ctx context.Context, input Envelope) (map[string]string, error)
 
 	// LoadPolicy loads policy rules from a source string or file content.
 	LoadPolicy(ctx context.Context, source string) error
@@ -1948,7 +1954,6 @@ import (
 	"strconv"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/engine"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -2052,20 +2057,20 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 		span.SetStatus(codes.Error, err.Error())
 		// Distinguish between Blueprint DENIAL and System ERROR
 		if g.isAlignmentIssue(err) {
-			span.SetAttributes(attribute.String(core.AttrPolicyOutcome, "deny"))
+			span.SetAttributes(attribute.String(core.AttrOutcome, "deny"))
 			var alignErr *core.AlignmentError
 			if errors.As(err, &alignErr) {
-				span.SetAttributes(attribute.String(core.AttrPolicyReason, alignErr.Message))
+				span.SetAttributes(attribute.String(core.KeyFeedback, alignErr.Message))
 				if alignErr.RuleID != "" {
-					span.SetAttributes(attribute.String(core.AttrPolicyRuleID, alignErr.RuleID))
+					span.SetAttributes(attribute.String(core.AttrRuleID, alignErr.RuleID))
 				}
 			} else {
-				span.SetAttributes(attribute.String(core.AttrPolicyReason, err.Error()))
+				span.SetAttributes(attribute.String(core.KeyFeedback, err.Error()))
 			}
 			// Legacy attribute for backward compatibility
-			span.SetAttributes(attribute.String("mangle.outcome", "DENIED"))
+			span.SetAttributes(attribute.String(core.AttrOutcome, "DENIED"))
 		} else {
-			span.SetAttributes(attribute.String("mangle.outcome", "ERROR"))
+			span.SetAttributes(attribute.String(core.AttrOutcome, "ERROR"))
 		}
 		return core.Envelope{}, err
 	}
@@ -2074,21 +2079,21 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 	decision := result.Metadata[core.KeyDecision]
 	switch decision {
 	case core.DecisionRetry:
-		span.SetAttributes(attribute.String(core.AttrPolicyOutcome, "retry"))
+		span.SetAttributes(attribute.String(core.AttrOutcome, "retry"))
 		if hint, ok := result.Metadata[core.KeyFeedback]; ok {
 			if s, ok := hint.(string); ok {
-				span.SetAttributes(attribute.String(core.AttrPolicyReason, s))
+				span.SetAttributes(attribute.String(core.KeyFeedback, s))
 			}
 		}
 	case core.DecisionRoute:
-		span.SetAttributes(attribute.String(core.AttrPolicyOutcome, "route"))
+		span.SetAttributes(attribute.String(core.AttrOutcome, "route"))
 		if target, ok := result.Metadata[core.KeyNextStep]; ok {
 			if s, ok := target.(string); ok {
-				span.SetAttributes(attribute.String(core.AttrPolicyTarget, s))
+				span.SetAttributes(attribute.String(core.AttrActionName, s))
 			}
 		}
 	default:
-		span.SetAttributes(attribute.String(core.AttrPolicyOutcome, "allow"))
+		span.SetAttributes(attribute.String(core.AttrOutcome, "allow"))
 	}
 
 	// Inject Retry Count if present
@@ -2096,15 +2101,15 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 		// handle both string and int
 		if s, ok := attemptVal.(string); ok {
 			if n, err := strconv.Atoi(s); err == nil {
-				span.SetAttributes(attribute.Int(core.AttrPolicyAttempt, n))
+				span.SetAttributes(attribute.Int(core.AttrAttempt, n))
 			}
 		} else if n, ok := attemptVal.(int); ok {
-			span.SetAttributes(attribute.Int(core.AttrPolicyAttempt, n))
+			span.SetAttributes(attribute.Int(core.AttrAttempt, n))
 		}
 	}
 
 	span.SetAttributes(
-		attribute.String("mangle.outcome", "ALLOWED"),
+		attribute.String(core.AttrOutcome, "ALLOWED"),
 		attribute.String("mangle.output_id", result.ID.String()),
 	)
 	return result, nil
@@ -2173,20 +2178,16 @@ func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envel
 	}
 
 	// [NEW] Dynamic Configuration Injection
-	// NOTE: core.Evaluator currently does not expose GetActionConfig.
-	// We might need to cast or add it to interface if critical.
-	// For now, if engine is *engine.PolicyEngine, we can use it.
-	if pe, ok := g.engine.(*engine.PolicyEngine); ok {
-		config, err := pe.GetActionConfig(ctx, input)
-		if err != nil {
-			logger.Warn("failed to retrieve action config", "error", err)
-		} else if len(config) > 0 {
-			if input.Metadata == nil {
+	// We query the engine for any configuration overrides (e.g. prompt params)
+	config, err := g.engine.GetActionConfig(ctx, input)
+	if err != nil {
+		logger.Warn("failed to retrieve action config", "error", err)
+	} else if len(config) > 0 {
+		if input.Metadata == nil {
 			input.Metadata = make(map[string]any)
-			}
-			for k, v := range config {
-				input.Metadata[core.PrefixPromptConfig+k] = v
-			}
+		}
+		for k, v := range config {
+			input.Metadata[core.PrefixPromptConfig+k] = v
 		}
 	}
 
@@ -2502,7 +2503,7 @@ func (c *Client) Execute(ctx context.Context, input core.Envelope, opts ...Execu
 
 #### 6. CHANGELOG
 
-*   **2025-11-30**: Full Repository Exhaustive Scan.
+*   **2025-12-15**: Full Repository Exhaustive Scan.
     *   Updated File Map to reflect current directory structure (removed `core/action.go`, `core/constants.go`, added `core/logic.go`, `core/data.go`, `core/governance.go`, `internal/resources`, etc.).
     *   Updated Component Analysis to include `internal/resources` and CLI tools.
     *   Updated Source Code Dump with critical files: `core/types.go`, `core/logic.go`, `core/governance.go`, `sdk/client.go`, `sdk/loop.go`, `internal/engine/solver.go`, `internal/supervisor/supervisor.go`, `internal/engine/reflection.go`.
