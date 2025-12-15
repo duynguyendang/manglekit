@@ -2,7 +2,6 @@ package sdk
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -130,15 +129,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	}
 
 	// 1.3 Inject Semantic Memory (RAG)
-	if c.agentMemory != nil {
-		// We use the JSON payload string as the query for simplicity
-		query := safelyStringify(payload)
-		if contextStr, err := c.agentMemory.Recall(ctx, query); err == nil && contextStr != "" {
-			// Inject into Metadata. The LLM Adapter (Genkit) must be updated
-			// to look for "manglekit.context" and add it to the system prompt.
-			env.SetMeta("manglekit.context", contextStr)
-		}
-	}
+	c.recallContext(ctx, payload, &env)
 
 	// 1.3 Inject Explicit Metadata
 	if params.Metadata != nil {
@@ -210,12 +201,9 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	decision := result.Metadata[core.KeyDecision]
 
 	// --- HOOK: MEMORIZE ---
-	// Only memorize if Policy ALLOWED the action and it wasn't a retry loop
-	if c.agentMemory != nil && decision == core.DecisionProceed {
-		go func() {
-			// Async save to avoid blocking response
-			_ = c.agentMemory.Memorize(context.Background(), safelyStringify(payload), safelyStringify(result.Payload))
-		}()
+	// Only learn if no error and Decision is PROCEED (or empty/legacy)
+	if err == nil && (decision == "" || decision == core.DecisionProceed) {
+		c.asyncMemorize(payload, result.Payload)
 	}
 
 	if c.logger != nil {
@@ -272,20 +260,6 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	return result, nil
 }
 
-// Helper for better logging
-func safelyStringify(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	// Try JSON first for structured data
-	b, err := json.Marshal(v)
-	if err == nil {
-		return string(b)
-	}
-	// Fallback
-	return fmt.Sprintf("%v", v)
-}
-
 // backoff handles the sleep and context cancellation check
 func (c *Client) backoff(ctx context.Context, retryCount int) error {
 	sleepDuration := time.Duration(retryCount) * BackoffBase
@@ -295,4 +269,80 @@ func (c *Client) backoff(ctx context.Context, retryCount int) error {
 	case <-time.After(sleepDuration):
 		return nil
 	}
+}
+
+// ---------------------------------------------------------
+// PRIVATE HELPERS (Memory & Context)
+// ---------------------------------------------------------
+
+// safelyStringify converts any payload to string for embedding.
+func safelyStringify(v any) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	// Fallback to generic formatting
+	return fmt.Sprintf("%v", v)
+}
+
+// recallContext handles the RAG lookup logic.
+// It fails silently (logs only) to not break the main flow.
+func (c *Client) recallContext(ctx context.Context, payload any, env *core.Envelope) {
+	if c.agentMemory == nil {
+		return
+	}
+
+	// Start Span for Observability
+	var span core.Span
+	if c.tracer != nil {
+		ctx, span = c.tracer.Start(ctx, core.SpanMemory)
+		defer span.End()
+	}
+
+	inputStr := safelyStringify(payload)
+
+	// Call Memory Provider
+	contextData, err := c.agentMemory.Recall(ctx, inputStr)
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Warn("Memory Recall failed", "error", err)
+		}
+		if span != nil {
+			span.RecordError(err)
+		}
+		return
+	}
+
+	// Inject if found
+	if contextData != "" {
+		env.SetMeta(core.KeyContext, contextData)
+		if c.logger != nil {
+			c.logger.Debug("Injected memory context", "len", len(contextData))
+		}
+	}
+}
+
+// asyncMemorize handles the Fire-and-Forget storage logic.
+func (c *Client) asyncMemorize(input any, output any) {
+	if c.agentMemory == nil {
+		return
+	}
+
+	inputStr := safelyStringify(input)
+	outputStr := safelyStringify(output)
+
+	// Launch Goroutine to not block response latency
+	go func(q, a string) {
+		// Create a detached context with timeout to prevent leaks
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := c.agentMemory.Memorize(ctx, q, a); err != nil {
+			if c.logger != nil {
+				c.logger.Warn("Memory Memorize failed", "error", err)
+			}
+		}
+	}(inputStr, outputStr)
 }
