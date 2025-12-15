@@ -39,7 +39,7 @@ func TestDualModeInput(t *testing.T) {
 		env := core.NewEnvelope(User{Age: 18})
 		// Default is TypeStruct
 
-		err = e.Authorize(context.Background(), core.ActionMetadata{Name: "test"}, env)
+		err = e.Assess(context.Background(), core.ActionMetadata{Name: "test"}, env)
 		assert.ErrorIs(t, err, core.ErrAlignment)
 	})
 
@@ -69,7 +69,7 @@ func TestDualModeInput(t *testing.T) {
 		env := core.NewEnvelope(data)
 		env.ContentType = core.TypeJSON
 
-		err = e.Authorize(context.Background(), core.ActionMetadata{Name: "test-dynamic"}, env)
+		err = e.Assess(context.Background(), core.ActionMetadata{Name: "test-dynamic"}, env)
 		assert.ErrorIs(t, err, core.ErrAlignment)
 	})
 }

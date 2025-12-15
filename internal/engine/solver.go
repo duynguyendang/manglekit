@@ -199,24 +199,25 @@ func (e *PolicyEngine) LoadPolicy(ctx context.Context, policy string) error {
 	return nil
 }
 
-// Assess implements the core.Evaluator interface.
-// It performs a high-level assessment of the input, mapping Authorize logic to a Decision.
-func (e *PolicyEngine) Assess(ctx context.Context, input core.Envelope) (core.Decision, error) {
+// AssessPlan implements the core.Evaluator interface.
+// It performs a high-level assessment of the input, mapping Assess logic to a Decision.
+// Formerly: Assess
+func (e *PolicyEngine) AssessPlan(ctx context.Context, input core.Envelope) (core.Decision, error) {
 	// Simple mapping: use empty metadata for generic assessment
-	err := e.Authorize(ctx, core.ActionMetadata{}, input)
+	err := e.Assess(ctx, core.ActionMetadata{}, input)
 	if err != nil {
 		// If authorization fails, it's a DENY
 		var alignErr *core.AlignmentError
 		if errors.As(err, &alignErr) {
 			return core.Decision{
-				Outcome: core.DecisionDeny,
+				Outcome: core.DecisionInfeasible,
 				Reasons: []string{alignErr.Message},
 				Meta:    map[string]string{"rule_id": alignErr.RuleID},
 			}, nil
 		}
-		return core.Decision{Outcome: core.DecisionDeny, Reasons: []string{err.Error()}}, err
+		return core.Decision{Outcome: core.DecisionInfeasible, Reasons: []string{err.Error()}}, err
 	}
-	return core.Decision{Outcome: core.DecisionAllow}, nil
+	return core.Decision{Outcome: core.DecisionProceed}, nil
 }
 
 // GetActionConfig queries the engine for dynamic configuration parameters.
@@ -299,11 +300,11 @@ func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope)
 	return config, nil
 }
 
-// Authorize performs the Pre-Check phase of governance.
+// Assess performs the Pre-Check phase of governance.
 // It checks if the input is allowed to proceed based on the loaded policies.
-// If the `deny(Req)` predicate is derived, it returns `core.ErrAlignment`.
+// If the `infeasible(Req, Reason)` or `deny(Req)` predicate is derived, it returns `core.ErrAlignment`.
 //
-// It automatically starts a tracing span (`Datalog.PreCheck`) and logs attributes.
+// It automatically starts a tracing span (`Datalog.Assess`) and logs attributes.
 //
 // Parameters:
 //   - ctx: The execution context.
@@ -312,9 +313,10 @@ func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope)
 //
 // Returns:
 //   - core.ErrAlignment if blocked, or nil if allowed.
-func (e *PolicyEngine) Authorize(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
+// Formerly: Authorize
+func (e *PolicyEngine) Assess(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
 	if e.tracer == nil {
-		return e.authorizeInternal(ctx, actionMeta, input)
+		return e.assessInternal(ctx, actionMeta, input)
 	}
 
 	ctx, span := e.tracer.Start(ctx, core.SpanPreCheck)
@@ -325,17 +327,17 @@ func (e *PolicyEngine) Authorize(ctx context.Context, actionMeta core.ActionMeta
 		span.SetAttributes(map[string]any{core.AttrLabels: input.SecurityLabels})
 	}
 
-	err := e.authorizeInternal(ctx, actionMeta, input)
+	err := e.assessInternal(ctx, actionMeta, input)
 	if err != nil {
 		span.RecordError(err)
 	} else {
-		span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeAllowed})
+		span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeProceed})
 	}
 	return err
 }
 
-// authorizeInternal executes the core authorization logic.
-func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
+// assessInternal executes the core authorization logic.
+func (e *PolicyEngine) assessInternal(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
 	var extraFacts []ast.Atom
 
 	// Inject Action Metadata facts: action_operation("Req", "Name")
@@ -349,14 +351,15 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 		}
 	}
 
-	return e.evaluateGate(ctx, actionMeta.Name, core.EntityInput, input, `deny("%s")`, extraFacts...)
+	// Use infeasible(Req, Reason) with fallback to deny(Req)
+	return e.evaluateGate(ctx, actionMeta.Name, core.EntityInput, input, extraFacts...)
 }
 
-// Validate performs the Post-Check phase of governance.
+// Reflect performs the Post-Check phase of governance.
 // It checks if the output is allowed to be returned to the caller.
-// If the `deny(Output)` predicate is derived, it returns `core.ErrAlignment`.
+// If the `infeasible(Output, Reason)` predicate is derived, it returns `core.ErrAlignment`.
 //
-// It automatically starts a tracing span (`Datalog.PostCheck`) and logs attributes.
+// It automatically starts a tracing span (`Datalog.Reflect`) and logs attributes.
 //
 // Parameters:
 //   - ctx: The execution context.
@@ -365,9 +368,10 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 //
 // Returns:
 //   - The validated envelope (potentially modified, though currently pass-through), or an error.
-func (e *PolicyEngine) Validate(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
+// Formerly: Validate
+func (e *PolicyEngine) Reflect(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
 	if e.tracer == nil {
-		return e.validateInternal(ctx, actionMeta, output)
+		return e.reflectInternal(ctx, actionMeta, output)
 	}
 
 	ctx, span := e.tracer.Start(ctx, core.SpanPostCheck)
@@ -378,18 +382,18 @@ func (e *PolicyEngine) Validate(ctx context.Context, actionMeta core.ActionMetad
 		span.SetAttributes(map[string]any{core.AttrLabels: output.SecurityLabels})
 	}
 
-	result, err := e.validateInternal(ctx, actionMeta, output)
+	result, err := e.reflectInternal(ctx, actionMeta, output)
 	if err != nil {
 		span.RecordError(err)
 		return core.Envelope{}, err
 	}
-	span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeAllowed})
+	span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeProceed})
 	return result, nil
 }
 
-// validateInternal executes the core validation logic.
-func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
-	err := e.evaluateGate(ctx, actionMeta.Name, core.EntityOutput, output, `deny("%s")`)
+// reflectInternal executes the core validation logic.
+func (e *PolicyEngine) reflectInternal(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
+	err := e.evaluateGate(ctx, actionMeta.Name, core.EntityOutput, output)
 	if err != nil {
 		return core.Envelope{}, err
 	}
@@ -397,8 +401,9 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 }
 
 // evaluateGate centralizes the logic for "Check -> Deny -> Explain".
-// It is used by both Authorize (Pre-Check) and Validate (Post-Check).
-func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, entityID string, env core.Envelope, queryTemplate string, extraFacts ...ast.Atom) error {
+// It is used by both Assess (Pre-Check) and Reflect (Post-Check).
+// Updated to check `infeasible(Entity, Reason)` first, then `deny(Entity)`.
+func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, entityID string, env core.Envelope, extraFacts ...ast.Atom) error {
 	if e.runtime == nil || e.runtime.programInfo == nil {
 		return nil // No runtime or program loaded, allow by default
 	}
@@ -466,24 +471,55 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		}
 	}
 
-	// 6. Run Query (deny(EntityID))
-	denied, err := e.runtime.ExecuteQuery(facts, fmt.Sprintf(queryTemplate, entityID))
+	// 6. Run Query
+	// Priority 1: infeasible(Entity, Reason)
+	var violationMsg, ruleID string
+	var blocked bool
+
+	// Query: infeasible(Entity, Reason)
+	queryInfeasible := fmt.Sprintf("%s(\"%s\", Reason)", core.PredInfeasible, entityID)
+	err = e.runtime.QueryWithSolutions(facts, queryInfeasible, func(solution map[string]any) error {
+		if reason, ok := solution["Reason"].(string); ok {
+			violationMsg = reason
+			blocked = true
+			return fmt.Errorf("found") // Stop searching
+		}
+		return nil
+	})
+
+	if blocked {
+		// Try to find rule ID if available (optional)
+		// Query: violation_rule(ID)
+		_ = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
+			if id, ok := solution["ID"].(string); ok {
+				ruleID = id
+				return fmt.Errorf("found")
+			}
+			return nil
+		})
+
+		if e.logger != nil {
+			e.logger.Debug("gate violation detected (infeasible)", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
+		}
+		return &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
+	}
+
+	// Priority 2: deny(Entity) (Backward Compatibility)
+	queryDeny := fmt.Sprintf("deny(\"%s\")", entityID)
+	denied, err := e.runtime.ExecuteQuery(facts, queryDeny)
 	if err != nil {
 		if e.logger != nil {
-			e.logger.Debug("policy evaluation failed", "error", err)
+			e.logger.Debug("policy evaluation failed (deny check)", "error", err)
 		}
 		return fmt.Errorf("policy evaluation error: %w", err)
 	}
 
 	if denied {
-		// Teacher-Student Protocol: Extract violation message and rule ID
-		var violationMsg, ruleID string
-
 		// Query: violation_msg(Msg)
 		_ = e.runtime.QueryWithSolutions(facts, "violation_msg(Msg)", func(solution map[string]any) error {
 			if msg, ok := solution["Msg"].(string); ok {
 				violationMsg = msg
-				return fmt.Errorf("found") // Stop searching
+				return fmt.Errorf("found")
 			}
 			return nil
 		})
@@ -492,13 +528,13 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		_ = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
 			if id, ok := solution["ID"].(string); ok {
 				ruleID = id
-				return fmt.Errorf("found") // Stop searching
+				return fmt.Errorf("found")
 			}
 			return nil
 		})
 
 		if e.logger != nil {
-			e.logger.Debug("gate violation detected", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
+			e.logger.Debug("gate violation detected (deny)", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
 		}
 		return &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
 	}
@@ -507,23 +543,23 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 }
 
 // EvaluateSteering executes "Steering Policies" which determine what to do next.
-// Unlike Authorize/Validate (which are binary Allow/Deny), Steering returns decisions like "Retry" or "Route".
+// Unlike Assess/Reflect (which are binary Proceed/Infeasible), Steering returns decisions like "Retry" or "Route".
 //
 // Logic Priority:
-//  1. Correction (Retry): If `correction(Req, Hint)` is derived, we return `RETRY` with the hint.
-//  2. Routing (Route): If `next_step(Req, Target)` is derived, we return `ROUTE` with the target.
-//  3. Default: `ALLOW` (Proceed as normal).
+//  1. Correction (Retry): If `retry(Hint)` is derived, we return `RETRY` with the hint.
+//  2. Routing (Route): If `route(Target)` is derived, we return `ROUTE` with the target.
+//  3. Default: `PROCEED` (Proceed as normal).
 //
 // Parameters:
 //   - ctx: The execution context.
 //   - input: The input envelope.
 //
 // Returns:
-//   - decision: The decision string (e.g., "RETRY", "ROUTE", "ALLOW").
+//   - decision: The decision string (e.g., "RETRY", "ROUTE", "PROCEED").
 //   - metadata: A map containing steering details (e.g., {"feedback": "hint"}).
 //   - error: An error if evaluation fails.
 func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope) (string, map[string]string, error) {
-	decision := core.DecisionAllow
+	decision := core.DecisionProceed
 	metadata := make(map[string]string)
 
 	if e.runtime == nil || e.runtime.programInfo == nil {
@@ -531,7 +567,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 	}
 
 	// Convert the input payload to Mangle facts
-	// We use "Req" as the entity ID, consistent with Authorize
+	// We use "Req" as the entity ID, consistent with Assess
 	facts, err := toMangleFacts(core.EntityInput, input.Payload, input.ContentType)
 	if err != nil {
 		if e.logger != nil {
@@ -573,22 +609,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 	}
 
 	// 1. Check Correction (Retry)
-	// Query: retry(Hint) - Simplified from correction(Req, Hint) as context is implicit in facts
-	// Wait, the instruction says: Change query `correction(..., Hint)` -> `retry(..., Hint)`.
-	// The ellipses imply arguments might be preserved or changed.
-	// But `retry` declaration is `Decl retry(Feedback).` (Arity 1).
-	// `correction` was `Decl correction(Feedback).` (Arity 1) in std.dl, but code used `correction("Req", Hint)` (Arity 2).
-	// Let's look at `std.dl` old content. The old content wasn't shown fully, but I overwrote it.
-	// My new `std.dl` has `Decl retry(Feedback).`. Arity 1.
-	// So the query must be `retry(Hint)`.
-	// The old code used `correction("%s", Hint)` with EntityInput.
-	// If the rule head was `correction(Hint) :- ...` then `correction("Req", Hint)` would fail unless arity matched.
-	// Mangle is strict. If `Decl correction(Feedback)` was arity 1, then `correction("Req", Hint)` would be invalid query if strict, or maybe "Req" was ignored?
-	// Actually, `std.dl` before update likely had `Decl correction(Entity, Feedback)` or `Decl correction(Feedback)`?
-	// The prompt says: `Decl retry(Feedback). % Was: correction`.
-	// And `EvaluateSteering` logic: `Change query correction(..., Hint) -> retry(..., Hint)`.
-	// Given `Decl retry(Feedback)`, I must query `retry(Hint)`.
-
+	// Query: retry(Hint)
 	_ = e.runtime.QueryWithSolutions(facts, "retry(Hint)", func(solution map[string]any) error {
 		if hint, ok := solution["Hint"].(string); ok {
 			decision = core.DecisionRetry
@@ -604,7 +625,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 	}
 
 	// 2. Check Routing
-	// Query: route(Target) - Corresponding to Decl route(NextStep).
+	// Query: route(Target)
 	_ = e.runtime.QueryWithSolutions(facts, "route(Target)", func(solution map[string]any) error {
 		if target, ok := solution["Target"].(string); ok {
 			decision = core.DecisionRoute

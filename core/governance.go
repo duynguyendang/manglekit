@@ -5,14 +5,18 @@ import "context"
 // Evaluator: The Mangle Logic Engine.
 // It defines the contract for policy execution, validation, and steering.
 type Evaluator interface {
-	// Assess evaluates the policy for a given input (General purpose).
-	Assess(ctx context.Context, input Envelope) (Decision, error)
+	// AssessPlan evaluates the policy for a given input (General purpose).
+	// It returns a Decision struct with the outcome.
+	// Formerly: Assess
+	AssessPlan(ctx context.Context, input Envelope) (Decision, error)
 
-	// Authorize performs the Pre-Check phase (input validation).
-	Authorize(ctx context.Context, actionMeta ActionMetadata, input Envelope) error
+	// Assess performs the Pre-Check phase (input validation).
+	// Formerly: Authorize
+	Assess(ctx context.Context, actionMeta ActionMetadata, input Envelope) error
 
-	// Validate performs the Post-Check phase (output validation).
-	Validate(ctx context.Context, actionMeta ActionMetadata, output Envelope) (Envelope, error)
+	// Reflect evaluates the outcome of an action (Post-Check).
+	// Formerly: Validate
+	Reflect(ctx context.Context, actionMeta ActionMetadata, output Envelope) (Envelope, error)
 
 	// EvaluateSteering determines the next step (Retry/Route) based on the output.
 	EvaluateSteering(ctx context.Context, input Envelope) (string, map[string]string, error)

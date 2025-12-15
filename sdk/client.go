@@ -244,7 +244,7 @@ func NewClientFromConfig(ctx context.Context, cfg *config.Config, opts ...Client
 }
 
 // Supervise wraps a raw core.Action in a SupervisedAction.
-// This applies the "Trace -> Authorize -> Execute -> Validate" governance lifecycle.
+// This applies the "Trace -> Assess -> Execute -> Reflect" governance lifecycle.
 // This is the core function of the Manglekit framework.
 //
 // Parameters:

@@ -15,13 +15,13 @@ import (
 )
 
 // SupervisedAction is a decorator that wraps any `core.Action` to enforce governance blueprints.
-// It implements the standard "Trace -> Authorize -> Execute -> Validate" lifecycle.
+// It implements the standard "Trace -> Assess -> Execute -> Reflect" lifecycle.
 //
 // Lifecycle:
 //  1. Trace: Starts an OpenTelemetry span for the operation.
-//  2. Authorize: Checks Pre-Check blueprints (e.g., "deny(Req)").
+//  2. Assess: Checks Pre-Check blueprints (e.g., "infeasible(Req)").
 //  3. Execute: Runs the inner action (e.g., calls the LLM).
-//  4. Validate: Checks Post-Check blueprints (e.g., "deny(Output)").
+//  4. Reflect: Checks Post-Check blueprints (e.g., "infeasible(Output)").
 //  5. Steering: Evaluates steering blueprints for routing or correction.
 type SupervisedAction struct {
 	inner       core.Action
@@ -75,10 +75,10 @@ func NewSupervisedActionWithTracer(action core.Action, eng core.Evaluator, trace
 // It performs the following steps:
 //  1. Starts a span.
 //  2. Injects the logger into the context.
-//  3. Runs Authorize(). If it fails, execution halts (unless Fail-Open).
+//  3. Runs Assess(). If it fails, execution halts (unless Fail-Open).
 //  4. Runs the inner Action.Execute().
 //  5. Propagates taint labels from input to output.
-//  6. Runs Validate(). If it fails, the result is blocked.
+//  6. Runs Reflect(). If it fails, the result is blocked.
 //  7. Runs EvaluateSteering() to determine next steps (Retry/Route).
 //
 // Parameters:
@@ -108,9 +108,9 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		// Distinguish between Blueprint DENIAL and System ERROR
+		// Distinguish between Blueprint INFEASIBILITY and System ERROR
 		if g.isAlignmentIssue(err) {
-			span.SetAttributes(attribute.String(core.AttrOutcome, "deny"))
+			span.SetAttributes(attribute.String(core.AttrOutcome, core.OutcomeInfeasible))
 			var alignErr *core.AlignmentError
 			if errors.As(err, &alignErr) {
 				span.SetAttributes(attribute.String(core.KeyFeedback, alignErr.Message))
@@ -120,15 +120,13 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 			} else {
 				span.SetAttributes(attribute.String(core.KeyFeedback, err.Error()))
 			}
-			// Legacy attribute for backward compatibility
-			span.SetAttributes(attribute.String(core.AttrOutcome, "DENIED"))
 		} else {
 			span.SetAttributes(attribute.String(core.AttrOutcome, "ERROR"))
 		}
 		return core.Envelope{}, err
 	}
 
-	// Success Path: Determine outcome (Allow/Route/Retry)
+	// Success Path: Determine outcome (Proceed/Route/Retry)
 	decision := result.Metadata[core.KeyDecision]
 	switch decision {
 	case core.DecisionRetry:
@@ -146,7 +144,7 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 			}
 		}
 	default:
-		span.SetAttributes(attribute.String(core.AttrOutcome, "allow"))
+		span.SetAttributes(attribute.String(core.AttrOutcome, core.OutcomeProceed))
 	}
 
 	// Inject Retry Count if present
@@ -162,7 +160,7 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 	}
 
 	span.SetAttributes(
-		attribute.String(core.AttrOutcome, "ALLOWED"),
+		attribute.String(core.AttrOutcome, core.OutcomeProceed),
 		attribute.String("mangle.output_id", result.ID.String()),
 	)
 	return result, nil
@@ -217,17 +215,18 @@ func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envel
 	// 	// g.engine.RecordLineage(ctx, input.ID.String(), parentID)
 	// }
 
-	// 2. Pre-Check: Authorization
-	if err := g.engine.Authorize(ctx, g.inner.Metadata(), input); err != nil {
+	// 2. Pre-Check: Assessment
+	// Formerly: Authorize
+	if err := g.engine.Assess(ctx, g.inner.Metadata(), input); err != nil {
 		if g.shouldBlock(err) {
-			logger.Warn("authorization failed",
+			logger.Warn("assessment failed",
 				core.AttrActionName, meta.Name,
 				"error", err.Error(),
 			)
-			return core.Envelope{}, fmt.Errorf("authorization failed: %w", err)
+			return core.Envelope{}, fmt.Errorf("assessment failed: %w", err)
 		}
 		// Fail-Open
-		logger.Warn("engine failed but Fail-Open active. Proceeding.", "error", err)
+		logger.Warn("engine assessment failed but Fail-Open active. Proceeding.", "error", err)
 	}
 
 	// [NEW] Dynamic Configuration Injection
@@ -270,18 +269,19 @@ func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envel
 	}
 	result.Metadata["derived_from"] = input.ID.String()
 
-	// 7. Post-Check: Validation
-	validatedResult, err := g.engine.Validate(ctx, g.inner.Metadata(), result)
+	// 7. Post-Check: Reflection
+	// Formerly: Validate
+	validatedResult, err := g.engine.Reflect(ctx, g.inner.Metadata(), result)
 	if err != nil {
 		if g.shouldBlock(err) {
-			logger.Warn("validation failed",
+			logger.Warn("reflection failed",
 				"action", meta.Name,
 				"error", err.Error(),
 			)
-			return core.Envelope{}, fmt.Errorf("validation failed: %w", err)
+			return core.Envelope{}, fmt.Errorf("reflection failed: %w", err)
 		}
 		// Fail-Open: use result as validatedResult
-		logger.Warn("engine validation failed but Fail-Open active. Proceeding.", "error", err)
+		logger.Warn("engine reflection failed but Fail-Open active. Proceeding.", "error", err)
 		validatedResult = result
 	}
 

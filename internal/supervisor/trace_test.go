@@ -76,7 +76,7 @@ func TestTraceHierarchy(t *testing.T) {
 	}
 
 	// Verify all required spans exist
-	requiredSpans := []string{"Action.mock-action", "Datalog.PreCheck", "Datalog.PostCheck"}
+	requiredSpans := []string{"Action.mock-action", "Datalog.Assess", "Datalog.Reflect"}
 	for _, spanName := range requiredSpans {
 		if _, ok := spanNames[spanName]; !ok {
 			t.Errorf("missing required span: %s", spanName)

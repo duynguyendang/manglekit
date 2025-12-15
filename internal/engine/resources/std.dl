@@ -18,22 +18,30 @@ Decl quad(S, P, O, G).
 Decl triple(S, P, O).
 triple(S, P, O) :- quad(S, P, O, _).
 
-% ========================================== % 2. SYSTEM CONTROL (Standard Vocabulary) % ==========================================
+% ==========================================
+% 2. SYSTEM CONTROL (Standard Vocabulary)
+% ==========================================
 
 % Arity 1: Global/Single-Context (JSON) 
 Decl deny(Reason). 
+Decl infeasible(Reason).
 Decl route(NextStep). 
 Decl retry(Feedback).
 
 % Arity 2: Entity-Specific (Graph/Batch) 
 % Allows pinning the decision to a specific node (Entity). 
 Decl deny(Entity, Reason). 
+Decl infeasible(Entity, Reason).
 Decl route(Entity, NextStep). 
 Decl retry(Entity, Feedback).
 
 % Config is always Key-Value (Arity 2) or Entity-Key-Value (Arity 3) 
 Decl config(Key, Value). 
 Decl config(Entity, Key, Value).
+
+% Semantic Alias for backward compatibility
+infeasible(Reason) :- deny(Reason).
+infeasible(Entity, Reason) :- deny(Entity, Reason).
 
 % ==========================================
 % 3. CONTEXT INJECTION

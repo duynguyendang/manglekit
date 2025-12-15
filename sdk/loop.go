@@ -233,10 +233,10 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		// Return result so caller loops
 		return result, nil
 
-	case core.DecisionAllow, "":
+	case core.DecisionProceed, "":
 		return result, nil
 
-	case core.DecisionDeny:
+	case core.DecisionInfeasible:
 		reason := result.Metadata["reason"]
 		if reason == "" {
 			reason = result.Metadata["violation_msg"]

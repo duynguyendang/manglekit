@@ -21,7 +21,7 @@ func TestPolicyEngine_AuthorizeWithSimpleDenyRule(t *testing.T) {
 	// Test: Authorization should be denied
 	input := core.NewEnvelope(map[string]string{"action": "test"})
 	ctx := context.Background()
-	err := engine.Authorize(ctx, core.ActionMetadata{Name: "test_action"}, input)
+	err := engine.Assess(ctx, core.ActionMetadata{Name: "test_action"}, input)
 
 	if !core.IsAlignmentError(err) {
 		t.Errorf("expected ErrAlignment, got %v", err)
@@ -35,7 +35,7 @@ func TestPolicyEngine_AllowWhenNoRule(t *testing.T) {
 	// Don't load any rules - should allow by default
 	input := core.NewEnvelope(map[string]string{"action": "test"})
 	ctx := context.Background()
-	err := engine.Authorize(ctx, core.ActionMetadata{Name: "test_action"}, input)
+	err := engine.Assess(ctx, core.ActionMetadata{Name: "test_action"}, input)
 
 	if err != nil {
 		t.Errorf("expected no error when no deny rule is defined, got %v", err)
