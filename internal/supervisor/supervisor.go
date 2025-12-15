@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/engine"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -232,20 +231,16 @@ func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envel
 	}
 
 	// [NEW] Dynamic Configuration Injection
-	// NOTE: core.Evaluator currently does not expose GetActionConfig.
-	// We might need to cast or add it to interface if critical.
-	// For now, if engine is *engine.PolicyEngine, we can use it.
-	if pe, ok := g.engine.(*engine.PolicyEngine); ok {
-		config, err := pe.GetActionConfig(ctx, input)
-		if err != nil {
-			logger.Warn("failed to retrieve action config", "error", err)
-		} else if len(config) > 0 {
-			if input.Metadata == nil {
-				input.Metadata = make(map[string]any)
-			}
-			for k, v := range config {
-				input.Metadata[core.PrefixPromptConfig+k] = v
-			}
+	// We query the engine for any configuration overrides (e.g. prompt params)
+	config, err := g.engine.GetActionConfig(ctx, input)
+	if err != nil {
+		logger.Warn("failed to retrieve action config", "error", err)
+	} else if len(config) > 0 {
+		if input.Metadata == nil {
+			input.Metadata = make(map[string]any)
+		}
+		for k, v := range config {
+			input.Metadata[core.PrefixPromptConfig+k] = v
 		}
 	}
 
