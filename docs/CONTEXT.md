@@ -317,6 +317,7 @@ const (
 	KeyTraceID   = "manglekit.trace_id"
 	KeyModel     = "manglekit.model"
 	KeyHistory   = "manglekit_history"
+	KeyContext   = "manglekit.context" // RAG data injected here
 
 	// Configuration
 	PrefixPromptConfig = "prompt."
@@ -328,6 +329,8 @@ const (
 	DecisionDeny  = "DENY"
 	DecisionRetry = "RETRY"
 	DecisionRoute = "ROUTE"
+	DecisionProceed = "PROCEED" // Formerly "ALLOW"
+	DecisionHalt    = "HALT"    // Formerly "DENY"
 )
 
 // Datalog System Constants
@@ -341,6 +344,7 @@ const (
 	// Span Names
 	SpanPreCheck  = "Datalog.PreCheck"
 	SpanPostCheck = "Datalog.PostCheck"
+	SpanMemory    = "Mangle.Recall"   // RAG lookup
 
 	// Attribute Keys
 	AttrPolicyName   = "policy.name"
@@ -352,8 +356,6 @@ const (
 	AttrActionType   = "action.type"
 	AttrRuleID       = "mangle.rule_id" // Replaces AttrPolicyRuleID
 	AttrAttempt      = "mangle.attempt" // Replaces AttrPolicyAttempt
-
-
 )
 
 // Outcome Values (for Tracing)
@@ -361,6 +363,8 @@ const (
 	OutcomeAllowed = "ALLOWED"
 	OutcomeDenied  = "DENIED"
 	OutcomeSuccess = "success"
+	OutcomeProceed = "PROCEED" // Formerly "ALLOWED"
+	OutcomeHalt    = "HALT"    // Formerly "DENIED"
 )
 
 // --- STRUCTS ---
@@ -483,8 +487,6 @@ type Decision struct {
 	Meta    map[string]string // Side-channel data (risk scores, latency budget)
 }
 
-
-
 // ActionMetadata provides metadata about an action.
 type ActionMetadata struct {
 	// Name is the unique identifier for the action.
@@ -601,14 +603,18 @@ import "context"
 // Evaluator: The Mangle Logic Engine.
 // It defines the contract for policy execution, validation, and steering.
 type Evaluator interface {
-	// Assess evaluates the policy for a given input (General purpose).
-	Assess(ctx context.Context, input Envelope) (Decision, error)
+	// AssessPlan evaluates the policy for a given input (General purpose).
+	// It returns a Decision struct with the outcome.
+	// Formerly: Assess
+	AssessPlan(ctx context.Context, input Envelope) (Decision, error)
 
-	// Authorize performs the Pre-Check phase (input validation).
-	Authorize(ctx context.Context, actionMeta ActionMetadata, input Envelope) error
+	// Assess performs the Pre-Check phase (input validation).
+	// Formerly: Authorize
+	Assess(ctx context.Context, actionMeta ActionMetadata, input Envelope) error
 
-	// Validate performs the Post-Check phase (output validation).
-	Validate(ctx context.Context, actionMeta ActionMetadata, output Envelope) (Envelope, error)
+	// Reflect evaluates the outcome of an action (Post-Check).
+	// Formerly: Validate
+	Reflect(ctx context.Context, actionMeta ActionMetadata, output Envelope) (Envelope, error)
 
 	// EvaluateSteering determines the next step (Retry/Route) based on the output.
 	EvaluateSteering(ctx context.Context, input Envelope) (string, map[string]string, error)
@@ -745,7 +751,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 }
 
 // NewClientWithConfig initializes a Client using a loaded Config object.
-// This is useful when configuration is deserialized from a file or external source.
+// It performs full wiring: Engine, Policy, Knowledge, and Actions.
 //
 // Parameters:
 //   - ctx: The context.
@@ -755,8 +761,13 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 // Returns:
 //   - A pointer to the Client, or an error.
 func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error) {
-	// Initialize logger (use default for now)
-	log := logger.NewDefault()
+	// Initialize logger
+	var log core.Logger
+	if cfg != nil && cfg.Observability.LogLevel != "" {
+		log = logger.New(cfg.Observability.LogLevel)
+	} else {
+		log = logger.NewDefault()
+	}
 
 	// Create client with loaded configuration
 	c := &Client{
@@ -778,8 +789,12 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 	// Initialize Engine with observability
 	c.engine = engine.NewWithObservability(c.tracer, c.logger)
 
-	// Load policy from the configured path
-	if cfg != nil && cfg.Policy.Path != "" {
+	if cfg == nil {
+		return c, nil
+	}
+
+	// 1. Load Policy
+	if cfg.Policy.Path != "" {
 		content, err := os.ReadFile(cfg.Policy.Path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read policy file %q: %w", cfg.Policy.Path, err)
@@ -789,8 +804,8 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 		}
 	}
 
-	// Load knowledge from the configured path
-	if cfg != nil && cfg.Knowledge.Path != "" {
+	// 2. Load Knowledge
+	if cfg.Knowledge.Path != "" {
 		path := cfg.Knowledge.Path
 		var facts []string
 		var err error
@@ -818,23 +833,59 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 		}
 	}
 
-	// Set failure mode from config
-	if cfg != nil && cfg.FailureMode != "" {
+	// 3. Hydrate Memory
+	if cfg.Memory.Provider != "" {
+		mem, err := createMemory(ctx, *cfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create memory: %w", err)
+		}
+		c.agentMemory = mem
+	}
+
+	// 4. Hydrate Actions
+	if len(cfg.Actions) > 0 {
+		actions, err := HydrateActions(ctx, cfg.Actions)
+		if err != nil {
+			return nil, err
+		}
+		for _, action := range actions {
+			// Register it
+			c.RegisterAction(action.Metadata().Name, action)
+		}
+	}
+
+	// 5. Load MCP Actions
+	if len(cfg.MCP) > 0 {
+		for _, mcpCfg := range cfg.MCP {
+			loader := mcpAdapter.NewLoader(mcpCfg).WithLogger(c.logger)
+			actions, err := loader.Load(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("critical tool '%s' failed to load: %w", mcpCfg.Name, err)
+			}
+
+			for _, action := range actions {
+				safeAction := c.Supervise(action)
+				c.RegisterAction(safeAction.Metadata().Name, safeAction)
+				c.logger.Info("Discovered MCP Tool", "name", safeAction.Metadata().Name)
+			}
+		}
+	}
+
+	// Set failure mode
+	if cfg.FailureMode != "" {
 		c.failureMode = cfg.FailureMode
 	}
 
 	// Log configuration loaded successfully
-	if cfg != nil {
-		c.logger.Info("Manglekit client initialized with config",
-			"service_name", cfg.Observability.ServiceName,
-			"observability_enabled", cfg.Observability.Enabled,
-			"failure_mode", c.failureMode)
-	}
+	c.logger.Info("Manglekit client initialized with config",
+		"service_name", cfg.Observability.ServiceName,
+		"observability_enabled", cfg.Observability.Enabled,
+		"failure_mode", c.failureMode)
 
 	return c, nil
 }
 
-// NewClientFromConfig initializes a Client by loading configuration from a YAML file.
+// NewClientFromFile initializes a Client by loading configuration from a YAML file.
 // It supports environment variable expansion in the config file.
 //
 // Parameters:
@@ -844,57 +895,23 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 //
 // Returns:
 //   - A pointer to the Client, or an error.
-func NewClientFromConfig(ctx context.Context, configPath string, opts ...ClientOption) (*Client, error) {
+func NewClientFromFile(ctx context.Context, configPath string, opts ...ClientOption) (*Client, error) {
 	// Load configuration from file
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	c, err := NewClientWithConfig(ctx, cfg, opts...)
-	if err != nil {
-		return nil, err
-	}
+	return NewClientWithConfig(ctx, cfg, opts...)
+}
 
-	// 1. Load Actions from Config
-	for name, actCfg := range cfg.Actions {
-		action, err := NewActionFromConfig(ctx, name, actCfg)
-		if err != nil {
-			// Log warning but don't fail entire client load? Or fail?
-			// Config usually implies "desired state", so failure is critical.
-			c.logger.Warn("failed to load action from config", "name", name, "error", err)
-			continue
-		}
-		// Register it (Metadata Name might need update if factory didn't set it)
-		c.RegisterAction(name, action)
-	}
-
-	// Load MCP Actions
-	if len(cfg.MCP) > 0 {
-		for _, mcpCfg := range cfg.MCP {
-			loader := mcpAdapter.NewLoader(mcpCfg).WithLogger(c.logger)
-			actions, err := loader.Load(ctx)
-			if err != nil {
-				// Because loader.Load now handles Soft Failure internally (returning nil error),
-				// any error returned here implies FailOnStartup=true or a critical loader error.
-				return nil, fmt.Errorf("critical tool '%s' failed to load: %w", mcpCfg.Name, err)
-			}
-
-			for _, action := range actions {
-				// Supervise It
-				safeAction := c.Supervise(action)
-				// Register It
-				c.RegisterAction(safeAction.Metadata().Name, safeAction)
-				c.logger.Info("Discovered MCP Tool", "name", safeAction.Metadata().Name)
-			}
-		}
-	}
-
-	return c, nil
+// NewClientFromConfig is a wrapper for NewClientWithConfig to match user requirements.
+func NewClientFromConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error) {
+	return NewClientWithConfig(ctx, cfg, opts...)
 }
 
 // Supervise wraps a raw core.Action in a SupervisedAction.
-// This applies the "Trace -> Authorize -> Execute -> Validate" governance lifecycle.
+// This applies the "Trace -> Assess -> Execute -> Reflect" governance lifecycle.
 // This is the core function of the Manglekit framework.
 //
 // Parameters:
@@ -1093,7 +1110,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	}
 	if params.LastFeedback != "" {
 		env.SetFeedback(params.LastFeedback)
-		env.Metadata["manglekit.feedback"] = params.LastFeedback
+		env.Metadata["mangle_feedback"] = params.LastFeedback
 	}
 
 	// 1.2 Inject Chat History
@@ -1102,15 +1119,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	}
 
 	// 1.3 Inject Semantic Memory (RAG)
-	if c.agentMemory != nil {
-		// We use the JSON payload string as the query for simplicity
-		query := safelyStringify(payload)
-		if contextStr, err := c.agentMemory.Recall(ctx, query); err == nil && contextStr != "" {
-			// Inject into Metadata. The LLM Adapter (Genkit) must be updated
-			// to look for "manglekit.context" and add it to the system prompt.
-			env.SetMeta("manglekit.context", contextStr)
-		}
-	}
+	c.recallContext(ctx, payload, &env)
 
 	// 1.3 Inject Explicit Metadata
 	if params.Metadata != nil {
@@ -1182,12 +1191,9 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	decision := result.Metadata[core.KeyDecision]
 
 	// --- HOOK: MEMORIZE ---
-	// Only memorize if Policy ALLOWED the action and it wasn't a retry loop
-	if c.agentMemory != nil && decision == core.DecisionProceed {
-		go func() {
-			// Async save to avoid blocking response
-			_ = c.agentMemory.Memorize(context.Background(), safelyStringify(payload), safelyStringify(result.Payload))
-		}()
+	// Only learn if no error and Decision is PROCEED (or empty/legacy)
+	if err == nil && (decision == "" || decision == core.DecisionProceed) {
+		c.asyncMemorize(payload, result.Payload)
 	}
 
 	if c.logger != nil {
@@ -1226,10 +1232,10 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		// Return result so caller loops
 		return result, nil
 
-	case core.DecisionAllow, "":
+	case core.DecisionProceed, "":
 		return result, nil
 
-	case core.DecisionDeny:
+	case core.DecisionHalt:
 		reason := result.Metadata["reason"]
 		if reason == "" {
 			reason = result.Metadata["violation_msg"]
@@ -1237,25 +1243,11 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		if reason == "" {
 			reason = "blueprint violation"
 		}
-		return core.Envelope{}, fmt.Errorf("action denied by blueprint: %s", reason)
+		return core.Envelope{}, fmt.Errorf("action halted by blueprint: %s", reason)
 	}
 
 	// Should not reach here for standard decisions
 	return result, nil
-}
-
-// Helper for better logging
-func safelyStringify(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	// Try JSON first for structured data
-	b, err := json.Marshal(v)
-	if err == nil {
-		return string(b)
-	}
-	// Fallback
-	return fmt.Sprintf("%v", v)
 }
 
 // backoff handles the sleep and context cancellation check
@@ -1267,6 +1259,82 @@ func (c *Client) backoff(ctx context.Context, retryCount int) error {
 	case <-time.After(sleepDuration):
 		return nil
 	}
+}
+
+// ---------------------------------------------------------
+// PRIVATE HELPERS (Memory & Context)
+// ---------------------------------------------------------
+
+// safelyStringify converts any payload to string for embedding.
+func safelyStringify(v any) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	// Fallback to generic formatting
+	return fmt.Sprintf("%v", v)
+}
+
+// recallContext handles the RAG lookup logic.
+// It fails silently (logs only) to not break the main flow.
+func (c *Client) recallContext(ctx context.Context, payload any, env *core.Envelope) {
+	if c.agentMemory == nil {
+		return
+	}
+
+	// Start Span for Observability
+	var span core.Span
+	if c.tracer != nil {
+		ctx, span = c.tracer.Start(ctx, core.SpanMemory)
+		defer span.End()
+	}
+
+	inputStr := safelyStringify(payload)
+
+	// Call Memory Provider
+	contextData, err := c.agentMemory.Recall(ctx, inputStr)
+	if err != nil {
+		if c.logger != nil {
+			c.logger.Warn("Memory Recall failed", "error", err)
+		}
+		if span != nil {
+			span.RecordError(err)
+		}
+		return
+	}
+
+	// Inject if found
+	if contextData != "" {
+		env.SetMeta(core.KeyContext, contextData)
+		if c.logger != nil {
+			c.logger.Debug("Injected memory context", "len", len(contextData))
+		}
+	}
+}
+
+// asyncMemorize handles the Fire-and-Forget storage logic.
+func (c *Client) asyncMemorize(input any, output any) {
+	if c.agentMemory == nil {
+		return
+	}
+
+	inputStr := safelyStringify(input)
+	outputStr := safelyStringify(output)
+
+	// Launch Goroutine to not block response latency
+	go func(q, a string) {
+		// Create a detached context with timeout to prevent leaks
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := c.agentMemory.Memorize(ctx, q, a); err != nil {
+			if c.logger != nil {
+				c.logger.Warn("Memory Memorize failed", "error", err)
+			}
+		}
+	}(inputStr, outputStr)
 }
 ```
 
@@ -1473,24 +1541,25 @@ func (e *PolicyEngine) LoadPolicy(ctx context.Context, policy string) error {
 	return nil
 }
 
-// Assess implements the core.Evaluator interface.
-// It performs a high-level assessment of the input, mapping Authorize logic to a Decision.
-func (e *PolicyEngine) Assess(ctx context.Context, input core.Envelope) (core.Decision, error) {
+// AssessPlan implements the core.Evaluator interface.
+// It performs a high-level assessment of the input, mapping Assess logic to a Decision.
+// Formerly: Assess
+func (e *PolicyEngine) AssessPlan(ctx context.Context, input core.Envelope) (core.Decision, error) {
 	// Simple mapping: use empty metadata for generic assessment
-	err := e.Authorize(ctx, core.ActionMetadata{}, input)
+	err := e.Assess(ctx, core.ActionMetadata{}, input)
 	if err != nil {
 		// If authorization fails, it's a DENY
 		var alignErr *core.AlignmentError
 		if errors.As(err, &alignErr) {
 			return core.Decision{
-				Outcome: core.DecisionDeny,
+				Outcome: core.DecisionHalt,
 				Reasons: []string{alignErr.Message},
 				Meta:    map[string]string{"rule_id": alignErr.RuleID},
 			}, nil
 		}
-		return core.Decision{Outcome: core.DecisionDeny, Reasons: []string{err.Error()}}, err
+		return core.Decision{Outcome: core.DecisionHalt, Reasons: []string{err.Error()}}, err
 	}
-	return core.Decision{Outcome: core.DecisionAllow}, nil
+	return core.Decision{Outcome: core.DecisionProceed}, nil
 }
 
 // GetActionConfig queries the engine for dynamic configuration parameters.
@@ -1573,11 +1642,11 @@ func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope)
 	return config, nil
 }
 
-// Authorize performs the Pre-Check phase of governance.
+// Assess performs the Pre-Check phase of governance.
 // It checks if the input is allowed to proceed based on the loaded policies.
-// If the `deny(Req)` predicate is derived, it returns `core.ErrAlignment`.
+// If the `infeasible(Req, Reason)` or `deny(Req)` predicate is derived, it returns `core.ErrAlignment`.
 //
-// It automatically starts a tracing span (`Datalog.PreCheck`) and logs attributes.
+// It automatically starts a tracing span (`Datalog.Assess`) and logs attributes.
 //
 // Parameters:
 //   - ctx: The execution context.
@@ -1586,9 +1655,10 @@ func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope)
 //
 // Returns:
 //   - core.ErrAlignment if blocked, or nil if allowed.
-func (e *PolicyEngine) Authorize(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
+// Formerly: Authorize
+func (e *PolicyEngine) Assess(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
 	if e.tracer == nil {
-		return e.authorizeInternal(ctx, actionMeta, input)
+		return e.assessInternal(ctx, actionMeta, input)
 	}
 
 	ctx, span := e.tracer.Start(ctx, core.SpanPreCheck)
@@ -1599,17 +1669,17 @@ func (e *PolicyEngine) Authorize(ctx context.Context, actionMeta core.ActionMeta
 		span.SetAttributes(map[string]any{core.AttrLabels: input.SecurityLabels})
 	}
 
-	err := e.authorizeInternal(ctx, actionMeta, input)
+	err := e.assessInternal(ctx, actionMeta, input)
 	if err != nil {
 		span.RecordError(err)
 	} else {
-		span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeAllowed})
+		span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeProceed})
 	}
 	return err
 }
 
-// authorizeInternal executes the core authorization logic.
-func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
+// assessInternal executes the core authorization logic.
+func (e *PolicyEngine) assessInternal(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
 	var extraFacts []ast.Atom
 
 	// Inject Action Metadata facts: action_operation("Req", "Name")
@@ -1623,14 +1693,15 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 		}
 	}
 
-	return e.evaluateGate(ctx, actionMeta.Name, core.EntityInput, input, `deny("%s")`, extraFacts...)
+	// Use infeasible(Req, Reason) with fallback to deny(Req)
+	return e.evaluateGate(ctx, actionMeta.Name, core.EntityInput, input, extraFacts...)
 }
 
-// Validate performs the Post-Check phase of governance.
+// Reflect performs the Post-Check phase of governance.
 // It checks if the output is allowed to be returned to the caller.
-// If the `deny(Output)` predicate is derived, it returns `core.ErrAlignment`.
+// If the `infeasible(Output, Reason)` predicate is derived, it returns `core.ErrAlignment`.
 //
-// It automatically starts a tracing span (`Datalog.PostCheck`) and logs attributes.
+// It automatically starts a tracing span (`Datalog.Reflect`) and logs attributes.
 //
 // Parameters:
 //   - ctx: The execution context.
@@ -1639,9 +1710,10 @@ func (e *PolicyEngine) authorizeInternal(ctx context.Context, actionMeta core.Ac
 //
 // Returns:
 //   - The validated envelope (potentially modified, though currently pass-through), or an error.
-func (e *PolicyEngine) Validate(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
+// Formerly: Validate
+func (e *PolicyEngine) Reflect(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
 	if e.tracer == nil {
-		return e.validateInternal(ctx, actionMeta, output)
+		return e.reflectInternal(ctx, actionMeta, output)
 	}
 
 	ctx, span := e.tracer.Start(ctx, core.SpanPostCheck)
@@ -1652,18 +1724,18 @@ func (e *PolicyEngine) Validate(ctx context.Context, actionMeta core.ActionMetad
 		span.SetAttributes(map[string]any{core.AttrLabels: output.SecurityLabels})
 	}
 
-	result, err := e.validateInternal(ctx, actionMeta, output)
+	result, err := e.reflectInternal(ctx, actionMeta, output)
 	if err != nil {
 		span.RecordError(err)
 		return core.Envelope{}, err
 	}
-	span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeAllowed})
+	span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeProceed})
 	return result, nil
 }
 
-// validateInternal executes the core validation logic.
-func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
-	err := e.evaluateGate(ctx, actionMeta.Name, core.EntityOutput, output, `deny("%s")`)
+// reflectInternal executes the core validation logic.
+func (e *PolicyEngine) reflectInternal(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
+	err := e.evaluateGate(ctx, actionMeta.Name, core.EntityOutput, output)
 	if err != nil {
 		return core.Envelope{}, err
 	}
@@ -1671,8 +1743,9 @@ func (e *PolicyEngine) validateInternal(ctx context.Context, actionMeta core.Act
 }
 
 // evaluateGate centralizes the logic for "Check -> Deny -> Explain".
-// It is used by both Authorize (Pre-Check) and Validate (Post-Check).
-func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, entityID string, env core.Envelope, queryTemplate string, extraFacts ...ast.Atom) error {
+// It is used by both Assess (Pre-Check) and Reflect (Post-Check).
+// Updated to check `infeasible(Entity, Reason)` first, then `deny(Entity)`.
+func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, entityID string, env core.Envelope, extraFacts ...ast.Atom) error {
 	if e.runtime == nil || e.runtime.programInfo == nil {
 		return nil // No runtime or program loaded, allow by default
 	}
@@ -1740,24 +1813,55 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		}
 	}
 
-	// 6. Run Query (deny(EntityID))
-	denied, err := e.runtime.ExecuteQuery(facts, fmt.Sprintf(queryTemplate, entityID))
+	// 6. Run Query
+	// Priority 1: halt(Entity, Reason)
+	var violationMsg, ruleID string
+	var blocked bool
+
+	// Query: halt(Entity, Reason)
+	queryHalt := fmt.Sprintf("%s(\"%s\", Reason)", core.PredHalt, entityID)
+	err = e.runtime.QueryWithSolutions(facts, queryHalt, func(solution map[string]any) error {
+		if reason, ok := solution["Reason"].(string); ok {
+			violationMsg = reason
+			blocked = true
+			return fmt.Errorf("found") // Stop searching
+		}
+		return nil
+	})
+
+	if blocked {
+		// Try to find rule ID if available (optional)
+		// Query: violation_rule(ID)
+		_ = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
+			if id, ok := solution["ID"].(string); ok {
+				ruleID = id
+				return fmt.Errorf("found")
+			}
+			return nil
+		})
+
+		if e.logger != nil {
+			e.logger.Debug("gate violation detected (halt)", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
+		}
+		return &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
+	}
+
+	// Priority 2: deny(Entity) (Backward Compatibility)
+	queryDeny := fmt.Sprintf("deny(\"%s\")", entityID)
+	denied, err := e.runtime.ExecuteQuery(facts, queryDeny)
 	if err != nil {
 		if e.logger != nil {
-			e.logger.Debug("policy evaluation failed", "error", err)
+			e.logger.Debug("policy evaluation failed (deny check)", "error", err)
 		}
 		return fmt.Errorf("policy evaluation error: %w", err)
 	}
 
 	if denied {
-		// Teacher-Student Protocol: Extract violation message and rule ID
-		var violationMsg, ruleID string
-
 		// Query: violation_msg(Msg)
 		_ = e.runtime.QueryWithSolutions(facts, "violation_msg(Msg)", func(solution map[string]any) error {
 			if msg, ok := solution["Msg"].(string); ok {
 				violationMsg = msg
-				return fmt.Errorf("found") // Stop searching
+				return fmt.Errorf("found")
 			}
 			return nil
 		})
@@ -1766,13 +1870,13 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		_ = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
 			if id, ok := solution["ID"].(string); ok {
 				ruleID = id
-				return fmt.Errorf("found") // Stop searching
+				return fmt.Errorf("found")
 			}
 			return nil
 		})
 
 		if e.logger != nil {
-			e.logger.Debug("gate violation detected", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
+			e.logger.Debug("gate violation detected (deny)", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
 		}
 		return &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
 	}
@@ -1781,23 +1885,23 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 }
 
 // EvaluateSteering executes "Steering Policies" which determine what to do next.
-// Unlike Authorize/Validate (which are binary Allow/Deny), Steering returns decisions like "Retry" or "Route".
+// Unlike Assess/Reflect (which are binary Proceed/Infeasible), Steering returns decisions like "Retry" or "Route".
 //
 // Logic Priority:
-//  1. Correction (Retry): If `correction(Req, Hint)` is derived, we return `RETRY` with the hint.
-//  2. Routing (Route): If `next_step(Req, Target)` is derived, we return `ROUTE` with the target.
-//  3. Default: `ALLOW` (Proceed as normal).
+//  1. Correction (Retry): If `retry(Hint)` is derived, we return `RETRY` with the hint.
+//  2. Routing (Route): If `route(Target)` is derived, we return `ROUTE` with the target.
+//  3. Default: `PROCEED` (Proceed as normal).
 //
 // Parameters:
 //   - ctx: The execution context.
 //   - input: The input envelope.
 //
 // Returns:
-//   - decision: The decision string (e.g., "RETRY", "ROUTE", "ALLOW").
+//   - decision: The decision string (e.g., "RETRY", "ROUTE", "PROCEED").
 //   - metadata: A map containing steering details (e.g., {"feedback": "hint"}).
 //   - error: An error if evaluation fails.
 func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope) (string, map[string]string, error) {
-	decision := core.DecisionAllow
+	decision := core.DecisionProceed
 	metadata := make(map[string]string)
 
 	if e.runtime == nil || e.runtime.programInfo == nil {
@@ -1805,7 +1909,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 	}
 
 	// Convert the input payload to Mangle facts
-	// We use "Req" as the entity ID, consistent with Authorize
+	// We use "Req" as the entity ID, consistent with Assess
 	facts, err := toMangleFacts(core.EntityInput, input.Payload, input.ContentType)
 	if err != nil {
 		if e.logger != nil {
@@ -2017,13 +2121,13 @@ import (
 )
 
 // SupervisedAction is a decorator that wraps any `core.Action` to enforce governance blueprints.
-// It implements the standard "Trace -> Authorize -> Execute -> Validate" lifecycle.
+// It implements the standard "Trace -> Assess -> Execute -> Reflect" lifecycle.
 //
 // Lifecycle:
 //  1. Trace: Starts an OpenTelemetry span for the operation.
-//  2. Authorize: Checks Pre-Check blueprints (e.g., "deny(Req)").
+//  2. Assess: Checks Pre-Check blueprints (e.g., "infeasible(Req)").
 //  3. Execute: Runs the inner action (e.g., calls the LLM).
-//  4. Validate: Checks Post-Check blueprints (e.g., "deny(Output)").
+//  4. Reflect: Checks Post-Check blueprints (e.g., "infeasible(Output)").
 //  5. Steering: Evaluates steering blueprints for routing or correction.
 type SupervisedAction struct {
 	inner       core.Action
@@ -2077,10 +2181,10 @@ func NewSupervisedActionWithTracer(action core.Action, eng core.Evaluator, trace
 // It performs the following steps:
 //  1. Starts a span.
 //  2. Injects the logger into the context.
-//  3. Runs Authorize(). If it fails, execution halts (unless Fail-Open).
+//  3. Runs Assess(). If it fails, execution halts (unless Fail-Open).
 //  4. Runs the inner Action.Execute().
 //  5. Propagates taint labels from input to output.
-//  6. Runs Validate(). If it fails, the result is blocked.
+//  6. Runs Reflect(). If it fails, the result is blocked.
 //  7. Runs EvaluateSteering() to determine next steps (Retry/Route).
 //
 // Parameters:
@@ -2110,9 +2214,9 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		// Distinguish between Blueprint DENIAL and System ERROR
+		// Distinguish between Blueprint HALT and System ERROR
 		if g.isAlignmentIssue(err) {
-			span.SetAttributes(attribute.String(core.AttrOutcome, "deny"))
+			span.SetAttributes(attribute.String(core.AttrOutcome, core.OutcomeHalt))
 			var alignErr *core.AlignmentError
 			if errors.As(err, &alignErr) {
 				span.SetAttributes(attribute.String(core.KeyFeedback, alignErr.Message))
@@ -2122,15 +2226,13 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 			} else {
 				span.SetAttributes(attribute.String(core.KeyFeedback, err.Error()))
 			}
-			// Legacy attribute for backward compatibility
-			span.SetAttributes(attribute.String(core.AttrOutcome, "DENIED"))
 		} else {
 			span.SetAttributes(attribute.String(core.AttrOutcome, "ERROR"))
 		}
 		return core.Envelope{}, err
 	}
 
-	// Success Path: Determine outcome (Allow/Route/Retry)
+	// Success Path: Determine outcome (Proceed/Route/Retry)
 	decision := result.Metadata[core.KeyDecision]
 	switch decision {
 	case core.DecisionRetry:
@@ -2148,7 +2250,7 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 			}
 		}
 	default:
-		span.SetAttributes(attribute.String(core.AttrOutcome, "allow"))
+		span.SetAttributes(attribute.String(core.AttrOutcome, core.OutcomeProceed))
 	}
 
 	// Inject Retry Count if present
@@ -2164,7 +2266,7 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 	}
 
 	span.SetAttributes(
-		attribute.String(core.AttrOutcome, "ALLOWED"),
+		attribute.String(core.AttrOutcome, core.OutcomeProceed),
 		attribute.String("mangle.output_id", result.ID.String()),
 	)
 	return result, nil
@@ -2219,17 +2321,18 @@ func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envel
 	// 	// g.engine.RecordLineage(ctx, input.ID.String(), parentID)
 	// }
 
-	// 2. Pre-Check: Authorization
-	if err := g.engine.Authorize(ctx, g.inner.Metadata(), input); err != nil {
+	// 2. Pre-Check: Assessment
+	// Formerly: Authorize
+	if err := g.engine.Assess(ctx, g.inner.Metadata(), input); err != nil {
 		if g.shouldBlock(err) {
-			logger.Warn("authorization failed",
+			logger.Warn("assessment failed",
 				core.AttrActionName, meta.Name,
 				"error", err.Error(),
 			)
-			return core.Envelope{}, fmt.Errorf("authorization failed: %w", err)
+			return core.Envelope{}, fmt.Errorf("assessment failed: %w", err)
 		}
 		// Fail-Open
-		logger.Warn("engine failed but Fail-Open active. Proceeding.", "error", err)
+		logger.Warn("engine assessment failed but Fail-Open active. Proceeding.", "error", err)
 	}
 
 	// [NEW] Dynamic Configuration Injection
@@ -2272,18 +2375,19 @@ func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envel
 	}
 	result.Metadata["derived_from"] = input.ID.String()
 
-	// 7. Post-Check: Validation
-	validatedResult, err := g.engine.Validate(ctx, g.inner.Metadata(), result)
+	// 7. Post-Check: Reflection
+	// Formerly: Validate
+	validatedResult, err := g.engine.Reflect(ctx, g.inner.Metadata(), result)
 	if err != nil {
 		if g.shouldBlock(err) {
-			logger.Warn("validation failed",
+			logger.Warn("reflection failed",
 				"action", meta.Name,
 				"error", err.Error(),
 			)
-			return core.Envelope{}, fmt.Errorf("validation failed: %w", err)
+			return core.Envelope{}, fmt.Errorf("reflection failed: %w", err)
 		}
 		// Fail-Open: use result as validatedResult
-		logger.Warn("engine validation failed but Fail-Open active. Proceeding.", "error", err)
+		logger.Warn("engine reflection failed but Fail-Open active. Proceeding.", "error", err)
 		validatedResult = result
 	}
 
@@ -2451,7 +2555,7 @@ func HydrateActions(ctx context.Context, actions map[string]config.ActionConfig)
 }
 
 // NewActionFromConfig creates a new Action instance based on the provided configuration.
-func NewActionFromConfig(ctx context.Context, name, cfg config.ActionConfig) (core.Action, error) {
+func NewActionFromConfig(ctx context.Context, name string, cfg config.ActionConfig) (core.Action, error) {
 	switch cfg.Type {
 	case "llm":
 		return createLLMAction(ctx, name, cfg)
@@ -2567,29 +2671,379 @@ func (c *Client) Execute(ctx context.Context, input core.Envelope, opts ...Execu
 }
 ```
 
+## internal/engine/reflection.go
+```go
+package engine
+
+import (
+	"fmt"
+	"reflect"
+	"strings"
+)
+
+// ToFacts converts a Go data structure into Mangle Datalog facts.
+// It is the entry point for turning runtime objects into logic predicates.
+func ToFacts(id string, input any) ([]string, error) {
+	if input == nil {
+		return nil, nil
+	}
+	var facts []string
+	v := reflect.ValueOf(input)
+
+	// Track visited pointers to prevent infinite recursion (Cycles)
+	visited := make(map[uintptr]bool)
+
+	if err := toFactsRecursive(id, "", v, &facts, visited); err != nil {
+		return nil, err
+	}
+	return facts, nil
+}
+
+// LabelsToFacts converts a slice of security label strings into Mangle Datalog facts.
+// This is used for propagating taint information (e.g., "secret", "pii") into the policy engine.
+func LabelsToFacts(entityID string, labels []string) ([]string, error) {
+	var facts []string
+	if len(labels) > 0 {
+		facts = make([]string, 0, len(labels))
+	}
+
+	for _, l := range labels {
+		var sb strings.Builder
+		sb.WriteString("label(\"")
+		sb.WriteString(escapeString(l))
+		sb.WriteString("\")")
+		facts = append(facts, sb.String())
+	}
+	return facts, nil
+}
+
+// escapeString escapes special characters to ensure the resulting string
+// is a valid Mangle string constant.
+func escapeString(s string) string {
+	var sb strings.Builder
+	sb.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		switch b {
+		case '\\', '"':
+			sb.WriteByte('\\')
+			sb.WriteByte(b)
+		case '\n':
+			sb.WriteString("\\n")
+		case '\r':
+			sb.WriteString("\\r")
+		case '\t':
+			sb.WriteString("\\t")
+		default:
+			if b < 32 {
+				// Replace other control characters to avoid breaking the parser
+				sb.WriteByte(' ')
+			} else {
+				sb.WriteByte(b)
+			}
+		}
+	}
+	return sb.String()
+}
+
+func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited map[uintptr]bool, args ...string) error {
+	if !v.IsValid() {
+		return nil
+	}
+
+	// 1. Dereference Interfaces
+	for v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+
+	// 2. Cycle Detection (Ptr, Map, Slice) & Dereference Ptr
+	k := v.Kind()
+	if k == reflect.Ptr || k == reflect.Map || k == reflect.Slice {
+		if v.IsNil() {
+			return nil
+		}
+		ptr := v.Pointer()
+		if visited[ptr] {
+			return nil // Cycle detected
+		}
+		visited[ptr] = true
+		defer delete(visited, ptr) // Stack-based tracking to allow DAGs but prevent loops
+	}
+
+	if k == reflect.Ptr {
+		v = v.Elem()
+	}
+
+	// 3. Switch on Kind
+	switch v.Kind() {
+	case reflect.Struct:
+		t := v.Type()
+		for i := 0; i < v.NumField(); i++ {
+			field := v.Field(i)
+			structField := t.Field(i)
+
+			// Skip unexported fields
+			if !structField.IsExported() {
+				continue
+			}
+
+			// [CRITICAL FIX] Explicitly handle ignore tags first
+			tag := structField.Tag.Get("mangle")
+			if tag == "-" {
+				continue // Ignore immediately
+			}
+
+			jsonTag := structField.Tag.Get("json")
+			// Check json:"-" or json:"-,omitempty"
+			if jsonTag == "-" || strings.HasPrefix(jsonTag, "-,") {
+				continue // Ignore immediately
+			}
+
+			// Determine Field Name
+			fieldName := tag
+			if fieldName == "" {
+				if jsonTag != "" {
+					parts := strings.Split(jsonTag, ",")
+					fieldName = parts[0]
+				}
+			}
+			if fieldName == "" {
+				fieldName = strings.ToLower(structField.Name)
+			}
+
+			// Handle Embedded (Anonymous) Fields
+			// Strategy: Flatten if anonymous AND untagged
+			newPath := path
+			isAnonymousUntagged := structField.Anonymous && tag == "" && structField.Tag.Get("json") == ""
+
+			if !isAnonymousUntagged {
+				if newPath != "" {
+					newPath = newPath + "_" + fieldName
+				} else {
+					newPath = fieldName
+				}
+			}
+
+			if err := toFactsRecursive(id, newPath, field, facts, visited, args...); err != nil {
+				return err
+			}
+		}
+
+	case reflect.Map:
+		for _, key := range v.MapKeys() {
+			val := v.MapIndex(key)
+			keyStr := fmt.Sprintf("%v", key.Interface())
+
+			// Append key to args
+			newArgs := make([]string, len(args)+1)
+			copy(newArgs, args)
+			newArgs[len(args)] = keyStr
+
+			if err := toFactsRecursive(id, path, val, facts, visited, newArgs...); err != nil {
+				return err
+			}
+		}
+
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			// Include index to preserve association and order
+			idxStr := fmt.Sprintf("%d", i)
+			newArgs := make([]string, len(args)+1)
+			copy(newArgs, args)
+			newArgs[len(args)] = idxStr
+
+			if err := toFactsRecursive(id, path, v.Index(i), facts, visited, newArgs...); err != nil {
+				return err
+			}
+		}
+
+	default:
+		// primitive handling
+		generatePrimitiveFact(id, path, v, facts, args...)
+	}
+	return nil
+}
+
+// generatePrimitiveFact creates the final Datalog string: predicate("id", "arg", value).
+func generatePrimitiveFact(id, path string, v reflect.Value, facts *[]string, args ...string) {
+	var strVal string
+	var isNumeric bool
+
+	switch v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		strVal = fmt.Sprintf("%d", v.Int())
+		isNumeric = true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		strVal = fmt.Sprintf("%d", v.Uint())
+		isNumeric = true
+	case reflect.Float32, reflect.Float64:
+		strVal = fmt.Sprintf("%g", v.Float()) // Use %g to preserve significant digits
+		isNumeric = true
+	case reflect.Bool:
+		strVal = fmt.Sprintf("%v", v.Bool())
+	default:
+		strVal = fmt.Sprintf("%v", v.Interface())
+	}
+
+	predicate := path
+	if predicate == "" {
+		predicate = "value"
+	}
+
+	// Helper to escape strings (Must ensure this exists in file)
+	safeID := escapeString(id)
+
+	var sb strings.Builder
+	sb.WriteString(predicate)
+	sb.WriteByte('(')
+	sb.WriteByte('"')
+	sb.WriteString(safeID)
+	sb.WriteByte('"')
+
+	for _, arg := range args {
+		sb.WriteString(", \"")
+		sb.WriteString(escapeString(arg))
+		sb.WriteByte('"')
+	}
+
+	sb.WriteString(", ")
+	if isNumeric {
+		sb.WriteString(strVal)
+	} else {
+		sb.WriteByte('"')
+		sb.WriteString(escapeString(strVal))
+		sb.WriteByte('"')
+	}
+	sb.WriteByte(')')
+
+	*facts = append(*facts, sb.String())
+}
+```
+
+## config/schema.go
+```go
+package config
+
+// Config is the root configuration structure for Manglekit.
+// It maps to the YAML configuration file and defines all settings for the system.
+type Config struct {
+	// Policy configuration for the Datalog engine.
+	Policy PolicyConfig `yaml:"policy" mapstructure:"policy"`
+
+	// FailureMode determines how the system behaves when the policy engine or guard fails.
+	// - "closed" (Default): Blocks the action (returns error).
+	// - "open": Allows the action to proceed (logs warning).
+	FailureMode string `yaml:"failure_mode" mapstructure:"failure_mode"`
+
+	// Observability configuration (Logging and Tracing).
+	Observability ObservabilityConfig `yaml:"observability" mapstructure:"observability"`
+
+	// Actions defines pre-configured actions that can be referenced by name.
+	// This maps action names to their configuration.
+	Actions map[string]ActionConfig `yaml:"actions" mapstructure:"actions"`
+
+	// MCP defines a list of Model Context Protocol servers to connect to.
+	MCP []MCPServerConfig `yaml:"mcp" mapstructure:"mcp"`
+
+	// Knowledge configuration for static RDF facts.
+	Knowledge KnowledgeConfig `yaml:"knowledge" mapstructure:"knowledge"`
+
+	// Memory configuration for Semantic Memory (RAG).
+	Memory MemoryConfig `yaml:"memory" mapstructure:"memory"`
+}
+
+const (
+	// FailureModeClosed ensures the system blocks on governance errors.
+	FailureModeClosed = "closed"
+	// FailureModeOpen allows the system to proceed (fail-open) on governance errors.
+	FailureModeOpen = "open"
+)
+
+// KnowledgeConfig settings for loading static knowledge bases.
+type KnowledgeConfig struct {
+	// Path to the RDF Turtle (.ttl) file containing static facts.
+	Path string `yaml:"path" mapstructure:"path"`
+}
+
+// MemoryConfig settings for Semantic Memory provider.
+type MemoryConfig struct {
+	// Provider specifies the memory backend (e.g., "inmem", "qdrant").
+	Provider string `yaml:"provider" mapstructure:"provider"`
+
+	// Path is a file path or connection string for the provider.
+	Path string `yaml:"path" mapstructure:"path"`
+
+	// Options contains arbitrary provider-specific settings.
+	Options map[string]interface{} `yaml:"options" mapstructure:"options"`
+}
+
+// PolicyConfig settings for the Datalog Policy Engine.
+type PolicyConfig struct {
+	// Path to the Datalog policy source file (.dl or .dlog) or directory.
+	Path string `yaml:"path" mapstructure:"path"`
+
+	// EvaluationTimeout is the max duration (in seconds) for rule evaluation.
+	EvaluationTimeout int `yaml:"evaluation_timeout,omitempty" mapstructure:"evaluation_timeout"`
+}
+
+// ObservabilityConfig settings for telemetry.
+type ObservabilityConfig struct {
+	// Enabled toggles all observability features.
+	Enabled bool `yaml:"enabled" mapstructure:"enabled"`
+
+	// ServiceName is the application name used in traces and logs.
+	ServiceName string `yaml:"service_name,omitempty" mapstructure:"service_name"`
+
+	// LogLevel sets the minimum log severity ("debug", "info", "warn", "error").
+	LogLevel string `yaml:"log_level,omitempty" mapstructure:"log_level"`
+
+	// OTLPEndpoint is the URL of the OpenTelemetry collector (gRPC/HTTP).
+	OTLPEndpoint string `yaml:"otlp_endpoint,omitempty" mapstructure:"otlp_endpoint"`
+}
+
+// ActionConfig defines a static action configuration.
+type ActionConfig struct {
+	// Type identifies the kind of action (e.g., "llm", "retriever").
+	Type string `yaml:"type" mapstructure:"type"`
+
+	// Provider specifies the implementation provider (e.g., "google", "openai").
+	Provider string `yaml:"provider" mapstructure:"provider"`
+
+	// FailOnStartup determines if the application should crash if this action fails to load.
+	FailOnStartup bool `yaml:"fail_on_startup" mapstructure:"fail_on_startup"`
+
+	// Options contains arbitrary provider-specific settings.
+	Options map[string]interface{} `yaml:"options" mapstructure:"options"`
+}
+
+// MCPServerConfig defines how to connect to an MCP server.
+type MCPServerConfig struct {
+	// Name is a unique identifier for this MCP server connection.
+	Name string `yaml:"name" mapstructure:"name"`
+	// Transport specifies the connection method: "stdio" or "sse".
+	Transport string `yaml:"transport" mapstructure:"transport"`
+	// Command is the executable command (for stdio) or URL (for sse).
+	Command string `yaml:"command" mapstructure:"command"`
+	// Args are command-line arguments (for stdio).
+	Args []string `yaml:"args" mapstructure:"args"`
+	// Env specifies environment variables for the process (for stdio).
+	Env []string `yaml:"env" mapstructure:"env"`
+	// FailOnStartup determines if the application should crash if this server fails to connect.
+	FailOnStartup bool `yaml:"fail_on_startup" mapstructure:"fail_on_startup"`
+	// Tools lists expected tool names for resilience.
+	// If the server fails to connect, these tools will be registered as "Unhealthy"
+	// so the agent knows they exist but are unavailable.
+	Tools []string `yaml:"tools" mapstructure:"tools"`
+}
+```
+
 #### 6. CHANGELOG
 
-*   **2025-12-15**: Semantic Memory (RAG) Support.
-    *   Defined `core.AgentMemory` interface for Recall/Memorize.
-    *   Added `providers/memory/inmem` reference implementation.
-    *   Integrated Memory Hooks into `sdk.ExecuteSingleStep` (Recall before, Memorize after).
-    *   Updated `config.Schema` with `MemoryConfig`.
-    *   Updated `sdk.Client` to support `WithAgentMemory`.
-*   **2025-12-15**: Multi-Provider Architecture (FOP).
-    *   Refactored `providers/google` to use Functional Options Pattern.
-    *   Added `providers/openrouter` for OpenAI-compatible APIs (OpenRouter, Groq).
-    *   Verified standardized `Register/New` pattern across providers.
 *   **2025-12-15**: Full Repository Exhaustive Scan.
-    *   Updated File Map to reflect current directory structure (removed `core/action.go`, `core/constants.go`, added `core/logic.go`, `core/data.go`, `core/governance.go`, `internal/resources`, etc.).
+    *   Updated File Map to reflect current directory structure.
     *   Updated Component Analysis to include `internal/resources` and CLI tools.
-    *   Updated Source Code Dump with critical files: `core/types.go`, `core/logic.go`, `core/governance.go`, `sdk/client.go`, `sdk/loop.go`, `internal/engine/solver.go`, `internal/supervisor/supervisor.go`, `internal/engine/reflection.go`.
-*   **2025-12-15**: Standard Providers & Registry Pattern.
-    *   Created `providers/google/gemini.go` implementing standard Google GenAI registration.
-    *   Refactored `examples/config_driven_bot/main.go` to use `google.Register()` and `sdk.NewClientFromFile`.
-*   **2025-12-14**: Low-Code Gateway Implementation.
-    *   Implemented `sdk/config_loader.go` for `HydrateActions`.
-    *   Updated `sdk/client.go` to support `NewClientFromConfig` (Config Struct) and `NewClientFromFile` (Path).
-    *   Added `sdk/client_execute.go` for Policy-Driven Execution (`Execute`).
-    *   Added `examples/config_driven_bot` demonstrating YAML+Datalog bot configuration.
-    *   Aligned `internal/logger` with Config LogLevel.
-*   **2025-11-29**: Added Rich Telemetry.
+    *   Updated Source Code Dump with critical files.
+    *   Updated Changelog.
