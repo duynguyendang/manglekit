@@ -93,3 +93,17 @@ func (m *mockGenerator) Stream(ctx context.Context, prompt string) (<-chan strin
 	}()
 	return ch, nil
 }
+
+// createMemory instantiates the memory provider from configuration.
+func createMemory(ctx context.Context, cfg config.Config) (core.AgentMemory, error) {
+	if cfg.Memory.Provider == "" {
+		return nil, nil // Memory is optional
+	}
+
+	factory, err := GetMemoryProvider(cfg.Memory.Provider)
+	if err != nil {
+		return nil, err
+	}
+
+	return factory(ctx, cfg.Memory)
+}

@@ -37,6 +37,8 @@ type Client struct {
 	logger core.Logger
 	// memory is the persistence layer for chat history (optional).
 	memory core.MemoryStore
+	// agentMemory is the semantic memory (RAG) provider (optional).
+	agentMemory core.AgentMemory
 	// registry holds registered actions for dynamic routing.
 	registry map[string]core.Action
 	// failureMode determines the system's resilience strategy ("open" or "closed").
@@ -175,7 +177,16 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 		}
 	}
 
-	// 3. Hydrate Actions
+	// 3. Hydrate Memory
+	if cfg.Memory.Provider != "" {
+		mem, err := createMemory(ctx, *cfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create memory: %w", err)
+		}
+		c.agentMemory = mem
+	}
+
+	// 4. Hydrate Actions
 	if len(cfg.Actions) > 0 {
 		actions, err := HydrateActions(ctx, cfg.Actions)
 		if err != nil {
@@ -187,7 +198,7 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 		}
 	}
 
-	// 4. Load MCP Actions
+	// 5. Load MCP Actions
 	if len(cfg.MCP) > 0 {
 		for _, mcpCfg := range cfg.MCP {
 			loader := mcpAdapter.NewLoader(mcpCfg).WithLogger(c.logger)

@@ -23,6 +23,9 @@ type Config struct {
 
 	// Knowledge configuration for static RDF facts.
 	Knowledge KnowledgeConfig `yaml:"knowledge" mapstructure:"knowledge"`
+
+	// Memory configuration for Semantic Memory (RAG).
+	Memory MemoryConfig `yaml:"memory" mapstructure:"memory"`
 }
 
 const (
@@ -36,6 +39,18 @@ const (
 type KnowledgeConfig struct {
 	// Path to the RDF Turtle (.ttl) file containing static facts.
 	Path string `yaml:"path" mapstructure:"path"`
+}
+
+// MemoryConfig settings for Semantic Memory provider.
+type MemoryConfig struct {
+	// Provider specifies the memory backend (e.g., "inmem", "qdrant").
+	Provider string `yaml:"provider" mapstructure:"provider"`
+
+	// Path is a file path or connection string for the provider.
+	Path string `yaml:"path" mapstructure:"path"`
+
+	// Options contains arbitrary provider-specific settings.
+	Options map[string]interface{} `yaml:"options" mapstructure:"options"`
 }
 
 // PolicyConfig settings for the Datalog Policy Engine.

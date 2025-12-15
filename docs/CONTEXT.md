@@ -86,6 +86,7 @@ scan_mode: exhaustive
 │   ├── logger.go
 │   ├── logger_test.go
 │   ├── logic.go
+│   ├── memory.go
 │   ├── state.go
 │   ├── tracer.go
 │   └── types.go
@@ -181,6 +182,9 @@ scan_mode: exhaustive
 ├── providers # Standard Plugins
 │   ├── google
 │   │   └── gemini.go
+│   ├── memory
+│   │   └── inmem
+│   │       └── store.go
 │   └── openrouter
 │       └── client.go
 └── sdk # Developer SDK & Steering Loop
@@ -566,6 +570,28 @@ type Extractor interface {
 }
 ```
 
+## core/memory.go
+```go
+package core
+
+import "context"
+
+// AgentMemory defines the capability to store and retrieve past experiences.
+// This interface supports the RAG (Retrieval-Augmented Generation) pattern,
+// allowing the agent to recall relevant context from a semantic store.
+type AgentMemory interface {
+	// Recall retrieves relevant context based on the current query.
+	// Returns a single string (consolidated context) to be injected into the prompt.
+	Recall(ctx context.Context, query string) (string, error)
+
+	// Memorize stores a new interaction (Input/Output) for future recall.
+	Memorize(ctx context.Context, query string, answer string) error
+
+	// Init performs any necessary setup (e.g. connecting to DB).
+	Init(ctx context.Context) error
+}
+```
+
 ## core/governance.go
 ```go
 package core
@@ -661,6 +687,8 @@ type Client struct {
 	logger core.Logger
 	// memory is the persistence layer for chat history (optional).
 	memory core.MemoryStore
+	// agentMemory is the semantic memory (RAG) provider (optional).
+	agentMemory core.AgentMemory
 	// registry holds registered actions for dynamic routing.
 	registry map[string]core.Action
 	// failureMode determines the system's resilience strategy ("open" or "closed").
@@ -1073,6 +1101,17 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		env.SetHistory(params.CurrentHistory)
 	}
 
+	// 1.3 Inject Semantic Memory (RAG)
+	if c.agentMemory != nil {
+		// We use the JSON payload string as the query for simplicity
+		query := safelyStringify(payload)
+		if contextStr, err := c.agentMemory.Recall(ctx, query); err == nil && contextStr != "" {
+			// Inject into Metadata. The LLM Adapter (Genkit) must be updated
+			// to look for "manglekit.context" and add it to the system prompt.
+			env.SetMeta("manglekit.context", contextStr)
+		}
+	}
+
 	// 1.3 Inject Explicit Metadata
 	if params.Metadata != nil {
 		for k, v := range params.Metadata {
@@ -1141,6 +1180,16 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	// --- Phase 4: Evaluation & Correction (Post-check) ---
 	// The Engine evaluates the result against the Blueprint and decides next steps (Retry/Route/Allow).
 	decision := result.Metadata[core.KeyDecision]
+
+	// --- HOOK: MEMORIZE ---
+	// Only memorize if Policy ALLOWED the action and it wasn't a retry loop
+	if c.agentMemory != nil && decision == core.DecisionProceed {
+		go func() {
+			// Async save to avoid blocking response
+			_ = c.agentMemory.Memorize(context.Background(), safelyStringify(payload), safelyStringify(result.Payload))
+		}()
+	}
+
 	if c.logger != nil {
 		c.logger.Debug("RunLoop decision", "decision", decision, "action", actionName)
 	}
@@ -2469,6 +2518,20 @@ func (m *mockGenerator) Stream(ctx context.Context, prompt string) (<-chan strin
 	}()
 	return ch, nil
 }
+
+// createMemory instantiates the memory provider from configuration.
+func createMemory(ctx context.Context, cfg config.Config) (core.AgentMemory, error) {
+	if cfg.Memory.Provider == "" {
+		return nil, nil // Memory is optional
+	}
+
+	factory, err := GetMemoryProvider(cfg.Memory.Provider)
+	if err != nil {
+		return nil, err
+	}
+
+	return factory(ctx, cfg.Memory)
+}
 ```
 
 ## sdk/client_execute.go
@@ -2506,6 +2569,12 @@ func (c *Client) Execute(ctx context.Context, input core.Envelope, opts ...Execu
 
 #### 6. CHANGELOG
 
+*   **2025-12-15**: Semantic Memory (RAG) Support.
+    *   Defined `core.AgentMemory` interface for Recall/Memorize.
+    *   Added `providers/memory/inmem` reference implementation.
+    *   Integrated Memory Hooks into `sdk.ExecuteSingleStep` (Recall before, Memorize after).
+    *   Updated `config.Schema` with `MemoryConfig`.
+    *   Updated `sdk.Client` to support `WithAgentMemory`.
 *   **2025-12-15**: Multi-Provider Architecture (FOP).
     *   Refactored `providers/google` to use Functional Options Pattern.
     *   Added `providers/openrouter` for OpenAI-compatible APIs (OpenRouter, Groq).

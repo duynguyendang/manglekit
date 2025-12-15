@@ -129,6 +129,17 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		env.SetHistory(params.CurrentHistory)
 	}
 
+	// 1.3 Inject Semantic Memory (RAG)
+	if c.agentMemory != nil {
+		// We use the JSON payload string as the query for simplicity
+		query := safelyStringify(payload)
+		if contextStr, err := c.agentMemory.Recall(ctx, query); err == nil && contextStr != "" {
+			// Inject into Metadata. The LLM Adapter (Genkit) must be updated
+			// to look for "manglekit.context" and add it to the system prompt.
+			env.SetMeta("manglekit.context", contextStr)
+		}
+	}
+
 	// 1.3 Inject Explicit Metadata
 	if params.Metadata != nil {
 		for k, v := range params.Metadata {
@@ -197,6 +208,16 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	// --- Phase 4: Evaluation & Correction (Post-check) ---
 	// The Engine evaluates the result against the Blueprint and decides next steps (Retry/Route/Allow).
 	decision := result.Metadata[core.KeyDecision]
+
+	// --- HOOK: MEMORIZE ---
+	// Only memorize if Policy ALLOWED the action and it wasn't a retry loop
+	if c.agentMemory != nil && decision == core.DecisionProceed {
+		go func() {
+			// Async save to avoid blocking response
+			_ = c.agentMemory.Memorize(context.Background(), safelyStringify(payload), safelyStringify(result.Payload))
+		}()
+	}
+
 	if c.logger != nil {
 		c.logger.Debug("RunLoop decision", "decision", decision, "action", actionName)
 	}

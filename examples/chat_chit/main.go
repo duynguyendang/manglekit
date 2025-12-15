@@ -7,8 +7,10 @@ import (
 	"os"
 
 	mangleai "github.com/duynguyendang/manglekit/adapters/ai"
+	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/providers/google"
+	"github.com/duynguyendang/manglekit/providers/memory/inmem"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/joho/godotenv"
 )
@@ -128,7 +130,17 @@ func main() {
 	cwd, _ := os.Getwd()
 	fmt.Printf("Running from: %s\n", cwd)
 
-	client, err := sdk.NewClient(ctx, sdk.WithBlueprintPath(protocolPath), sdk.WithFailMode("closed"))
+	// 1.5 Initialize Memory
+	mem, err := inmem.New(ctx, config.MemoryConfig{})
+	if err != nil {
+		log.Fatalf("Failed to create memory: %v", err)
+	}
+
+	client, err := sdk.NewClient(ctx,
+		sdk.WithBlueprintPath(protocolPath),
+		sdk.WithFailMode("closed"),
+		sdk.WithAgentMemory(mem),
+	)
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
 	}
