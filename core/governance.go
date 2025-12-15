@@ -17,6 +17,9 @@ type Evaluator interface {
 	// EvaluateSteering determines the next step (Retry/Route) based on the output.
 	EvaluateSteering(ctx context.Context, input Envelope) (string, map[string]string, error)
 
+	// GetActionConfig queries the engine for dynamic configuration parameters.
+	GetActionConfig(ctx context.Context, input Envelope) (map[string]string, error)
+
 	// LoadPolicy loads policy rules from a source string or file content.
 	LoadPolicy(ctx context.Context, source string) error
 
