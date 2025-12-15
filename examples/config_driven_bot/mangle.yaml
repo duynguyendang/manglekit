@@ -1,9 +1,9 @@
 actions:
   chat_agent:
     type: "llm"
-    provider: "mock"
+    provider: "google"
     options:
-      model: "gemini-1.5-flash"
+      model: "gemini-2.5-flash"
       prompt: "You are Mangle. Answer briefly."
 policy:
   path: "./examples/config_driven_bot/policy.dl"

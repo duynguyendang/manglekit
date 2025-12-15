@@ -177,7 +177,7 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 
 	// 3. Hydrate Actions
 	if len(cfg.Actions) > 0 {
-		actions, err := HydrateActions(cfg.Actions)
+		actions, err := HydrateActions(ctx, cfg.Actions)
 		if err != nil {
 			return nil, err
 		}
