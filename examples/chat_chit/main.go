@@ -7,10 +7,10 @@ import (
 	"os"
 
 	mangleai "github.com/duynguyendang/manglekit/adapters/ai"
+	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/providers/google"
 	"github.com/duynguyendang/manglekit/sdk"
-	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/joho/godotenv"
 )
 
@@ -134,30 +134,24 @@ func main() {
 		log.Fatalf("Failed to create client: %v", err)
 	}
 
-	// 2. Initialize Genkit (Perception)
-	// We initialize the Google AI plugin directly here since the adapter helper is unavailable.
+	// 2. Initialize Genkit (Perception) using Google Provider
+	// We use the new provider 'google' package to get the generator
 	if os.Getenv("GOOGLE_API_KEY") == "" {
 		log.Fatal("GOOGLE_API_KEY is not set")
 	}
 
-	// Initialize Genkit with Google GenAI plugin
-	// Note: genkit.Init returns *Genkit (single value) and panics/logs on error?
-	// Or maybe it just constructs the registry.
-	g := genkit.Init(ctx,
-		genkit.WithPlugins(&googlegenai.GoogleAI{}),
-	)
-	if g == nil {
-		log.Fatal("Genkit Init failed (returned nil)")
+	// Create config for the generator
+	genConfig := config.ActionConfig{
+		Options: map[string]interface{}{
+			"model": "gemini-2.5-flash",
+		},
 	}
 
-	// Use Google AI Model
-	model := googlegenai.GoogleAIModel(g, "gemini-2.5-flash")
-	if model == nil {
-		log.Fatal("Model gemini-2.5-flash not found")
+	// Create the Manglekit TextGenerator adapter via provider
+	gemini, err := google.NewGenerator(ctx, genConfig)
+	if err != nil {
+		log.Fatalf("Failed to initialize google provider: %v", err)
 	}
-
-	// Create the Manglekit TextGenerator adapter
-	gemini := mangleai.NewGenkitAdapter(model, g)
 
 	// 3. Register Actions
 	intentExtractor := &IntentExtractorAction{llm: gemini}
