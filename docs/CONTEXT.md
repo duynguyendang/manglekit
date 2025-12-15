@@ -2,7 +2,7 @@
 context_type: full_source_dump
 project: manglekit
 language: go
-last_updated: 2025-11-30
+last_updated: 2025-12-15
 scan_mode: exhaustive
 ---
 
@@ -178,6 +178,9 @@ scan_mode: exhaustive
 │           └── validator.go
 ├── mangle.yaml
 ├── manglekit.go # Public Facade
+├── providers # Standard Plugins
+│   └── google
+│       └── gemini.go
 └── sdk # Developer SDK & Steering Loop
     ├── client.go
     ├── client_execute.go
@@ -188,6 +191,7 @@ scan_mode: exhaustive
     ├── helpers.go
     ├── loop.go
     ├── options.go
+    ├── registry.go
     └── policy_generator.go
 ```
 
@@ -2506,6 +2510,9 @@ func (c *Client) Execute(ctx context.Context, input core.Envelope, opts ...Execu
     *   Updated File Map to reflect current directory structure (removed `core/action.go`, `core/constants.go`, added `core/logic.go`, `core/data.go`, `core/governance.go`, `internal/resources`, etc.).
     *   Updated Component Analysis to include `internal/resources` and CLI tools.
     *   Updated Source Code Dump with critical files: `core/types.go`, `core/logic.go`, `core/governance.go`, `sdk/client.go`, `sdk/loop.go`, `internal/engine/solver.go`, `internal/supervisor/supervisor.go`, `internal/engine/reflection.go`.
+*   **2025-12-15**: Standard Providers & Registry Pattern.
+    *   Created `providers/google/gemini.go` implementing standard Google GenAI registration.
+    *   Refactored `examples/config_driven_bot/main.go` to use `google.Register()` and `sdk.NewClientFromFile`.
 *   **2025-12-14**: Low-Code Gateway Implementation.
     *   Implemented `sdk/config_loader.go` for `HydrateActions`.
     *   Updated `sdk/client.go` to support `NewClientFromConfig` (Config Struct) and `NewClientFromFile` (Path).
