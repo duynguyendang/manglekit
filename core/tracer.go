@@ -25,9 +25,3 @@ func (n *NopSpan) SetStatus(code string, msg string) {}
 
 // RecordError is a no-op.
 func (n *NopSpan) RecordError(err error) {}
-
-// Error is a no-op.
-func (n *NopSpan) Error(err error) {}
-
-// SetAttr is a no-op.
-func (n *NopSpan) SetAttr(key string, value interface{}) {}

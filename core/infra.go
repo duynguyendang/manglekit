@@ -2,12 +2,6 @@ package core
 
 import "context"
 
-// Watcher listens for config/policy changes.
-type Watcher interface {
-	Watch(ctx context.Context, key string) (<-chan ConfigEvent, error)
-	Close() error
-}
-
 // Breaker implements the Circuit Breaker pattern.
 type Breaker interface {
 	Execute(req func() (any, error)) (any, error)
@@ -32,8 +26,4 @@ type Span interface {
 	SetAttributes(attributes map[string]any)
 	SetStatus(code string, msg string)
 	RecordError(err error)
-
-	// Legacy methods from tracer.go to preserve logic
-	Error(err error)
-	SetAttr(key string, value interface{})
 }

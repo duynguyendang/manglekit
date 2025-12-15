@@ -111,20 +111,20 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 		span.SetStatus(codes.Error, err.Error())
 		// Distinguish between Blueprint DENIAL and System ERROR
 		if g.isAlignmentIssue(err) {
-			span.SetAttributes(attribute.String(core.AttrPolicyOutcome, "deny"))
+			span.SetAttributes(attribute.String(core.AttrOutcome, "deny"))
 			var alignErr *core.AlignmentError
 			if errors.As(err, &alignErr) {
-				span.SetAttributes(attribute.String(core.AttrPolicyReason, alignErr.Message))
+				span.SetAttributes(attribute.String(core.KeyFeedback, alignErr.Message))
 				if alignErr.RuleID != "" {
-					span.SetAttributes(attribute.String(core.AttrPolicyRuleID, alignErr.RuleID))
+					span.SetAttributes(attribute.String(core.AttrRuleID, alignErr.RuleID))
 				}
 			} else {
-				span.SetAttributes(attribute.String(core.AttrPolicyReason, err.Error()))
+				span.SetAttributes(attribute.String(core.KeyFeedback, err.Error()))
 			}
 			// Legacy attribute for backward compatibility
-			span.SetAttributes(attribute.String("mangle.outcome", "DENIED"))
+			span.SetAttributes(attribute.String(core.AttrOutcome, "DENIED"))
 		} else {
-			span.SetAttributes(attribute.String("mangle.outcome", "ERROR"))
+			span.SetAttributes(attribute.String(core.AttrOutcome, "ERROR"))
 		}
 		return core.Envelope{}, err
 	}
@@ -133,21 +133,21 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 	decision := result.Metadata[core.KeyDecision]
 	switch decision {
 	case core.DecisionRetry:
-		span.SetAttributes(attribute.String(core.AttrPolicyOutcome, "retry"))
+		span.SetAttributes(attribute.String(core.AttrOutcome, "retry"))
 		if hint, ok := result.Metadata[core.KeyFeedback]; ok {
 			if s, ok := hint.(string); ok {
-				span.SetAttributes(attribute.String(core.AttrPolicyReason, s))
+				span.SetAttributes(attribute.String(core.KeyFeedback, s))
 			}
 		}
 	case core.DecisionRoute:
-		span.SetAttributes(attribute.String(core.AttrPolicyOutcome, "route"))
+		span.SetAttributes(attribute.String(core.AttrOutcome, "route"))
 		if target, ok := result.Metadata[core.KeyNextStep]; ok {
 			if s, ok := target.(string); ok {
-				span.SetAttributes(attribute.String(core.AttrPolicyTarget, s))
+				span.SetAttributes(attribute.String(core.AttrActionName, s))
 			}
 		}
 	default:
-		span.SetAttributes(attribute.String(core.AttrPolicyOutcome, "allow"))
+		span.SetAttributes(attribute.String(core.AttrOutcome, "allow"))
 	}
 
 	// Inject Retry Count if present
@@ -155,15 +155,15 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 		// handle both string and int
 		if s, ok := attemptVal.(string); ok {
 			if n, err := strconv.Atoi(s); err == nil {
-				span.SetAttributes(attribute.Int(core.AttrPolicyAttempt, n))
+				span.SetAttributes(attribute.Int(core.AttrAttempt, n))
 			}
 		} else if n, ok := attemptVal.(int); ok {
-			span.SetAttributes(attribute.Int(core.AttrPolicyAttempt, n))
+			span.SetAttributes(attribute.Int(core.AttrAttempt, n))
 		}
 	}
 
 	span.SetAttributes(
-		attribute.String("mangle.outcome", "ALLOWED"),
+		attribute.String(core.AttrOutcome, "ALLOWED"),
 		attribute.String("mangle.output_id", result.ID.String()),
 	)
 	return result, nil
@@ -241,7 +241,7 @@ func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envel
 			logger.Warn("failed to retrieve action config", "error", err)
 		} else if len(config) > 0 {
 			if input.Metadata == nil {
-			input.Metadata = make(map[string]any)
+				input.Metadata = make(map[string]any)
 			}
 			for k, v := range config {
 				input.Metadata[core.PrefixPromptConfig+k] = v

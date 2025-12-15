@@ -337,13 +337,10 @@ const (
 	AttrLabels       = "mangle.labels" // Taint Propagation
 	AttrActionName   = "action.name"
 	AttrActionType   = "action.type"
+	AttrRuleID       = "mangle.rule_id" // Replaces AttrPolicyRuleID
+	AttrAttempt      = "mangle.attempt" // Replaces AttrPolicyAttempt
 
-	// Telemetry specific (legacy/compatibility)
-	AttrPolicyOutcome = "policy.outcome"
-	AttrPolicyReason  = "policy.reason"
-	AttrPolicyTarget  = "policy.target"
-	AttrPolicyRuleID  = "policy.rule_id"
-	AttrPolicyAttempt = "policy.attempt"
+
 )
 
 // Outcome Values (for Tracing)
@@ -473,12 +470,7 @@ type Decision struct {
 	Meta    map[string]string // Side-channel data (risk scores, latency budget)
 }
 
-// ConfigEvent: For Hot-Swap mechanisms.
-type ConfigEvent struct {
-	Key     string
-	Content []byte
-	Type    string
-}
+
 
 // ActionMetadata provides metadata about an action.
 type ActionMetadata struct {
@@ -682,7 +674,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		logger:   logger.NewDefault(),
 		registry: make(map[string]core.Action),
-		memory:   core.NoOpStore{},
+		memory:   core.NopStore{},
 	}
 
 	for _, opt := range opts {
@@ -730,7 +722,7 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 	c := &Client{
 		logger:   log,
 		registry: make(map[string]core.Action),
-		memory:   core.NoOpStore{},
+		memory:   core.NopStore{},
 	}
 
 	for _, opt := range opts {
@@ -990,7 +982,7 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 	case core.MemoryModeTransient:
 		params.Store = &engine_memory.VolatileStore{}
 	default:
-		params.Store = &core.NoOpStore{}
+		params.Store = &core.NopStore{}
 	}
 
 	currentAction := startAction
@@ -1543,14 +1535,14 @@ func (e *PolicyEngine) Authorize(ctx context.Context, actionMeta core.ActionMeta
 
 	// Log security labels to span attributes for audit
 	if len(input.SecurityLabels) > 0 {
-		span.SetAttr(core.AttrLabels, input.SecurityLabels)
+		span.SetAttributes(map[string]any{core.AttrLabels: input.SecurityLabels})
 	}
 
 	err := e.authorizeInternal(ctx, actionMeta, input)
 	if err != nil {
-		span.Error(err)
+		span.RecordError(err)
 	} else {
-		span.SetAttr(core.AttrOutcome, core.OutcomeAllowed)
+		span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeAllowed})
 	}
 	return err
 }
@@ -1701,15 +1693,15 @@ func (e *PolicyEngine) Validate(ctx context.Context, actionMeta core.ActionMetad
 
 	// Log security labels to span attributes for audit
 	if len(output.SecurityLabels) > 0 {
-		span.SetAttr(core.AttrLabels, output.SecurityLabels)
+		span.SetAttributes(map[string]any{core.AttrLabels: output.SecurityLabels})
 	}
 
 	result, err := e.validateInternal(ctx, actionMeta, output)
 	if err != nil {
-		span.Error(err)
+		span.RecordError(err)
 		return core.Envelope{}, err
 	}
-	span.SetAttr(core.AttrOutcome, core.OutcomeAllowed)
+	span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeAllowed})
 	return result, nil
 }
 
@@ -1920,15 +1912,15 @@ func (e *PolicyEngine) ExecuteQuery(ctx context.Context, facts []ast.Atom, query
 	ctx, span := e.tracer.Start(ctx, "Datalog.ExecuteQuery")
 	defer span.End()
 
-	span.SetAttr("datalog.query", queryStr)
+	span.SetAttributes(map[string]any{"datalog.query": queryStr})
 
 	res, err := e.runtime.ExecuteQuery(facts, queryStr)
 	if err != nil {
-		span.Error(err)
+		span.RecordError(err)
 		return false, err
 	}
 
-	span.SetAttr("datalog.result", res)
+	span.SetAttributes(map[string]any{"datalog.result": res})
 	return res, nil
 }
 
@@ -1964,7 +1956,7 @@ func (e *PolicyEngine) Query(ctx context.Context, facts []string, queryStr strin
 		var span core.Span
 		ctx, span = e.tracer.Start(ctx, "Datalog.Query")
 		defer span.End()
-		span.SetAttr("datalog.query", queryStr)
+		span.SetAttributes(map[string]any{"datalog.query": queryStr})
 	}
 
 	err := e.runtime.QueryWithSolutions(atomFacts, queryStr, func(solution map[string]any) error {

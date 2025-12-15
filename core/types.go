@@ -12,10 +12,10 @@ import (
 // Standard Metadata Keys used for Control Plane signaling.
 const (
 	// Governance & Routing
-	KeyDecision     = "manglekit.decision"   // Values: "ALLOW", "DENY", "RETRY", "ROUTE"
-	KeyFeedback     = "manglekit.feedback"   // Human/LLM readable reason
-	KeyPrevFeedback = "prev_feedback"        // Loopback for retry
-	KeyNextStep     = "manglekit.next_step"  // Next action routing
+	KeyDecision     = "manglekit.decision"  // Values: "ALLOW", "DENY", "RETRY", "ROUTE"
+	KeyFeedback     = "manglekit.feedback"  // Human/LLM readable reason
+	KeyPrevFeedback = "prev_feedback"       // Loopback for retry
+	KeyNextStep     = "manglekit.next_step" // Next action routing
 
 	// Risk & Analysis
 	KeyRiskScore = "manglekit.risk_score" // 0-100
@@ -58,13 +58,8 @@ const (
 	AttrLabels       = "mangle.labels" // Taint Propagation
 	AttrActionName   = "action.name"
 	AttrActionType   = "action.type"
-
-	// Telemetry specific (legacy/compatibility)
-	AttrPolicyOutcome = "policy.outcome"
-	AttrPolicyReason  = "policy.reason"
-	AttrPolicyTarget  = "policy.target"
-	AttrPolicyRuleID  = "policy.rule_id"
-	AttrPolicyAttempt = "policy.attempt"
+	AttrRuleID       = "mangle.rule_id" // Replaces AttrPolicyRuleID
+	AttrAttempt      = "mangle.attempt" // Replaces AttrPolicyAttempt
 )
 
 // Outcome Values (for Tracing)

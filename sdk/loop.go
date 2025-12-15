@@ -50,7 +50,7 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 	case core.MemoryModeTransient:
 		params.Store = &engine_memory.VolatileStore{}
 	default:
-		params.Store = &core.NoOpStore{}
+		params.Store = &core.NopStore{}
 	}
 
 	currentAction := startAction

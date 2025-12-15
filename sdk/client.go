@@ -62,7 +62,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		logger:   logger.NewDefault(),
 		registry: make(map[string]core.Action),
-		memory:   core.NoOpStore{},
+		memory:   core.NopStore{},
 	}
 
 	for _, opt := range opts {
@@ -115,7 +115,7 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 	c := &Client{
 		logger:   log,
 		registry: make(map[string]core.Action),
-		memory:   core.NoOpStore{},
+		memory:   core.NopStore{},
 	}
 
 	for _, opt := range opts {

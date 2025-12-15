@@ -48,12 +48,12 @@ type MemoryStore interface {
 	Write(ctx context.Context, sessionID string, msgs []Message) error
 }
 
-// NoOpStore is a no-op implementation of MemoryStore for stateless mode.
+// NopStore is a no-op implementation of MemoryStore for stateless mode.
 // It discards writes and returns empty reads.
-type NoOpStore struct{}
+type NopStore struct{}
 
 // Read returns nil, nil (empty history).
-func (n NoOpStore) Read(_ context.Context, _ string) ([]Message, error) { return nil, nil }
+func (n NopStore) Read(_ context.Context, _ string) ([]Message, error) { return nil, nil }
 
 // Write returns nil (successful no-op).
-func (n NoOpStore) Write(_ context.Context, _ string, _ []Message) error { return nil }
+func (n NopStore) Write(_ context.Context, _ string, _ []Message) error { return nil }
