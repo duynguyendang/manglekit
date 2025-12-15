@@ -103,7 +103,7 @@ func createHandler(client *sdk.Client) http.HandlerFunc {
 					"error": "Policy Violation",
 					"reasons": []string{alignErr.Message},
 					"rule_id": alignErr.RuleID,
-					"decision": core.DecisionInfeasible,
+					"decision": core.DecisionHalt,
 				}
 				json.NewEncoder(w).Encode(resp)
 				return
@@ -116,7 +116,7 @@ func createHandler(client *sdk.Client) http.HandlerFunc {
 
 		// Case B: Policy Violation (Check Metadata)
 		// Even if err is nil, check decision metadata
-		if d, ok := result.Metadata[core.KeyDecision]; ok && d == core.DecisionInfeasible {
+		if d, ok := result.Metadata[core.KeyDecision]; ok && d == core.DecisionHalt {
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(result) // Return full result as body
 			return

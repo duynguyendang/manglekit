@@ -108,9 +108,9 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		// Distinguish between Blueprint INFEASIBILITY and System ERROR
+		// Distinguish between Blueprint HALT and System ERROR
 		if g.isAlignmentIssue(err) {
-			span.SetAttributes(attribute.String(core.AttrOutcome, core.OutcomeInfeasible))
+			span.SetAttributes(attribute.String(core.AttrOutcome, core.OutcomeHalt))
 			var alignErr *core.AlignmentError
 			if errors.As(err, &alignErr) {
 				span.SetAttributes(attribute.String(core.KeyFeedback, alignErr.Message))

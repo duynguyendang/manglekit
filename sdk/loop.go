@@ -257,7 +257,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	case core.DecisionProceed, "":
 		return result, nil
 
-	case core.DecisionInfeasible:
+	case core.DecisionHalt:
 		reason := result.Metadata["reason"]
 		if reason == "" {
 			reason = result.Metadata["violation_msg"]
@@ -265,7 +265,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		if reason == "" {
 			reason = "blueprint violation"
 		}
-		return core.Envelope{}, fmt.Errorf("action denied by blueprint: %s", reason)
+		return core.Envelope{}, fmt.Errorf("action halted by blueprint: %s", reason)
 	}
 
 	// Should not reach here for standard decisions
