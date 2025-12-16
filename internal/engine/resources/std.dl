@@ -54,3 +54,12 @@ Decl label(Tag).            % Security taint labels (e.g., "pii", "unsafe").
 
 % Telemetry Predicate (Arity 2: Entity, RuleID)
 Decl violation_rule(Entity, RuleID).
+
+% --- Helper: String Matching ---
+
+% input_contains(Req, Keyword)
+% Checks if the input text payload contains the keyword (case-insensitive if supported).
+% NOTE: fn:contains is not supported in Mangle v0.3.0, so this helper is currently disabled.
+% input_contains(Req, Keyword) :-
+%    value(Req, "text", Text),
+%    fn:contains(Text, Keyword).

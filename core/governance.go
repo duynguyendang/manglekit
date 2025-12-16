@@ -24,6 +24,9 @@ type Evaluator interface {
 	// GetActionConfig queries the engine for dynamic configuration parameters.
 	GetActionConfig(ctx context.Context, input Envelope) (map[string]string, error)
 
+	// CheckRequirement checks if a capability is needed. e.g., requires(Req, "memory").
+	CheckRequirement(ctx context.Context, input Envelope, reqName string) (bool, error)
+
 	// LoadPolicy loads policy rules from a source string or file content.
 	LoadPolicy(ctx context.Context, source string) error
 
