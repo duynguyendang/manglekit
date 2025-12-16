@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/duynguyendang/manglekit/adapters/ai"
+	aiAdapter "github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/providers/openai"
 )
 
 // HydrateActions iterates through the configuration and instantiates the defined actions.
@@ -42,6 +43,40 @@ func createLLMAction(ctx context.Context, name string, cfg config.ActionConfig) 
 		return factory(ctx, name, cfg)
 	}
 
+	// Special Wiring for OpenAI
+	if cfg.Provider == "openai" {
+		// 1. Extract Options Safely
+		apiKey, _ := cfg.Options["api_key"].(string)
+		baseURL, _ := cfg.Options["base_url"].(string)
+
+		// Default model if missing
+		modelID, ok := cfg.Options["model"].(string)
+		if !ok || modelID == "" {
+			modelID = "gpt-4o"
+		}
+
+		// 2. Initialize Plugin (Wire it!)
+		// Get Registry from Adapter
+		g := aiAdapter.GetGenkit(ctx)
+
+		// This registers "openai/{modelID}" into Genkit's internal registry.
+		if err := openai.Init(g, modelID, openai.Config{APIKey: apiKey, BaseURL: baseURL}); err != nil {
+			return nil, fmt.Errorf("failed to wire openai provider: %w", err)
+		}
+
+		// 3. Create Action using Universal Adapter
+		// We tell the adapter to look for "openai/" + modelID
+		genkitModelName := "openai/" + modelID
+
+		// Ensure NewGenkitAction signature matches your codebase (passing name and options)
+		// Assuming: NewGenkitAction(ctx context.Context, modelName string, opts ...GenerateOption)
+		action, err := aiAdapter.NewGenkitAction(ctx, genkitModelName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create genkit action: %w", err)
+		}
+		return action, nil
+	}
+
 	// 2. Fallback for Mock (Built-in)
 	if cfg.Provider == "mock" {
 		return createMockLLMAction(name, cfg)
@@ -61,7 +96,7 @@ func createMockLLMAction(name string, cfg config.ActionConfig) (core.Action, err
 		systemPrompt: prompt,
 	}
 
-	return ai.NewLLMAction(name, gen)
+	return aiAdapter.NewLLMAction(name, gen)
 }
 
 // mockGenerator implements core.TextGenerator for testing/fallback.

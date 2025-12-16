@@ -3,11 +3,52 @@ package ai
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 )
+
+var (
+	globalGenkit *genkit.Genkit
+	initOnce     sync.Once
+)
+
+// GetGenkit returns the global Genkit instance, initializing it if necessary.
+// This allows other packages to register models/tools.
+func GetGenkit(ctx context.Context) *genkit.Genkit {
+	initOnce.Do(func() {
+		// Initialize without plugins initially
+		globalGenkit = genkit.Init(ctx)
+	})
+	return globalGenkit
+}
+
+// NewGenkitAction creates a new core.Action backed by a Genkit model.
+// It ensures the Genkit runtime is initialized and looks up the model by name.
+func NewGenkitAction(ctx context.Context, modelName string) (core.Action, error) {
+	g := GetGenkit(ctx)
+
+	// Lookup model using genkit.LookupModel
+	// Note: We use the full name (e.g., "openai/gpt-4o") directly.
+	model := genkit.LookupModel(g, modelName)
+	if model == nil {
+		// Try parsing if lookup failed directly (in case some registry logic differs)
+		// But usually full name is key.
+
+		// Fallback debug info
+		return nil, fmt.Errorf("genkit model not found: %s", modelName)
+	}
+
+	// Create adapter
+	adapter := NewGenkitAdapter(model, g)
+
+	// Wrap in LLMAction
+	// We use modelName as the action name
+	// Note: We might want a cleaner name? Using modelName is fine.
+	return NewLLMAction(modelName, adapter)
+}
 
 // genkitAdapter adapts the Firebase Genkit ai.Model interface to the Manglekit core.TextGenerator interface.
 type genkitAdapter struct {
@@ -99,36 +140,10 @@ func (g *genkitAdapter) Generate(ctx context.Context, prompt string, opts ...cor
 
 	// Handle Output
 	if cfg.OutputType != nil {
-		// Use Genkit's structured output
-		// Note: we're not implementing the full output handling here as per instructions "Do NOT implement Streaming yet"
-		// but we need to pass the schema.
-		// However, ai.ModelRequest.Output is usually used for format instructions.
-		// The prompt says "Do NOT implement Streaming yet. Focus strictly on Type Safety".
-		// It also says "OutputType is used by Genkit to enforce structured output (schema)."
-		// The original code had Output: &ai.ModelOutputConfig{Format: ai.OutputFormatJSON}.
-		// We should respect cfg.OutputType if present.
-
-		// This part is tricky because ai.ModelRequest structure varies by version.
-		// Assuming v1.2.0 as per memory.
-		// Actually, let's just stick to what the prompt example implied: "Map to Genkit Request".
-		// The memory says "To generate structured output using firebase/genkit/go/ai, use ai.Generate with ai.WithOutputType(T)".
-		// But here we are using `g.model.Generate` directly, which takes `*ai.ModelRequest`.
-		// Let's look at `ai.ModelRequest` definition if possible, but I can't see library code.
-		// I'll assume standard Genkit usage.
-
 		req.Output = &ai.ModelOutputConfig{}
 		if cfg.JSONMode {
 			req.Output.Format = ai.OutputFormatJSON
 		}
-		// If OutputType is set, we might need to do something with it,
-		// but `ai.ModelRequest` doesn't directly take a type.
-		// `ai.Generate` helper does.
-		// Since we are using `g.model.Generate`, we might be limited.
-		// BUT the user prompt says: "Map to Genkit Request: Pass cfg.Temperature, cfg.MaxTokens, etc., to ai.NewGenerateRequest."
-		// Wait, `ai.NewGenerateRequest`? That sounds like a helper I don't see in the code I read.
-		// The code I read uses `g.model.Generate(ctx, req, nil)`.
-
-		// I will just map the config fields I can see.
 	} else if cfg.JSONMode {
 		req.Output = &ai.ModelOutputConfig{
 			Format: ai.OutputFormatJSON,
