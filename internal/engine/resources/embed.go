@@ -13,7 +13,7 @@ func GetPlannerRules() string {
 	return plannerRules
 }
 
-// GetStdLib returns the Manglekit Standard Library rules.
-func GetStdLib() string {
+// StdLib returns the Manglekit Standard Library rules.
+func StdLib() string {
 	return stdLib
 }

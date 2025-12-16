@@ -7,11 +7,9 @@ import (
 	"strconv"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/telemetry"
 
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // SupervisedAction is a decorator that wraps any `core.Action` to enforce governance blueprints.
@@ -89,39 +87,41 @@ func NewSupervisedActionWithTracer(action core.Action, eng core.Evaluator, trace
 //   - The result envelope (possibly modified by blueprint), or an error.
 func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	// Auto-Tracing (Phase 5)
-	// We use the global OTel tracer "manglekit" to create spans automatically.
-	// This supersedes the legacy g.tracer usage for the main span,
-	// ensuring consistent observability without user configuration.
-	tracer := otel.Tracer("manglekit")
+	// We use the injected core.Tracer if available, otherwise fallback to global OTel.
+	tracer := g.tracer
+	if tracer == nil {
+		tracer = telemetry.NewOTelTracer(otel.Tracer("manglekit"))
+	}
 	meta := g.inner.Metadata()
 
-	ctx, span := tracer.Start(ctx, fmt.Sprintf("Action.%s", meta.Name),
-		trace.WithAttributes(
-			attribute.String("mangle.action_name", meta.Name),
-			attribute.String("mangle.action_type", string(meta.Type)),
-			attribute.String("mangle.input_id", input.ID.String()),
-		),
-	)
+	ctx, span := tracer.Start(ctx, fmt.Sprintf("Action.%s", meta.Name))
 	defer span.End()
+
+	span.SetAttributes(map[string]any{
+		"mangle.action_name": meta.Name,
+		"mangle.action_type": string(meta.Type),
+		"mangle.input_id":    input.ID.String(),
+	})
 
 	result, err := g.executeInternal(ctx, input)
 	if err != nil {
 		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		span.SetStatus("error", err.Error())
 		// Distinguish between Blueprint HALT and System ERROR
 		if g.isAlignmentIssue(err) {
-			span.SetAttributes(attribute.String(core.AttrOutcome, core.OutcomeHalt))
+			span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeHalt})
 			var alignErr *core.AlignmentError
 			if errors.As(err, &alignErr) {
-				span.SetAttributes(attribute.String(core.KeyFeedback, alignErr.Message))
+				attrs := map[string]any{core.KeyFeedback: alignErr.Message}
 				if alignErr.RuleID != "" {
-					span.SetAttributes(attribute.String(core.AttrRuleID, alignErr.RuleID))
+					attrs[core.AttrRuleID] = alignErr.RuleID
 				}
+				span.SetAttributes(attrs)
 			} else {
-				span.SetAttributes(attribute.String(core.KeyFeedback, err.Error()))
+				span.SetAttributes(map[string]any{core.KeyFeedback: err.Error()})
 			}
 		} else {
-			span.SetAttributes(attribute.String(core.AttrOutcome, "ERROR"))
+			span.SetAttributes(map[string]any{core.AttrOutcome: "ERROR"})
 		}
 		return core.Envelope{}, err
 	}
@@ -130,21 +130,21 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 	decision := result.Metadata[core.KeyDecision]
 	switch decision {
 	case core.DecisionRetry:
-		span.SetAttributes(attribute.String(core.AttrOutcome, "retry"))
+		span.SetAttributes(map[string]any{core.AttrOutcome: "retry"})
 		if hint, ok := result.Metadata[core.KeyFeedback]; ok {
 			if s, ok := hint.(string); ok {
-				span.SetAttributes(attribute.String(core.KeyFeedback, s))
+				span.SetAttributes(map[string]any{core.KeyFeedback: s})
 			}
 		}
 	case core.DecisionRoute:
-		span.SetAttributes(attribute.String(core.AttrOutcome, "route"))
+		span.SetAttributes(map[string]any{core.AttrOutcome: "route"})
 		if target, ok := result.Metadata[core.KeyNextStep]; ok {
 			if s, ok := target.(string); ok {
-				span.SetAttributes(attribute.String(core.AttrActionName, s))
+				span.SetAttributes(map[string]any{core.AttrActionName: s})
 			}
 		}
 	default:
-		span.SetAttributes(attribute.String(core.AttrOutcome, core.OutcomeProceed))
+		span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeProceed})
 	}
 
 	// Inject Retry Count if present
@@ -152,17 +152,17 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 		// handle both string and int
 		if s, ok := attemptVal.(string); ok {
 			if n, err := strconv.Atoi(s); err == nil {
-				span.SetAttributes(attribute.Int(core.AttrAttempt, n))
+				span.SetAttributes(map[string]any{core.AttrAttempt: n})
 			}
 		} else if n, ok := attemptVal.(int); ok {
-			span.SetAttributes(attribute.Int(core.AttrAttempt, n))
+			span.SetAttributes(map[string]any{core.AttrAttempt: n})
 		}
 	}
 
-	span.SetAttributes(
-		attribute.String(core.AttrOutcome, core.OutcomeProceed),
-		attribute.String("mangle.output_id", result.ID.String()),
-	)
+	span.SetAttributes(map[string]any{
+		core.AttrOutcome:     core.OutcomeProceed,
+		"mangle.output_id":   result.ID.String(),
+	})
 	return result, nil
 }
 

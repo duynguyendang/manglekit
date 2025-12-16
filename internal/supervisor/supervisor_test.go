@@ -100,7 +100,10 @@ func (l *TestLogger) GetLogs() []string {
 
 func TestSupervisedAction_Execute(t *testing.T) {
 	// 1. Setup
-	eng := engine.New()
+	eng, err := engine.New()
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
 	mock := &MockAction{}
 	supervisedAction := NewSupervisedAction(mock, eng, "closed")
 
@@ -132,7 +135,10 @@ func TestSupervisedAction_Execute(t *testing.T) {
 func TestSupervisedAction_LoggerContextInjection(t *testing.T) {
 	// 1. Setup with a custom logger
 	testLogger := &TestLogger{}
-	eng := engine.NewWithObservability(nil, testLogger)
+	eng, err := engine.NewWithObservability(nil, testLogger)
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
 	capturingAction := &LoggerCapturingAction{}
 	supervisedAction := NewSupervisedAction(capturingAction, eng, "closed")
 
@@ -140,7 +146,7 @@ func TestSupervisedAction_LoggerContextInjection(t *testing.T) {
 	input := core.NewEnvelope("test payload")
 
 	// 3. Execute
-	_, err := supervisedAction.Execute(context.Background(), input)
+	_, err = supervisedAction.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("Execute() returned an unexpected error: %v", err)
 	}

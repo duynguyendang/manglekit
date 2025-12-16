@@ -36,7 +36,7 @@ func New() (*PolicyEngine, error) {
 	}
 
 	// Auto-load Standard Library
-	if err := pe.runtime.AddPolicy(resources.GetStdLib()); err != nil {
+	if err := pe.runtime.AddPolicy(resources.StdLib()); err != nil {
 		return nil, fmt.Errorf("manglekit: failed to load std.dl: %w", err)
 	}
 
@@ -94,7 +94,7 @@ func NewWithObservability(tracer core.Tracer, logger core.Logger) (*PolicyEngine
 	}
 
 	// Load Manglekit Standard Library (std.dl)
-	if err := pe.runtime.AddPolicy(resources.GetStdLib()); err != nil {
+	if err := pe.runtime.AddPolicy(resources.StdLib()); err != nil {
 		if logger != nil {
 			logger.Error("failed to load standard library", "error", err)
 		}
@@ -515,7 +515,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		}
 		// Log but do not block on metadata query failure
 		if qErr != nil && e.logger != nil {
-			e.logger.Debug("failed to query violation rule ID", "error", qErr)
+			e.logger.Warn("failed to query violation rule ID", "error", qErr)
 		}
 
 		if e.logger != nil {
@@ -548,7 +548,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 			qErr = nil
 		}
 		if qErr != nil && e.logger != nil {
-			e.logger.Debug("failed to query violation message", "error", qErr)
+			e.logger.Warn("failed to query violation message", "error", qErr)
 		}
 
 		// Query: violation_rule(ID)
@@ -563,7 +563,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 			qErr = nil
 		}
 		if qErr != nil && e.logger != nil {
-			e.logger.Debug("failed to query violation rule ID", "error", qErr)
+			e.logger.Warn("failed to query violation rule ID", "error", qErr)
 		}
 
 		if e.logger != nil {

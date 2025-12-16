@@ -98,7 +98,7 @@ The `Client` is the factory and registry.
 
 *   **Responsibility**: Wiring dependencies (Engine, Logger, Tracer).
 *   **Method**: `Supervise(action)` -> returns `GuardedAction`.
-*   **API**: `GetMemory()` -> exposes `core.AgentMemory` for RAG seeding.
+*   **API**: `Memory()` -> exposes `core.AgentMemory` for RAG seeding.
 *   **State**: Holds the `map[string]Action` registry.
 
 ### 4.2 The Supervisor (`internal/supervisor/supervisor.go`)
@@ -185,6 +185,7 @@ Uses `google/mangle` (Datalog).
 
 ## 14. Changelog
 
+*   **2025-11-27**: Refactored getters to be idiomatic (`Memory()`, `Provider()`, `StdLib()`) and fixed observability gaps.
 *   **2025-11-27**: Added `GetMemory()` to `sdk.Client` and `policy_bot` example.
 *   **2025-11-27**: Complete rewrite of `CONTEXT.md` to match UGA architecture. Removed "Sandwich" references.
 *   **2025-11-20**: Added `adapters/mcp`.

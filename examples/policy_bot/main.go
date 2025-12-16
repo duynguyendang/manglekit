@@ -68,7 +68,7 @@ func main() {
 }
 
 func seedKnowledge(ctx context.Context, c *sdk.Client) {
-	mem := c.GetMemory()
+	mem := c.Memory()
 	if mem == nil {
 		log.Println("⚠️ Memory is not enabled!")
 		return
