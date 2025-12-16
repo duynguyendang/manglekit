@@ -78,7 +78,11 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	}
 
 	// Initialize Engine with observability
-	c.engine = engine.NewWithObservability(c.tracer, c.logger)
+	eng, err := engine.NewWithObservability(c.tracer, c.logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize policy engine: %w", err)
+	}
+	c.engine = eng
 
 	// Load blueprint from file if provided
 	if c.blueprintPath != "" {
@@ -131,7 +135,11 @@ func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...Client
 	}
 
 	// Initialize Engine with observability
-	c.engine = engine.NewWithObservability(c.tracer, c.logger)
+	eng, err := engine.NewWithObservability(c.tracer, c.logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize policy engine: %w", err)
+	}
+	c.engine = eng
 
 	if cfg == nil {
 		return c, nil

@@ -42,9 +42,12 @@ const (
 
 // Datalog System Constants
 const (
-	EntityInput  = "Req"    // ID for Input Envelope
-	EntityOutput = "Output" // ID for Output Envelope
-	PredHalt     = "halt"   // Predicate for blocking execution
+	EntityInput   = "Req"           // ID for Input Envelope
+	EntityOutput  = "Output"        // ID for Output Envelope
+	PredHalt      = "halt"          // Was "deny" or "infeasible"
+	PredRetry     = "retry"         // Correction signal
+	PredRoute     = "route"         // Dynamic routing signal
+	PredViolation = "violation_msg" // To extract error messages
 )
 
 // Observability & Trace Attributes

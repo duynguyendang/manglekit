@@ -11,6 +11,8 @@ import (
 	"github.com/google/mangle/parse"
 )
 
+var ErrSolutionFound = errors.New("solution found")
+
 // PolicyEngine is the core decision-making component of Manglekit.
 // It orchestrates the loading of policies, maintaining the Datalog runtime,
 // and executing authorization (Pre-Check) and validation (Post-Check) logic.
@@ -26,7 +28,7 @@ type PolicyEngine struct {
 //
 // Returns:
 //   - A pointer to a new PolicyEngine instance.
-func New() *PolicyEngine {
+func New() (*PolicyEngine, error) {
 	pe := &PolicyEngine{
 		tracer:  &core.NopTracer{},
 		logger:  core.NopLogger{},
@@ -35,10 +37,10 @@ func New() *PolicyEngine {
 
 	// Auto-load Standard Library
 	if err := pe.runtime.AddPolicy(resources.GetStdLib()); err != nil {
-		panic("manglekit: failed to load std.dl: " + err.Error())
+		return nil, fmt.Errorf("manglekit: failed to load std.dl: %w", err)
 	}
 
-	return pe
+	return pe, nil
 }
 
 // NewWithTracer creates a new PolicyEngine with tracing enabled.
@@ -70,7 +72,7 @@ func NewWithTracer(tracer core.Tracer) *PolicyEngine {
 //
 // Returns:
 //   - A pointer to a new PolicyEngine instance.
-func NewWithObservability(tracer core.Tracer, logger core.Logger) *PolicyEngine {
+func NewWithObservability(tracer core.Tracer, logger core.Logger) (*PolicyEngine, error) {
 	if tracer == nil {
 		tracer = &core.NopTracer{}
 	}
@@ -97,10 +99,10 @@ func NewWithObservability(tracer core.Tracer, logger core.Logger) *PolicyEngine 
 			logger.Error("failed to load standard library", "error", err)
 		}
 		// Failure to load stdlib is critical for dynamic features
-		panic("manglekit: failed to load std.dl: " + err.Error())
+		return nil, fmt.Errorf("manglekit: failed to load std.dl: %w", err)
 	}
 
-	return pe
+	return pe, nil
 }
 
 // RecordLineage records a data lineage relationship between a child and a parent.
@@ -482,21 +484,35 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		if reason, ok := solution["Reason"].(string); ok {
 			violationMsg = reason
 			blocked = true
-			return fmt.Errorf("found") // Stop searching
+			return ErrSolutionFound // Stop searching
 		}
 		return nil
 	})
 
+	// Check if search was stopped due to finding a solution
+	if errors.Is(err, ErrSolutionFound) {
+		err = nil // Clear sentinel error
+	}
+	if err != nil {
+		if e.logger != nil {
+			e.logger.Debug("failed to execute halt query", "error", err)
+		}
+		return fmt.Errorf("halt query error: %w", err)
+	}
+
 	if blocked {
 		// Try to find rule ID if available (optional)
 		// Query: violation_rule(ID)
-		_ = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
+		err = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
 			if id, ok := solution["ID"].(string); ok {
 				ruleID = id
-				return fmt.Errorf("found")
+				return ErrSolutionFound
 			}
 			return nil
 		})
+		if errors.Is(err, ErrSolutionFound) {
+			err = nil
+		}
 
 		if e.logger != nil {
 			e.logger.Debug("gate violation detected (halt)", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
@@ -505,7 +521,8 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 	}
 
 	// Priority 2: deny(Entity) (Backward Compatibility)
-	queryDeny := fmt.Sprintf("deny(\"%s\")", entityID)
+	// Map legacy "deny" to core.PredHalt ("halt")
+	queryDeny := fmt.Sprintf("%s(\"%s\")", core.PredHalt, entityID)
 	denied, err := e.runtime.ExecuteQuery(facts, queryDeny)
 	if err != nil {
 		if e.logger != nil {
@@ -516,22 +533,28 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 
 	if denied {
 		// Query: violation_msg(Msg)
-		_ = e.runtime.QueryWithSolutions(facts, "violation_msg(Msg)", func(solution map[string]any) error {
+		err = e.runtime.QueryWithSolutions(facts, fmt.Sprintf("%s(Msg)", core.PredViolation), func(solution map[string]any) error {
 			if msg, ok := solution["Msg"].(string); ok {
 				violationMsg = msg
-				return fmt.Errorf("found")
+				return ErrSolutionFound
 			}
 			return nil
 		})
+		if errors.Is(err, ErrSolutionFound) {
+			err = nil
+		}
 
 		// Query: violation_rule(ID)
-		_ = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
+		err = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
 			if id, ok := solution["ID"].(string); ok {
 				ruleID = id
-				return fmt.Errorf("found")
+				return ErrSolutionFound
 			}
 			return nil
 		})
+		if errors.Is(err, ErrSolutionFound) {
+			err = nil
+		}
 
 		if e.logger != nil {
 			e.logger.Debug("gate violation detected (deny)", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
@@ -632,15 +655,24 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 
 	// 1. Check Correction (Retry)
 	// Query: retry(Hint)
-	_ = e.runtime.QueryWithSolutions(facts, "retry(Hint)", func(solution map[string]any) error {
+	err = e.runtime.QueryWithSolutions(facts, fmt.Sprintf("%s(Hint)", core.PredRetry), func(solution map[string]any) error {
 		if hint, ok := solution["Hint"].(string); ok {
 			decision = core.DecisionRetry
 			metadata[core.KeyFeedback] = hint
 			// Stop searching after first match
-			return fmt.Errorf("found") // Use error to break early
+			return ErrSolutionFound // Use error to break early
 		}
 		return nil
 	})
+
+	if errors.Is(err, ErrSolutionFound) {
+		err = nil
+	}
+	if err != nil {
+		if e.logger != nil {
+			e.logger.Debug("failed to query retry", "error", err)
+		}
+	}
 
 	if decision == core.DecisionRetry {
 		return decision, metadata, nil
@@ -648,14 +680,23 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 
 	// 2. Check Routing
 	// Query: route(Target)
-	_ = e.runtime.QueryWithSolutions(facts, "route(Target)", func(solution map[string]any) error {
+	err = e.runtime.QueryWithSolutions(facts, fmt.Sprintf("%s(Target)", core.PredRoute), func(solution map[string]any) error {
 		if target, ok := solution["Target"].(string); ok {
 			decision = core.DecisionRoute
 			metadata[core.KeyNextStep] = target
-			return fmt.Errorf("found") // Use error to break early
+			return ErrSolutionFound // Use error to break early
 		}
 		return nil
 	})
+
+	if errors.Is(err, ErrSolutionFound) {
+		err = nil
+	}
+	if err != nil {
+		if e.logger != nil {
+			e.logger.Debug("failed to query route", "error", err)
+		}
+	}
 
 	return decision, metadata, nil
 }
