@@ -294,6 +294,21 @@ func (c *Client) recallContext(ctx context.Context, payload any, env *core.Envel
 		return
 	}
 
+	// [GATE] Check if memory is required
+	if c.engine != nil {
+		// Ask: requires(Req, "memory") ?
+		needed, err := c.engine.CheckRequirement(ctx, *env, "memory")
+		if err != nil {
+			if c.logger != nil {
+				c.logger.Warn("Engine check failed, skipping memory", "err", err)
+			}
+			return
+		}
+		if !needed {
+			return // Skip RAG if not required
+		}
+	}
+
 	// Start Span for Observability
 	var span core.Span
 	if c.tracer != nil {

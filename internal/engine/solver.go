@@ -542,6 +542,28 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 	return nil
 }
 
+// CheckRequirement queries: requires("req_id", "capability")
+func (e *PolicyEngine) CheckRequirement(ctx context.Context, input core.Envelope, reqName string) (bool, error) {
+	if e.runtime == nil {
+		return false, nil
+	}
+
+	// 1. Convert Input to Facts using the PRIVATE helper
+	// Signature: toMangleFacts(entityID, payload, contentType)
+	facts, err := toMangleFacts(core.EntityInput, input.Payload, input.ContentType)
+	if err != nil {
+		return false, fmt.Errorf("fact conversion failed: %w", err)
+	}
+
+	// 2. Construct Query
+	// Query format: requires("Req", "memory")
+	query := fmt.Sprintf(`requires("%s", "%s")`, core.EntityInput, reqName)
+
+	// 3. Execute Query
+	// Returns (bool, error) directly as per current engine design
+	return e.ExecuteQuery(ctx, facts, query)
+}
+
 // EvaluateSteering executes "Steering Policies" which determine what to do next.
 // Unlike Assess/Reflect (which are binary Proceed/Infeasible), Steering returns decisions like "Retry" or "Route".
 //
