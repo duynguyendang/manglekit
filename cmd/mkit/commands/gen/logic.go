@@ -29,7 +29,7 @@ func ValidatePolicySyntax(datalog, schemaDeclarations string) error {
 	// Prepend standard declarations to the validator so usages of std lib don't fail.
 	// We use the single source of truth from internal/engine/resources.
 	// We also strictly declare 'deny' as it is the expected output interface.
-	stdDecls := resources.GetStdLib()
+	stdDecls := resources.StdLib()
 	denyDecl := "Decl deny(Source, Reason) ."
 	fullProgram := stdDecls + "\n" + denyDecl + "\n" + schemaDeclarations + "\n" + datalog
 

@@ -37,7 +37,7 @@ func NewActionFromConfig(ctx context.Context, name string, cfg config.ActionConf
 
 func createLLMAction(ctx context.Context, name string, cfg config.ActionConfig) (core.Action, error) {
 	// 1. Try to find a registered provider
-	factory, err := GetProvider(cfg.Provider)
+	factory, err := Provider(cfg.Provider)
 	if err == nil {
 		return factory(ctx, name, cfg)
 	}
@@ -100,7 +100,7 @@ func createMemory(ctx context.Context, cfg config.Config) (core.AgentMemory, err
 		return nil, nil // Memory is optional
 	}
 
-	factory, err := GetMemoryProvider(cfg.Memory.Provider)
+	factory, err := MemoryProvider(cfg.Memory.Provider)
 	if err != nil {
 		return nil, err
 	}

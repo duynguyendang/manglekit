@@ -25,8 +25,8 @@ func RegisterProvider(name string, factory ProviderFactory) {
 	registry[name] = factory
 }
 
-// GetProvider retrieves a registered factory.
-func GetProvider(name string) (ProviderFactory, error) {
+// Provider retrieves a registered factory.
+func Provider(name string) (ProviderFactory, error) {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
@@ -52,8 +52,8 @@ func RegisterMemoryProvider(name string, factory MemoryFactory) {
 	memoryRegistry[name] = factory
 }
 
-// GetMemoryProvider retrieves a registered memory factory.
-func GetMemoryProvider(name string) (MemoryFactory, error) {
+// MemoryProvider retrieves a registered memory factory.
+func MemoryProvider(name string) (MemoryFactory, error) {
 	memoryRegistryMu.RLock()
 	defer memoryRegistryMu.RUnlock()
 	factory, ok := memoryRegistry[name]

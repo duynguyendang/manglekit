@@ -37,7 +37,10 @@ func TestTraceHierarchy(t *testing.T) {
 	coreTracer := telemetry.NewOTelTracer(otelTracer)
 
 	// Initialize the engine and supervisor with tracing
-	eng := engine.NewWithObservability(coreTracer, core.NopLogger{})
+	eng, err := engine.NewWithObservability(coreTracer, core.NopLogger{})
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
 
 	// Create a simple test action
 	innerAction := &MockAction{}
@@ -49,7 +52,7 @@ func TestTraceHierarchy(t *testing.T) {
 	ctx := context.Background()
 	input := core.NewEnvelope("test input")
 
-	_, err := supervisedAction.Execute(ctx, input)
+	_, err = supervisedAction.Execute(ctx, input)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
@@ -102,7 +105,10 @@ func TestTraceHierarchy(t *testing.T) {
 // TestTraceHierarchyWithoutTracer verifies that execution works without a tracer
 func TestTraceHierarchyWithoutTracer(t *testing.T) {
 	// Create a supervisor without a tracer
-	eng := engine.New()
+	eng, err := engine.New()
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
 	innerAction := &MockAction{}
 	supervisedAction := NewSupervisedAction(innerAction, eng, "closed")
 
@@ -110,7 +116,7 @@ func TestTraceHierarchyWithoutTracer(t *testing.T) {
 	ctx := context.Background()
 	input := core.NewEnvelope("test input")
 
-	_, err := supervisedAction.Execute(ctx, input)
+	_, err = supervisedAction.Execute(ctx, input)
 	if err != nil {
 		t.Fatalf("Execute without tracer failed: %v", err)
 	}
@@ -136,7 +142,10 @@ func TestTraceErrorHandling(t *testing.T) {
 	coreTracer := telemetry.NewOTelTracer(otelTracer)
 
 	// Initialize the engine and supervisor with tracing
-	eng := engine.NewWithObservability(coreTracer, core.NopLogger{})
+	eng, err := engine.NewWithObservability(coreTracer, core.NopLogger{})
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
 
 	// Create a failing action
 	innerAction := &FailingAction{err: core.ErrAlignment}
@@ -148,7 +157,7 @@ func TestTraceErrorHandling(t *testing.T) {
 	ctx := context.Background()
 	input := core.NewEnvelope("test input")
 
-	_, err := supervisedAction.Execute(ctx, input)
+	_, err = supervisedAction.Execute(ctx, input)
 	if err == nil {
 		t.Fatal("expected execution to fail, but it succeeded")
 	}
