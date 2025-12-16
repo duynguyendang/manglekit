@@ -1,0 +1,15 @@
+services:
+  policy_bot:
+    action: "chat_policy"
+    # Enable Memory
+    memory:
+      provider: "inmem"
+    # LLM Config
+    llm:
+      provider: "google"
+      model: "gemini-1.5-flash"
+
+# Global Provider Config (Optional overrides)
+providers:
+  google:
+    api_key: "${GOOGLE_GENAI_API_KEY}"

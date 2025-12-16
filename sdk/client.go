@@ -327,3 +327,9 @@ func (c *Client) Shutdown(ctx context.Context) error {
 	}
 	return nil
 }
+
+// GetMemory returns the active memory provider (if any).
+// This is useful for manual data seeding or debugging.
+func (c *Client) GetMemory() core.AgentMemory {
+	return c.agentMemory
+}
