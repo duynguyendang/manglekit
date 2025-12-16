@@ -11,13 +11,15 @@ import (
 	"github.com/duynguyendang/manglekit/providers/google"
 	"github.com/duynguyendang/manglekit/providers/memory/inmem"
 	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/joho/godotenv"
 )
 
 func main() {
 	// 1. Setup Environment
 	ctx := context.Background()
-	if os.Getenv("GOOGLE_GENAI_API_KEY") == "" {
-		log.Fatal("Please set GOOGLE_GENAI_API_KEY environment variable")
+	_ = godotenv.Overload()
+	if os.Getenv("GOOGLE_API_KEY") == "" {
+		log.Fatal("Please set GOOGLE_API_KEY environment variable")
 	}
 
 	// 2. Register Plugins
@@ -26,8 +28,14 @@ func main() {
 
 	// 3. Initialize Client
 	fmt.Println("🚀 Initializing Policy Bot...")
+	// Try to locate the specific config file for this example
+	configPath := "mangle.yaml"
+	if _, err := os.Stat("examples/policy_bot/mangle.yaml"); err == nil {
+		configPath = "examples/policy_bot/mangle.yaml"
+	}
+
 	// Use NewClientFromFile for loading from a YAML file path.
-	client, err := sdk.NewClientFromFile(ctx, "mangle.yaml")
+	client, err := sdk.NewClientFromFile(ctx, configPath)
 	if err != nil {
 		log.Fatalf("Failed to init client: %v", err)
 	}
