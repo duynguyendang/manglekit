@@ -503,15 +503,19 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 	if blocked {
 		// Try to find rule ID if available (optional)
 		// Query: violation_rule(ID)
-		err = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
+		qErr := e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
 			if id, ok := solution["ID"].(string); ok {
 				ruleID = id
 				return ErrSolutionFound
 			}
 			return nil
 		})
-		if errors.Is(err, ErrSolutionFound) {
-			err = nil
+		if errors.Is(qErr, ErrSolutionFound) {
+			qErr = nil
+		}
+		// Log but do not block on metadata query failure
+		if qErr != nil && e.logger != nil {
+			e.logger.Debug("failed to query violation rule ID", "error", qErr)
 		}
 
 		if e.logger != nil {
@@ -533,27 +537,33 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 
 	if denied {
 		// Query: violation_msg(Msg)
-		err = e.runtime.QueryWithSolutions(facts, fmt.Sprintf("%s(Msg)", core.PredViolation), func(solution map[string]any) error {
+		qErr := e.runtime.QueryWithSolutions(facts, fmt.Sprintf("%s(Msg)", core.PredViolation), func(solution map[string]any) error {
 			if msg, ok := solution["Msg"].(string); ok {
 				violationMsg = msg
 				return ErrSolutionFound
 			}
 			return nil
 		})
-		if errors.Is(err, ErrSolutionFound) {
-			err = nil
+		if errors.Is(qErr, ErrSolutionFound) {
+			qErr = nil
+		}
+		if qErr != nil && e.logger != nil {
+			e.logger.Debug("failed to query violation message", "error", qErr)
 		}
 
 		// Query: violation_rule(ID)
-		err = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
+		qErr = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
 			if id, ok := solution["ID"].(string); ok {
 				ruleID = id
 				return ErrSolutionFound
 			}
 			return nil
 		})
-		if errors.Is(err, ErrSolutionFound) {
-			err = nil
+		if errors.Is(qErr, ErrSolutionFound) {
+			qErr = nil
+		}
+		if qErr != nil && e.logger != nil {
+			e.logger.Debug("failed to query violation rule ID", "error", qErr)
 		}
 
 		if e.logger != nil {
