@@ -18,7 +18,8 @@ type User struct {
 func TestDualModeInput(t *testing.T) {
 	// Scenario A: Typed Mode (Struct)
 	t.Run("Typed Mode", func(t *testing.T) {
-		e := engine.New()
+		e, err := engine.New()
+		require.NoError(t, err)
 
 		// Create temporary policy file with dummy fact for declaration
 		policy := `
@@ -45,7 +46,8 @@ func TestDualModeInput(t *testing.T) {
 
 	// Scenario B: Dynamic Mode (JSON)
 	t.Run("Dynamic Mode", func(t *testing.T) {
-		e := engine.New()
+		e, err := engine.New()
+		require.NoError(t, err)
 
 		// Policy: deny if json_link(Req, "user", U), json_num(U, "age", 20)
 		// Includes dummy facts for static analysis
@@ -57,8 +59,8 @@ func TestDualModeInput(t *testing.T) {
 			json_num(U, "age", 20).
 		`
 		// Load raw policy string instead of from file
-		err := e.LoadPolicy(context.Background(), policy)
-		require.NoError(t, err)
+		loadErr := e.LoadPolicy(context.Background(), policy)
+		require.NoError(t, loadErr)
 
 		// Input: JSON map
 		data := map[string]any{

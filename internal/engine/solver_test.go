@@ -9,11 +9,15 @@ import (
 
 func TestPolicyEngine_AuthorizeWithSimpleDenyRule(t *testing.T) {
 	// Create a new PolicyEngine
-	engine := New()
+	engine, err := New()
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
 
 	// Define a simple fact that violates policy
 	// In Mangle, we can query for fact existence
-	rule := `deny("Req").`
+	// Mapped to halt("Req") in solver
+	rule := `halt("Req").`
 	if err := engine.runtime.LoadFromString(rule); err != nil {
 		t.Fatalf("failed to load rule: %v", err)
 	}
@@ -21,24 +25,27 @@ func TestPolicyEngine_AuthorizeWithSimpleDenyRule(t *testing.T) {
 	// Test: Authorization should be denied
 	input := core.NewEnvelope(map[string]string{"action": "test"})
 	ctx := context.Background()
-	err := engine.Assess(ctx, core.ActionMetadata{Name: "test_action"}, input)
+	assessErr := engine.Assess(ctx, core.ActionMetadata{Name: "test_action"}, input)
 
-	if !core.IsAlignmentError(err) {
+	if !core.IsAlignmentError(assessErr) {
 		t.Errorf("expected ErrAlignment, got %v", err)
 	}
 }
 
 func TestPolicyEngine_AllowWhenNoRule(t *testing.T) {
 	// Create a new PolicyEngine with empty runtime
-	engine := New()
+	engine, err := New()
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
 
 	// Don't load any rules - should allow by default
 	input := core.NewEnvelope(map[string]string{"action": "test"})
 	ctx := context.Background()
-	err := engine.Assess(ctx, core.ActionMetadata{Name: "test_action"}, input)
+	assessErr := engine.Assess(ctx, core.ActionMetadata{Name: "test_action"}, input)
 
-	if err != nil {
-		t.Errorf("expected no error when no deny rule is defined, got %v", err)
+	if assessErr != nil {
+		t.Errorf("expected no error when no deny rule is defined, got %v", assessErr)
 	}
 }
 

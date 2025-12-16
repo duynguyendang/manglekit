@@ -44,7 +44,10 @@ var EvalCmd = &cobra.Command{
 
 		// 2. Initialize Engine
 		// New() now auto-loads std.dl, so no manual declaration fixes needed!
-		e := engine.New()
+		e, err := engine.New()
+		if err != nil {
+			return fmt.Errorf("failed to initialize engine: %w", err)
+		}
 
 		// 3. Process Knowledge (Facts) First to Extract Schema
 		if knowledgePath != "" {
