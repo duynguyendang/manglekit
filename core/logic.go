@@ -12,7 +12,7 @@ type Action interface {
 }
 
 // GenerateOption is a functional option for text generation.
-type GenerateOption func(o any)
+type GenerateOption func(o *GenerationConfig)
 
 // LLMResponse contains the generated text and token usage metadata.
 type LLMResponse struct {
