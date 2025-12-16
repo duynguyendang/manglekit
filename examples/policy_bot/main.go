@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/providers/google"
 	"github.com/duynguyendang/manglekit/providers/memory/inmem"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/joho/godotenv"
@@ -23,7 +22,7 @@ func main() {
 	}
 
 	// 2. Register Plugins
-	google.Register()
+	// Note: Google is auto-wired via SDK Config Loader
 	inmem.Register()
 
 	// 3. Initialize Client

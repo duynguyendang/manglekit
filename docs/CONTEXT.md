@@ -194,7 +194,7 @@ scan_mode: exhaustive
 ├── manglekit.go                                # Root Facade
 ├── providers                                   # Standard Providers
 │   ├── google
-│   │   └── gemini.go
+│   │   └── plugin.go
 │   ├── memory
 │   │   ├── inmem
 │   │       └── store.go
@@ -2650,6 +2650,11 @@ type MCPServerConfig struct {
 }
 ```
 
+## 10. Known Gaps
+
+*   **Google Provider Dependency**: The `googleai` plugin package is missing in the `genkit/go` `v1.2.0` module. We are polyfilling it using the `googlegenai` plugin (which exists) combined with a manual proxy registration pattern to ensure compatibility with `Init(ctx, apiKey)` semantics.
+
 ## 14. CHANGELOG
 
 - **2025-12-05**: Full Context Resync. Exhaustive scan and source dump of critical kernel components (`core`, `sdk`, `engine`, `supervisor`).
+- **2025-12-05**: Refactored `providers/google` to use the `googlegenai` plugin with a proxy pattern due to missing `googleai` package in Genkit v1.2.0. Updated `sdk` loader to support new `Init` pattern.
