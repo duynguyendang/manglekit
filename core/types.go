@@ -239,6 +239,18 @@ type Query struct {
 	Meta map[string]any `json:"meta,omitempty"`
 }
 
+// GenerationConfig holds standard LLM parameters.
+type GenerationConfig struct {
+	Temperature   float64
+	MaxTokens     int
+	TopP          float64
+	StopSequences []string
+	Model         string
+	JSONMode      bool
+	// OutputType is used by Genkit to enforce structured output (schema).
+	OutputType any
+}
+
 // Document represents a snippet of knowledge/memory.
 type Document struct {
 	Content  string         `json:"content"`
