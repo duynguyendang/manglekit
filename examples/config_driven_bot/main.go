@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/duynguyendang/manglekit/providers/google"
 	"github.com/duynguyendang/manglekit/providers/openrouter"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/joho/godotenv"
@@ -16,7 +15,7 @@ func main() {
 	_ = godotenv.Load()
 
 	// 1. Register Standard Plugins
-	google.Register()
+	// Note: Google is now handled via configuration/auto-wiring
 	openrouter.Register()
 
 	// 2. Create Client

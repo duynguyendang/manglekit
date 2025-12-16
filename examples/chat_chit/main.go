@@ -12,6 +12,7 @@ import (
 	"github.com/duynguyendang/manglekit/providers/google"
 	"github.com/duynguyendang/manglekit/providers/memory/inmem"
 	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/firebase/genkit/go/genkit"
 	"github.com/joho/godotenv"
 )
 
@@ -146,16 +147,30 @@ func main() {
 	}
 
 	// 2. Initialize Genkit (Perception) using Google Provider
-	// We use the new provider 'google' package to get the generator
-	if os.Getenv("GOOGLE_API_KEY") == "" {
+	// REFACTORED: Use the new Init/Action pattern
+	apiKey := os.Getenv("GOOGLE_API_KEY")
+	if apiKey == "" {
 		log.Fatal("GOOGLE_API_KEY is not set")
 	}
 
-	// Create the Manglekit TextGenerator adapter via provider
-	gemini, err := google.New(ctx, google.WithModel("gemini-2.5-flash"))
-	if err != nil {
-		log.Fatalf("Failed to initialize google provider: %v", err)
+	modelID := "gemini-2.5-flash"
+
+	// 2a. Get Global Genkit Instance
+	g := mangleai.GetGenkit(ctx)
+
+	// 2b. Init Google Plugin (Registers models)
+	if err := google.Init(g, modelID, apiKey); err != nil {
+		log.Fatalf("Failed to init google provider: %v", err)
 	}
+
+	// 2c. Get the model directly (since we need TextGenerator)
+	modelName := "googleai/" + modelID
+	model := genkit.LookupModel(g, modelName)
+	if model == nil {
+		log.Fatalf("Model %q not found in registry", modelName)
+	}
+
+	gemini := mangleai.NewGenkitAdapter(model, g)
 
 	// 3. Register Actions
 	intentExtractor := &IntentExtractorAction{llm: gemini}
