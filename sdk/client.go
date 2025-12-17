@@ -3,13 +3,9 @@ package sdk
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/duynguyendang/manglekit/adapters/knowledge"
-	mcpAdapter "github.com/duynguyendang/manglekit/adapters/mcp"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine"
@@ -47,7 +43,9 @@ type Client struct {
 	blueprintPath string
 	// shutdownFunc is a cleanup function to stop exporters/tracers.
 	shutdownFunc func(context.Context) error
-	// llm is the plugged-in text generation backend.
+	// defaultLLM is the plugged-in text generation backend.
+	defaultLLM core.TextGenerator
+	// llm is alias for defaultLLM to maintain internal compatibility.
 	llm core.TextGenerator
 }
 
@@ -62,191 +60,40 @@ type Client struct {
 //   - A pointer to the initialized Client, or an error if initialization fails.
 func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	c := &Client{
-		logger:   logger.NewDefault(),
-		registry: make(map[string]core.Action),
-		memory:   core.NopStore{},
+		logger:      logger.NewDefault(),
+		registry:    make(map[string]core.Action),
+		memory:      core.NopStore{},
+		failureMode: "closed", // Default to closed
 	}
 
-	for _, opt := range opts {
-		opt(c)
-	}
+	c.otelTracer = trace.NewNoopTracerProvider().Tracer(TracerName)
+	c.tracer = telemetry.NewOTelTracer(c.otelTracer)
 
-	// SAFETY FIX: Ensure tracer is never nil to prevent nil pointer dereferences
-	if c.tracer == nil {
-		c.otelTracer = trace.NewNoopTracerProvider().Tracer(TracerName)
-		c.tracer = telemetry.NewOTelTracer(c.otelTracer)
-	}
-
-	// Initialize Engine with observability
+	// Initialize Engine with defaults
 	eng, err := engine.NewWithObservability(c.tracer, c.logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize policy engine: %w", err)
 	}
 	c.engine = eng
 
-	// Load blueprint from file if provided
-	if c.blueprintPath != "" {
-		content, err := os.ReadFile(c.blueprintPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read blueprint file: %w", err)
-		}
-		if err := c.engine.LoadPolicy(ctx, string(content)); err != nil {
-			return nil, err
-		}
-	}
-
-	return c, nil
-}
-
-// NewClientWithConfig initializes a Client using a loaded Config object.
-// It performs full wiring: Engine, Policy, Knowledge, and Actions.
-//
-// Parameters:
-//   - ctx: The context.
-//   - cfg: The loaded configuration struct.
-//   - opts: Additional functional options (override config settings).
-//
-// Returns:
-//   - A pointer to the Client, or an error.
-func NewClientWithConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error) {
-	// Initialize logger
-	var log core.Logger
-	if cfg != nil && cfg.Observability.LogLevel != "" {
-		log = logger.New(cfg.Observability.LogLevel)
-	} else {
-		log = logger.NewDefault()
-	}
-
-	// Create client with loaded configuration
-	c := &Client{
-		logger:   log,
-		registry: make(map[string]core.Action),
-		memory:   core.NopStore{},
-	}
-
+	// Apply options
 	for _, opt := range opts {
-		opt(c)
-	}
-
-	// SAFETY FIX: Ensure tracer is never nil to prevent nil pointer dereferences
-	if c.tracer == nil {
-		c.otelTracer = trace.NewNoopTracerProvider().Tracer(TracerName)
-		c.tracer = telemetry.NewOTelTracer(c.otelTracer)
-	}
-
-	// Initialize Engine with observability
-	eng, err := engine.NewWithObservability(c.tracer, c.logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize policy engine: %w", err)
-	}
-	c.engine = eng
-
-	if cfg == nil {
-		return c, nil
-	}
-
-	// 1. Load Policy
-	if cfg.Policy.Path != "" {
-		content, err := os.ReadFile(cfg.Policy.Path)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read policy file %q: %w", cfg.Policy.Path, err)
-		}
-		if err := c.engine.LoadPolicy(ctx, string(content)); err != nil {
-			return nil, fmt.Errorf("failed to load policy from %q: %w", cfg.Policy.Path, err)
-		}
-	}
-
-	// 2. Load Knowledge
-	if cfg.Knowledge.Path != "" {
-		path := cfg.Knowledge.Path
-		var facts []string
-		var err error
-
-		if strings.HasSuffix(path, ".nt") {
-			f, err := os.Open(path)
-			if err != nil {
-				return nil, fmt.Errorf("failed to open knowledge file %q: %w", path, err)
-			}
-			loader := knowledge.NewNTriplesLoader()
-			facts, err = loader.Parse(f)
-			f.Close()
-		} else {
-			// Default to RDF Loader (Turtle/XML)
-			loader := knowledge.NewRDFLoader()
-			facts, err = loader.Parse(path)
-		}
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse knowledge from %q: %w", path, err)
-		}
-
-		if err := c.engine.LoadFacts(facts); err != nil {
-			return nil, fmt.Errorf("failed to load knowledge facts from %q: %w", path, err)
-		}
-	}
-
-	// 3. Hydrate Memory
-	if cfg.Memory.Provider != "" {
-		mem, err := createMemory(ctx, *cfg)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create memory: %w", err)
-		}
-		c.agentMemory = mem
-	}
-
-	// 4. Hydrate Actions
-	if len(cfg.Actions) > 0 {
-		actions, err := HydrateActions(ctx, cfg.Actions)
-		if err != nil {
+		if err := opt(c); err != nil {
 			return nil, err
 		}
-		for _, action := range actions {
-			// Register it
-			c.RegisterAction(action.Metadata().Name, action)
-		}
 	}
 
-	// 5. Load MCP Actions
-	if len(cfg.MCP) > 0 {
-		for _, mcpCfg := range cfg.MCP {
-			loader := mcpAdapter.NewLoader(mcpCfg).WithLogger(c.logger)
-			actions, err := loader.Load(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("critical tool '%s' failed to load: %w", mcpCfg.Name, err)
-			}
-
-			for _, action := range actions {
-				safeAction := c.Supervise(action)
-				c.RegisterAction(safeAction.Metadata().Name, safeAction)
-				c.logger.Info("Discovered MCP Tool", "name", safeAction.Metadata().Name)
-			}
-		}
+	// Ensure LLM consistency
+	if c.llm != nil && c.defaultLLM == nil {
+		c.defaultLLM = c.llm
+	} else if c.defaultLLM != nil && c.llm == nil {
+		c.llm = c.defaultLLM
 	}
-
-	// Set failure mode
-	if cfg.FailureMode != "" {
-		c.failureMode = cfg.FailureMode
-	}
-
-	// Log configuration loaded successfully
-	c.logger.Info("Manglekit client initialized with config",
-		"service_name", cfg.Observability.ServiceName,
-		"observability_enabled", cfg.Observability.Enabled,
-		"failure_mode", c.failureMode)
 
 	return c, nil
 }
 
 // NewClientFromFile initializes a Client by loading configuration from a YAML file.
-// It supports environment variable expansion in the config file.
-//
-// Parameters:
-//   - ctx: The context.
-//   - configPath: Path to the YAML configuration file.
-//   - opts: Additional functional options.
-//
-// Returns:
-//   - A pointer to the Client, or an error.
 func NewClientFromFile(ctx context.Context, configPath string, opts ...ClientOption) (*Client, error) {
 	// Load configuration from file
 	cfg, err := config.Load(configPath)
@@ -254,25 +101,18 @@ func NewClientFromFile(ctx context.Context, configPath string, opts ...ClientOpt
 		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	return NewClientWithConfig(ctx, cfg, opts...)
+	// Prepend WithConfig to opts
+	newOpts := append([]ClientOption{WithConfig(cfg)}, opts...)
+	return NewClient(ctx, newOpts...)
 }
 
 // NewClientFromConfig initializes a Client using a pre-loaded Config object.
-// It serves as a convenience wrapper around NewClientWithConfig, primarily to support
-// varied initialization patterns required by different user integrations.
 func NewClientFromConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error) {
-	return NewClientWithConfig(ctx, cfg, opts...)
+	newOpts := append([]ClientOption{WithConfig(cfg)}, opts...)
+	return NewClient(ctx, newOpts...)
 }
 
 // Supervise wraps a raw core.Action in a SupervisedAction.
-// This applies the "Trace -> Assess -> Execute -> Reflect" governance lifecycle.
-// This is the core function of the Manglekit framework.
-//
-// Parameters:
-//   - action: The action to supervise.
-//
-// Returns:
-//   - A new core.Action that enforces blueprints.
 func (c *Client) Supervise(action core.Action) core.Action {
 	if c.tracer != nil {
 		return supervisor.NewSupervisedActionWithTracer(action, c.engine, c.tracer, c.failureMode)
@@ -281,14 +121,11 @@ func (c *Client) Supervise(action core.Action) core.Action {
 }
 
 // Engine returns the underlying policy engine (Evaluator).
-// This is useful for advanced use cases where direct access to the Datalog runtime is needed,
-// such as manual query execution or debugging.
 func (c *Client) Engine() core.Evaluator {
 	return c.engine
 }
 
 // LoadFacts allows manually injecting straight Datalog facts into the engine.
-// This supports the "Explicit Loading" workflow where adapters parse data first.
 func (c *Client) LoadFacts(facts []string) error {
 	if c.engine == nil {
 		return fmt.Errorf("engine not initialized")
@@ -297,7 +134,6 @@ func (c *Client) LoadFacts(facts []string) error {
 }
 
 // Tracer returns the OpenTelemetry Tracer used by the client.
-// This allows users to start their own spans that are linked to the Manglekit trace context.
 func (c *Client) Tracer() trace.Tracer {
 	return c.otelTracer
 }
@@ -307,23 +143,12 @@ func (c *Client) Logger() core.Logger {
 	return c.logger
 }
 
-// NewDefault initializes a Client with sensible default settings:
-//   - Default internal logger (slog).
-//   - No-op tracer.
-//   - No policy loaded (allow-all default).
-//
-// Returns:
-//   - A pointer to the Client, or an error.
+// NewDefault initializes a Client with sensible default settings.
 func NewDefault() (*Client, error) {
 	return NewClient(context.Background())
 }
 
 // RegisterAction adds an action to the client's internal registry.
-// Registered actions can be invoked by name using ExecuteByName, enabling dynamic routing.
-//
-// Parameters:
-//   - name: The unique name for the action.
-//   - action: The action instance.
 func (c *Client) RegisterAction(name string, action core.Action) {
 	c.registry[name] = action
 	if c.engine != nil {
@@ -333,7 +158,7 @@ func (c *Client) RegisterAction(name string, action core.Action) {
 	}
 }
 
-// Shutdown cleans up resources used by the client, such as flushing traces.
+// Shutdown cleans up resources used by the client.
 func (c *Client) Shutdown(ctx context.Context) error {
 	if c.shutdownFunc != nil {
 		return c.shutdownFunc(ctx)
@@ -342,7 +167,6 @@ func (c *Client) Shutdown(ctx context.Context) error {
 }
 
 // Memory returns the active memory provider (if any).
-// This is useful for manual data seeding or debugging.
 func (c *Client) Memory() core.AgentMemory {
 	return c.agentMemory
 }
