@@ -1,6 +1,6 @@
 # AGENTS.md — Manglekit Coding Agent Configuration
 
-*Last updated: 2025-11-27*
+*Last updated: 2025-12-17*
 
 ---
 
@@ -29,7 +29,7 @@ Before marking ANY task as complete, you MUST verify if docs/CONTEXT.md needs sy
 
 Coding agents working in this repository should be capable of:
 
-* Understanding the **Universal AI Governance Kernel** architecture (`Client` -> `Guard` -> `Engine`).
+* Understanding the **Universal AI Governance Kernel** architecture (`Client` -> `Supervisor` -> `Engine`).
 * Updating context and documentation automatically when code changes in `docs/CONTEXT.md`.
 * Maintaining observability and performance best practices.
 * Identifying gaps and inconsistencies in adapter implementation or policy logic.
@@ -42,9 +42,9 @@ Agents must recognize the following key locations and their purposes (aligned wi
 
 * `manglekit.go`: The main entry point (`Client`, `Protect`).
 * `core/`: Contracts (`Action`, `Envelope`, `Logger`, `Tracer`).
-* `guard/`: The `GuardedAction` implementation (Trace -> AuthZ -> Exec -> Validate).
-* `engine/`: The Policy Engine and Mangle Runtime.
-* `adapters/`: Universal adapters (`ai`, `func`, `vector`).
+* `internal/supervisor/`: The `SupervisedAction` implementation (Trace -> Assess -> Execute -> Reflect).
+* `internal/engine/`: The Policy Engine and Mangle Runtime.
+* `adapters/`: Universal adapters (`ai`, `mcp`, `resilience`).
 * `config/`: Configuration loading.
 * `docs/`: Technical docs and architecture rules.
 
@@ -72,7 +72,8 @@ Use the document’s internal structure as a guide:
 | **Implementation Snapshot** | Understand the Client/Guard/Engine relationship. |
 | **Dependency Rules** | Validate layering — ensure `guard` doesn't depend on `adapters`. |
 | **Core Contracts** | Retrieve `Action` and `Envelope` definitions. |
-| **Guarded Action Lifecycle** | Understand the Trace -> AuthZ -> Exec -> Validate flow. |
+| **Supervised Action Lifecycle** | Understand the Trace -> Assess -> Exec -> Reflect flow. |
+| **Semantic State Machine** | Understand the Loop (Action -> Decision -> Retry/Route). |
 | **Known Gaps** | Identify open architectural issues (e.g., Lineage). |
 | **Changelog** | Understand recent architectural shifts (e.g., v1.0). |
 
@@ -140,8 +141,8 @@ chore(context): auto-sync CONTEXT.md (+LLD/HLD)
 
 * Never print directly to stdout in production paths.
 * Use `core.Logger` injected via Context (`core.LoggerFromContext(ctx)`).
-* Use `core.Tracer` via `Client` or `GuardedAction`.
-* Ensure `GuardedAction` always starts a parent span.
+* Use `core.Tracer` via `Client` or `SupervisedAction`.
+* Ensure `SupervisedAction` always starts a parent span.
 
 ---
 
@@ -149,7 +150,7 @@ chore(context): auto-sync CONTEXT.md (+LLD/HLD)
 
 Agents must maintain or extend test coverage when altering code in these areas:
 
-* `guard/`: Trace hierarchy and error handling.
+* `internal/supervisor/`: Trace hierarchy and error handling.
 * `engine/`: Policy evaluation and reflection.
 * `adapters/`: Adapter correctness (mocking external drivers).
 
@@ -169,7 +170,7 @@ Any code violating these rules must be rejected or refactored immediately.
 - **⛔ NO 3RD-PARTY DEPS IN CORE**: Keep `core` lightweight.
 - **⛔ CONTEXT PROPAGATION**: `ctx` is mandatory everywhere.
 - **Layered dependencies**:
-    - `guard` depends on `engine` and `core`.
+    - `supervisor` depends on `engine` and `core`.
     - `engine` depends on `core` and `google/mangle`.
     - `adapters` depend on `core` and external drivers.
     - `core` has NO dependencies.
@@ -187,8 +188,8 @@ Any code violating these rules must be rejected or refactored immediately.
 
 ### Policy Logic Change
 
-- Update `engine/policy.go` or `engine/runtime.go`.
-- Ensure `Authorize` and `Validate` methods are updated.
+- Update `engine/solver.go` or `engine/runtime.go`.
+- Ensure `Assess` and `Reflect` methods are updated.
 - Update `docs/LLD.md` reflection section if needed.
 
 ---
@@ -197,17 +198,17 @@ Any code violating these rules must be rejected or refactored immediately.
 
 This section documents key architectural patterns for v1.0.
 
-### 12.1 The "Guarded Action" Pattern
+### 12.1 The "Supervised Action" Pattern
 
 **Context:** We need to enforce policy and observability on *any* operation without modifying the operation itself.
 
 **Implementation:**
 - Use the Decorator pattern.
-- `GuardedAction` implements `core.Action`.
+- `SupervisedAction` implements `core.Action`.
 - It wraps an inner `core.Action`.
-- It executes `Trace -> Authorize -> Inner.Execute -> Validate`.
+- It executes `Trace -> Assess -> Inner.Execute -> Reflect`.
 
-**When Implementing:** Always use `client.Protect()` to apply this pattern. Never manually construct `guard.GuardedAction` in user code.
+**When Implementing:** The `sdk.Client` automatically wraps registered actions. Never manually construct `supervisor.SupervisedAction` in user code.
 
 ### 12.2 The "Universal Adapter" Pattern
 
@@ -230,7 +231,7 @@ This section documents key architectural patterns for v1.0.
 - Generate facts: `field(ID, "FieldName", Value)`.
 - Use `engine.Reflector` in the Policy Engine.
 
-**When Implementing:** Rely on `engine.Authorize/Validate` to handle conversion. Do not write custom `ToFacts` methods unless absolutely necessary for performance.
+**When Implementing:** Rely on `engine.Assess/Reflect` to handle conversion. Do not write custom `ToFacts` methods unless absolutely necessary for performance.
 
 ---
 
@@ -248,8 +249,8 @@ This section documents key architectural patterns for v1.0.
 *   **Method:**
     1.  Create a real `manglekit.Client` with a test policy file.
     2.  Wrap a mock Action.
-    3.  Execute and assert that `PolicyViolationError` occurs when expected.
-*   **Goal:** Verify the Guard/Engine interaction.
+    3.  Execute and assert that `AlignmentError` occurs when expected.
+*   **Goal:** Verify the Supervisor/Engine interaction.
 
 ---
 
@@ -279,8 +280,8 @@ Before committing any code changes, verify:
 ### Architecture Compliance Checks
 - [ ] **Veto Rules Check**: Verified against `docs/ARCHITECTURE_RULES.md`
 - [ ] No illegal cross-layer imports
-- [ ] Adapters do not depend on Guard or Engine
-- [ ] Guard always creates a span
+- [ ] Adapters do not depend on Supervisor or Engine
+- [ ] Supervisor always creates a span
 
 ### Documentation Checks
 - [ ] `docs/CONTEXT.md` updated
@@ -308,7 +309,7 @@ If you produce code but do not produce the diff for `CONTEXT.md`, you are violat
 
 **The Manglekit SDK embodies these core principles:**
 
-1.  **Universal Governance**: Everything is an Action; every Action is Guarded.
+1.  **Universal Governance**: Everything is an Action; every Action is Supervised.
 2.  **Composition**: Wrap existing objects; don't reinvent them.
 3.  **Observability**: Tracing and Logging are first-class citizens.
 4.  **Policy-Driven**: Logic Engine controls execution flow.

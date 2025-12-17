@@ -2,8 +2,8 @@
 
 **Project:** Manglekit Core
 **Status:** Live Document
-**Version:** v1.1 (Consolidated)
-**Last Updated:** 2025-12-15
+**Version:** v1.2 (Cognitive Systems)
+**Last Updated:** 2025-12-17
 
 ## 1\. Architecture Roadmap (The Shift)
 
@@ -22,6 +22,9 @@ This table illustrates the evolution from the legacy "Builder/DI" pattern to the
 | **9** | [Strict Dependency Inversion in Governance](https://www.google.com/search?q=%23adr-9-strict-dependency-inversion-in-governance) | Expansion (v1.1) | Accepted | *N/A (Fix)* |
 | **10** | [Architectural Boundaries Enforcement](https://www.google.com/search?q=%23adr-10-architectural-boundaries-enforcement) | Process | Accepted | *Old ADR 8 (Static Rules)* |
 | **11** | [Dual-Tier Testing Strategy](https://www.google.com/search?q=%23adr-11-dual-tier-testing-strategy) | Process | Accepted | *Old ADR 6 (Testing)* |
+| **12** | [Unified Governance Gates](https://www.google.com/search?q=%23adr-12-unified-governance-gates) | Integration (v1.2) | Accepted | *Legacy distinct Assess/Validate* |
+| **13** | [Semantic State Machine (The Loop)](https://www.google.com/search?q=%23adr-13-semantic-state-machine-the-loop) | Integration (v1.2) | Accepted | *Legacy linear execution* |
+| **14** | [Native Structured Envelopes](https://www.google.com/search?q=%23adr-14-native-structured-envelopes) | Integration (v1.2) | Accepted | *Legacy JSON text parsing* |
 
 -----
 
@@ -197,7 +200,58 @@ Adopt two tiers:
 
 -----
 
-## V. Appendix: Superseded Concepts (The Graveyard)
+## V. The Integration (v1.2 - Cognitive Systems)
+
+*This era focuses on the deep convergence of the Deterministic Engine and the Probabilistic LLM, enabling "Self-Correction" and "Structured Intelligence".*
+
+### ADR 12: Unified Governance Gates
+
+**(Standardizes Policy Engine Interaction)**
+
+**Context:**
+The internal logic for "Pre-Check" (`Assess`) and "Post-Check" (`Reflect`) was diverging. Pre-checks used `deny` predicates while Post-checks were ad-hoc. There was no consistent way to block an action based on Datalog results across different stages.
+**Decision:**
+Implement a **Unified Gate Mechanism** (`evaluateGate`):
+
+1.  **Protocol:** Both input and output checks use the same underlying Datalog query logic.
+2.  **Predicates:** Standardize on `halt(Entity, Reason)` (replacing `deny` and `infeasible`).
+3.  **Flow:** Check `halt` first. If derived, return `AlignmentError`.
+    **Rationale:**
+    Reduces cognitive load by having a single "mental model" for how the Engine blocks actions. "Everything is a Gate."
+
+### ADR 13: Semantic State Machine (The Loop)
+
+**(The "Self-Correcting" Architecture)**
+
+**Context:**
+Simple linear execution (Input -> Action -> Output) is brittle for AI. Agents need to retry failed steps, route based on intent, or remember feedback.
+**Decision:**
+Transform the `sdk.Client` execution model into a **Semantic State Machine**:
+
+1.  **State:** The `Envelope` + `FeedbackHistory`.
+2.  **Transitions:** Driven by Engine "Steering" signals (`retry(Hint)`, `route(Target)`).
+3.  **Loop:** A robust `runLoopInternal` that handles Context Injection, Execution, Evaluation, and Correction.
+    **Rationale:**
+    Moves Manglekit from a "Pipeline Runner" to an "Agentic Runtime". It enables the **Stochastic Runtime Paradox** by wrapping probabilistic actions in deterministic control loops.
+
+### ADR 14: Native Structured Envelopes
+
+**(Schema-First Generation)**
+
+**Context:**
+Relying on LLMs to output raw JSON text and then parsing it with Regex is flaky and slow. Modern providers (Genkit, OpenAI) support native schema enforcement.
+**Decision:**
+Enforce **Structured Generation** contracts:
+
+1.  `ContentType: STRUCT` is the privileged mode.
+2.  Adapters MUST support `OutputType` in `GenerationConfig`.
+3.  The `Envelope` carries typed Go structs, not just `map[string]any`.
+    **Rationale:**
+    Type safety shouldn't stop at the LLM API. The Policy Engine requires structured facts; getting them directly from the LLM reduces translation errors.
+
+-----
+
+## VI. Appendix: Superseded Concepts (The Graveyard)
 
 *The following concepts from the legacy architecture (v0.x) are deprecated and removed:*
 
