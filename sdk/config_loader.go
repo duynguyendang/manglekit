@@ -37,10 +37,9 @@ func NewActionFromConfig(ctx context.Context, name string, cfg config.ActionConf
 
 func createLLMAction(ctx context.Context, name string, cfg config.ActionConfig) (core.Action, error) {
 	// 1. Try to find a registered provider
-	factory, err := Provider(cfg.Provider)
-	if err == nil {
-		return factory(ctx, name, cfg)
-	}
+	// Note: ProviderFactory now returns ClientOption, so we cannot instantiate Action directly here.
+	// This function is legacy compatibility for HydrateActions.
+	// Users should use WithConfig(cfg) instead of HydrateActions.
 
 	// 2. Fallback for Mock (Built-in)
 	if cfg.Provider == "mock" {

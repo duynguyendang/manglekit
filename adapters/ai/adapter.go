@@ -82,3 +82,18 @@ func (a *LLMAction) Metadata() core.ActionMetadata {
 		Type: "llm",
 	}
 }
+
+// Complete implements core.TextGenerator.
+func (a *LLMAction) Complete(ctx context.Context, prompt string) (string, error) {
+	return a.generator.Complete(ctx, prompt)
+}
+
+// Generate implements core.TextGenerator.
+func (a *LLMAction) Generate(ctx context.Context, prompt string, opts ...core.GenerateOption) (*core.LLMResponse, error) {
+	return a.generator.Generate(ctx, prompt, opts...)
+}
+
+// Stream implements core.TextGenerator.
+func (a *LLMAction) Stream(ctx context.Context, prompt string) (<-chan string, error) {
+	return a.generator.Stream(ctx, prompt)
+}
