@@ -7,7 +7,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/providers/memory/inmem"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/joho/godotenv"
@@ -52,18 +51,24 @@ func main() {
 	// - Recall: Find the WFH policy
 	// - Inject: Add it to the prompt
 	// - Execute: Call Gemini
-	resp, err := client.ExecuteByName(ctx, "chat_policy", question)
+	//
+	// Workaround: Manually inject context until SDK Loop is fixed
+	if mem := client.Memory(); mem != nil {
+		contextData, err := mem.Recall(ctx, question)
+		if err == nil && contextData != "" {
+			fmt.Printf("\n[Debug] Used Context:\n%s\n", contextData)
+			question = fmt.Sprintf("CONTEXT:\n%s\n\nQUESTION:\n%s", contextData, question)
+		}
+	}
+
+	// Note: Currently, the SDK registers Google Actions by their model name (googleai/...), ignoring the config alias.
+	resp, err := client.ExecuteByName(ctx, "googleai/gemini-2.5-flash", question)
 	if err != nil {
 		log.Fatalf("Execution failed: %v", err)
 	}
 
 	// 7. Output Result
 	fmt.Printf("🤖 Bot: %v\n", resp.Payload)
-
-	// Optional: Check metadata to see if RAG worked
-	if contextStr := resp.GetMeta(core.KeyContext); contextStr != "" {
-		fmt.Printf("\n[Debug] Used Context:\n%s\n", contextStr)
-	}
 }
 
 func seedKnowledge(ctx context.Context, c *sdk.Client) {

@@ -58,7 +58,7 @@ func Init(ctx context.Context, globalG *genkit.Genkit, apiKey string, modelName 
 
 	// Define the Proxy
 	// This function forwards calls from Global -> Local
-	err := genkit.DefineModel(globalG, globalName, meta,
+	genkit.DefineModel(globalG, globalName, meta,
 		func(ctx context.Context, req *ai.ModelRequest, cb func(context.Context, *ai.ModelResponseChunk) error) (*ai.ModelResponse, error) {
 			// FIX: Workaround for plugin bug rejecting standard config
 			req.Config = nil
@@ -67,9 +67,6 @@ func Init(ctx context.Context, globalG *genkit.Genkit, apiKey string, modelName 
 			return realModel.Generate(ctx, req, cb)
 		},
 	)
-	if err != nil {
-		return "", fmt.Errorf("failed to register proxy model %s: %w", globalName, err)
-	}
 
 	return globalName, nil
 }
