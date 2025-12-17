@@ -1,17 +1,24 @@
 package sdk
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/duynguyendang/manglekit/adapters/knowledge"
+	mcpAdapter "github.com/duynguyendang/manglekit/adapters/mcp"
+	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/telemetry"
 )
 
 // ClientOption configures the Manglekit Client during initialization.
-type ClientOption func(*Client)
+type ClientOption func(*Client) error
 
 // WithBlueprintPath specifies the file path to load Datalog rules from.
 // "Blueprint" is the new terminology for "Policy".
@@ -19,8 +26,9 @@ type ClientOption func(*Client)
 // Parameters:
 //   - path: A file path to the .dl blueprint file.
 func WithBlueprintPath(path string) ClientOption {
-	return func(c *Client) {
+	return func(c *Client) error {
 		c.blueprintPath = path
+		return nil
 	}
 }
 
@@ -29,8 +37,9 @@ func WithBlueprintPath(path string) ClientOption {
 // Parameters:
 //   - mode: "open" (allow execution on error) or "closed" (block execution on error).
 func WithFailMode(mode string) ClientOption {
-	return func(c *Client) {
+	return func(c *Client) error {
 		c.failureMode = mode
+		return nil
 	}
 }
 
@@ -39,10 +48,11 @@ func WithFailMode(mode string) ClientOption {
 // Parameters:
 //   - l: A core.Logger implementation.
 func WithLogger(l core.Logger) ClientOption {
-	return func(c *Client) {
+	return func(c *Client) error {
 		if l != nil {
 			c.logger = l
 		}
+		return nil
 	}
 }
 
@@ -51,10 +61,11 @@ func WithLogger(l core.Logger) ClientOption {
 // Parameters:
 //   - mem: A core.AgentMemory implementation.
 func WithAgentMemory(mem core.AgentMemory) ClientOption {
-	return func(c *Client) {
+	return func(c *Client) error {
 		if mem != nil {
 			c.agentMemory = mem
 		}
+		return nil
 	}
 }
 
@@ -64,12 +75,13 @@ func WithAgentMemory(mem core.AgentMemory) ClientOption {
 // Parameters:
 //   - tp: The OpenTelemetry TracerProvider.
 func WithTracerProvider(tp trace.TracerProvider) ClientOption {
-	return func(c *Client) {
+	return func(c *Client) error {
 		if tp != nil {
 			otelTracer := tp.Tracer(TracerName)
 			c.otelTracer = otelTracer
 			c.tracer = telemetry.NewOTelTracer(otelTracer)
 		}
+		return nil
 	}
 }
 
@@ -78,10 +90,11 @@ func WithTracerProvider(tp trace.TracerProvider) ClientOption {
 // Parameters:
 //   - store: A core.MemoryStore implementation (e.g., Redis backed).
 func WithMemory(store core.MemoryStore) ClientOption {
-	return func(c *Client) {
+	return func(c *Client) error {
 		if store != nil {
 			c.memory = store
 		}
+		return nil
 	}
 }
 
@@ -92,10 +105,125 @@ func WithMemory(store core.MemoryStore) ClientOption {
 // Parameters:
 //   - gen: A core.TextGenerator implementation (e.g., adapters.ai.NewGenkitAdapter(model)).
 func WithLLM(gen core.TextGenerator) ClientOption {
-	return func(c *Client) {
+	return func(c *Client) error {
 		if gen != nil {
 			c.llm = gen
 		}
+		return nil
+	}
+}
+
+// WithConfig applies settings from a loaded configuration struct.
+// It handles wiring of providers, actions, policy, knowledge, and memory.
+func WithConfig(cfg *config.Config) ClientOption {
+	return func(c *Client) error {
+		if cfg == nil {
+			return nil
+		}
+
+		// 1. Update Logger if specified
+		if cfg.Observability.LogLevel != "" {
+			c.logger = logger.New(cfg.Observability.LogLevel)
+		}
+
+		// 2. Load Policy (Blueprint)
+		if cfg.Policy.Path != "" {
+			// Ensure engine is ready (NewClient initializes it, but we might need to be sure)
+			if c.engine == nil {
+				return fmt.Errorf("engine not initialized")
+			}
+			content, err := os.ReadFile(cfg.Policy.Path)
+			if err != nil {
+				return fmt.Errorf("failed to read policy file %q: %w", cfg.Policy.Path, err)
+			}
+			// Use background context as option doesn't provide one
+			if err := c.engine.LoadPolicy(context.Background(), string(content)); err != nil {
+				return fmt.Errorf("failed to load policy from %q: %w", cfg.Policy.Path, err)
+			}
+		}
+
+		// 3. Load Knowledge
+		if cfg.Knowledge.Path != "" {
+			path := cfg.Knowledge.Path
+			var facts []string
+			var err error
+
+			if strings.HasSuffix(path, ".nt") {
+				f, err := os.Open(path)
+				if err != nil {
+					return fmt.Errorf("failed to open knowledge file %q: %w", path, err)
+				}
+				loader := knowledge.NewNTriplesLoader()
+				facts, err = loader.Parse(f)
+				f.Close()
+			} else {
+				loader := knowledge.NewRDFLoader()
+				facts, err = loader.Parse(path)
+			}
+
+			if err != nil {
+				return fmt.Errorf("failed to parse knowledge from %q: %w", path, err)
+			}
+
+			if err := c.engine.LoadFacts(facts); err != nil {
+				return fmt.Errorf("failed to load knowledge facts from %q: %w", path, err)
+			}
+		}
+
+		// 4. Hydrate Memory
+		if cfg.Memory.Provider != "" {
+			// Assuming createMemory helper exists or we use registry
+			// We can use the MemoryRegistry from registry.go
+			factory, err := MemoryProvider(cfg.Memory.Provider)
+			if err != nil {
+				return fmt.Errorf("memory provider %q not found: %w", cfg.Memory.Provider, err)
+			}
+			mem, err := factory(context.Background(), cfg.Memory)
+			if err != nil {
+				return fmt.Errorf("failed to create memory: %w", err)
+			}
+			c.agentMemory = mem
+		}
+
+		// 5. Hydrate Actions
+		// Loops through cfg.Actions to register supervised actions using WithProviderConfig logic.
+		// Note: The configuration schema does not currently have a separate "LLM" section.
+		// LLMs are configured as actions with Type="llm". The WithProviderConfig option
+		// automatically detects this and sets the client's default LLM if applicable.
+		for name, actionCfg := range cfg.Actions {
+			opt := WithProviderConfig(name, actionCfg)
+			if err := opt(c); err != nil {
+				return err
+			}
+		}
+
+		// 6. Load MCP Actions
+		if len(cfg.MCP) > 0 {
+			for _, mcpCfg := range cfg.MCP {
+				loader := mcpAdapter.NewLoader(mcpCfg).WithLogger(c.logger)
+				actions, err := loader.Load(context.Background())
+				if err != nil {
+					if mcpCfg.FailOnStartup {
+						return fmt.Errorf("critical tool '%s' failed to load: %w", mcpCfg.Name, err)
+					}
+					c.logger.Warn("MCP tool failed to load", "tool", mcpCfg.Name, "error", err)
+					continue
+				}
+
+				for _, action := range actions {
+					safeAction := c.Supervise(action)
+					c.registry[safeAction.Metadata().Name] = safeAction
+					c.logger.Info("Discovered MCP Tool", "name", safeAction.Metadata().Name)
+				}
+			}
+		}
+
+		// 7. Failure Mode
+		if cfg.FailureMode != "" {
+			c.failureMode = cfg.FailureMode
+		}
+
+		return nil
 	}
 }
 

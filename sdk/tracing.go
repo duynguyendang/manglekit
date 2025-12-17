@@ -14,10 +14,10 @@ import (
 // WithStdoutTracer configures the client to use a standard output tracer.
 // This is useful for development and debugging to see traces in the console.
 func WithStdoutTracer() ClientOption {
-	return func(c *Client) {
+	return func(c *Client) error {
 		exporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
 		if err != nil {
-			return
+			return err
 		}
 
 		tp := sdktrace.NewTracerProvider(
@@ -37,5 +37,6 @@ func WithStdoutTracer() ClientOption {
 		c.shutdownFunc = func(ctx context.Context) error {
 			return tp.Shutdown(ctx)
 		}
+		return nil
 	}
 }
