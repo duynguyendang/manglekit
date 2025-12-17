@@ -50,22 +50,26 @@ func createLLMAction(ctx context.Context, name string, cfg config.ActionConfig) 
 	// CASE 1: Google (Official Plugin Wrapper)
 	case "google":
 		apiKey, _ := cfg.Options["api_key"].(string)
-		modelName, _ := cfg.Options["model"].(string) // e.g. "gemini-1.5-flash"
+		modelName, _ := cfg.Options["model"].(string)
+		if modelName == "" {
+			modelName = "gemini-1.5-flash"
+		}
 
 		// 1. Init Plugin (Registers "googleai/...")
 		g := aiAdapter.GetGenkit(ctx)
-		if err := googleProvider.Init(g, modelName, apiKey); err != nil {
-			return nil, err
+
+		// Call The Encapsulated Init (The Black Box)
+		// This handles all the proxying and bug fixing internally.
+		registeredName, err := googleProvider.Init(ctx, g, apiKey, modelName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to wire google provider: %w", err)
 		}
 
-		// 2. Lookup & Wrap via Registry
-		// Official plugin uses "googleai/" prefix
-		genkitModelName := "googleai/" + modelName
-
-		// Use the Factory we created in adapters/ai/genkit.go
-		action, err := aiAdapter.NewGenkitAction(ctx, genkitModelName)
+		// 2. Create Action
+		// Now we just use the clean registered name.
+		action, err := aiAdapter.NewGenkitAction(ctx, registeredName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to wire google action: %w", err)
+			return nil, fmt.Errorf("failed to create action for google: %w", err)
 		}
 		return action, nil
 

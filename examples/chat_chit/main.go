@@ -159,12 +159,13 @@ func main() {
 	g := mangleai.GetGenkit(ctx)
 
 	// 2b. Init Google Plugin (Registers models)
-	if err := google.Init(g, modelID, apiKey); err != nil {
+	// Returns the actual registered name (e.g. "googleai/gemini-1.5-flash")
+	modelName, err := google.Init(ctx, g, apiKey, modelID)
+	if err != nil {
 		log.Fatalf("Failed to init google provider: %v", err)
 	}
 
 	// 2c. Get the model directly (since we need TextGenerator)
-	modelName := "googleai/" + modelID
 	model := genkit.LookupModel(g, modelName)
 	if model == nil {
 		log.Fatalf("Model %q not found in registry", modelName)
