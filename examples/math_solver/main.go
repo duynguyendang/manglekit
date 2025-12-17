@@ -59,10 +59,25 @@ func (a *GeminiSolverAction) Execute(ctx context.Context, env core.Envelope) (co
 
 	fmt.Printf("\n[Gemini Solver] Analyzing problem: %q\n", problem)
 
-	sysPrompt := "You are a mathematical engine. Solve the given equation for variable 't'. " +
-		"Find ALL real solutions, including negative ones. " +
-		"Return a JSON object with the equation, a list of candidate values (floats), and brief reasoning."
+	sysPrompt := `
+	You are a Logic Constraint Solver specializing in spatial reasoning puzzles. 
+	Your task is to arrange people into seats based on a set of logical constraints.
+	### RULES OF THE WORLD:
+	1.  **Environment**: A Round Table with 4 seats numbered 1, 2, 3, 4.
+	2.  **Geometry**: 
+	    - The seats are arranged clockwise. 
+	    - \"Right of Seat N\" means Seat N+1 (or Seat 1 if N=4).
+	    - \"Opposite of Seat N\" means Seat N+2 (modulo 4).
+	    - \"Next to\" means either immediate Left or immediate Right.
+	### OUTPUT FORMAT:
+	You must output a SINGLE valid JSON object representing the assignment.
+	- Keys: Seat numbers as strings ("1", "2", "3", "4").
+	- Values: Name of the person assigned.
+	- NO markdown or json formatting. NO explanation. NO header/footer. Just the raw JSON string.
 
+	### EXAMPLE OUTPUT:
+	{"1": "Alice", "2": "Bob", "3": "Charlie", "4": "David"}
+	`
 	resp, err := mangleai.GenerateStruct[SolutionCandidates](
 		ctx,
 		a.llm,
