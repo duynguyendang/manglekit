@@ -1,0 +1,16 @@
+actions:
+  solve_seating:
+    type: "llm"
+    provider: "google"
+    options:
+      model: "gemini-1.5-flash" # or equivalent
+      prompt: |
+        Crucial! Instruct the LLM to act as a Solver and output ONLY valid JSON in the format {"1": "Name", "2": "Name" ...}.
+        It must accept Feedback from the system if previous attempts failed.
+        Entities: An, Binh, Cuong, Dung.
+        Seats: 1, 2, 3, 4.
+        
+failure_mode: "closed"
+observability:
+  enabled: true
+  log_level: "debug"
