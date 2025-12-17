@@ -23,10 +23,10 @@ It acts as a **Middleware Engine** following the *"Wrap, Don't Build"* philosoph
 
 | Component | Role | Responsibility |
 | :--- | :--- | :--- |
-| **SDK** | **Client** | The entry point. Developers use client.Protect() to wrap capabilities. |
-| **Blueprint** | **The Logic Store** | Datalog files (`.dl`) defining the "Standard Operating Procedures". |
-| **Supervisor** | **The Interceptor** | The middleware that enforces the Blueprint on every action. |
-| **Integrations** | **The Drivers** | Universal adapters for LLMs (Genkit), Tools (MCP), and Functions. |
+| **SDK** | **Client** | The entry point. Developers use `client.Supervise()` to wrap capabilities. |
+| **Blueprint** | **Logic Store** | Datalog files (`.dl`) defining the "Standard Operating Procedures". |
+| **Supervisor** | **Interceptor** | The middleware that enforces the Blueprint on every action. |
+| **Integrations** | **Drivers** | Universal adapters for LLMs (Genkit), Tools (MCP), and Functions. |
 
 ## ⚡ Getting Started
 
@@ -51,6 +51,7 @@ import (
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/adapters/ai"
+	"github.com/duynguyendang/manglekit/providers/google"
 )
 
 func main() {
@@ -62,18 +63,23 @@ func main() {
 	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithBlueprintPath("blueprint.dl")))
 
 	// 2. Initialize the AI Driver (Gemini via Genkit)
-	gen, err := ai.NewGemini(ctx, os.Getenv("GEMINI_API_KEY"), "gemini-2.5-flash")
+	// We use the Google Provider to register the model.
+	// Ensure GOOGLE_API_KEY is set in environment.
+	genkitInstance := ai.GetGenkit(ctx)
+	modelName, err := google.Init(ctx, genkitInstance, os.Getenv("GOOGLE_API_KEY"), "gemini-2.5-flash")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// 3. Create & Protect the Action
-	// Wrap the basic LLM generator in a "Supervised Action"
-	llmAction, err := ai.NewLLMAction("jester", gen)
+	// 3. Create & Supervise the Action
+	// Wrap the basic Genkit model in a "Supervised Action"
+	// The Client.Supervise() method applies the Blueprint logic.
+	llmAction, err := ai.NewGenkitAction(ctx, modelName)
 	if err != nil {
 		log.Fatal(err)
 	}
-	safeAction := client.Protect(llmAction)
+	// Apply Governance
+	safeAction := client.Supervise(llmAction)
 
 	// 4. Register for the Loop
 	// Registering allows the engine to route and retry automatically
@@ -113,13 +119,13 @@ violation_msg("Do not mention passwords in jokes.") :- deny(Req).
 
 Manglekit v1.0 is a **Neuro-Symbolic AI Kernel** built on three core layers:
 
-### Layer 1: The Kernel (Client)
+### Layer 1: The Client (SDK)
 
 *   **Role**: Orchestrates the entire governance flow
-*   **Responsibilities**: Holds configuration, manages the Blueprint Engine, and coordinates observability
-*   **Entry Point**: `manglekit.NewClient()` initializes the kernel with policy rules
+*   **Responsibilities**: Holds configuration, manages the Blueprint Engine, and coordinates observability.
+*   **Entry Point**: `manglekit.NewClient()` initializes the kernel with policy rules.
 
-### Layer 2: The Runtime Supervisor (SupervisedAction)
+### Layer 2: The Supervisor (Interceptor)
 
 *   **Role**: An intelligent orchestration layer that binds logic to execution.
 *   **Lifecycle**: `Trace → Align → Run → Steer`
@@ -129,14 +135,14 @@ Manglekit v1.0 is a **Neuro-Symbolic AI Kernel** built on three core layers:
     *   **Steer**: Evaluate output against the Blueprint to trigger **Self-Correction (Retry)** or **Routing (Next Step)**.
 *   **Pattern**: Middleware / Decorator for `core.Action`.
 
-### Layer 3: The Engine (Datalog Runtime)
+### Layer 3: The Blueprint (Logic Store)
 
-*   **Role**: The deterministic reasoning layer
+*   **Role**: The deterministic reasoning layer ("The Left Brain").
 *   **Components**:
-    *   **Solver**: Evaluates Datalog blueprints against facts
-    *   **Reflector**: Automatically converts Go structs to Datalog facts (zero-config)
-    *   **Knowledge Base**: Loads static RDF knowledge for reasoning
-*   **Guarantees**: Fast (microsecond latency), deterministic, testable
+    *   **Solver**: Evaluates Datalog blueprints against facts.
+    *   **Reflector**: Automatically converts Go structs to Datalog facts (zero-config).
+    *   **Knowledge Base**: Loads static RDF knowledge for reasoning.
+*   **Guarantees**: Fast (microsecond latency), deterministic, testable.
 
 ### Universal Adapters
 
@@ -202,12 +208,6 @@ manglekit/
 ├── sdk/                # The User-Facing API (Client, Loop)
 └── examples/           # Runnable Demo Projects
 ```
-
-## 📚 Documentation
-
-*   **[Concept & Philosophy (CSD)](docs/CSD.md)**: Read about the "Dual-Brain Architecture" and "Stochastic Paradox".
-*   **[Internal Architecture (Context)](docs/CONTEXT.md)**: Deep dive into the codebase map.
-*   **[Configuration](docs/CONFIG.md)**: YAML setup and environment variables.
 
 ## 🤝 Contributing
 
