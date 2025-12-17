@@ -10,7 +10,8 @@ import (
 )
 
 // ProviderFactory defines the constructor signature for creating an action from config.
-type ProviderFactory func(ctx context.Context, name string, cfg config.ActionConfig) (core.Action, error)
+// Strict Mode: Returns a ClientOption to configure the client directly.
+type ProviderFactory func(opts map[string]any) (ClientOption, error)
 
 var (
 	registryMu       sync.RWMutex
@@ -38,7 +39,7 @@ func Provider(name string) (ProviderFactory, error) {
 }
 
 // WithProviderConfig creates a ClientOption that initializes a provider from configuration.
-// It looks up the factory, creates the action, supervises it, and registers it to the client.
+// It looks up the factory, creates the ClientOption, and applies it.
 func WithProviderConfig(name string, cfg config.ActionConfig) ClientOption {
 	return func(c *Client) error {
 		registryMu.RLock()
@@ -55,29 +56,23 @@ func WithProviderConfig(name string, cfg config.ActionConfig) ClientOption {
 			return nil
 		}
 
-		// Create the action using the factory.
-		// Note: We use context.Background() here because ClientOption doesn't accept context.
-		// This implies providers should not rely on the context for long-lived cancellation during init.
-		action, err := factory(context.Background(), name, cfg)
+		// Create the option using the factory.
+		opt, err := factory(cfg.Options)
 		if err != nil {
 			if cfg.FailOnStartup {
-				return fmt.Errorf("failed to create action '%s': %w", name, err)
+				return fmt.Errorf("failed to create option for action '%s': %w", name, err)
 			}
-			c.logger.Warn("failed to create action", "name", name, "error", err)
+			c.logger.Warn("failed to create provider option", "name", name, "error", err)
 			return nil
 		}
 
-		// Supervise the action (apply governance)
-		supervised := c.Supervise(action)
-
-		// Register to the client
-		c.registry[name] = supervised
-
-		// If this is an LLM and we don't have a default LLM yet, set it.
-		if cfg.Type == "llm" && c.llm == nil {
-			if gen, ok := action.(core.TextGenerator); ok {
-				c.llm = gen
+		// Apply the option to the client
+		if err := opt(c); err != nil {
+			if cfg.FailOnStartup {
+				return fmt.Errorf("failed to apply provider option for action '%s': %w", name, err)
 			}
+			c.logger.Warn("failed to apply provider option", "name", name, "error", err)
+			return nil
 		}
 
 		return nil

@@ -148,6 +148,15 @@ func NewDefault() (*Client, error) {
 	return NewClient(context.Background())
 }
 
+// SetLLM manually configures the default TextGenerator (LLM) for the client.
+// This is useful for code-first wiring or when using provider factories.
+func (c *Client) SetLLM(gen core.TextGenerator) {
+	c.llm = gen
+	if c.defaultLLM == nil {
+		c.defaultLLM = gen
+	}
+}
+
 // RegisterAction adds an action to the client's internal registry.
 func (c *Client) RegisterAction(name string, action core.Action) {
 	c.registry[name] = action
