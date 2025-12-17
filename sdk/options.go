@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"fmt"
 	"time"
 
 	"go.opentelemetry.io/otel/trace"
@@ -110,11 +111,11 @@ type ExecutionParams struct {
 	Timeout time.Duration
 
 	// State fields (Managed by ExecuteSingleStep/Loop)
-	Store           core.MemoryStore   `json:"-"` // Internal store reference
-	CurrentHistory  []core.Message     `json:"history,omitempty"`
-	FeedbackHistory []string           `json:"feedback_history,omitempty"`
-	LastFeedback    string             `json:"last_feedback,omitempty"`
-	RetryCount      int                `json:"retry_count,omitempty"`
+	Store           core.MemoryStore `json:"-"` // Internal store reference
+	CurrentHistory  []core.Message   `json:"history,omitempty"`
+	FeedbackHistory []string         `json:"feedback_history,omitempty"`
+	LastFeedback    string           `json:"last_feedback,omitempty"`
+	RetryCount      int              `json:"retry_count,omitempty"`
 }
 
 // ExecuteOption configures a single execution call (e.g., ExecuteByName).
@@ -201,5 +202,21 @@ func WithJSONMode(enabled bool) core.GenerateOption {
 func WithStructuredOutput(schema any) core.GenerateOption {
 	return func(cfg *core.GenerationConfig) {
 		cfg.OutputType = schema
+	}
+}
+
+// WithMetadataMap injects a map of custom key-value pairs into the execution envelope's metadata.
+func WithMetadataMap(meta map[string]any) ExecuteOption {
+	return func(p *ExecutionParams) {
+		if p.Metadata == nil {
+			p.Metadata = make(map[string]string)
+		}
+		for k, v := range meta {
+			if s, ok := v.(string); ok {
+				p.Metadata[k] = s
+			} else {
+				p.Metadata[k] = fmt.Sprintf("%v", v)
+			}
+		}
 	}
 }
