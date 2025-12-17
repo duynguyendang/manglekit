@@ -29,6 +29,9 @@ func (c *Client) ExecuteByName(ctx context.Context, actionName string, input any
 	return c.runLoopInternal(ctx, actionName, input, params)
 }
 
+// runLoopInternal implements the core Semantic State Machine loop.
+// It iterates through steps, managing memory storage, handling decisions (Retry/Route),
+// and enforcing the execution limits (max steps, timeouts).
 func (c *Client) runLoopInternal(ctx context.Context, startAction string, payload any, params ExecutionParams) (core.Envelope, error) {
 	if c.logger != nil {
 		ctx = core.ContextWithLogger(ctx, c.logger)

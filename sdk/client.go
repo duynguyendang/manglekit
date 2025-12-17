@@ -257,7 +257,9 @@ func NewClientFromFile(ctx context.Context, configPath string, opts ...ClientOpt
 	return NewClientWithConfig(ctx, cfg, opts...)
 }
 
-// NewClientFromConfig is a wrapper for NewClientWithConfig to match user requirements.
+// NewClientFromConfig initializes a Client using a pre-loaded Config object.
+// It serves as a convenience wrapper around NewClientWithConfig, primarily to support
+// varied initialization patterns required by different user integrations.
 func NewClientFromConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error) {
 	return NewClientWithConfig(ctx, cfg, opts...)
 }
@@ -278,6 +280,9 @@ func (c *Client) Supervise(action core.Action) core.Action {
 	return supervisor.NewSupervisedAction(action, c.engine, c.failureMode)
 }
 
+// Engine returns the underlying policy engine (Evaluator).
+// This is useful for advanced use cases where direct access to the Datalog runtime is needed,
+// such as manual query execution or debugging.
 func (c *Client) Engine() core.Evaluator {
 	return c.engine
 }
