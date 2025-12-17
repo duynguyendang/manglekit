@@ -2,7 +2,7 @@
 context_type: full_source_dump
 project: manglekit
 language: go
-last_updated: 2025-12-05
+last_updated: 2025-12-17
 scan_mode: exhaustive
 ---
 
@@ -42,7 +42,7 @@ scan_mode: exhaustive
 │   │   └── loader_test.go
 │   ├── resilience
 │   │   ├── circuit_breaker.go                  # Circuit Breaker decorator
-│   │   └── circuit_breaker_test.go
+│   │   ├── circuit_breaker_test.go
 │   └── vector
 │       ├── genkit_retriever.go
 │       ├── retriever_adapter.go
@@ -51,10 +51,27 @@ scan_mode: exhaustive
 │   └── mkit                                    # CLI Tool
 │       ├── commands
 │       │   ├── eval
+│       │   │   └── run.go
 │       │   ├── gen
+│       │   │   ├── inductor
+│       │   │   │   ├── graph.go
+│       │   │   │   ├── inductor.go
+│       │   │   │   ├── inductor_test.go
+│       │   │   │   └── topology_test.go
+│       │   │   ├── logic.go
+│       │   │   ├── logic_test.go
+│       │   │   ├── resources.go
+│       │   │   ├── root.go
+│       │   │   └── rule.go
 │       │   ├── inspect
+│       │   │   ├── root.go
+│       │   │   └── struct.go
 │       │   ├── kg
+│       │   │   ├── convert.go
+│       │   │   └── root.go
 │       │   └── serve
+│       │       ├── serve.go
+│       │       └── serve_test.go
 │       └── main.go
 ├── config                                      # Configuration Management
 │   ├── loader.go                               # Config loading logic
@@ -138,8 +155,8 @@ scan_mode: exhaustive
 │   │   └── main.go
 │   ├── taint_demo
 │   │   └── main.go
-│   └── typed_invocation
-│       └── main.go
+│   ├── typed_invocation
+│   │   └── main.go
 ├── go.mod
 ├── go.sum
 ├── internal                                    # Internal Implementation Details
@@ -198,6 +215,8 @@ scan_mode: exhaustive
 │   ├── memory
 │   │   ├── inmem
 │   │       └── store.go
+│   ├── openai
+│   │   └── plugin.go
 │   └── openrouter
 │       └── client.go
 └── sdk                                         # Software Development Kit
@@ -267,6 +286,21 @@ scan_mode: exhaustive
 - Defines the **Hexagonal Architecture Ports** (Interfaces).
 - Contains the **Ubiquitous Language** (Constants, Types).
 - Dependency-free kernel.
+
+### 2.6 CLI (`cmd/mkit`)
+**Key Structs:** `EvalCmd`, `GenCmd`, `ServeCmd`, `InspectCmd`.
+**Responsibilities:**
+- **Code Generation:** `gen rule` automates Datalog policy creation from natural language.
+- **Evaluation:** `eval` runs Datalog queries against static data or knowledge bases.
+- **Server:** `serve` exposes the SDK via HTTP.
+- **Inspection:** `inspect` visualizes how data maps to Datalog facts.
+
+### 2.7 Providers (`providers/`)
+**Key Structs:** `openai.Config`, `google.Config`.
+**Responsibilities:**
+- **OpenAI:** Implements the OpenAI provider plugin, bridging `genkit` to `openai-go`.
+- **Google:** Implements the Google GenAI provider plugin.
+- **Memory:** Reference implementations for memory stores.
 
 ## 3. CRITICAL PATH & DATA
 
@@ -2533,120 +2567,875 @@ func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envel
 }
 ```
 
-### `config/schema.go`
+### `cmd/mkit/commands/gen/logic.go`
 ```go
-package config
+package gen
 
-// Config is the root configuration structure for Manglekit.
-// It maps to the YAML configuration file and defines all settings for the system.
-type Config struct {
-	// Policy configuration for the Datalog engine.
-	Policy PolicyConfig `yaml:"policy" mapstructure:"policy"`
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
 
-	// FailureMode determines how the system behaves when the policy engine or guard fails.
-	// - "closed" (Default): Blocks the action (returns error).
-	// - "open": Allows the action to proceed (logs warning).
-	FailureMode string `yaml:"failure_mode" mapstructure:"failure_mode"`
-
-	// Observability configuration (Logging and Tracing).
-	Observability ObservabilityConfig `yaml:"observability" mapstructure:"observability"`
-
-	// Actions defines pre-configured actions that can be referenced by name.
-	// This maps action names to their configuration.
-	Actions map[string]ActionConfig `yaml:"actions" mapstructure:"actions"`
-
-	// MCP defines a list of Model Context Protocol servers to connect to.
-	MCP []MCPServerConfig `yaml:"mcp" mapstructure:"mcp"`
-
-	// Knowledge configuration for static RDF facts.
-	Knowledge KnowledgeConfig `yaml:"knowledge" mapstructure:"knowledge"`
-
-	// Memory configuration for Semantic Memory (RAG).
-	Memory MemoryConfig `yaml:"memory" mapstructure:"memory"`
-}
-
-const (
-	// FailureModeClosed ensures the system blocks on governance errors.
-	FailureModeClosed = "closed"
-	// FailureModeOpen allows the system to proceed (fail-open) on governance errors.
-	FailureModeOpen = "open"
+	"github.com/duynguyendang/manglekit/adapters/ai"
+	"github.com/duynguyendang/manglekit/cmd/mkit/commands/gen/inductor"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/engine"
+	"github.com/duynguyendang/manglekit/internal/engine/resources"
 )
 
-// KnowledgeConfig settings for loading static knowledge bases.
-type KnowledgeConfig struct {
-	// Path to the RDF Turtle (.ttl) file containing static facts.
-	Path string `yaml:"path" mapstructure:"path"`
+// GeneratedPolicy represents the structured response from the LLM.
+type GeneratedPolicy struct {
+	// DatalogContent contains the raw .dl code.
+	DatalogContent string `json:"datalog_content"`
+	// Explanation provides a human-readable summary of the logic.
+	Explanation string `json:"explanation"`
 }
 
-// MemoryConfig settings for Semantic Memory provider.
-type MemoryConfig struct {
-	// Provider specifies the memory backend (e.g., "inmem", "qdrant").
-	Provider string `yaml:"provider" mapstructure:"provider"`
+// ValidatePolicySyntax checks if the generated Datalog code is valid using the Mangle engine.
+func ValidatePolicySyntax(datalog, schemaDeclarations string) error {
+	// Initialize a runtime.
+	eng := engine.NewMangleRuntime()
 
-	// Path is a file path or connection string for the provider.
-	Path string `yaml:"path" mapstructure:"path"`
+	// Prepend standard declarations to the validator so usages of std lib don't fail.
+	// We use the single source of truth from internal/engine/resources.
+	// We also strictly declare 'deny' as it is the expected output interface.
+	stdDecls := resources.StdLib()
+	denyDecl := "Decl deny(Source, Reason) ."
+	fullProgram := stdDecls + "\n" + denyDecl + "\n" + schemaDeclarations + "\n" + datalog
 
-	// Options contains arbitrary provider-specific settings.
-	Options map[string]interface{} `yaml:"options" mapstructure:"options"`
+	// Attempt to parse and compile the policy
+	return eng.LoadFromSource(fullProgram)
 }
 
-// PolicyConfig settings for the Datalog Policy Engine.
-type PolicyConfig struct {
-	// Path to the Datalog policy source file (.dl or .dlog) or directory.
-	Path string `yaml:"path" mapstructure:"path"`
+// GenerateWithFeedback orchestrates the Teacher-Student protocol.
+func GenerateWithFeedback(ctx context.Context, gen core.TextGenerator, userReq string, domainVocab []string, schema *inductor.SchemaHint, iclContent string) (*GeneratedPolicy, error) {
+	// 1. Construct System Prompt
+	factsList := ""
+	for _, f := range domainVocab {
+		factsList += "- " + f + "\n"
+	}
 
-	// EvaluationTimeout is the max duration (in seconds) for rule evaluation.
-	EvaluationTimeout int `yaml:"evaluation_timeout,omitempty" mapstructure:"evaluation_timeout"`
+	autoVocab := ""
+	if schema != nil {
+		if schema.FileType == "graph" {
+			// For Graph: "Decl is_vip(S, O)."
+			// We format declarations as a list
+			decls := strings.Join(schema.Declarations, "\n")
+			autoVocab = fmt.Sprintf(`
+### Auto-Detected Vocabulary (Graph):
+The data uses these predicates. Use them directly:
+%s
+`, decls)
+		} else if schema.FileType == "json" {
+			// For JSON: "amount (number)", "desc (string)"
+			keys := strings.Join(schema.JsonKeys, "\n")
+			autoVocab = fmt.Sprintf(`
+### Auto-Detected JSON Structure (Path -> Type):
+%s
+### Handling Nested & Array Paths:
+1. **Dot Notation** ("deployment.replicas"): Use 'json_link' to traverse objects.
+   json_link(Root, "deployment", DeployNode), json_num(DeployNode, "replicas", Val).
+
+2. **Object Arrays** ("servers[].ip"): Use 'json_link' to list, then 'json_link' with '_' (wildcard) to iterate items.
+   json_link(Root, "servers", List), json_link(List, _, Server), json_str(Server, "ip", IP).
+
+3. **Primitive Arrays** ("env_vars (array of string)"): Use 'json_link' to list, then 'json_str' with '_' to iterate values.
+   json_link(Root, "env_vars", List), json_str(List, _, "TargetValue").
+`, keys)
+		}
+	}
+
+	systemPrompt := fmt.Sprintf(`You are a Senior Knowledge Engineer specializing in Google Mangle Datalog.
+Your task is to translate natural language requirements into strict, compilable Datalog rules.
+
+### Standard Library (Always Available):
+- json_num(Source, Key, Value)  // Int/Float fields
+- json_str(Source, Key, Value)  // String fields
+- json_bool(Source, Key, Value) // Boolean fields
+- json_link(Parent, Key, Child) // Nested objects
+- deny(Source, Reason)          // Main policy output (Do NOT redeclare this)
+
+### Telemetry & Compliance (MANDATORY):
+1. You MUST declare a violation rule predicate: Decl violation_rule(Entity, RuleID).
+2. For EVERY 'deny' rule you create, you MUST create a corresponding 'violation_rule'.
+   - The RuleID must be UPPERCASE_SNAKE_CASE (e.g., "COST_LIMIT_EXCEEDED").
+   - It captures the same conditions as the deny rule.
+
+Example:
+   deny(Req, "Cost too high") :- exceeds_cost(Req).
+   violation_rule(Req, "COST_LIMIT_CHECK_01") :- exceeds_cost(Req).
+
+### Domain Vocabulary:
+%s
+%s
+### 4. Code Style Reference (Golden Rules)
+The following are verified Manglekit Datalog examples.
+Pay close attention to how 'json_link' is used for nested objects and how predicates are declared.
+
+--- BEGIN REFERENCE ---
+%s
+--- END REFERENCE ---
+
+### Syntax Rules:
+1. Use 'Decl name(Arg1, Arg2, ...).' to declare predicates.
+   - CRITICAL: Do NOT use '.Decl', '.decl', or 'decl'. MUST be 'Decl' (Case-sensitive, no dot).
+   - Args MUST start with Uppercase (e.g., Decl amount(Source, Val).).
+2. Do NOT redeclare 'deny'. It is already declared.
+3. Prioritize using the Domain Vocabulary over raw json_xxx predicates if available.
+4. If mapping raw JSON, prefer creating a "Helper Predicate" first (e.g., amount(R, V) :- json_num...) to keep the deny rule clean.
+5. Strings must be double-quoted.
+6. Variables start with uppercase (e.g., P, Amount).
+7. Do NOT use aggregation (max, count) unless absolutely necessary.
+
+Output JSON only: {"datalog_content": "...", "explanation": "..."}`, factsList, autoVocab, iclContent)
+
+	currentReq := userReq
+	var lastErr error
+
+	// The Loop (Max 5 Retries)
+	for i := 0; i < 5; i++ {
+		// Step B (Generation)
+		policy, err := ai.GenerateStruct[GeneratedPolicy](ctx, gen, systemPrompt, currentReq)
+		if err != nil {
+			// If generation itself fails (e.g. network), we probably shouldn't blindly retry unless it's transient.
+			lastErr = err
+			// Feedback for JSON error
+			feedback := fmt.Sprintf("Generation failed: %v", err)
+			currentReq = fmt.Sprintf("%s\n\n[SYSTEM CORRECTION]: Previous attempt invalid.\nError: %s\nFix syntax immediately.", userReq, feedback)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		// Step C (Validation)
+		schemaDeclsVal := ""
+		if schema != nil && len(schema.Declarations) > 0 {
+			schemaDeclsVal = strings.Join(schema.Declarations, "\n")
+		}
+		if err := ValidatePolicySyntax(policy.DatalogContent, schemaDeclsVal); err != nil {
+			lastErr = err
+			// Step D (Decision) - Update feedback
+			feedback := err.Error()
+			fmt.Printf("DEBUG: Validation failed for Datalog:\n%s\nError: %s\n", policy.DatalogContent, feedback)
+			// Step A (Prompting) - Update prompt for next iteration
+			currentReq = fmt.Sprintf("%s\n\n[SYSTEM CORRECTION]: Previous attempt invalid.\nError: %s\nCheck your decl syntax. Do NOT use .Decl or .decl.", userReq, feedback)
+
+			// Sleep briefly
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		// Success
+		return &policy, nil
+	}
+
+	return nil, fmt.Errorf("failed after 5 retries. Last error: %w", lastErr)
+}
+```
+
+### `cmd/mkit/commands/gen/inductor/inductor.go`
+```go
+package inductor
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// SchemaHint holds the inferred schema information.
+type SchemaHint struct {
+	Declarations []string // For Graph: "Decl is_vip(S, O)."
+	JsonKeys     []string // For JSON: "amount (number)", "desc (string)"
+	FileType     string   // "graph" or "json"
 }
 
-// ObservabilityConfig settings for telemetry.
-type ObservabilityConfig struct {
-	// Enabled toggles all observability features.
-	Enabled bool `yaml:"enabled" mapstructure:"enabled"`
-
-	// ServiceName is the application name used in traces and logs.
-	ServiceName string `yaml:"service_name,omitempty" mapstructure:"service_name"`
-
-	// LogLevel sets the minimum log severity ("debug", "info", "warn", "error").
-	LogLevel string `yaml:"log_level,omitempty" mapstructure:"log_level"`
-
-	// OTLPEndpoint is the URL of the OpenTelemetry collector (gRPC/HTTP).
-	OTLPEndpoint string `yaml:"otlp_endpoint,omitempty" mapstructure:"otlp_endpoint"`
+// InferFromFile scans the file at path and returns a SchemaHint.
+func InferFromFile(path string) (*SchemaHint, error) {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".json":
+		return parseJSON(path)
+	case ".nq", ".nt":
+		return parseGraph(path)
+	case ".ttl":
+		return parseTurtle(path)
+	default:
+		return nil, fmt.Errorf("unsupported file type: %s", ext)
+	}
 }
 
-// ActionConfig defines a static action configuration.
-type ActionConfig struct {
-	// Type identifies the kind of action (e.g., "llm", "retriever").
-	Type string `yaml:"type" mapstructure:"type"`
+func parseJSON(path string) (*SchemaHint, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
 
-	// Provider specifies the implementation provider (e.g., "google", "openai").
-	Provider string `yaml:"provider" mapstructure:"provider"`
+	decoder := json.NewDecoder(f)
+	var raw any
+	if err := decoder.Decode(&raw); err != nil {
+		return nil, err
+	}
 
-	// FailOnStartup determines if the application should crash if this action fails to load.
-	FailOnStartup bool `yaml:"fail_on_startup" mapstructure:"fail_on_startup"`
+	hint := &SchemaHint{FileType: "json"}
+	var targetMap map[string]any
 
-	// Options contains arbitrary provider-specific settings.
-	Options map[string]interface{} `yaml:"options" mapstructure:"options"`
+	switch v := raw.(type) {
+	case map[string]any:
+		targetMap = v
+	case []any:
+		if len(v) > 0 {
+			if m, ok := v[0].(map[string]any); ok {
+				targetMap = m
+			}
+		}
+	}
+
+	if targetMap == nil {
+		// Could not find a suitable object to infer schema from
+		return hint, nil // Empty hint but valid file type detected
+	}
+
+	walkJSON("", targetMap, &hint.JsonKeys)
+	return hint, nil
 }
 
-// MCPServerConfig defines how to connect to an MCP server.
-type MCPServerConfig struct {
-	// Name is a unique identifier for this MCP server connection.
-	Name string `yaml:"name" mapstructure:"name"`
-	// Transport specifies the connection method: "stdio" or "sse".
-	Transport string `yaml:"transport" mapstructure:"transport"`
-	// Command is the executable command (for stdio) or URL (for sse).
-	Command string `yaml:"command" mapstructure:"command"`
-	// Args are command-line arguments (for stdio).
-	Args []string `yaml:"args" mapstructure:"args"`
-	// Env specifies environment variables for the process (for stdio).
-	Env []string `yaml:"env" mapstructure:"env"`
-	// FailOnStartup determines if the application should crash if this server fails to connect.
-	FailOnStartup bool `yaml:"fail_on_startup" mapstructure:"fail_on_startup"`
-	// Tools lists expected tool names for resilience.
-	// If the server fails to connect, these tools will be registered as "Unhealthy"
-	// so the agent knows they exist but are unavailable.
-	Tools []string `yaml:"tools" mapstructure:"tools"`
+func walkJSON(prefix string, data map[string]any, keys *[]string) {
+	for k, v := range data {
+		fullKey := k
+		if prefix != "" {
+			fullKey = prefix + "." + k
+		}
+
+		switch val := v.(type) {
+		case map[string]any:
+			walkJSON(fullKey, val, keys)
+		case []any:
+			if len(val) > 0 {
+				first := val[0]
+				if m, ok := first.(map[string]any); ok {
+					walkJSON(fullKey+"[]", m, keys)
+				} else {
+					switch first.(type) {
+					case string:
+						*keys = append(*keys, fmt.Sprintf("%s (array of string)", fullKey))
+					case float64:
+						*keys = append(*keys, fmt.Sprintf("%s (array of number)", fullKey))
+					case bool:
+						*keys = append(*keys, fmt.Sprintf("%s (array of boolean)", fullKey))
+					}
+				}
+			}
+		case float64:
+			*keys = append(*keys, fmt.Sprintf("%s (number)", fullKey))
+		case string:
+			*keys = append(*keys, fmt.Sprintf("%s (string)", fullKey))
+		case bool:
+			*keys = append(*keys, fmt.Sprintf("%s (boolean)", fullKey))
+		}
+	}
+}
+```
+
+### `cmd/mkit/commands/kg/convert.go`
+```go
+package kg
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+
+	"github.com/cayleygraph/quad"
+	"github.com/cayleygraph/quad/jsonld"
+	"github.com/cayleygraph/quad/nquads"
+	"github.com/spf13/cobra"
+)
+
+var (
+	inFile  string
+	outFile string
+	inFmt   string
+	outFmt  string
+)
+
+var ConvertCmd = &cobra.Command{
+	Use:   "convert",
+	Short: "Convert between knowledge graph formats (e.g., TTL to NQ)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// 1. Open Input
+		f, err := os.Open(inFile)
+		if err != nil {
+			return fmt.Errorf("failed to open input file: %w", err)
+		}
+		defer f.Close()
+
+		// 2. Decoder
+		format := inFmt
+		if format == "" {
+			ext := filepath.Ext(inFile)
+			switch ext {
+			case ".ttl":
+				// Turtle not supported in current quad version apparently, use nquads as fallback or error?
+				// return fmt.Errorf("turtle format not supported in this version")
+				// User explicitly asked for it, but if it's missing...
+				// I'll leave a TODO or try to map .ttl to something else if possible? No.
+				return fmt.Errorf("turtle format (.ttl) is currently not supported")
+			case ".nq":
+				format = "nquads"
+			case ".nt":
+				format = "ntriples"
+			case ".jsonld":
+				format = "jsonld"
+			default:
+				return fmt.Errorf("unknown input extension %s, please specify --from", ext)
+			}
+		}
+
+		var r quad.Reader
+		switch format {
+		case "nquads", "ntriples":
+			// nquads.NewReader likely takes (io.Reader, bool) for strict mode. Default to false?
+			r = nquads.NewReader(f, false)
+		case "jsonld":
+			r = jsonld.NewReader(f)
+		default:
+			return fmt.Errorf("unsupported input format: %s", format)
+		}
+
+		// 3. Open Output
+		outF, err := os.Create(outFile)
+		if err != nil {
+			return fmt.Errorf("failed to create output file: %w", err)
+		}
+		defer outF.Close()
+
+		// 4. Encoder
+		var w quad.Writer
+		switch outFmt {
+		case "nquads", "ntriples":
+			// nquads writer is used for both
+			w = nquads.NewWriter(outF)
+		case "jsonld":
+			w = jsonld.NewWriter(outF)
+		default:
+			return fmt.Errorf("unsupported output format: %s", outFmt)
+		}
+
+		// Close writer if it needs closing
+		defer func() {
+			if c, ok := w.(io.Closer); ok {
+				c.Close()
+			}
+		}()
+
+		// 5. Copy
+		n, err := quad.Copy(w, r)
+		if err != nil {
+			return fmt.Errorf("conversion failed: %w", err)
+		}
+
+		// 6. UX
+		cmd.Printf("Converted %d quads to %s\n", n, outFile)
+		return nil
+	},
+}
+
+func init() {
+	ConvertCmd.Flags().StringVarP(&inFile, "input", "i", "", "Input file path")
+	ConvertCmd.MarkFlagRequired("input")
+
+	ConvertCmd.Flags().StringVarP(&outFile, "output", "o", "", "Output file path")
+	ConvertCmd.MarkFlagRequired("output")
+
+	ConvertCmd.Flags().StringVar(&inFmt, "from", "", "Input format (auto-detect if empty)")
+	ConvertCmd.Flags().StringVar(&outFmt, "to", "nquads", "Output format (options: \"nquads\", \"ntriples\", \"jsonld\")")
+}
+```
+
+### `cmd/mkit/commands/eval/run.go`
+```go
+package eval
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/duynguyendang/manglekit/adapters/knowledge"
+	"github.com/duynguyendang/manglekit/internal/engine"
+	"github.com/spf13/cobra"
+)
+
+var (
+	policyPath    string
+	dataPath      string
+	knowledgePath string
+	queryString   string
+)
+
+var EvalCmd = &cobra.Command{
+	Use:   "eval",
+	Short: "Evaluate a Datalog query against policy and data",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Validation
+		if dataPath == "" && knowledgePath == "" {
+			return fmt.Errorf("must provide either --data (JSON) or --facts/--knowledge (Graph)")
+		}
+
+		// 1. Read Files
+		policyBytes, err := os.ReadFile(policyPath)
+		if err != nil {
+			return fmt.Errorf("failed to read policy file: %w", err)
+		}
+
+		var dataBytes []byte
+		if dataPath != "" {
+			dataBytes, err = os.ReadFile(dataPath)
+			if err != nil {
+				return fmt.Errorf("failed to read data file: %w", err)
+			}
+		}
+
+		// 2. Initialize Engine
+		// New() now auto-loads std.dl, so no manual declaration fixes needed!
+		e, err := engine.New()
+		if err != nil {
+			return fmt.Errorf("failed to initialize engine: %w", err)
+		}
+
+		// 3. Process Knowledge (Facts) First to Extract Schema
+		if knowledgePath != "" {
+			// Using the new Graph Loader that supports .nq and .ttl
+			triples, err := knowledge.ParseGraphFile(knowledgePath)
+			if err != nil {
+				return fmt.Errorf("failed to parse knowledge base: %w", err)
+			}
+
+			// Extract Schema Declarations
+			preds := knowledge.GetPredicates(triples)
+			if len(preds) > 0 {
+				var decls []string
+				for _, p := range preds {
+					// Default to binary declaration: Decl p(Subject, Object).
+					decls = append(decls, fmt.Sprintf("Decl %s(S, O).", p))
+				}
+				schemaBlock := strings.Join(decls, "\n")
+
+				// Load Declarations BEFORE Policy
+				if err := e.LoadPolicy(cmd.Context(), schemaBlock); err != nil {
+					return fmt.Errorf("failed to inject schema declarations: %w", err)
+				}
+				fmt.Printf("Injected %d schema declarations.\n", len(preds))
+			}
+
+			// Load Facts
+			facts := knowledge.TriplesToFacts(triples)
+			if err := e.LoadFacts(facts); err != nil {
+				return fmt.Errorf("failed to load knowledge facts: %w", err)
+			}
+			fmt.Printf("Loaded %d knowledge facts.\n", len(facts))
+		}
+
+		// 4. Load Policy (User Policy)
+		// Now that Decls are present (if any), loading the policy should succeed.
+		if err := e.LoadPolicy(cmd.Context(), string(policyBytes)); err != nil {
+			// This might still error if the user uses non-standard predicates without declaring them,
+			// but json_str, quad etc are now covered.
+			return fmt.Errorf("failed to load policy: %w", err)
+		}
+
+		// 5. Inject Data (JSON)
+		if dataPath != "" {
+			var data any
+			if err := json.Unmarshal(dataBytes, &data); err != nil {
+				return fmt.Errorf("failed to parse data JSON: %w", err)
+			}
+
+			// Flatten the data into facts
+			// "input" is used as the root ID for the data
+			dataFacts, err := engine.Flatten("input", data)
+			if err != nil {
+				return fmt.Errorf("failed to flatten data: %w", err)
+			}
+
+			if err := e.LoadFacts(dataFacts); err != nil {
+				return fmt.Errorf("failed to load data facts: %w", err)
+			}
+		}
+
+		// 6. Execute Query
+		ctx := context.Background()
+		// Using Query instead of ExecuteQuery to get results/bindings
+		results, err := e.Query(ctx, nil, queryString)
+		if err != nil {
+			return fmt.Errorf("query execution failed: %w", err)
+		}
+
+		// 7. Output
+		if len(results) == 0 {
+			fmt.Println("No results found.")
+			return nil
+		}
+
+		// Print as JSON array for nice formatting
+		outputBytes, err := json.MarshalIndent(results, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to format output: %w", err)
+		}
+		fmt.Println(string(outputBytes))
+
+		return nil
+	},
+}
+
+func init() {
+	EvalCmd.Flags().StringVarP(&policyPath, "policy", "p", "", "Path to the .dl file")
+	EvalCmd.MarkFlagRequired("policy")
+
+	EvalCmd.Flags().StringVarP(&dataPath, "data", "d", "", "Path to the .json input file. Optional if --knowledge is provided.")
+
+	EvalCmd.Flags().StringVarP(&knowledgePath, "knowledge", "k", "", "Path to the .nq, .nt, or .ttl knowledge base")
+	EvalCmd.Flags().StringVar(&knowledgePath, "facts", "", "Alias for --knowledge")
+
+	EvalCmd.Flags().StringVarP(&queryString, "query", "q", "", "The Datalog query to execute")
+	EvalCmd.MarkFlagRequired("query")
+}
+
+func AddCommands(rootCmd *cobra.Command) {
+	rootCmd.AddCommand(EvalCmd)
+}
+```
+
+### `providers/openai/plugin.go`
+```go
+package openai
+
+import (
+	"context"
+	"fmt"
+	"os"
+
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
+	openai "github.com/sashabaranov/go-openai"
+)
+
+// Config holds connection parameters.
+type Config struct {
+	APIKey  string
+	BaseURL string // Crucial for Ollama/LocalAI/OpenRouter support
+}
+
+// Init registers a specific model (e.g., "gpt-4o") into Genkit's global registry.
+// It maps "openai/{modelID}" in Genkit to "{modelID}" in OpenAI API.
+func Init(g *genkit.Genkit, modelID string, cfg Config) error {
+	// 1. Env Var Fallback
+	apiKey := cfg.APIKey
+	if apiKey == "" {
+		apiKey = os.Getenv("OPENAI_API_KEY")
+	}
+
+	// Allow empty Key only if BaseURL is set (e.g. Local Ollama)
+	if apiKey == "" && cfg.BaseURL == "" {
+		return fmt.Errorf("openai provider: API Key is missing and no BaseURL provided")
+	}
+
+	// 2. Setup Client
+	c := openai.DefaultConfig(apiKey)
+	if cfg.BaseURL != "" {
+		c.BaseURL = cfg.BaseURL
+	}
+	client := openai.NewClientWithConfig(c)
+
+	// 3. Define Metadata
+	meta := &ai.ModelOptions{
+		Label: modelID,
+		Supports: &ai.ModelSupports{
+			Multiturn: true, SystemRole: true, Tools: false, Media: false,
+		},
+	}
+
+	// 4. Register
+	// Genkit Name: "openai/gpt-4o"
+	// We use genkit.DefineModel to register it to the instance.
+	// Name: "openai/" + modelID
+	fullName := "openai/" + modelID
+	genkit.DefineModel(g, fullName, meta, func(ctx context.Context, req *ai.ModelRequest, cb func(context.Context, *ai.ModelResponseChunk) error) (*ai.ModelResponse, error) {
+		// Pass the explicit 'modelID' to ensure we don't send "openai/gpt-4o" to the API
+		return generate(ctx, client, modelID, req, cb)
+	})
+
+	return nil
+}
+
+// generate handles the translation logic
+func generate(ctx context.Context, client *openai.Client, explicitModelID string, req *ai.ModelRequest, cb func(context.Context, *ai.ModelResponseChunk) error) (*ai.ModelResponse, error) {
+	// CONSTRAINT: No Streaming Support yet
+	if cb != nil {
+		return nil, fmt.Errorf("streaming is not supported by this provider yet")
+	}
+
+	// 1. Map Messages
+	msgs := []openai.ChatCompletionMessage{}
+	for _, m := range req.Messages {
+		role := openai.ChatMessageRoleUser
+		switch m.Role {
+		case ai.RoleModel:
+			role = openai.ChatMessageRoleAssistant
+		case ai.RoleSystem:
+			role = openai.ChatMessageRoleSystem
+		}
+
+		content := ""
+		for _, p := range m.Content {
+			if p.Text != "" {
+				content += p.Text
+			}
+		}
+		msgs = append(msgs, openai.ChatCompletionMessage{Role: role, Content: content})
+	}
+
+	// 2. Prepare Request
+	// IMPORTANT: Use explicitModelID
+	oaiReq := openai.ChatCompletionRequest{
+		Model:    explicitModelID,
+		Messages: msgs,
+	}
+
+	// 3. Map Config
+	// Config is 'any' in ModelRequest. We need to cast it.
+	// Genkit passes 'GenerationCommonConfig' usually.
+	// Fields are values (not pointers) in this version.
+	if cfg, ok := req.Config.(ai.GenerationCommonConfig); ok {
+		if cfg.Temperature != 0 {
+			oaiReq.Temperature = float32(cfg.Temperature)
+		}
+		if cfg.MaxOutputTokens != 0 {
+			oaiReq.MaxTokens = cfg.MaxOutputTokens
+		}
+		if cfg.TopP != 0 {
+			oaiReq.TopP = float32(cfg.TopP)
+		}
+	}
+
+	// 4. Execute
+	resp, err := client.CreateChatCompletion(ctx, oaiReq)
+	if err != nil {
+		return nil, fmt.Errorf("openai completion error: %w", err)
+	}
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("openai returned no choices")
+	}
+
+	// 5. Return Response
+	return &ai.ModelResponse{
+		Message: ai.NewModelTextMessage(resp.Choices[0].Message.Content),
+		// Fill Usage if available
+		Usage: &ai.GenerationUsage{
+			InputTokens:  resp.Usage.PromptTokens,
+			OutputTokens: resp.Usage.CompletionTokens,
+			TotalTokens:  resp.Usage.TotalTokens,
+		},
+	}, nil
+}
+```
+
+### `cmd/mkit/commands/serve/serve.go`
+```go
+package serve
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/google/uuid"
+	"github.com/spf13/cobra"
+)
+
+var (
+	port         string
+	policyPath   string
+	mcpConfig    string
+)
+
+var serveCmd = &cobra.Command{
+	Use:   "serve",
+	Short: "Start the Manglekit HTTP Server",
+	Long:  `Exposes the Manglekit SDK via an HTTP API, enforcing governance policies on every request.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		runServer()
+	},
+}
+
+func AddCommands(root *cobra.Command) {
+	serveCmd.Flags().StringVarP(&port, "port", "p", "8080", "Port to listen on")
+	serveCmd.Flags().StringVarP(&policyPath, "policy", "f", "", "Path to the Datalog policy file")
+	serveCmd.Flags().StringVarP(&mcpConfig, "mcp", "m", "", "Path to MCP configuration file")
+	root.AddCommand(serveCmd)
+}
+
+func runServer() {
+	opts := []sdk.ClientOption{}
+	if policyPath != "" {
+		opts = append(opts, sdk.WithBlueprintPath(policyPath))
+	}
+
+	ctx := context.Background()
+	client, err := sdk.NewClient(ctx, opts...)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize client: %v\n", err)
+		os.Exit(1)
+	}
+
+	handler := createHandler(client)
+	http.Handle("/", handler)
+
+	fmt.Printf("Manglekit HTTP Server listening on :%s\n", port)
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "Server failed: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// Handler handles the HTTP request.
+// It is separated for testability.
+func createHandler(client *sdk.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var envelope core.Envelope
+		if err := json.NewDecoder(r.Body).Decode(&envelope); err != nil {
+			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+			return
+		}
+
+		// FIX: Initialize metadata if nil
+		if envelope.Metadata == nil {
+			envelope.Metadata = make(map[string]any)
+		}
+
+		// FIX: Generate UUID if missing
+		if envelope.ID == uuid.Nil {
+			envelope.ID = uuid.New()
+		}
+
+		// Execution
+		result, err := client.Execute(r.Context(), envelope)
+
+		// Response Mapping
+		if err != nil {
+			// Check for Policy Violation (AlignmentError)
+			if core.IsAlignmentError(err) {
+				// Case B: Policy Violation
+				w.WriteHeader(http.StatusForbidden)
+
+				// Construct JSON body with deny reasons
+				var alignErr *core.AlignmentError
+				errors.As(err, &alignErr)
+
+				// Create a structured response
+				resp := map[string]any{
+					"error": "Policy Violation",
+					"reasons": []string{alignErr.Message},
+					"rule_id": alignErr.RuleID,
+					"decision": core.DecisionHalt,
+				}
+				json.NewEncoder(w).Encode(resp)
+				return
+			}
+
+			// Case A: Internal Error
+			http.Error(w, fmt.Sprintf("Internal Server Error: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Case B: Policy Violation (Check Metadata)
+		// Even if err is nil, check decision metadata
+		if d, ok := result.Metadata[core.KeyDecision]; ok && d == core.DecisionHalt {
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(result) // Return full result as body
+			return
+		}
+
+		// Case C: Success
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(result)
+	}
+}
+```
+
+### `cmd/mkit/commands/inspect/struct.go`
+```go
+package inspect
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+
+	"github.com/duynguyendang/manglekit/internal/engine"
+	"github.com/spf13/cobra"
+)
+
+var jsonFlag string
+
+var StructCmd = &cobra.Command{
+	Use:   "struct",
+	Short: "Inspect a struct and see the generated Mangle facts.",
+	Long:  `Parses a JSON string or file representing a struct and uses the core reflection engine to generate Mangle Datalog facts. This helps users understand how Manglekit perceives their data structures.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var jsonData []byte
+		var err error
+
+		// Check if the input is a file path or a raw JSON string
+		if _, err := os.Stat(jsonFlag); err == nil {
+			jsonData, err = os.ReadFile(jsonFlag)
+			if err != nil {
+				return fmt.Errorf("failed to read JSON file: %w", err)
+			}
+		} else {
+			jsonData = []byte(jsonFlag)
+		}
+
+		var data map[string]any
+		if err := json.Unmarshal(jsonData, &data); err != nil {
+			return fmt.Errorf("failed to unmarshal JSON: %w", err)
+		}
+
+		facts, err := engine.ToFacts("request", data)
+		if err != nil {
+			return fmt.Errorf("failed to generate facts: %w", err)
+		}
+
+		for _, fact := range facts {
+			fmt.Println(fact)
+		}
+
+		return nil
+	},
+}
+
+func init() {
+	StructCmd.Flags().StringVar(&jsonFlag, "json", "", "JSON string or file path representing a struct")
+	StructCmd.MarkFlagRequired("json")
+	InspectCmd.AddCommand(StructCmd)
 }
 ```
 
@@ -2656,5 +3445,5 @@ type MCPServerConfig struct {
 
 ## 14. CHANGELOG
 
-- **2025-12-05**: Full Context Resync. Exhaustive scan and source dump of critical kernel components (`core`, `sdk`, `engine`, `supervisor`).
 - **2025-12-05**: Refactored `providers/google` to use the `googlegenai` plugin with a proxy pattern due to missing `googleai` package in Genkit v1.2.0. Updated `sdk` loader to support new `Init` pattern.
+- **2025-12-17**: Full Context Resync. Exhaustive scan and source dump of critical kernel components (`core`, `sdk`, `engine`, `supervisor`), plus `cmd/mkit` generation logic and `providers/openai` plugin.
