@@ -7,8 +7,6 @@ import (
 	aiAdapter "github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
-	googleProvider "github.com/duynguyendang/manglekit/providers/google"
-	"github.com/duynguyendang/manglekit/providers/openai"
 )
 
 // HydrateActions iterates through the configuration and instantiates the defined actions.
@@ -44,73 +42,13 @@ func createLLMAction(ctx context.Context, name string, cfg config.ActionConfig) 
 		return factory(ctx, name, cfg)
 	}
 
-	// Special Wiring for Plugins
-	switch cfg.Provider {
-
-	// CASE 1: Google (Official Plugin Wrapper)
-	case "google":
-		apiKey, _ := cfg.Options["api_key"].(string)
-		modelName, _ := cfg.Options["model"].(string)
-		if modelName == "" {
-			modelName = "gemini-1.5-flash"
-		}
-
-		// 1. Init Plugin (Registers "googleai/...")
-		g := aiAdapter.GetGenkit(ctx)
-
-		// Call The Encapsulated Init (The Black Box)
-		// This handles all the proxying and bug fixing internally.
-		registeredName, err := googleProvider.Init(ctx, g, apiKey, modelName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to wire google provider: %w", err)
-		}
-
-		// 2. Create Action
-		// Now we just use the clean registered name.
-		action, err := aiAdapter.NewGenkitAction(ctx, registeredName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create action for google: %w", err)
-		}
-		return action, nil
-
-	// CASE 2: OpenAI (Local Plugin)
-	case "openai":
-		apiKey, _ := cfg.Options["api_key"].(string)
-		baseURL, _ := cfg.Options["base_url"].(string)
-		modelName, _ := cfg.Options["model"].(string)
-
-		// Default model if missing
-		if modelName == "" {
-			modelName = "gpt-4o"
-		}
-
-		// 1. Init Plugin (Registers "openai/...")
-		// Get Registry from Adapter
-		g := aiAdapter.GetGenkit(ctx)
-
-		// This registers "openai/{modelID}" into Genkit's internal registry.
-		// Note: openai.Init returns the full registered name, but let's stick to convention
-		if err := openai.Init(g, modelName, openai.Config{APIKey: apiKey, BaseURL: baseURL}); err != nil {
-			return nil, fmt.Errorf("failed to wire openai provider: %w", err)
-		}
-
-		// 2. Lookup & Wrap via Registry
-		genkitModelName := "openai/" + modelName
-
-		action, err := aiAdapter.NewGenkitAction(ctx, genkitModelName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to wire openai action: %w", err)
-		}
-		return action, nil
-	}
-
 	// 2. Fallback for Mock (Built-in)
 	if cfg.Provider == "mock" {
 		return createMockLLMAction(name, cfg)
 	}
 
 	// 3. Error if not found
-	return nil, fmt.Errorf("failed to create action '%s': %w (Did you forget to call sdk.RegisterProvider in main?)", name, err)
+	return nil, fmt.Errorf("failed to create action '%s': provider '%s' not registered (Did you forget to call sdk.RegisterProvider in main?)", name, cfg.Provider)
 }
 
 func createMockLLMAction(name string, cfg config.ActionConfig) (core.Action, error) {
