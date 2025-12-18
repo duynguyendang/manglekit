@@ -7,16 +7,18 @@ scan_mode: logic_focused
 ---
 #### 2. THE COMPLETE FILE MAP
 
-*   `adapters/` # Universal Adapters (AI, MCP, Resilience)
+*   `adapters/` # Universal Adapters
     *   `ai/` # Genkit & LLM Integration
+    *   `extractor/` # Structured Data Extraction
     *   `func/` # Go Function Adapter
     *   `knowledge/` # Knowledge Graph Helpers
+    *   `logger/` # Logger Adapters
     *   `mcp/` # Model Context Protocol
     *   `resilience/` # Circuit Breakers & Retries
     *   `vector/` # Vector DB Abstraction
 *   `cmd/` # CLI Entry Points
-    *   `mkit/` # The 'mkit' Developer Tool
-        *   `commands/` # Cobra Commands (gen, serve, eval)
+    *   `mkit/`
+        *   `commands/` # Cobra Commands (eval, gen, inspect, kg, serve)
 *   `config/` # Configuration Management
     *   `loader.go`
     *   `schema.go`
@@ -30,21 +32,23 @@ scan_mode: logic_focused
 *   `internal/` # Private Logic (The Kernel)
     *   `engine/` # The Neuro-Symbolic Core
         *   `resources/` # Embedded Datalog Rules
+        *   `memory/` # In-Memory Stores
         *   `solver.go` # Policy Engine Implementation
         *   `runtime.go` # Mangle Runtime Wrapper
         *   `evaluator.go` # Standalone Evaluator
         *   `reflection.go` # Zero-Cost Struct-to-Fact
         *   `flattener.go` # JSON-to-Fact Logic
+    *   `logger/` # Logging Implementation
+    *   `statehelper/` # State Management Helpers
     *   `supervisor/` # The Action Sandwich (Guard)
-        *   `supervisor.go` # Trace -> Assess -> Execute -> Reflect
-    *   `logger/` # Logging Adapters
-    *   `telemetry/` # Tracing Adapters
+    *   `telemetry/` # Tracing Implementation
+    *   `testproviders/` # Test Helpers
+    *   `tools/` # Internal Tools
     *   `util/` # Shared Utilities
-*   `providers/` # External Providers (Plugins)
+*   `providers/` # External Providers
     *   `google/`
+    *   `memory/`
     *   `openai/`
-    *   `openrouter/`
-    *   `rules/`
 *   `sdk/` # User-Facing Orchestration
     *   `client.go` # The Client Factory & Facade
     *   `loop.go` # The Semantic State Machine
@@ -58,18 +62,23 @@ scan_mode: logic_focused
 **1. Core (`core/`)**
 *   **Role:** Defines the immutable contracts and ubiquitous language of the system.
 *   **Responsibilities:** Defines `Action`, `Envelope`, `Evaluator`, and `Decision` types.
-*   **Key Mechanics:** Pure interface definitions, no dependencies on internal logic.
-*   **Key Structs:**
+*   **Mechanics:** Pure interface definitions, no dependencies on internal logic. Hexagonal Port definition.
+*   **Structs:**
     *   `Envelope`: Universal data container with `Payload` (any), `Metadata` (map), and `SecurityLabels`.
     *   `Decision`: Structured outcome from the engine (`PROCEED`, `HALT`, `RETRY`, `ROUTE`).
     *   `AlignmentError`: Specialized error type carrying rule violation details.
+*   **Key Functions:**
+    *   `NewEnvelope`: Factory for creating envelopes with defaults.
+    *   `IsAlignmentError`: Helper to detect policy violations.
 
 **2. SDK (`sdk/`)**
 *   **Role:** The orchestration layer and user entry point.
 *   **Responsibilities:** Client initialization, Action execution loop, Configuration loading.
-*   **Key Mechanics:**
+*   **Mechanics:**
     *   **Semantic State Machine (`loop.go`):** Implements the execution loop that handles `RETRY` (correction) and `ROUTE` (steering) signals from the engine.
     *   **Client (`client.go`):** Central dependency injection container for Engine, Logger, and Memory.
+*   **Structs:**
+    *   `Client`: The main facade struct holding the Engine, Logger, and Registry.
 *   **Key Functions:**
     *   `ExecuteByName`: Runs the governance loop for a named action.
     *   `runLoopInternal`: The core loop implementation handling max steps and backoff.
@@ -77,10 +86,13 @@ scan_mode: logic_focused
 **3. Internal Engine (`internal/engine/`)**
 *   **Role:** The reasoning brain. Mangle Datalog runtime.
 *   **Responsibilities:** Evaluating policies, converting Go structs to facts, managing the Datalog knowledge base.
-*   **Key Mechanics:**
+*   **Mechanics:**
     *   **Zero-Cost Reflection:** `reflection.go` recursively walks arbitrary Go structs to generate Datalog facts (`value(ID, Field, Val)`).
     *   **JSON Flattening:** `flattener.go` converts dynamic maps to graph facts (`json_link`).
-    *   **Solver:** `solver.go` implements the `Assess` (Pre-check) and `Reflect` (Post-check) logic.
+    *   **Solver:** `solver.go` implements the `Assess` (Pre-check) and `Reflect` (Post-check) logic using the Mangle runtime.
+*   **Structs:**
+    *   `PolicyEngine`: The main struct implementing `core.Evaluator`.
+    *   `MangleRuntime`: Wrapper around the Google Mangle library.
 *   **Key Functions:**
     *   `Assess`: Checks `halt` or `deny` predicates before execution.
     *   `EvaluateSteering`: Queries `retry` or `route` predicates after execution.
@@ -88,14 +100,16 @@ scan_mode: logic_focused
 **4. Internal Supervisor (`internal/supervisor/`)**
 *   **Role:** The "Sandwich" or "Decorator".
 *   **Responsibilities:** Wraps every action to enforce the `Trace -> Assess -> Execute -> Reflect` lifecycle.
-*   **Key Mechanics:** Decorator Pattern (`SupervisedAction` wraps `core.Action`).
+*   **Mechanics:** Decorator Pattern (`SupervisedAction` wraps `core.Action`).
+*   **Structs:**
+    *   `SupervisedAction`: The wrapper struct holding the inner action and engine.
 *   **Key Functions:**
     *   `Execute`: The master method that orchestrates the governance phases and error handling.
 
 **5. Adapters (`adapters/`)**
 *   **Role:** Translation layer for external capabilities.
 *   **Responsibilities:** Converting external types (Genkit, HTTP) to/from `core.Envelope`.
-*   **Key Mechanics:** Adapter Pattern. `ai.GenkitAdapter` implements `core.TextGenerator`.
+*   **Mechanics:** Adapter Pattern. `ai.GenkitAdapter` implements `core.TextGenerator`.
 
 #### 4. CRITICAL PATH & DATA (The Flow)
 
@@ -1848,7 +1862,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 		atom, err := parse.Atom(factStr)
 		if err != nil {
 			if e.logger != nil {
-				e.logger.Error("failed to parse envelop fact", "fact", factStr, "error", err)
+				e.logger.Error("failed to parse envelop fact", "fact", f, "error", err)
 			}
 			return decision, metadata, fmt.Errorf("envelope fact parsing error: %w", err)
 		}
