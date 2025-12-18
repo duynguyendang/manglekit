@@ -21,6 +21,8 @@ The examples are categorized by the architectural layer they demonstrate, moving
 | **`dynamic_pricing`** | **Runtime Context Injection** | Shows how to inject dynamic application state (user tier, inventory, time) as **Datalog Facts** to govern complex, real-time business logic. |
 | **`context_aware_rag`** | **Knowledge Graph Filtering** | Demonstrates **Context-Aware Knowledge** by filtering N-Quads data using Datalog rules based on user roles (Multi-tenancy). |
 | **`chat_chit`** | **Dual-Stream Envelope** | Demonstrates the **Dual-Stream** pattern: passing unstructured payload (Text) alongside structured facts (Logic) to drive routing without the engine understanding the raw text. |
+| **`typed_invocation`** | **Type-Safe Invocation** | Uses Go structs to define strict input/output contracts for LLM actions, ensuring compile-time safety and runtime validation. |
+| **`policy_bot`** | **Episodic Memory & RAG** | Demonstrates the **Memory Provider** interface by seeding and recalling policy documents ("facts") to ground the LLM's responses. |
 
 -----
 
@@ -34,6 +36,8 @@ The examples are categorized by the architectural layer they demonstrate, moving
 | **`steering`** | **Dynamic Routing & Dispatch** | Demonstrates how **Policy Rules** determine control flow (e.g., **Route** to a different action, **Retry** the current action) based on context and results. |
 | **`semantic_feedback`** | **Teacher-Student Protocol** | The core **Self-Correction** mechanism. Shows an agent receiving a `PolicyViolationError` and using the feedback message to generate a correct output on retry. |
 | **`rag_flow`** | **Governed RAG Pipeline** | A complete RAG pipeline demonstrating retrieval, context formatting, and LLM generation within the unified `Action Sandwich` structure. |
+| **`math_solver`** | **Dual-System Verification** | Implements "System 1" (LLM Proposal) vs "System 2" (Code/Logic Verification) architecture to solve math problems with high precision. |
+| **`seating_solver`** | **Constraint Solving** | Solves logical constraint problems (e.g., seating arrangements) by combining Generative AI for candidates and Datalog for validation. |
 
 -----
 
@@ -46,7 +50,6 @@ The examples are categorized by the architectural layer they demonstrate, moving
 | **`sre_guardrail`** | **Operational Guardrails** | Prevents high-risk operations (e.g., deleting a critical K8s resource) by checking contextual facts against deterministic security policies. |
 | **`taint_demo`** | **Information Flow Control** | Demonstrates Taint Analysis: tracking the propagation of security labels (`"secret"`, `"pii"`) through the system and blocking sensitive data leakage via policy. |
 | **`fintech_approval`** | **Complex Recursive Logic** | Handles intricate compliance scenarios (e.g., loan eligibility, nested approvals) using the power of Datalog's **Recursive Rules**. |
-| **`policy-copilot`** | **Neuro-Symbolic Policy Gen** | A "Text-to-Policy" demonstration where an LLM generates Datalog rules from natural language, which are then validated and executed by the Engine. |
 
 -----
 
@@ -57,6 +60,8 @@ The examples are categorized by the architectural layer they demonstrate, moving
 | Folder | Concept | Description |
 | :--- | :--- | :--- |
 | **`lineage_demo`** | **Tracing & Data Lineage** | Tracks the full execution path and data flow across multiple chained Actions using built-in **OpenTelemetry** spans. |
+| **`config_driven_bot`** | **Zero-Code Configuration** | Initializes the entire agent stack (Providers, Actions, Memory) purely from a `mangle.yaml` file, decoupling code from config. |
+| **`openrouter_demo`** | **Multi-Provider Ecosystem** | Showcases the **OpenAI Compatibility Layer** by swapping in OpenRouter to access varying models (e.g., Llama 3, Claude) without changing code. |
 
 -----
 
