@@ -83,9 +83,9 @@ func main() {
 		}
 
 		// 4. Context Injection
-		// Injecting metadata facts directly using sdk.WithFact
-		reqCtx := sdk.WithFact(ctx, "user_vip", "true")
-		reqCtx = sdk.WithFact(reqCtx, "fn_get_inventory", strconv.Itoa(qty))
+		// Injecting metadata facts directly using core.WithFact
+		reqCtx := core.WithFact(ctx, "user_vip", "true")
+		reqCtx = core.WithFact(reqCtx, "fn_get_inventory", strconv.Itoa(qty))
 
 		req := PricingReq{
 			User:    user,

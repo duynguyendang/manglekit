@@ -9,7 +9,6 @@ import (
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/joho/godotenv"
@@ -32,9 +31,9 @@ func (a *BudgetAction) Execute(ctx context.Context, env core.Envelope) (core.Env
 	if feedback, ok := env.Metadata["mangle_feedback"]; ok {
 		// Ensure string type for WithFact
 		if s, ok := feedback.(string); ok {
-			ctx = sdk.WithFact(ctx, "mangle_feedback", s)
+			ctx = core.WithFact(ctx, "mangle_feedback", s)
 		} else {
-			ctx = sdk.WithFact(ctx, "mangle_feedback", fmt.Sprintf("%v", feedback))
+			ctx = core.WithFact(ctx, "mangle_feedback", fmt.Sprintf("%v", feedback))
 		}
 	}
 

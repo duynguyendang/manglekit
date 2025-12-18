@@ -60,7 +60,7 @@ deny(Req) :- loan_id(Req, ID), deny(ID).
 		},
 	}
 
-	client, err := sdk.NewClientWithConfig(ctx, cfg)
+	client, err := sdk.NewClientFromConfig(ctx, cfg)
 	if err != nil {
 		fmt.Printf("Failed to init client: %v\n", err)
 		os.Exit(1)

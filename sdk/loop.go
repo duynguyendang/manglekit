@@ -143,7 +143,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 
 	// 1.4 Inject Context Facts (e.g. User Role, Budget from sdk.WithFact)
 	// This ensures facts propagate to the Engine for Blueprint Checks.
-	if facts := ContextFacts(ctx); facts != nil {
+	if facts := core.ContextFacts(ctx); facts != nil {
 		for k, v := range facts {
 			env.Metadata[k] = v
 		}

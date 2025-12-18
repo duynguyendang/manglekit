@@ -59,7 +59,7 @@ deny(Req) :- request_user(Req, U), status(U, "banned").
 	}
 
 	ctx := context.Background()
-	client, err := sdk.NewClientWithConfig(ctx, cfg)
+	client, err := sdk.NewClientFromConfig(ctx, cfg)
 	if err != nil {
 		log.Fatalf("Client init failed: %v", err)
 	}

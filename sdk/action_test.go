@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,10 +22,10 @@ type TestOutput struct {
 
 func TestContextFacts(t *testing.T) {
 	ctx := context.Background()
-	ctx = sdk.WithFact(ctx, "role", "admin")
-	ctx = sdk.WithFact(ctx, "region", "us-east")
+	ctx = core.WithFact(ctx, "role", "admin")
+	ctx = core.WithFact(ctx, "region", "us-east")
 
-	facts := sdk.ContextFacts(ctx)
+	facts := core.ContextFacts(ctx)
 	assert.Equal(t, "admin", facts["role"])
 	assert.Equal(t, "us-east", facts["region"])
 }
@@ -34,7 +35,7 @@ func TestDefineAndRun(t *testing.T) {
 	require.NoError(t, err)
 
 	handler := func(ctx context.Context, in TestInput) (TestOutput, error) {
-		facts := sdk.ContextFacts(ctx)
+		facts := core.ContextFacts(ctx)
 		if facts["test_key"] != "test_value" {
 			return TestOutput{}, errors.New("context facts missing")
 		}
@@ -45,7 +46,7 @@ func TestDefineAndRun(t *testing.T) {
 	action := sdk.Define(client, "double", handler)
 
 	ctx := context.Background()
-	ctx = sdk.WithFact(ctx, "test_key", "test_value")
+	ctx = core.WithFact(ctx, "test_key", "test_value")
 
 	res, err := action.Run(ctx, TestInput{Value: 5})
 	require.NoError(t, err)
