@@ -2,256 +2,131 @@
 context_type: kernel_source_dump
 project: manglekit
 language: go, datalog
-last_updated: 2023-10-27T10:00:00Z
+last_updated: 2025-12-17
 scan_mode: logic_focused
 ---
-## 1. Executive Summary
 
-Manglekit is a Go-based framework for building neuro-symbolic applications. It provides a "Universal Guarded Action" (UGA) architecture that wraps any unit of work (an `Action`) with a layer of governance enforced by a Datalog-based policy engine (`Evaluator`). This allows for dynamic, rule-based control over application behavior, including input validation, output reflection, dynamic configuration, and state machine-like steering (routing and retries). The core principle is to separate application logic from governance logic, enabling safer, more observable, and adaptable AI and automation systems.
-
----
-
-## 2. The Complete File Map
+## 2. THE COMPLETE FILE MAP
 
 ```
 .
 |____.env.example
-|____.github
-| |____workflows
-| | |____context-sync.yml
 |____.gitignore
-|____AGENTS.md # Instructions for AI agents working on this repo.
+|____AGENTS.md # Instructions for AI agents.
 |____CONTRIBUTING.md
 |____LICENSE
-|____Makefile # Build, test, and lint commands.
+|____Makefile # Build/Test commands.
 |____README.md
-|____adapters # Connects external systems to the Manglekit core.Action interface.
-| |____ai # Adapters for AI models (e.g., Genkit).
-| | |____adapter.go
-| | |____genkit.go
-| | |____utils.go
-| |____extractor # Extracts structured data from text.
-| | |____adapter.go
-| |____func # Wraps plain Go functions as Actions.
-| | |____wrapper.go
-| |____knowledge # Loads knowledge graphs (RDF).
-| | |____graph_loader.go
-| | |____nquads.go
-| | |____ntriples.go
-| | |____rdf.go
-| | |____rdf_stub.go
-| |____logger # Logging adapters (e.g., Zap).
-| | |____zap_adapter.go
-| |____mcp # Adapters for the Model Context Protocol (MCP).
-| | |____action.go
-| | |____loader.go
-| |____resilience # Resilience patterns as Actions (e.g., Circuit Breaker).
-| | |____circuit_breaker.go
-| |____vector # Adapters for vector stores.
-| | |____genkit_retriever.go
-| | |____retriever_adapter.go
-|____cmd # Command-line interface tools.
-| |____mkit # The primary CLI tool for Manglekit.
-| | |____README.md
-| | |____commands
-| | | |____eval # Evaluates a policy against input data.
-| | | |____gen # Generates rules and schemas.
-| | | |____inspect # Inspects data structures.
-| | | |____kg # Knowledge graph utilities.
-| | | |____serve # Serves the Manglekit SDK over HTTP.
-| | |____main.go
-|____config # Configuration loading and schema definitions.
-| |____loader.go
-| |____schema.go
-|____core # Foundational interfaces and data structures. The "Constitution" of the framework.
-| |____context_facts.go
-| |____context_lineage.go
-| |____data.go
-| |____errors.go
-| |____governance.go
-| |____infra.go
-| |____logger.go
-| |____logic.go
-| |____memory.go
-| |____state.go
-| |____tracer.go
-| |____types.go
-|____docs # Project documentation.
-|____examples # Example usage of the Manglekit framework.
-|____go.mod # Go module definition.
-|____go.sum # Go module checksums.
-|____internal # Internal packages not intended for public use.
-| |____engine # The Neuro-Symbolic Core (Mangle Runtime)
-| | |____evaluator.go
-| | |____flattener.go
-| | |____memory
-| | |____reflection.go
-| | |____resources
-| | |____runtime.go
-| | |____solver.go
-| |____logger # Internal logger implementation.
-| | |____std.go
-| |____resources # Embedded resources (e.g., rule templates).
-| |____statehelper # State management utilities.
-| |____supervisor # The "Action Sandwich" that enforces governance.
-| | |____supervisor.go
-| |____telemetry # Telemetry and observability helpers.
-| |____testproviders # Mock providers for testing.
-| |____tools # Internal tooling.
-| |____util # General utility packages.
-|____manglekit.go # Public facade for the SDK.
-|____providers # Implementations for external services (e.g., Google, OpenAI).
+|____adapters # Connects external systems to core.Action.
+| |____ai # AI Adapters (Genkit).
+| |____extractor # Structured Data Extraction.
+| |____func # Go Function Wrapper.
+| |____knowledge # RDF Knowledge Graph.
+| |____logger # Logger Adapters.
+| |____mcp # Model Context Protocol.
+| |____resilience # Circuit Breakers/Retries.
+| |____vector # Vector Store Retrieval.
+|____cmd # CLI Entry Points.
+| |____mkit # The Manglekit CLI.
+|____config # Configuration Loading.
+|____core # The Kernel Contracts (Interfaces & Types).
+|____docs # Documentation.
+|____examples # Runnable Examples.
+|____go.mod
+|____go.sum
+|____internal # Internal Implementation Details.
+| |____engine # The Neuro-Symbolic Core (Mangle Runtime).
+| |____logger # Internal Logging.
+| |____supervisor # The "Action Sandwich" (Trace->Assess->Exec->Reflect).
+| |____telemetry # Observability Utilities.
+| |____util # Common Utilities.
+|____manglekit.go # Public Facade.
+|____providers # Concrete Service Providers.
 | |____google
-| |____memory
 | |____openai
-|____sdk # The primary Software Development Kit for Manglekit.
-| |____client.go # The main client struct.
-| |____client_execute.go
-| |____config_loader.go
-| |____execute_typed.go
-| |____executor.go
-| |____generics.go
-| |____handle.go
-| |____helpers.go
-| |____loader.go
-| |____loop.go # The Semantic State Machine implementation.
-| |____options.go
-| |____planner.go
-| |____policy_generator.go
-| |____registry.go
-| |____tracing.go
-| |____types.go
+|____sdk # The Orchestration Layer (State Machine).
 ```
 
----
-
-## 3. Components (The Logic)
+## 3. COMPONENTS (The Logic)
 
 ### core
-
 *   **Responsibilities:** Defines the essential contracts (interfaces) and data structures that decouple all other components. It is the abstract core of the framework, containing no concrete implementations.
 *   **Structs:**
-    *   `Envelope`: The universal data wrapper for all information passed through the system. It contains the `Payload`, `Metadata`, `SecurityLabels`, and other contextual information.
-    *   `ActionMetadata`: Describes an `Action`'s properties, like its name, type, and I/O schema.
-    *   `Decision`: A structured output from the `Evaluator` indicating the outcome of a policy check (e.g., `PROCEED`, `HALT`, `RETRY`, `ROUTE`).
-*   **Key Functions/Interfaces:**
-    *   `Action`: The fundamental unit of work. Any component that *does* something (calls an LLM, reads a database, etc.) must implement this interface (`Execute`, `Metadata`).
-    *   `Evaluator`: The contract for the policy engine. It defines methods for assessing inputs (`Assess`), reflecting on outputs (`Reflect`), and steering execution flow (`EvaluateSteering`).
-    *   `TextGenerator`: An abstraction for Large Language Models.
+    *   `Envelope`: The universal data wrapper containing Payload, Metadata, SecurityLabels, and Facts.
+    *   `Decision`: Structured output from the Evaluator (Outcome, Target, Reasons).
+    *   `ActionMetadata`: Describes an Action's properties (Name, Type, I/O Schema).
+*   **Key Functions:**
+    *   `Action`: Interface for any unit of work (`Execute(ctx, env)`).
+    *   `Evaluator`: Interface for the policy engine (`Assess`, `Reflect`, `EvaluateSteering`).
 
 ### internal/engine
-
-*   **Responsibilities:** Provides the concrete implementation of the `core.Evaluator` interface. It wraps the Mangle Datalog engine, manages its runtime state, and translates Go objects into Datalog facts.
+*   **Responsibilities:** Implements `core.Evaluator`. Wraps the Mangle Datalog engine, manages runtime state, and translates Go objects/JSON into Datalog facts.
 *   **Structs:**
-    *   `PolicyEngine`: The main implementation of the `core.Evaluator`. It holds the Datalog runtime and provides the logic for assessing policies.
-    *   `MangleRuntime`: A thread-safe wrapper around the underlying Mangle Datalog interpreter.
+    *   `PolicyEngine`: Main `Evaluator` implementation.
+    *   `MangleRuntime`: Thread-safe wrapper for the Datalog interpreter.
 *   **Key Functions:**
-    *   `ToFacts` (`reflection.go`): Uses reflection to convert strongly-typed Go structs into Datalog facts. It respects `json` and `mangle` struct tags.
-    *   `Flatten` (`flattener.go`): Converts `map[string]any` (JSON-like) structures into a graph of `json_*` Datalog facts.
-    *   `solver.go`: Contains the logic for querying the Datalog engine for specific decisions (`halt`, `route`, `retry`).
-    *   `std.dl`: The Datalog "standard library" defining primitive predicates for data reflection and system control, automatically loaded into the engine.
+    *   `ToFacts`: Converts Go structs to Datalog facts via reflection.
+    *   `Flatten`: Converts JSON/Maps to graph facts (`json_link`).
+    *   `Assess/Reflect`: Enforces Pre/Post-check policies.
+    *   `EvaluateSteering`: Determines `RETRY`/`ROUTE` decisions.
 
 ### internal/supervisor
-
-*   **Responsibilities:** Implements the "Action Sandwich" pattern. It acts as a decorator (`SupervisedAction`) that wraps any `core.Action` to enforce the governance lifecycle.
+*   **Responsibilities:** Implements the "Action Sandwich" pattern (`SupervisedAction`). Decorates `core.Action` to enforce governance.
 *   **Structs:**
-    *   `SupervisedAction`: A struct that holds an inner `Action` and an `Evaluator`. Its `Execute` method orchestrates the entire governance flow.
+    *   `SupervisedAction`: Wraps `core.Action` + `core.Evaluator`.
 *   **Key Functions:**
-    *   `Execute`: The core method that implements the "Trace -> Assess -> Execute -> Reflect -> Steer" lifecycle. It calls the `Evaluator` before and after executing the inner `Action`, propagates security labels (taint), and handles failure modes ('open' vs. 'closed').
+    *   `Execute`: Orchestrates `Trace -> Assess -> Execute -> Reflect -> Steer`. Propagates taint labels.
 
 ### sdk
-
-*   **Responsibilities:** Provides the user-facing API for interacting with the Manglekit framework. It simplifies the process of creating clients, defining actions, and executing them under governance.
+*   **Responsibilities:** User-facing API and Orchestration. Manages the execution loop (Semantic State Machine).
 *   **Structs:**
-    *   `Client`: The main entry point for users. It holds the action registry, the policy engine, and configuration for logging, tracing, and memory.
-    *   `Runnable[In, Out]`: A generic wrapper that provides type-safe execution of actions.
+    *   `Client`: Main entry point. Holds registry, engine, memory.
 *   **Key Functions:**
-    *   `NewClient`: The factory function for creating a `Client`, configured using the functional options pattern (e.g., `WithBlueprintPath`, `WithLogger`).
-    *   `Define`: Registers a Go function as a type-safe `Action` in the client's registry.
-    *   `runLoopInternal` (`loop.go`): The implementation of the Semantic State Machine. It manages the execution loop, handling `RETRY` and `ROUTE` decisions from the `Evaluator`, applying backoff strategies, and managing conversation history.
+    *   `runLoopInternal`: The Semantic State Machine loop. Handles Retries, Routing, and Memory persistence.
+    *   `ExecuteByName`: Public entry point for execution.
 
 ### adapters, providers, config
-
-*   **Responsibilities:** These components handle the "wiring" of the framework.
-    *   `adapters`: Connect external concepts (like Go functions, HTTP endpoints, AI models) to the `core.Action` interface.
-    *   `providers`: Concrete implementations for third-party services (e.g., `google`, `openai`).
-    *   `config`: Handles loading and parsing of YAML configuration files (`schema.go`) into Go structs that the `sdk` uses to hydrate the `Client`.
-
----
+*   **Responsibilities:** Wiring and connectivity.
+    *   `adapters`: Bridges external systems (Genkit, Functions) to `core.Action`.
+    *   `providers`: Specific service implementations (Google, OpenAI).
+    *   `config`: YAML configuration loading.
 
 ## 4. CRITICAL PATH & DATA (The Flow)
 
 ### Wiring Flow
-
-This diagram shows how components are constructed and wired together at startup.
-
 ```mermaid
 graph TD
-    subgraph "Configuration (YAML)"
-        A[mangle.yaml]
-    end
-
-    subgraph "SDK Initialization"
-        B(sdk.NewClient) -- reads --> A
-        B -- creates --> C[sdk.Client]
-        C -- holds --> D[Action Registry]
-        C -- holds --> E[internal/engine.PolicyEngine]
-        E -- loads --> F[policies/blueprint.dl]
-        E -- auto-loads --> G[internal/engine/resources/std.dl]
-    end
-
-    subgraph "Action Definition"
-        H(My Go Function) -- wrapped by --> I(sdk.Define)
-        I -- registers --> D
-    end
-
-    subgraph "Supervision"
-        J[internal/supervisor.SupervisedAction] -- wraps --> I
-        J -- uses --> E
-        C -- uses --> J
-    end
+    A[sdk.NewClient] -->|Loads| B(config.Config)
+    A -->|Inits| C[internal/engine.PolicyEngine]
+    C -->|Loads| D[std.dl]
+    A -->|Hydrates| E[Action Registry]
+    E -->|Wraps| F[internal/supervisor.SupervisedAction]
 ```
 
 ### Execution Flow
-
-This diagram illustrates the lifecycle of a single `ExecuteByName` call.
-
 ```mermaid
 graph TD
-    Start((Start)) --> A[sdk.Client.ExecuteByName]
-    A --> B[sdk.runLoopInternal]
-    B --> C{Step < MaxSteps?}
-    C -- Yes --> D[supervisor.Execute]
-    D --> D1[1. Assess (Pre-Check)]
-    D1 -- OK --> D2[2. Execute Inner Action]
-    D2 --> D3[3. Reflect (Post-Check)]
-    D3 --> D4[4. Evaluate Steering]
-    D4 --> E{Decision?}
-
-    E -- PROCEED --> F((End))
-    E -- HALT --> G([HALT])
-
-    E -- RETRY --> H{Retry < MaxRetries?}
-    H -- Yes --> I[Backoff]
-    I --> B
-    H -- No --> J([FAIL])
-
-    E -- ROUTE --> K[Set Next Action]
-    K --> B
-    C -- No --> J
+    Start --> A[sdk.runLoopInternal]
+    A --> B{Step < Max?}
+    B -- Yes --> C[supervisor.Execute]
+    C --> D[1. Assess]
+    D -- Pass --> E[2. Inner Action]
+    E --> F[3. Reflect]
+    F --> G[4. Steer]
+    G --> H{Decision?}
+    H -- RETRY --> A
+    H -- ROUTE --> A
+    H -- PROCEED --> End
 ```
 
-*   **Execution Flow:** A request starts at the `sdk.Client`, which enters the `runLoopInternal`. The `SupervisedAction` is executed, which first calls the `PolicyEngine` to `Assess` the input. If allowed, the inner action (e.g., LLM call) is executed. The output is then passed back to the `PolicyEngine` to `Reflect` upon. Finally, the engine evaluates `Steering` rules, which may decide to `RETRY` the same action with feedback, `ROUTE` to a different action, or `PROCEED` to finish the loop.
-*   **Data Structures:**
-    *   **Envelope:** The single, immutable container for data moving through the system. The `Payload` holds the business data, while `Metadata` is used by the control plane (the engine and SDK) to pass signals like `decision`, `feedback`, and `next_step`.
-    *   **Facts:** Datalog facts are string representations of predicates (e.g., `label("pii")`, `json_num("Req", "age", 30)`). They are the logical representation of the `Envelope`'s data, used by the engine for reasoning. There is no persistent "Fact Store"; facts are generated on-the-fly for each execution step.
-
----
+### Data Structures
+*   **Envelope:** `ID`, `Payload` (any), `Metadata` (Map), `SecurityLabels` ([]string), `Facts` ([]string).
+*   **Facts:** Dynamic Datalog predicates generated from Payload (e.g., `json_num("Req", "age", 30)`).
 
 ## 5. SOURCE CODE DUMP
 
 ---
-### [internal/engine/resources/std.dl]
+## [internal/engine/resources/std.dl]
 ```datalog
 % --- Manglekit Standard Library (v2.0) ---
 % Auto-loaded on engine startup.
@@ -311,7 +186,7 @@ Decl label(Tag).            % Security taint labels (e.g., "pii", "unsafe").
 Decl violation_rule(Entity, RuleID).
 ```
 ---
-### [internal/engine/reflection.go]
+## [internal/engine/reflection.go]
 ```go
 package engine
 
@@ -322,7 +197,6 @@ import (
 )
 
 // ToFacts converts a Go data structure into Mangle Datalog facts.
-// It is the entry point for turning runtime objects into logic predicates.
 func ToFacts(id string, input any) ([]string, error) {
 	if input == nil {
 		return nil, nil
@@ -345,6 +219,7 @@ func LabelsToFacts(entityID string, labels []string) ([]string, error) {
 	if len(labels) > 0 {
 		facts = make([]string, 0, len(labels))
 	}
+
 	for _, l := range labels {
 		var sb strings.Builder
 		sb.WriteString("label(\"")
@@ -385,6 +260,7 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 	if !v.IsValid() {
 		return nil
 	}
+
 	for v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return nil
@@ -399,7 +275,7 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 		}
 		ptr := v.Pointer()
 		if visited[ptr] {
-			return nil // Cycle detected
+			return nil
 		}
 		visited[ptr] = true
 		defer delete(visited, ptr)
@@ -415,6 +291,7 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 		for i := 0; i < v.NumField(); i++ {
 			field := v.Field(i)
 			structField := t.Field(i)
+
 			if !structField.IsExported() {
 				continue
 			}
@@ -423,6 +300,7 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 			if tag == "-" {
 				continue
 			}
+
 			jsonTag := structField.Tag.Get("json")
 			if jsonTag == "-" || strings.HasPrefix(jsonTag, "-,") {
 				continue
@@ -438,8 +316,10 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 			if fieldName == "" {
 				fieldName = strings.ToLower(structField.Name)
 			}
+
 			newPath := path
 			isAnonymousUntagged := structField.Anonymous && tag == "" && structField.Tag.Get("json") == ""
+
 			if !isAnonymousUntagged {
 				if newPath != "" {
 					newPath = newPath + "_" + fieldName
@@ -447,31 +327,38 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 					newPath = fieldName
 				}
 			}
+
 			if err := toFactsRecursive(id, newPath, field, facts, visited, args...); err != nil {
 				return err
 			}
 		}
+
 	case reflect.Map:
 		for _, key := range v.MapKeys() {
 			val := v.MapIndex(key)
 			keyStr := fmt.Sprintf("%v", key.Interface())
+
 			newArgs := make([]string, len(args)+1)
 			copy(newArgs, args)
 			newArgs[len(args)] = keyStr
+
 			if err := toFactsRecursive(id, path, val, facts, visited, newArgs...); err != nil {
 				return err
 			}
 		}
+
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < v.Len(); i++ {
 			idxStr := fmt.Sprintf("%d", i)
 			newArgs := make([]string, len(args)+1)
 			copy(newArgs, args)
 			newArgs[len(args)] = idxStr
+
 			if err := toFactsRecursive(id, path, v.Index(i), facts, visited, newArgs...); err != nil {
 				return err
 			}
 		}
+
 	default:
 		generatePrimitiveFact(id, path, v, facts, args...)
 	}
@@ -481,6 +368,7 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 func generatePrimitiveFact(id, path string, v reflect.Value, facts *[]string, args ...string) {
 	var strVal string
 	var isNumeric bool
+
 	switch v.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		strVal = fmt.Sprintf("%d", v.Int())
@@ -501,18 +389,22 @@ func generatePrimitiveFact(id, path string, v reflect.Value, facts *[]string, ar
 	if predicate == "" {
 		predicate = "value"
 	}
+
 	safeID := escapeString(id)
+
 	var sb strings.Builder
 	sb.WriteString(predicate)
 	sb.WriteByte('(')
 	sb.WriteByte('"')
 	sb.WriteString(safeID)
 	sb.WriteByte('"')
+
 	for _, arg := range args {
 		sb.WriteString(", \"")
 		sb.WriteString(escapeString(arg))
 		sb.WriteByte('"')
 	}
+
 	sb.WriteString(", ")
 	if isNumeric {
 		sb.WriteString(strVal)
@@ -522,11 +414,12 @@ func generatePrimitiveFact(id, path string, v reflect.Value, facts *[]string, ar
 		sb.WriteByte('"')
 	}
 	sb.WriteByte(')')
+
 	*facts = append(*facts, sb.String())
 }
 ```
 ---
-### [internal/engine/flattener.go]
+## [internal/engine/flattener.go]
 ```go
 package engine
 
@@ -542,8 +435,10 @@ func Flatten(rootID string, input any) ([]string, error) {
 	if input == nil {
 		return facts, nil
 	}
+
 	counter := 0
 	visited := make(map[uintptr]bool)
+
 	if err := flattenRecursive(rootID, reflect.ValueOf(input), &facts, &counter, visited); err != nil {
 		return nil, err
 	}
@@ -571,8 +466,10 @@ func flattenRecursive(nodeID string, v reflect.Value, facts *[]string, counter *
 		for iter.Next() {
 			key := iter.Key()
 			val := iter.Value()
+
 			keyStr := fmt.Sprintf("%v", key.Interface())
 			safeKey := escapeString(keyStr)
+
 			effVal := val
 			for effVal.Kind() == reflect.Interface || effVal.Kind() == reflect.Ptr {
 				if effVal.IsNil() {
@@ -580,6 +477,7 @@ func flattenRecursive(nodeID string, v reflect.Value, facts *[]string, counter *
 				}
 				effVal = effVal.Elem()
 			}
+
 			if isComplexKind(effVal.Kind()) {
 				*counter++
 				childID := fmt.Sprintf("node_%d", *counter)
@@ -592,10 +490,12 @@ func flattenRecursive(nodeID string, v reflect.Value, facts *[]string, counter *
 				addPrimitiveReflect(nodeID, safeKey, effVal, facts)
 			}
 		}
+
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < v.Len(); i++ {
 			val := v.Index(i)
 			keyStr := strconv.Itoa(i)
+
 			effVal := val
 			for effVal.Kind() == reflect.Interface || effVal.Kind() == reflect.Ptr {
 				if effVal.IsNil() {
@@ -603,11 +503,14 @@ func flattenRecursive(nodeID string, v reflect.Value, facts *[]string, counter *
 				}
 				effVal = effVal.Elem()
 			}
+
 			if isComplexKind(effVal.Kind()) {
 				*counter++
 				childID := fmt.Sprintf("node_%d", *counter)
+
 				fact := fmt.Sprintf("json_link(\"%s\", \"%s\", \"%s\")", escapeString(nodeID), keyStr, childID)
 				*facts = append(*facts, fact)
+
 				if err := flattenRecursive(childID, val, facts, counter, visited); err != nil {
 					return err
 				}
@@ -630,11 +533,14 @@ func addPrimitiveReflect(nodeID, key string, v reflect.Value, facts *[]string) {
 		}
 		v = v.Elem()
 	}
+
 	nodeID = escapeString(nodeID)
+
 	switch v.Kind() {
 	case reflect.String:
 		fact := fmt.Sprintf("json_str(\"%s\", \"%s\", \"%s\")", nodeID, key, escapeString(v.String()))
 		*facts = append(*facts, fact)
+
 	case reflect.Bool:
 		sVal := "false"
 		if v.Bool() {
@@ -642,15 +548,19 @@ func addPrimitiveReflect(nodeID, key string, v reflect.Value, facts *[]string) {
 		}
 		fact := fmt.Sprintf("json_bool(\"%s\", \"%s\", \"%s\")", nodeID, key, sVal)
 		*facts = append(*facts, fact)
+
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		fact := fmt.Sprintf("json_num(\"%s\", \"%s\", %d)", nodeID, key, v.Int())
 		*facts = append(*facts, fact)
+
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		fact := fmt.Sprintf("json_num(\"%s\", \"%s\", %d)", nodeID, key, v.Uint())
 		*facts = append(*facts, fact)
+
 	case reflect.Float32, reflect.Float64:
 		fact := fmt.Sprintf("json_num(\"%s\", \"%s\", %g)", nodeID, key, v.Float())
 		*facts = append(*facts, fact)
+
 	default:
 		sVal := fmt.Sprintf("%v", v.Interface())
 		fact := fmt.Sprintf("json_str(\"%s\", \"%s\", \"%s\")", nodeID, key, escapeString(sVal))
@@ -659,7 +569,7 @@ func addPrimitiveReflect(nodeID, key string, v reflect.Value, facts *[]string) {
 }
 ```
 ---
-### [internal/supervisor/supervisor.go]
+## [internal/supervisor/supervisor.go]
 ```go
 package supervisor
 
@@ -671,10 +581,10 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/telemetry"
+
 	"go.opentelemetry.io/otel"
 )
 
-// SupervisedAction is a decorator that wraps any `core.Action` to enforce governance blueprints.
 type SupervisedAction struct {
 	inner       core.Action
 	engine      core.Evaluator
@@ -682,7 +592,6 @@ type SupervisedAction struct {
 	failureMode string
 }
 
-// NewSupervisedAction creates a new SupervisedAction.
 func NewSupervisedAction(action core.Action, eng core.Evaluator, failureMode string) *SupervisedAction {
 	return &SupervisedAction{
 		inner:       action,
@@ -692,13 +601,13 @@ func NewSupervisedAction(action core.Action, eng core.Evaluator, failureMode str
 	}
 }
 
-// Execute runs the supervised action, orchestrating the full governance lifecycle.
 func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	tracer := g.tracer
 	if tracer == nil {
 		tracer = telemetry.NewOTelTracer(otel.Tracer("manglekit"))
 	}
 	meta := g.inner.Metadata()
+
 	ctx, span := tracer.Start(ctx, fmt.Sprintf("Action.%s", meta.Name))
 	defer span.End()
 
@@ -714,12 +623,56 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 		span.SetStatus("error", err.Error())
 		if core.IsAlignmentError(err) {
 			span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeHalt})
+			var alignErr *core.AlignmentError
+			if errors.As(err, &alignErr) {
+				attrs := map[string]any{core.KeyFeedback: alignErr.Message}
+				if alignErr.RuleID != "" {
+					attrs[core.AttrRuleID] = alignErr.RuleID
+				}
+				span.SetAttributes(attrs)
+			} else {
+				span.SetAttributes(map[string]any{core.KeyFeedback: err.Error()})
+			}
 		} else {
 			span.SetAttributes(map[string]any{core.AttrOutcome: "ERROR"})
 		}
 		return core.Envelope{}, err
 	}
-	span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeProceed})
+
+	decision := result.Metadata[core.KeyDecision]
+	switch decision {
+	case core.DecisionRetry:
+		span.SetAttributes(map[string]any{core.AttrOutcome: "retry"})
+		if hint, ok := result.Metadata[core.KeyFeedback]; ok {
+			if s, ok := hint.(string); ok {
+				span.SetAttributes(map[string]any{core.KeyFeedback: s})
+			}
+		}
+	case core.DecisionRoute:
+		span.SetAttributes(map[string]any{core.AttrOutcome: "route"})
+		if target, ok := result.Metadata[core.KeyNextStep]; ok {
+			if s, ok := target.(string); ok {
+				span.SetAttributes(map[string]any{core.AttrActionName: s})
+			}
+		}
+	default:
+		span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeProceed})
+	}
+
+	if attemptVal, ok := input.Metadata["retry_count"]; ok {
+		if s, ok := attemptVal.(string); ok {
+			if n, err := strconv.Atoi(s); err == nil {
+				span.SetAttributes(map[string]any{core.AttrAttempt: n})
+			}
+		} else if n, ok := attemptVal.(int); ok {
+			span.SetAttributes(map[string]any{core.AttrAttempt: n})
+		}
+	}
+
+	span.SetAttributes(map[string]any{
+		core.AttrOutcome:     core.OutcomeProceed,
+		"mangle.output_id":   result.ID.String(),
+	})
 	return result, nil
 }
 
@@ -744,10 +697,11 @@ func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envel
 	ctx = core.ContextWithLogger(ctx, g.engine.Logger())
 	logger := core.LoggerFromContext(ctx)
 	meta := g.inner.Metadata()
+	logger.Info("Action started", "action", meta.Name, "input_id", input.ID.String())
 
 	if err := g.engine.Assess(ctx, g.inner.Metadata(), input); err != nil {
 		if g.shouldBlock(err) {
-			logger.Warn("assessment failed", "action", meta.Name, "error", err.Error())
+			logger.Warn("assessment failed", core.AttrActionName, meta.Name, "error", err.Error())
 			return core.Envelope{}, fmt.Errorf("assessment failed: %w", err)
 		}
 		logger.Warn("engine assessment failed but Fail-Open active. Proceeding.", "error", err)
@@ -768,13 +722,18 @@ func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envel
 	childCtx := core.WithParentID(ctx, input.ID.String())
 	result, err := g.inner.Execute(childCtx, input)
 	if err != nil {
-		logger.Error("action execution failed", "action", meta.Name, "error", err.Error())
+		logger.Error("action execution failed", core.AttrActionName, meta.Name, "error", err.Error())
 		return core.Envelope{}, fmt.Errorf("action execution failed: %w", err)
 	}
 
 	if len(input.SecurityLabels) > 0 {
 		result.MergeLabels(input.SecurityLabels)
 	}
+
+	if result.Metadata == nil {
+		result.Metadata = make(map[string]any)
+	}
+	result.Metadata["derived_from"] = input.ID.String()
 
 	validatedResult, err := g.engine.Reflect(ctx, g.inner.Metadata(), result)
 	if err != nil {
@@ -799,11 +758,14 @@ func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envel
 	for k, v := range steeringMeta {
 		validatedResult.Metadata[k] = v
 	}
+
+	logger.Info("Action completed", "action", meta.Name, "result", "success")
+
 	return validatedResult, nil
 }
 ```
 ---
-### [sdk/loop.go]
+## [sdk/loop.go]
 ```go
 package sdk
 
@@ -828,7 +790,22 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 	if c.logger != nil {
 		ctx = core.ContextWithLogger(ctx, c.logger)
 	}
-	// Memory/Store setup omitted for brevity...
+
+	switch params.MemoryMode {
+	case core.MemoryModePersist:
+		params.Store = c.memory
+		if params.SessionID != "" {
+			var err error
+			params.CurrentHistory, err = params.Store.Read(ctx, params.SessionID)
+			if err != nil && c.logger != nil {
+				c.logger.Warn("RunLoop failed to hydrate history", "error", err)
+			}
+		}
+	case core.MemoryModeTransient:
+		params.Store = &engine_memory.VolatileStore{}
+	default:
+		params.Store = &core.NopStore{}
+	}
 
 	currentAction := startAction
 	currentPayload := payload
@@ -837,23 +814,34 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 		if err := ctx.Err(); err != nil {
 			return core.Envelope{}, err
 		}
+
+		if c.logger != nil {
+			c.logger.Info("RunLoop step", "step", step, "action", currentAction)
+		}
+
 		result, err := c.ExecuteSingleStep(ctx, currentAction, currentPayload, &params)
 		if err != nil {
 			return core.Envelope{}, err
 		}
+
 		decision := result.Metadata[core.KeyDecision]
 		if decision == core.DecisionRoute {
 			next, ok := result.Metadata[core.KeyNextStep].(string)
 			if !ok || next == "" {
 				return core.Envelope{}, fmt.Errorf("route decision missing next_step")
 			}
+			if c.logger != nil {
+				c.logger.Info("RunLoop: Routing to next action", "from", currentAction, "to", next, "payload_type", fmt.Sprintf("%T", result.Payload))
+			}
 			currentAction = next
 			currentPayload = result.Payload
 			continue
 		}
+
 		if decision == core.DecisionRetry {
 			continue
 		}
+
 		return result, nil
 	}
 	return core.Envelope{}, fmt.Errorf("max steps exceeded")
@@ -864,12 +852,28 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	if !ok {
 		return core.Envelope{}, fmt.Errorf("action not found: %s", actionName)
 	}
+
 	env := core.NewEnvelope(payload)
 	env.ContentType = action.Metadata().InputContentType
 
-	// Context/Metadata injection omitted for brevity...
+	if len(params.FeedbackHistory) > 0 {
+		env.Metadata[core.KeyPrevFeedback] = strings.Join(params.FeedbackHistory, "; ")
+	}
+	if params.LastFeedback != "" {
+		env.SetFeedback(params.LastFeedback)
+		env.Metadata["mangle_feedback"] = params.LastFeedback
+	}
+	if len(params.CurrentHistory) > 0 && params.MemoryMode != core.MemoryModeNone {
+		env.SetHistory(params.CurrentHistory)
+	}
 
 	c.recallContext(ctx, payload, &env)
+
+	if params.Metadata != nil {
+		for k, v := range params.Metadata {
+			env.Metadata[k] = v
+		}
+	}
 	if facts := core.ContextFacts(ctx); facts != nil {
 		for k, v := range facts {
 			env.Metadata[k] = v
@@ -885,9 +889,15 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 			}
 			params.RetryCount++
 			params.LastFeedback = pve.Message
+
+			if c.logger != nil {
+				c.logger.Warn("RunLoop: Blueprint Alignment Issue", "feedback", params.LastFeedback, "attempt", params.RetryCount)
+			}
+
 			if err := c.backoff(ctx, params.RetryCount); err != nil {
 				return core.Envelope{}, err
 			}
+
 			res := core.NewEnvelope(payload)
 			res.Metadata[core.KeyDecision] = core.DecisionRetry
 			return res, nil
@@ -896,7 +906,22 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	}
 
 	params.LastFeedback = ""
-	// History/Persistence omitted for brevity...
+
+	if params.MemoryMode != core.MemoryModeNone {
+		userContent := safelyStringify(payload)
+		assistContent := safelyStringify(result.Payload)
+		newExchange := []core.Message{
+			{Role: "user", Content: userContent},
+			{Role: "assistant", Content: assistContent},
+		}
+		params.CurrentHistory = append(params.CurrentHistory, newExchange...)
+	}
+
+	if params.Store != nil && params.SessionID != "" && params.MemoryMode == core.MemoryModePersist {
+		if err := params.Store.Write(ctx, params.SessionID, params.CurrentHistory); err != nil && c.logger != nil {
+			c.logger.Warn("RunLoop failed to persist history", "error", err)
+		}
+	}
 
 	decision := result.Metadata[core.KeyDecision]
 	if err == nil && (decision == "" || decision == core.DecisionProceed) {
@@ -912,19 +937,36 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		hint := result.GetFeedback()
 		params.LastFeedback = hint
 		params.FeedbackHistory = append(params.FeedbackHistory, hint)
+		if c.logger != nil {
+			c.logger.Warn("RunLoop: RETRY triggered", "feedback", hint)
+		}
 		if err := c.backoff(ctx, params.RetryCount); err != nil {
 			return core.Envelope{}, err
 		}
 		return result, nil
+
 	case core.DecisionRoute:
 		params.RetryCount = 0
 		params.FeedbackHistory = nil
+		if c.logger != nil {
+			c.logger.Info("RunLoop: Feedback history cleared for new action route")
+		}
 		return result, nil
+
 	case core.DecisionProceed, "":
 		return result, nil
+
 	case core.DecisionHalt:
-		return core.Envelope{}, fmt.Errorf("action halted by blueprint")
+		reason := result.Metadata["reason"]
+		if reason == "" {
+			reason = result.Metadata["violation_msg"]
+		}
+		if reason == "" {
+			reason = "blueprint violation"
+		}
+		return core.Envelope{}, fmt.Errorf("action halted by blueprint: %s", reason)
 	}
+
 	return result, nil
 }
 
@@ -935,13 +977,13 @@ func (c *Client) backoff(ctx context.Context, retryCount int) error {
 		return ctx.Err()
 	case <-time.After(sleepDuration):
 		return nil
+	case <-time.After(sleepDuration):
+		return nil
 	}
 }
-
-// Other helpers (safelyStringify, recallContext, asyncMemorize) omitted for brevity...
 ```
 ---
-### [core/types.go]
+## [core/types.go]
 ```go
 package core
 
@@ -951,15 +993,16 @@ import (
 	"github.com/google/uuid"
 )
 
-// Standard Metadata Keys
 const (
 	KeyDecision     = "manglekit.decision"
 	KeyFeedback     = "manglekit.feedback"
 	KeyPrevFeedback = "prev_feedback"
 	KeyNextStep     = "manglekit.next_step"
+	KeyRiskScore    = "manglekit.risk_score"
+	KeyTraceID      = "manglekit.trace_id"
+	KeyContext      = "manglekit.context"
 )
 
-// Standard Decision Values
 const (
 	DecisionProceed = "PROCEED"
 	DecisionHalt    = "HALT"
@@ -967,7 +1010,6 @@ const (
 	DecisionRoute   = "ROUTE"
 )
 
-// Datalog System Constants
 const (
 	EntityInput   = "Req"
 	EntityOutput  = "Output"
@@ -977,6 +1019,15 @@ const (
 	PredViolation = "violation_msg"
 )
 
+const (
+	AttrPolicyOutcome = "policy.outcome"
+	AttrActionName    = "action.name"
+	AttrRuleID        = "mangle.rule_id"
+	AttrAttempt       = "mangle.attempt"
+	OutcomeProceed    = "PROCEED"
+	OutcomeHalt       = "HALT"
+)
+
 type ContentType string
 
 const (
@@ -984,7 +1035,6 @@ const (
 	TypeJSON   ContentType = "JSON"
 )
 
-// Envelope: The unified data container.
 type Envelope struct {
 	ID             uuid.UUID `json:"id"`
 	Payload        any `json:"data"`
@@ -995,7 +1045,6 @@ type Envelope struct {
 	ContentType    ContentType `json:"content_type,omitempty"`
 }
 
-// NewEnvelope creates a new envelope with the provided payload.
 func NewEnvelope(payload any) Envelope {
 	return Envelope{
 		ID:             uuid.New(),
@@ -1006,7 +1055,59 @@ func NewEnvelope(payload any) Envelope {
 	}
 }
 
-// Decision: Structured result from the Policy Engine.
+func (e *Envelope) SetMeta(k string, v any) {
+	if e.Metadata == nil {
+		e.Metadata = make(map[string]any)
+	}
+	e.Metadata[k] = v
+}
+
+func (e *Envelope) GetFeedback() string {
+	if e.Metadata == nil {
+		return ""
+	}
+	v, ok := e.Metadata[KeyFeedback]
+	if !ok {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+func (e *Envelope) SetFeedback(msg string) {
+	e.SetMeta(KeyFeedback, msg)
+}
+
+func (e *Envelope) MergeLabels(other []string) {
+	for _, l := range other {
+		e.AddLabel(l)
+	}
+}
+
+func (e *Envelope) AddLabel(label string) {
+	if !e.HasLabel(label) {
+		e.SecurityLabels = append(e.SecurityLabels, label)
+	}
+}
+
+func (e *Envelope) HasLabel(label string) bool {
+	for _, l := range e.SecurityLabels {
+		if l == label {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Envelope) SetHistory(msgs []Message) {
+	b, err := json.Marshal(msgs)
+	if err == nil {
+		e.SetMeta("manglekit_history", string(b))
+	}
+}
+
 type Decision struct {
 	Outcome string
 	Target  string
@@ -1014,7 +1115,6 @@ type Decision struct {
 	Meta    map[string]string
 }
 
-// ActionMetadata provides metadata about an action.
 type ActionMetadata struct {
 	Name             string
 	Type             string
@@ -1023,15 +1123,19 @@ type ActionMetadata struct {
 	OutputType       string
 	IsDynamic        bool
 }
+
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
 ```
 ---
-### [core/governance.go]
+## [core/governance.go]
 ```go
 package core
 
 import "context"
 
-// Evaluator: The Mangle Logic Engine.
 type Evaluator interface {
 	AssessPlan(ctx context.Context, input Envelope) (Decision, error)
 	Assess(ctx context.Context, actionMeta ActionMetadata, input Envelope) error
@@ -1044,9 +1148,15 @@ type Evaluator interface {
 	RegisterAction(meta ActionMetadata) error
 	Logger() Logger
 }
+
+type PreProcessor interface {
+	Process(ctx context.Context, input Envelope) (map[string]any, error)
+}
+
+type RiskEngine interface {
+	CalculateRisk(ctx context.Context, input Envelope) (float64, error)
+}
 ```
----
 
-## 6. Changelog
-
-*   [2023-10-27]: Kernel Resync. Dumped core logic from `internal/engine`, `internal/supervisor`, and `sdk`. Added Datalog StdLib and Reflection/Flattening logic.
+## 6. CHANGELOG
+*   [2025-12-17]: Kernel Resync. Added Datalog StdLib and Reflection Logic.
