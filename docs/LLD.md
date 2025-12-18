@@ -2,215 +2,210 @@
 context_type: low_level_design
 project: manglekit
 language: go
-version: 0.5.0
-last_updated: 2025-10-25
-stability: stable
+version: 1.0
+last_updated: 2025-12-11
+stability: implementation
 audience: developers
 ---
 
 # 1. Purpose & Scope
 
-This document provides a detailed low-level design for the Manglekit SDK's core framework components. It covers the decentralized, handler-based Builder, the Registry, provider factories, the dependency injection mechanism, and the stage-based pipeline architecture. It is intended to be a technical reference for developers extending the framework or diagnosing its behavior.
+This document provides the Low-Level Design (LLD) for **Manglekit v2.0**. It details the implementation of the **Neuro-Symbolic Kernel**, focusing on the `Client`, `Supervisor`, `Engine`, and `Adapter` subsystems.
+
+This version introduces the **"Headless Kernel"** architecture:
+* **Explicit Initialization:** User wires dependencies (Genkit, Models) in `main.go`.
+* **Clean Adapters:** Core SDK depends only on interfaces, not specific provider plugins.
+* **Active Supervision:** Renaming "Guard" to "Supervisor" to reflect active orchestration (Steering/Correction).
 
 # 2. Component Diagram
 
 ```mermaid
 graph TD
-    subgraph "Configuration Layer"
-        A[YAML Config] --> B{sdk.FromConfig}
+    subgraph "User Space (main.go)"
+        UserCode[User Application]
+        GenkitInit[Genkit Init & Model]
     end
 
-    subgraph "Construction Layer"
-        B --> C[builder.go]
-        C --> D[registry.go]
-        D -- Contains --> E[Component Handlers]
-        D -- Contains --> F[Provider Factories]
+    subgraph "Manglekit Kernel (sdk/)"
+        Client[Client]
+        Define[Define() / Supervise()]
+        Loop[Execution Loop]
     end
 
-    subgraph "Core Contracts"
-        G[core/interfaces.go]
-        H[core/handler.go]
-        I[core/diapi]
+    subgraph "The Supervisor (internal/supervisor)"
+        SupervisedAction[SupervisedAction]
+        Lifecycle[Trace -> Align -> Run -> Steer]
+        
+        Client -->|Register| SupervisedAction
+        SupervisedAction --> Lifecycle
     end
 
-    subgraph "Implementation Layer"
-        E -- Implements --> H
-        F -- Consumes --> I
-        C -- Provides --> I
-        J[internal/providers/*] --> E
-        J -- Also provides --> F
+    subgraph "Logic Engine (internal/engine)"
+        PolicyEngine[PolicyEngine]
+        Runtime[MangleRuntime]
+        StdLib[std.dl (Standard Lib)]
+        
+        Lifecycle -- Authorize (Pre) --> PolicyEngine
+        Lifecycle -- Validate (Post) --> PolicyEngine
+        PolicyEngine --> Runtime
+        Runtime -.-> StdLib
     end
 
-    subgraph "Execution Layer"
-        K["pipeline/sandwich.go"]
-        L["pipeline/declarative/orchestrator.go"]
-        C --> K
-        C --> L
+    subgraph "Adapters (adapters/)"
+        AI[AI Adapter (Genkit Core)]
+        Resilience[Circuit Breaker]
+        MCP[MCP Adapter]
+        
+        Lifecycle -- Delegate --> Resilience
+        Resilience -- Wrap --> AI
+        AI -- ai.Generate --> GenkitInit
     end
 
-    G --> K
-    G --> L
+    UserCode --> GenkitInit
+    GenkitInit -->|Inject| AI
+    UserCode -->|NewClient| Client
 ```
 
-# 3. Builder Subsystem
+# 3. Core Kernel (`sdk`)
 
-The `Builder` is the central component for constructing an orchestrator. It follows a handler-based process that is decentralized and respects the Open/Closed Principle.
+The `sdk` package is the user-facing facade. It enforces the **Explicit Initialization** pattern.
 
-**Process Flow:**
-1.  **Configuration:** The builder is configured programmatically via `With(opts)` calls. The `sdk.FromConfig` function translates YAML into these calls.
-2.  **Component Grouping:** All configured components are grouped by their `core.Kind`.
-3.  **Ordered Build:** The builder iterates through a hard-coded build order (`Embedder` -> `VectorStore` -> `Retriever`, etc.).
-4.  **Handler Invocation:** For each component, it looks up the corresponding `core.ComponentHandler` in the `Registry`.
-5.  **Delegated Build:** The builder calls the handler's `BuildComponent` method, passing itself as a dependency provider (`builderDI`), the component's factory, its configuration, and the map of already resolved components.
-6.  **Component Construction:** The handler is responsible for creating the dependency struct, calling the factory, and placing the resulting component instance into the resolved map.
-7.  **Orchestrator Creation:** After all components are built, the `Resolved` struct is assembled and passed to the selected orchestrator's factory.
+### 3.1 Client
 
-```mermaid
-sequenceDiagram
-    participant User/Config
-    participant Builder
-    participant Registry
-    participant ComponentHandler
-    participant ProviderFactory
+The `Client` struct is the governance kernel.
 
-    User/Config->>+Builder: With(opts)
-    Builder->>+Builder: Stores opts in cfgs list
-    User/Config->>+Builder: Build(ctx)
-    Builder->>+Builder: Groups cfgs by kind
-    Builder->>+Builder: Iterates through build order...
-    Builder->>+Registry: GetHandler(kind)
-    Registry-->>-Builder: Returns handler
-    Builder->>+Registry: Get(kind, name)
-    Registry-->>-Builder: Returns factory
-    Builder->>+ComponentHandler: BuildComponent(ctx, builder, factory, resolved, cfg, name)
-    ComponentHandler->>+ProviderFactory: Build(ctx, deps, cfg)
-    ProviderFactory-->>-ComponentHandler: Returns component instance
-    ComponentHandler->>+Builder: Places instance in resolved map
-    ComponentHandler-->>-Builder: Returns closer
-    Builder->>-Builder: Repeats for all components...
-    Builder-->>-User/Config: Returns final orchestrator
+  * **Initialization**:
+      * `NewClient(ctx, opts...)`: The primary constructor.
+      * `WithBlueprintPath(path)`: Loads the Datalog blueprint (formerly Policy).
+      * `WithLLM(gen sdk.TextGenerator)`: Injects the default AI adapter.
+  * **Responsibility**: Holds the `PolicyEngine`, manages the `Registry`, and provides the `ExecuteByName` entry point.
+
+### 3.2 Supervise API
+
+Replaces the old `Protect` API.
+
+  * **Function**: `Supervise(action core.Action) core.Action`
+  * **Mechanism**: Wraps a raw capability with the `internal/supervisor.SupervisedAction` decorator.
+
+### 3.3 Semantic Loop (The Teacher-Student Protocol)
+
+The `ExecuteByName` method implements the **Semantic State Machine**:
+
+1.  **Execute**: Runs the action.
+2.  **Catch**: If `AlignmentError` occurs (Blueprint violation).
+3.  **Feedback**: Extracts feedback msg from the error.
+4.  **Inject**: Puts feedback into `Envelope.Metadata["mangle_feedback"]`.
+5.  **Retry**: Re-runs the action. The AI Adapter sees the feedback and self-corrects.
+
+# 4. The Supervisor (`internal/supervisor`)
+
+Formerly `guard`, this package implements the active governance lifecycle.
+
+### 4.1 SupervisedAction
+
+A decorator struct that implements `core.Action`. It binds the Logic Engine to the Execution Runtime.
+
+### 4.2 Execution Lifecycle
+
+The `Execute` method enforces the following strict sequence:
+
+1.  **Trace Start**: Opens OTel span `Action.{Name}`.
+2.  **Authorization (Pre-Check)**:
+      * Converts Input --> Facts (`json_xxx`).
+      * Queries: `deny("input")`.
+      * **Halt**: If true, returns `AlignmentError`.
+3.  **Execution**:
+      * Calls `inner.Execute(ctx, input)`.
+4.  **Validation (Post-Check)**:
+      * Converts Output --> Facts.
+      * Queries: `deny("output")`.
+      * **Halt**: If true, queries `violation_msg(Msg)` and returns `AlignmentError`.
+5.  **Steering**:
+      * Queries: `correction(Hint)` OR `next_step(Target)`.
+      * Updates Envelope Metadata for the SDK Loop to handle.
+
+# 5. Logic Engine (`internal/engine`)
+
+Hosts the Google Mangle runtime and Standard Library.
+
+### 5.1 Standard Library (`std.dl`)
+
+Auto-loaded on startup (`engine/resources/`). Defines the vocabulary for the outside world:
+
+  * `json_str`, `json_num`, `json_bool`: Primitives for Reflection.
+  * `quad`, `triple`: Primitives for Knowledge Graph.
+
+### 5.2 Reflector
+
+  * **Flatten**: Recursively walks Go structs to generate `json_xxx` facts.
+  * **Zero-Config**: No tags required; uses Go reflection rules.
+
+# 6. Adapters (`adapters`)
+
+Implements the **Clean Adapter Pattern** with pragmatic concessions for framework stability.
+
+### 6.1 AI Adapter (`adapters/ai`)
+
+Wraps Google Genkit to provide Native Structured Output.
+
+  * **Struct**: `genkitAdapter` holds `model ai.Model` AND `gk *genkit.Genkit`.
+      * *Note:* The `gk` registry reference is retained to ensure `ai.Generate` functions correctly with advanced features.
+  * **Utils**: `GenerateStruct[T]`
+      * Uses `ai.Generate(ctx, adapter.gk, ai.WithModel(adapter.model), ai.WithOutput(&result))`.
+      * Leverages Genkit's native schema generation and JSON parsing.
+
+### 6.2 Resilience Adapter (`adapters/resilience`)
+
+**New in v2.0**. Implements the Circuit Breaker pattern.
+
+  * **Component**: `CircuitBreaker` struct wrapping `core.Action`.
+  * **States**: `Closed` (Normal) --> `Open` (Fail Fast) --> `HalfOpen` (Probe).
+  * **Concurrency**: Uses `sync.RWMutex` for thread safety.
+
+### 6.3 MCP Adapter (`adapters/mcp`)
+
+Wraps Model Context Protocol tools.
+
+  * **Loader**: `NewLoader` supports `FailOnStartup` configuration.
+
+# 7. Configuration (`config`)
+
+Handles `mangle.yaml` loading.
+
+  * **Changes**:
+      * `Policy` field is semantically treated as `Blueprint`.
+      * Validation logic uses strict schema checking (planned).
+
+# 8. Project Layout
+
+```text
+manglekit/
+├── adapters/          
+│   ├── ai/            # Genkit Adapter (Clean + Native Utils)
+│   ├── resilience/    # Circuit Breaker
+│   ├── mcp/           # MCP Tools
+│   └── ...
+├── cmd/               # CLI (mkit)
+├── config/            # YAML Loader
+├── core/              # Interfaces (Action, Envelope)
+├── docs/              # Architecture (LLD, CSD)
+├── internal/          
+│   ├── engine/        # Logic Engine (Mangle + std.dl)
+│   └── supervisor/    # The Interceptor (formerly guard)
+├── sdk/               # Public API (Client, Loop, Define)
+└── examples/          # Demos (Semantic Feedback, RAG)
 ```
 
-# 4. Factory Interface Layer
+# 9. Changelog
 
-All component factories must adhere to the `core.Factory` interface.
-
-```go
-// core/factory.go
-type Factory interface {
-	Build(ctx context.Context, deps any, cfg any) (any, error)
-}
-```
-
-This generic interface is made type-safe by the `ComponentHandler`, which is responsible for creating the specific, typed dependency (`diapi.*`) and configuration structs required by the factory.
-
-```go
-// internal/providers/retrievers/handler.go
-func (h *Handler) BuildComponent(...) (core.ResourceCloser, error) {
-    // The handler knows the specific types needed.
-    b, _ := builderDI.(diapi.Builder)
-    f, _ := factory.(core.Factory)
-
-    // It constructs the typed dependency struct.
-    deps := diapi.RetrieverDeps{
-        Embedder:     b.GetEmbedder(...),
-        VectorStore:  b.GetVectorStore(...),
-    }
-
-    // It calls the factory with the typed structs.
-    built, err := f.Build(ctx, deps, cfg)
-    // ...
-}
-```
-
-# 5. Dependency Injection Layer
-
-The builder implements the `diapi.Builder` interface, which exposes methods like `GetEmbedder(name)` and `GetVectorStore(name)`. This allows component handlers and factories to request specific, named dependencies.
-
-*   `diapi.Builder`: The core DI interface, implemented by `manglekit.Builder`.
-*   The handler for a given component is responsible for using the `diapi.Builder` to construct the correct dependency struct for its factory.
-
-Circular dependencies are prevented by the hard-coded linear build order defined in `builder.go`.
-
-# 6. Provider Family Details
-
-### LLM: `openai`
-*   **Handler:** `internal/providers/llm/handler.go`
-*   **Factory Entrypoint:** `openai.New`
-*   **Registered Key:** `openai`
-*   **Config Struct:** `openai.Options`
-*   **Dependencies:** `diapi.LLMDeps` (constructed by the handler).
-
-### Retriever: `hybrid`
-*   **Handler:** `internal/providers/retrievers/handler.go`
-*   **Factory Entrypoint:** `hybrid.New`
-*   **Registered Key:** `hybrid`
-*   **Config Struct:** `hybrid.HybridOptions`
-*   **Dependencies:** `diapi.RetrieverDeps` (constructed by the handler). The factory uses `deps.SubRetrievers` to access its dependencies.
-
-# 7. Configuration Binding
-
-Configuration from YAML is mapped to provider-specific `Options` structs using `mapstructure`. The `sdk.FromConfig` function looks up the `reflect.Type` of a provider's `Options` struct in the registry and uses it to decode the raw `map[string]any` from the YAML.
-
-**YAML Example (`config.yaml`):**
-```yaml
-retrievers:
-  - name: my_hybrid
-    provider: hybrid
-    options:
-      retrievers: ["bm25", "dense"]
-      rrf_k: 60.0
-```
-
-**Go Mapping:**
-The loader finds the `hybrid.HybridOptions` type associated with the `hybrid` retriever, creates an instance of it, and `mapstructure` decodes the `options` map into the struct. This typed options object is then passed to `builder.With()`.
-
-# 8. Lifecycle & Resource Management
-
-Resource cleanup is handled via the `core.ResourceCloser` function type.
-
-1.  A `ComponentHandler` is responsible for checking if a newly built component has a `Close(ctx) error` method.
-2.  If it does, the handler returns the method as a `core.ResourceCloser`.
-3.  The `Builder` collects all returned `ResourceCloser` functions.
-4.  This list is passed to the final orchestrator inside the `core.Resolved` struct.
-5.  The orchestrator's `Close` method iterates through these functions and executes them, ensuring graceful shutdown.
-
-# 9. Logging & Observability Hooks
-
-The `core.Observability` struct (logger, tracer, meter) is the central point for instrumentation. It is configured on the `Builder` and passed to the final orchestrator via the `core.Resolved` struct. The `Sandwich` orchestrator then passes the logger and meter to each of its pipeline stages.
-
-# 10. Example Construction Path
-
-Tracing the `hybrid` retriever:
-1.  **Config:** YAML defines a retriever named `my_hybrid` with provider `hybrid`.
-2.  **SDK Loader:** `sdk.FromConfig` finds the `hybrid.HybridOptions` type, decodes the YAML into it, and calls `builder.With("my_hybrid", hybrid.HybridOptions{...})`.
-3.  **Build Process:**
-    *   The `buildAll` method reaches `core.KindRetriever`.
-    *   It gets the retriever `ComponentHandler` from the registry.
-    *   It calls `handler.BuildComponent` for the `my_hybrid` component.
-4.  **Handler Execution (Multiplexer):**
-    *   The `retrievers.Handler` acts as a multiplexer. It performs a type switch on the provider's `Options` struct (`cfg`) to determine which dependency struct to build.
-    *   For `hybrid.HybridOptions`, it constructs `diapi.RetrieverDeps`, resolving the sub-retrievers named in the config (e.g., `bm25`, `dense`) from the `resolved` map.
-    *   For `dense.DenseOptions`, it would construct `diapi.DenseRetrieverDeps` instead.
-5.  **Factory Execution:**
-    *   The handler gets the `hybrid` factory from the registry.
-    *   It calls `factory.Build(ctx, diapi.RetrieverDeps{...}, cfg)`.
-    *   The factory correctly consumes the `diapi.RetrieverDeps` struct to access its sub-retrievers.
-6.  **Instance:** The fully constructed `hybrid` retriever is returned to the handler, which places it in the `resolved.Retrievers` map.
-
-# 11. Design Constraints & Guardrails
-
-*   **No Global Singletons:** All component instances are managed by the builder and contained within the orchestrator.
-*   **Stateless Factories & Handlers:** Provider factories and handlers should be stateless.
-*   **Type-Safe DI:** The combination of `ComponentHandler` and `diapi` structs ensures that dependency injection is type-safe without runtime reflection.
-
-# 12. Deviations & Blockers
-
-All known architectural GAPs (GAP-005, GAP-006, GAP-007, GAP-008) have been resolved. The codebase is now in full compliance with the architecture described in this document and in `docs/CONTEXT.md`.
-
-# 13. Changelog
-
-*   **2025-10-25:** Synchronized LLD with final, audited architecture. Updated diagram, construction path, and deviations section to reflect that all architectural GAPs are resolved.
-*   **2025-10-23:** Updated deviations to reflect current gaps (orchestrator handler coverage, hybrid factory signature, declarative state selection). Clarified hybrid construction path note.
-*   **2025-10-20:** Regenerated LLD to reflect the decentralized, handler-based builder architecture. Updated diagrams and construction path to show the new flow. Synchronized deviations with the latest code review.
-*   **2025-10-19:** Initial draft of the LLD.
+* **2025-12-11**: **v2.0 Architecture**.
+    * Renamed `Guard` --> `Supervisor`.
+    * Renamed `Policy` --> `Blueprint`.
+    * Added `Resilience` adapter (Circuit Breaker).
+    * Refactored `AI` adapter to use pragmatic registry injection for native structured output.
+    * Updated SDK to use Explicit Initialization.
+* **2025-12-05**: **v1.0 Baseline**. Initial LLD release.
+* **2025-11-29**: Architecture Cleanup. Logic moved from `policy/` to `engine/` and `sdk/`.
+* **2025-11-27**: Major rewrite for v1.0. Replaced Builder/Registry architecture with Client/Guard/Engine composition.
+* **2025-11-25**: Implemented Smart Router in Sandwich (now legacy).
+* **2025-11-20**: Added `core/reflection`.

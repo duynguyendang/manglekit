@@ -1,0 +1,14 @@
+actions:
+  chat_agent:
+    type: "llm"
+    provider: "openrouter"
+    options:
+      model: "liquid/lfm-40b"
+      prompt: "You are Mangle. Answer briefly."
+policy:
+  path: "./examples/config_driven_bot/policy.dl"
+observability:
+  enabled: true
+  service_name: "config-bot"
+  log_level: "debug"
+failure_mode: "closed"

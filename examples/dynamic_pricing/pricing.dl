@@ -1,0 +1,14 @@
+# Dynamic Pricing Policy
+
+# Declarations
+Decl user_vip(Req, IsVip).
+Decl fn_get_inventory(Req, Qty).
+Decl request_product(Req, Product).
+Decl request_user(Req, User).
+
+# Logic
+# Deny (Signal Discount Applied) if user is VIP and inventory > 100
+deny(Req) :- 
+    user_vip(Req, "true"), 
+    fn_get_inventory(Req, Qty), 
+    Qty > 100.

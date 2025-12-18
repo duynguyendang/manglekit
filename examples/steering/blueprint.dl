@@ -1,0 +1,10 @@
+Decl payload.sql(Req, SQL).
+Decl payload.tier(Req, Tier).
+
+% Retry Logic: If SQL is exactly the bad one.
+correction(Req, "Do not use DROP. Use DELETE.") :-
+  payload.sql(Req, "SELECT * FROM users; DROP TABLE users;").
+
+% Route Logic: Gold tier goes to VIP agent.
+next_step(Req, "vip_agent") :-
+  payload.tier(Req, "gold").

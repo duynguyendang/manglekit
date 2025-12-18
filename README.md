@@ -2,123 +2,43 @@
 
 # Manglekit
 
-**Manglekit** is a lightweight, embeddable Go framework for building **neuro-symbolic AI applications**. It integrates Genkit’s neural components—retrievers, rerankers, and LLMs—with Mangle’s symbolic reasoning engine of declarative rules and ontology.
+**Manglekit** is the **Neuro-Symbolic Engine for Go**.
 
-Through both declarative and programmable orchestration, Manglekit lets developers define and control AI pipelines as logical flows. From simple “Sandwich Patterns” (Rules → RAG → Rules → LLM) to fully rule-driven workflows, every response remains grounded, explainable, and policy-compliant.
+It solves the **Stochastic Runtime Paradox** of modern AI: applications require **Deterministic Reliability** (strict protocols, type safety, logic), but LLMs are inherently **Probabilistic** (creative, non-deterministic).
 
-It is designed for high-performance AI applications where correctness, safety, and explainability are critical.
+Manglekit bridges this gap with a **Dual-Brain Architecture**:
+*   **The Left Brain (Symbolic)**: The Logic Engine (Google Mangle) that holds the **Blueprints** and performs reasoning.
+*   **The Right Brain (Neural)**: The Execution Runtime (Genkit) that handles **Intuition** and generation.
 
-## 🚀 Key Features
+It acts as a **Middleware Engine** following the *"Wrap, Don't Build"* philosophy. You bring your capabilities (Genkit flows, tools), and Manglekit wraps them in a **Supervisor** shell that handles safety, self-correction, and flow control.
 
--   **Rules-Driven Control**: Use the Mangle Datalog engine to enforce policies, validate inputs, filter outputs, and modify behavior at runtime.
--   **Verifiable & Explainable**: Every answer can be traced back to the source documents and the rules that were applied.
--   **Pluggable Components**: Easily swap out components like Retrievers, Rerankers, LLMs, and Vector Stores. MangleKit provides built-in support for popular providers.
--   **Fluent Builder API**: A type-safe, chainable API for programmatically constructing your RAG pipeline.
--   **Declarative Configuration**: Define your entire pipeline in a YAML file for easy setup and environment management.
--   **Two Orchestration Modes**: Choose between a simple, linear "Sandwich" pipeline or a powerful, dynamic "Declarative" workflow driven by rules.
--   **High Performance**: Built in Go for low-latency, concurrent, and scalable services.
+## 🚀 Core Capabilities
 
-## ⚙️ Core Architectures
+1.  **Neuro-Symbolic Steering**: Use logic predicates to dynamically control execution flow (e.g., `next_step("escalate") :- output.confidence < 0.9.`).
+2.  **Self-Correcting Loop**: Implements the **Teacher-Student Protocol**. If the AI violates a Blueprint, the engine feeds the error back as a "Correction" prompt, allowing the agent to fix itself in real-time.
+3.  **Zero-Config Reflection**: **Type-Safety** at the boundary. Your Go structs *are* the schema, automatically mapped to Datalog facts for logical reasoning.
+4.  **Logical Observability**: Trace the *reasoning* process. OpenTelemetry spans show exactly which **Logic Rule** triggered a decision.
 
-MangleKit offers two primary orchestration models to suit different needs.
+## 🛠️ System Building Blocks
 
-### 1. The Sandwich Pattern (Default)
+| Component | Role | Responsibility |
+| :--- | :--- | :--- |
+| **SDK** | **Client** | The entry point. Developers use `client.Supervise()` to wrap capabilities. |
+| **Blueprint** | **Logic Store** | Datalog files (`.dl`) defining the "Standard Operating Procedures". |
+| **Supervisor** | **Interceptor** | The middleware that enforces the Blueprint on every action. |
+| **Integrations** | **Drivers** | Universal adapters for LLMs (Genkit), Tools (MCP), and Functions. |
 
-This is a robust, linear pipeline that wraps a standard RAG flow with rule evaluation stages. It's easy to configure and ideal for many common use cases.
+## ⚡ Getting Started
 
-```
-User Query
-    │
-    ▼
-[Mangle Pre-Rules]
-(Validate, Normalize, Scope Query)
-    │
-    ▼
-[Retrieve] → [Rerank]
-(Fetch & Re-order Documents)
-    │
-    ▼
-[Mangle Post-Rules]
-(Filter Docs by Entitlement, PII, etc.)
-    │
-    ▼
-[LLM Generation]
-(Synthesize Answer from Vetted Docs)
-    │
-    ▼
-Final Answer
-```
-
-### 2. The Declarative Workflow
-
-For ultimate flexibility, the declarative orchestrator uses the Mangle engine itself to define the execution flow. The pipeline is defined as a set of Datalog facts, allowing you to create complex, conditional, and dynamic workflows without changing any Go code.
-
-See the [Declarative Workflow](#example-3-declarative-workflow-with-yaml) section for a detailed example.
-
-## 🛠️ Getting Started
-
-### 1. Prerequisites
-
--   Go 1.24 or later.
--   API keys for your chosen providers (e.g., OpenAI, Google).
-
-### 2. Installation
-
-To add MangleKit to your Go project, run:
+### Installation
 
 ```bash
 go get github.com/duynguyendang/manglekit
 ```
 
-You will also need to import the `providers/all` package to register the built-in components:
+### Quick Start
 
-```go
-import _ "github.com/duynguyendang/manglekit/providers/all"
-```
-
-### 3. Environment Setup
-
-MangleKit can be configured to read API keys from environment variables. The easiest way to manage this during development is with a `.env` file.
-
-1.  Create a file named `.env` in the root of your project.
-2.  Add your API keys to the file:
-
-    ```env
-    # For OpenAI models (LLM or Embedder)
-    OPENAI_API_KEY="sk-..."
-
-    # For Google models (LLM or Embedder)
-    GOOGLE_API_KEY="AIza..."
-
-    # For Groq's fast inference API (now configured via the OpenAI provider)
-    GROQ_API_KEY="gsk_..."
-    ```
-
-    **Note on Groq:** To use Groq, you will now configure an `openai` provider with a custom `base_url` pointing to the Groq API endpoint.
-
-3.  Use a library like `godotenv` to load this file when your application starts.
-
-    ```go
-    import "github.com/joho/godotenv"
-
-    func main() {
-        // Load .env file from the current directory.
-        // It's conventional to ignore the error if the file doesn't exist.
-        _ = godotenv.Load()
-
-        // ... rest of your application logic
-    }
-    ```
-
-## 💻 Usage Examples
-
-You can configure MangleKit either programmatically using the fluent Builder API or declaratively with a single YAML file.
-
----
-
-### Example 1: Programmatic Setup (Sandwich Pattern)
-
-This is the most common and type-safe way to build a MangleKit pipeline. The example below wires the Sandwich flow with Mangle pre/post rules, a BM25 retriever, and an OpenAI LLM.
+This example demonstrates the **Self-Correcting Loop**. We wrap a Genkit model in a "Supervised Action".
 
 ```go
 package main
@@ -127,246 +47,172 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/llm"
-	"github.com/duynguyendang/manglekit/retrieve"
-	"github.com/joho/godotenv"
-
-	// This single blank import registers all standard MangleKit providers.
-	_ "github.com/duynguyendang/manglekit/providers/all"
+	"github.com/duynguyendang/manglekit/adapters/ai"
+	"github.com/duynguyendang/manglekit/providers/google"
 )
 
 func main() {
-	_ = godotenv.Load()
 	ctx := context.Background()
 
-	// Use the fluent builder to construct the orchestrator.
-	// Components are configured with simple, type-safe options structs.
-	orch, err := manglekit.NewBuilder().
-		WithRules(&core.MangleOptions{
-			Path:              []string{"./rules/pre.dlog", "./rules/post.dlog"},
-			DefaultConverters: true,
-		}).
-		WithRetriever(&retrieve.BM25Options{Path: "./data"}).
-		WithLLM(&llm.OpenAIOptions{Model: "gpt-4o-mini"}).
-		WithTopK(6). // Global default; individual retrievers can override this.
-		Build(ctx)
-	if err != nil {
-		log.Fatalf("Failed to build orchestrator: %v", err)
-	}
-	defer orch.Close(ctx)
+	// 1. Initialize Manglekit Client (The Kernel)
+	// Loads the "Blueprint" which defines the rules.
+	// We use Must() to panic on initialization error for brevity.
+	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithBlueprintPath("blueprint.dl")))
 
-	// Run a query through the pipeline.
-	query := core.Query{Text: "What is MangleKit?"}
-	answer, err := orch.Run(ctx, query)
+	// 2. Initialize the AI Driver (Gemini via Genkit)
+	// We use the Google Provider to register the model.
+	// Ensure GOOGLE_API_KEY is set in environment.
+	genkitInstance := ai.GetGenkit(ctx)
+	modelName, err := google.Init(ctx, genkitInstance, os.Getenv("GOOGLE_API_KEY"), "gemini-2.5-flash")
 	if err != nil {
-		log.Fatalf("Orchestrator run failed: %v", err)
+		log.Fatal(err)
 	}
 
-	fmt.Println("Answer:", answer.Text)
+	// 3. Create & Supervise the Action
+	// Wrap the basic Genkit model in a "Supervised Action"
+	// The Client.Supervise() method applies the Blueprint logic.
+	llmAction, err := ai.NewGenkitAction(ctx, modelName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Apply Governance
+	safeAction := client.Supervise(llmAction)
+
+	// 4. Register for the Loop
+	// Registering allows the engine to route and retry automatically
+	client.RegisterAction("jester", safeAction)
+
+	// 5. Execute with Self-Correction
+	// The Supervisor will check the output against blueprint.dl.
+	// If it violates policy, it sends feedback to Gemini and retries automatically.
+	result, err := client.ExecuteByName(ctx, "jester", "Tell me a joke about security.")
+	if err != nil {
+		log.Fatalf("❌ Task Failed: %v", err)
+	}
+
+	fmt.Printf("✅ Result: %s\n", result.Payload)
 }
 ```
 
----
+### Defining The Blueprint (`blueprint.dl`)
 
-### Example 2: Declarative Setup with YAML (Sandwich Pattern)
+Manglekit uses **Datalog** to define the logic. It's like SQL but for rules.
 
-For easy configuration changes, you can define the entire sandwich pipeline in a `config.yaml` file.
+```prolog
+// Allow requests by default
+allow(Req) :- request(Req).
 
-**`config.yaml`:**
-
-```yaml
-# Set default pipeline parameters for the "sandwich" orchestrator.
-orchestrator:
-  type: "sandwich"
-
-topK: 6
-fallbackThreshold: 0.35
-
-# Configure API keys and other provider-specific settings. The ${VAR} syntax
-# expands environment variables at load time.
-providers:
-  google:
-    apiKey: "${GOOGLE_API_KEY}"
-  openai:
-    apiKey: "${OPENAI_API_KEY}"
-
-rules:
-  name: "mangle"
-  params:
-    path:
-      - "./rules/kb.facts"
-      - "./rules/policy.dlog"
-    defaultConverters: true
-    fileFirst: true
-
-# Define the components for each stage of the pipeline
-retriever:
-  name: "bm25"
-  params:
-    path: "./data"
-
-llm:
-  name: "google"
-  params:
-    model: "gemini-1.5-flash"
+// The "Quality Control" Rule
+// If the joke contains "password", reject it and ask for a fix.
+deny(Req) :-
+    request(Req),
+    req_payload(Req, Text),
+    fn:contains(Text, "password").
+    
+violation_msg("Do not mention passwords in jokes.") :- deny(Req).
 ```
 
-**Go code to load the YAML:**
+## 📦 Architecture
+
+Manglekit v1.0 is a **Neuro-Symbolic AI Kernel** built on three core layers:
+
+### Layer 1: The Client (SDK)
+
+*   **Role**: Orchestrates the entire governance flow
+*   **Responsibilities**: Holds configuration, manages the Blueprint Engine, and coordinates observability.
+*   **Entry Point**: `manglekit.NewClient()` initializes the kernel with policy rules.
+
+### Layer 2: The Supervisor (Interceptor)
+
+*   **Role**: An intelligent orchestration layer that binds logic to execution.
+*   **Lifecycle**: `Trace → Align → Run → Steer`
+    *   **Trace**: Start an observable Logical Span (OpenTelemetry).
+    *   **Align**: Ensure input context matches the Blueprint prerequisites (Input Alignment).
+    *   **Run**: Execute the capability (LLM, Vector Search, API Call).
+    *   **Steer**: Evaluate output against the Blueprint to trigger **Self-Correction (Retry)** or **Routing (Next Step)**.
+*   **Pattern**: Middleware / Decorator for `core.Action`.
+
+### Layer 3: The Blueprint (Logic Store)
+
+*   **Role**: The deterministic reasoning layer ("The Left Brain").
+*   **Components**:
+    *   **Solver**: Evaluates Datalog blueprints against facts.
+    *   **Reflector**: Automatically converts Go structs to Datalog facts (zero-config).
+    *   **Knowledge Base**: Loads static RDF knowledge for reasoning.
+*   **Guarantees**: Fast (microsecond latency), deterministic, testable.
+
+### Universal Adapters
+
+Bridge external libraries into the kernel:
+
+*   **`ai` Adapter**: Wraps Google Genkit models and embedders.
+*   **`func` Adapter**: Wraps native Go functions as Actions.
+*   **`mcp` Adapter**: Integrates Model Context Protocol (MCP) servers.
+*   **`extractor` Adapter**: Performs semantic extraction using LLMs.
+*   **`vector` Adapter**: Handles vector search and retrieval operations.
+*   **`resilience` Adapter**: Provides Circuit Breaker functionality for failure resilience.
+
+#### Resilience Adapter
+
+The `resilience` adapter provides a zero-dependency Circuit Breaker that prevents failure amplification.
 
 ```go
 package main
 
 import (
-    "context"
-    "fmt"
-    "log"
+	"time"
 
-    "github.com/duynguyendang/manglekit"
-    "github.com/duynguyendang/manglekit/core"
-    "github.com/joho/godotenv"
-
-    // This single blank import registers all standard MangleKit providers.
-    _ "github.com/duynguyendang/manglekit/providers/all"
+	"github.com/duynguyendang/manglekit/adapters/resilience"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 func main() {
-    _ = godotenv.Load()
+	// Assume `myAction` is an existing core.Action (e.g., a Genkit action)
+	var myAction core.Action
 
-    // Create a builder instance directly from the YAML file.
-    builder, err := manglekit.NewBuilderFromYAML("config.yaml")
-    if err != nil {
-        log.Fatalf("Failed to create builder from YAML: %v", err)
-    }
+	// Configure the Circuit Breaker
+	config := resilience.CircuitBreakerConfig{
+		FailureThreshold: 5,                // Open circuit after 5 consecutive failures
+		ResetTimeout:     30 * time.Second, // Wait 30s before probing (Half-Open)
+	}
 
-    // Build the orchestrator from the configuration.
-    ctx := context.Background()
-    orch, err := builder.Build(ctx)
-    if err != nil {
-        log.Fatalf("Failed to build orchestrator: %v", err)
-    }
-    defer orch.Close(ctx)
+	// Wrap the action
+	safeAction := resilience.NewCircuitBreaker(myAction, config)
 
-    // Run a query.
-    query := core.Query{Text: "What is MangleKit?"}
-    answer, err := orch.Run(ctx, query)
-    if err != nil {
-        log.Fatalf("Orchestrator run failed: %v", err)
-    }
-
-    fmt.Println("Answer:", answer.Text)
+	// Use safeAction normally
+	// If myAction fails repeatedly, safeAction will fail-fast with resilience.ErrCircuitOpen
 }
 ```
 
----
+## 📂 Directory Structure
 
-### Example 3: Declarative Workflow with YAML
-
-This example showcases the power of the declarative orchestrator. The workflow is defined in Datalog (`.dlog`) files, not in Go code. This allows for incredibly dynamic and complex pipelines.
-
-**`config.yaml`:**
-
-```yaml
-orchestrator:
-  type: "declarative"
-  # The 'main_flow' is defined in our .dlog files.
-  flowName: "main_flow"
-
-providers:
-  google:
-    apiKey: "${GOOGLE_API_KEY}"
-
-# The main rules engine that will also act as the FlowController.
-rules:
-  name: "mangle"
-  params:
-    path:
-      - "./rules/flow.dlog" # Contains the workflow definition
-      - "./rules/policy.dlog"
-
-# Define a map of named "tools" that can be used by the workflow.
-tools:
-  google_llm:
-    provider: "google"
-    params:
-      model: "gemini-1.5-flash"
-
-  doc_retriever:
-    provider: "bm25"
-    params:
-      path: "./data"
-```
-
-**`rules/flow.dlog`:**
-
-```prolog
-// Define the stages of the 'main_flow'.
-// The second argument is the execution order.
-flow_stage("main_flow", "1", "retrieval_stage").
-flow_stage("main_flow", "2", "llm_stage").
-
-// Assign a configured tool to each stage.
-// The tool name must match a key in the 'tools' map in config.yaml.
-stage_tool("retrieval_stage", "doc_retriever").
-stage_tool("llm_stage", "google_llm").
-```
-
-The Go code to run this is identical to the previous YAML example. The `NewBuilderFromYAML` function handles the complexity of parsing the declarative configuration and wiring the tools.
-
-## 📦 Available Components
-
-MangleKit includes a suite of built-in providers that can be configured in the builder or YAML file.
-
-| Component Type    | Provider Name | Description                                                  | Depends On         |
-| ----------------- | ------------- | ------------------------------------------------------------ | ------------------ |
-| **Retriever**     | `bm25`        | Keyword-based search (Okapi BM25) over local files.          | _None_             |
-|                   | `dense`       | Vector search using an embedder and vector store.            | `Embedder`, `VectorStore` |
-|                   | `hybrid`      | Fuses results from `bm25` and `dense` using RRF.             | `bm25`, `dense`    |
-|                   | `in-memory`   | A simple, updatable in-memory store for testing.             | _None_             |
-| **Reranker**      | `cosine`      | Re-ranks documents based on cosine similarity of embeddings. | `Embedder`         |
-| **LLM**           | `google`      | Integrates with Google's generative models via Genkit.       | _None_             |
-|                   | `openai`      | Integrates with OpenAI's models (e.g., GPT-4) and compatible APIs like Groq (via `base_url`). | _None_             |
-| **Embedder**      | `google-embedder` | Generates embeddings using Google's models.                  | _None_             |
-|                   | `openai-embedder` | Generates embeddings using OpenAI's models.                  | _None_             |
-| **Rules Engine**  | `mangle`      | The core Datalog engine for rules-based control.             | _None_             |
-| **Schema Parser** | `jsonschema`  | Parses JSON Schema files into facts for the Mangle engine.   | _None_             |
-|                   | `rdf`         | Parses RDF (Turtle) files into facts for the Mangle engine.  | _None_             |
-| **Vector Store**  | `localvec`    | An in-memory vector store that persists to disk.             | `Embedder`         |
-
-## 📂 Simplified Repository Layout
-
-This is a high-level overview of the most important directories in the MangleKit repository.
-
-```
-.
-├── builder.go              # Fluent Builder API
-├── config.go               # YAML/environment loading helpers
-├── registry.go             # Provider registry + Must* helpers
-├── sdk.go                  # New(), Options, orchestrator wiring
-│
-├── core/                   # Core contracts (Doc, Query, Answer, Options, rules)
-├── embed/                  # Embedder option types
-├── llm/                    # LLM client options and prompts
-├── retrieve/               # Public retriever option types
-├── rerank/                 # Reranker interfaces and options
-├── pipeline/               # Sandwich orchestrator + declarative engine
-│   └── declarative/
-├── internal/               # Concrete providers (bm25, hybrid, llm, vectorstores, etc.)
-│   ├── embedders/
-│   ├── logger/
-│   ├── providers/
-│   └── vectorstores/
-├── providers/              # Public registration helpers (e.g., providers/all)
-├── examples/               # Runnable guides and sample data
-└── docs/                   # CONTEXT.md, HLD/LLD/CSD, reviews
+```text
+manglekit/
+├── adapters/           # Drivers for External Systems (AI, MCP, Vector)
+│   ├── ai/             # Google Genkit & LLM Adapters
+│   ├── knowledge/      # N-Quads/RDF Knowledge Loaders
+│   ├── mcp/            # Model Context Protocol Tools
+│   └── ...
+├── cmd/                # CLI Tools
+│   └── mkit/           # The 'mkit' Developer Utility
+├── config/             # Configuration Loading
+├── core/               # Public Interfaces & Types (Action, Envelope)
+├── docs/               # Architecture Documentation
+├── internal/           # Private Implementation
+│   ├── engine/         # The Datalog Logic Engine (Solver, Runtime)
+│   ├── supervisor/     # The Governance Interceptor
+│   └── ...
+├── sdk/                # The User-Facing API (Client, Loop)
+└── examples/           # Runnable Demo Projects
 ```
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to submit pull requests, report issues, and suggest features.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## 📜 License
 
-This project is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.
+Apache 2.0

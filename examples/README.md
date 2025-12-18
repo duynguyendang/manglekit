@@ -1,108 +1,107 @@
-# Manglekit Examples
+## Manglekit Examples
 
-This directory contains canonical examples demonstrating the major capabilities of the **Manglekit SDK (v0.5.0)**.  
-Each example is **self-contained**, **config-first**, and can be run independently using a local YAML configuration.
+This directory contains canonical examples demonstrating the major capabilities of the **Manglekit SDK**.
 
-Manglekit now provides a **type-safe, declarative, and orchestrator-driven architecture**.  
-All examples load their configuration through:
+Manglekit enables **Operational Neuro-Symbolic** application development by combining the flexibility of LLMs with the safety and determinism of Datalog policies.
 
-```go
-orch, _ := sdk.FromConfig(ctx, "config.yaml")
-defer orch.Close(ctx)
-ans, _ := orch.Execute(ctx, "your prompt here")
-````
+-----
 
----
+## 🧠 Strategic Example Catalog
 
-## 🧱 Example Catalog
+The examples are categorized by the architectural layer they demonstrate, moving from raw data handling to complex system governance.
 
-| #      | Folder                                                           | Orchestrator  | Purpose                                                                                                                                                                              |
-| ------ | ---------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **01** | [01-rag-sandwich](./01-rag-sandwich)                             | `sandwich`    | Baseline deterministic RAG pipeline combining BM25 and dense retrievers via the **Hybrid Retriever**. Demonstrates `retrievers`, `vectorstores`, and RRF configuration through YAML. |
-| **02** | [02-rag-chat-app](./02-rag-chat-app)                             | `sandwich`    | Stateful chat application that can answer questions over your documents. Demonstrates how **StateProvider** integrates with the pipeline for multi-turn context.                     |
-| **03** | [03-neuro-symbolic-declarative](./03-neuro-symbolic-declarative) | `declarative` | Showcases the **Declarative Orchestrator** for neuro-symbolic composition: combining rules, reasoner, retriever, and LLM stages with policy guards and logic control.                |
-| **04** | [04-schema-validation](./04-schema-validation)                   | `sandwich`    | Demonstrates the use of **SchemaParser** providers for validating input/output structure and enforcing contracts around the LLM.                                                     |
-| **05** | [05-rdf-knowledge-store](./05-rdf-knowledge-store)               | `declarative` | Integrates an RDF or graph knowledge base via the **KnowledgeStore** provider. Enables hybrid retrieval with symbolic reasoning over structured data.                                |
-| **06** | [06-genkit-integration](./06-genkit-integration)                 | —             | Demonstrates how Manglekit can act as a **Genkit Tool** or sub-pipeline, showing interoperability between Manglekit and Genkit frameworks.                                           |
-| **07** | [07-custom-prompts](./07-custom-prompts)                         | `sandwich`    | Illustrates prompt customization and templating. Shows how to pass a custom `prompt_template` through YAML to influence LLM behavior.                                                |
-| **08** | [08-tool-calling-declarative](./08-tool-calling-declarative)     | `declarative` | Demonstrates **policy-aware tool invocation** (HTTP/OpenAPI). Rulesets guard external calls and planners decide which tools to use under explicit constraints.                       |
+### 1. Tier I: The Data Bridge & Logic Foundation
 
----
+*(Focus: Translating unstructured data into structured facts for the Logic Engine.)*
+
+| Folder | Concept | Description |
+| :--- | :--- | :--- |
+| **`extractor_demo`** | **Semantic Fact Generation** | Uses the Extractor Adapter to enforce **strongly-typed Go Structs** as output from LLMs, providing clean, structured facts for policy evaluation. |
+| **`kernel_knowledge_demo`** | **Static Knowledge Integration** | Demonstrates loading and querying static, external knowledge bases (e.g., **RDF/Turtle files**) directly within Datalog policies to ground AI decisions. |
+| **`dynamic_pricing`** | **Runtime Context Injection** | Shows how to inject dynamic application state (user tier, inventory, time) as **Datalog Facts** to govern complex, real-time business logic. |
+| **`context_aware_rag`** | **Knowledge Graph Filtering** | Demonstrates **Context-Aware Knowledge** by filtering N-Quads data using Datalog rules based on user roles (Multi-tenancy). |
+| **`chat_chit`** | **Dual-Stream Envelope** | Demonstrates the **Dual-Stream** pattern: passing unstructured payload (Text) alongside structured facts (Logic) to drive routing without the engine understanding the raw text. |
+
+-----
+
+### 2. Tier II: Autonomous Intelligence & Flow Control
+
+*(Focus: Managing complex, multi-step execution and ensuring agents self-correct.)*
+
+| Folder | Concept | Description |
+| :--- | :--- | :--- |
+| **`planner`** | **Logic-Driven Planning** | Utilizes the **Planner** to decompose high-level goals into executable sequences by reasoning over available actions and policy subgoals. |
+| **`steering`** | **Dynamic Routing & Dispatch** | Demonstrates how **Policy Rules** determine control flow (e.g., **Route** to a different action, **Retry** the current action) based on context and results. |
+| **`semantic_feedback`** | **Teacher-Student Protocol** | The core **Self-Correction** mechanism. Shows an agent receiving a `PolicyViolationError` and using the feedback message to generate a correct output on retry. |
+| **`rag_flow`** | **Governed RAG Pipeline** | A complete RAG pipeline demonstrating retrieval, context formatting, and LLM generation within the unified `Action Sandwich` structure. |
+
+-----
+
+### 3. Tier III: Enterprise Governance & Determinism
+
+*(Focus: Applying mathematical certainty (Determinism) to high-risk business and security processes.)*
+
+| Folder | Concept | Description |
+| :--- | :--- | :--- |
+| **`sre_guardrail`** | **Operational Guardrails** | Prevents high-risk operations (e.g., deleting a critical K8s resource) by checking contextual facts against deterministic security policies. |
+| **`taint_demo`** | **Information Flow Control** | Demonstrates Taint Analysis: tracking the propagation of security labels (`"secret"`, `"pii"`) through the system and blocking sensitive data leakage via policy. |
+| **`fintech_approval`** | **Complex Recursive Logic** | Handles intricate compliance scenarios (e.g., loan eligibility, nested approvals) using the power of Datalog's **Recursive Rules**. |
+| **`policy-copilot`** | **Neuro-Symbolic Policy Gen** | A "Text-to-Policy" demonstration where an LLM generates Datalog rules from natural language, which are then validated and executed by the Engine. |
+
+-----
+
+### 4. Tier IV: Architecture & Observability
+
+*(Focus: Demonstrating the robustness and system integrity of the Go-native framework.)*
+
+| Folder | Concept | Description |
+| :--- | :--- | :--- |
+| **`lineage_demo`** | **Tracing & Data Lineage** | Tracks the full execution path and data flow across multiple chained Actions using built-in **OpenTelemetry** spans. |
+
+-----
 
 ## 🧩 Architectural Highlights
 
-Each example demonstrates one or more of the following SDK features:
+Manglekit allows you to build systems that are:
 
-| Feature                        | Description                                                                                                                             |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| **Config-First Construction**  | All pipelines are built declaratively from YAML using `sdk.FromConfig`. No manual builder wiring.                                       |
-| **Typed Dependency Injection** | Components request their dependencies via the `diapi.Builder` interface.                                                                |
-| **Orchestrators**              | `sandwich` for deterministic RAG; `declarative` for logic-rich and policy-aware flows.                                                  |
-| **Provider Composition**       | Providers (retriever, reranker, rule, reasoner, tool, etc.) register themselves via `providers/all` and are referenced by name in YAML. |
-| **Observability & Lifecycle**  | Logs, metrics, and graceful shutdown (`Close()`) are managed automatically by the framework.                                            |
-| **Policy & Schema Layers**     | Declarative rule and schema enforcement before and after LLM execution.                                                                 |
-| **Neuro-Symbolic Integration** | Blends neural (LLM, embedder, retriever) and symbolic (rules, reasoner, planner) components.                                            |
+  * **Safe**: Policies are deterministic and guaranteed to execute.
+  * **Observable**: Every action is traced, and data flow is tracked.
+  * **Flexible**: Mix and match "Neural" (LLM) and "Symbolic" (Code/Rules) components.
 
----
+### Key Patterns
+
+  * **Facade Pattern**: Use `manglekit.NewClient` and `manglekit.Define` for a clean, idiomatic Go API.
+  * **Guardrails**: Wrap any function or struct with `client.Supervise` to enforce policies.
+  * **Adapters**: Integrate with external ecosystems (like Genkit) via `adapters/`.
+
+-----
 
 ## 🧠 Running the Examples
 
 ### Prerequisites
 
-* Go 1.22+
-* Environment variables for providers (e.g., `OPENAI_API_KEY`)
-* Example-specific dependencies (local data, RDF files, etc.)
+  * **Go 1.24+**
+  * **Environment:** Some examples may require API keys (e.g., `GOOGLE_API_KEY`) if they connect to real LLMs, though many use mocks.
 
-### Common Run Pattern
+### Instructions
 
-```bash
-cd examples/01-rag-sandwich
-go run . "What is Manglekit architecture?"
-```
-
-or for declarative flow:
+Navigate to any example directory and run `main.go`. For example:
 
 ```bash
-cd examples/03-neuro-symbolic-declarative
-go run . "Detect anomalies and call audit tool if allowed."
+cd examples/sre_guardrail
+go run .
 ```
 
-### Environment Configuration
+-----
 
-Each example may reference environment variables in YAML, e.g.:
+## 🏗️ Building New Agents
 
-```yaml
-options:
-  api_key: env:OPENAI_API_KEY
-```
+Want to create your own agent? Check out the **[Agent Guide](AGENTS.md)** for:
+  * **Standard Scaffolding**: Copy-pasteable templates for new agents.
+  * **Architecture Rules**: The "4 Iron Rules" required for Manglekit agents.
+  * **Best Practices**: Detailed steps for creating robust, policy-governed tools.
 
-Ensure they are exported before running.
-
----
-
-## 🔬 Testing & Extension
-
-You can write end-to-end tests using the same `sdk.FromConfig` API:
-
-```go
-orch, _ := sdk.FromConfig(ctx, "../examples/01-rag-sandwich/config.yaml")
-out, _ := orch.Execute(ctx, "What is Manglekit?")
-```
-
-New examples can be added by copying one folder and editing only the **config.yaml** and **main.go**.
-
----
-
-## 🗺 Example Roadmap
-
-| Theme                     | Planned Examples                                                   |
-| ------------------------- | ------------------------------------------------------------------ |
-| **Performance & Caching** | Demonstrate warm-up, connection pooling, and token budgets.        |
-| **Multi-Tenant Configs**  | Load profiles dynamically (`config.dev.yaml`, `config.prod.yaml`). |
-| **Benchmark Suite**       | Compare retriever configurations (RRF, top_k) from YAML only.      |
-| **WASM/Plugin Sandbox**   | Upcoming architecture extension (see ADR roadmap).                 |
-
----
+-----
 
 ### License
 

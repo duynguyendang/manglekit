@@ -1,3 +1,0 @@
-pipeline: sandwich
-llm:
-  provider: "non-existent-llm"

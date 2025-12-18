@@ -1,0 +1,9 @@
+// Implicitly declare EDB predicates with dummy facts
+rich("decl", "decl").
+guarantor("decl", "decl").
+request_loan("decl", "decl").
+
+eligible(User) :- rich(User, "true").
+eligible(User) :- guarantor(User, Sponsor), eligible(Sponsor).
+
+deny(Req) :- request_loan(Req, User), !eligible(User).

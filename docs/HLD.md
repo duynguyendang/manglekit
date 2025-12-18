@@ -1,409 +1,176 @@
-# Manglekit — High‑Level Design (HLD)
+# High-Level Design (HLD) — Manglekit
 
-**Revision:** Oct 2025
-**Scope:** Core SDK (registry, builder, orchestrators, providers, config bridge)
-**Audience:** Framework maintainers, provider authors, application teams
-**Mission:** A **neuro‑symbolic AI composition framework** for building explainable, policy‑aware systems that combine statistical models (LLMs, embedders) with symbolic reasoning (rules, planners, schema/graph tooling).
+**Project:** Manglekit (Genesis v3)
+**Type:** Architecture Document
+**Scope:** System Components, Logical Layers, & Data Flow
+**Status:** Approved
 
----
+-----
 
-## 1. Executive Summary
+## 1. Introduction
 
-Modern intelligent systems increasingly require **neuro‑symbolic integration** — combining data‑driven neural models with explicit symbolic reasoning and policy layers.  LLMs excel at open‑ended inference but lack verifiability, determinism, and policy control; symbolic systems (rules, planners, logic engines) provide these guarantees but lack contextual flexibility.
+Manglekit is an **Embedded AI Control Plane**. Its primary purpose is to provide deterministic governance (Security, Compliance, Observability) over probabilistic AI components (LLMs, Agents).
 
-**Manglekit** exists to bridge that gap.
+It functions as a **Kernel**, enforcing a strict separation between **Decision Making** (Logic) and **Task Execution** (Drivers).
 
-It provides a single, composable framework that lets developers declaratively assemble **neural** (LLM, embedder, retriever) and **symbolic** (rules, reasoner, planner, knowledge graph) engines into unified pipelines.  This yields AI applications that are **explainable, auditable, and policy‑compliant**, without giving up adaptability.
+-----
 
-The framework supplies:
+## 2. Architectural Style: Hexagonal Architecture
 
-* A **config‑first**, declarative construction flow.
-* A **generic, type‑safe DI system** unifying all component kinds.
-* **Composable orchestrators** for hybrid reasoning and data retrieval.
-* **Built‑in observability, lifecycle, and policy enforcement**.
+The system adopts the **Ports and Adapters** (Hexagonal) pattern to ensure the core logic remains isolated from external technologies.
 
-**Manglekit’s key purpose**: enable neuro‑symbolic AI composition—where neural models reason under explicit symbolic rules, producing decisions that can be explained, traced, and verified.
+  * **The Core (Center):** The Logic Kernel. Pure, stateless, and deterministic.
+  * **The Ports (Interface):** The Guard and Action Contracts.
+  * **The Adapters (Outer Ring):** Integrations with Genkit, MCP, Vector DBs, and Native Functions.
 
----
-
-## 2. Goals & Non‑Goals
-
-### 2.1 Goals
-
-* **Neuro‑symbolic composition:** Blend statistical components (LLM, embedder) with symbolic ones (rules, logic, planners, KGs) in one pipeline.
-* **Deterministic control:** Enable explicit, auditable control flow and constraints via the **Declarative Orchestrator** and rule stages.
-* **Strong typing:** Compile‑time guarantees for component wiring; no runtime type guessing in orchestrators.
-* **Extensibility:** Add new component kinds without editing the core—**Open/Closed** by design.
-* **Operational excellence:** Uniform metrics, tracing hooks, structured logs, and graceful shutdown.
-* **Reproducibility:** Versionable configs; environment‑portable pipelines.
-
-### 2.2 Non‑Goals
-
-* Building a new LLM or solver: Manglekit **integrates** engines; it doesn’t replace them.
-* Vendor lock‑in: contracts remain neutral; provider packages are pluggable.
-* One‑size‑fits‑all safety: we provide hooks and contracts, not a prescriptive policy.
-
----
-
-## 3. Design Tenets
-
-* **Config‑First:** YAML/ENV → validated structs → builder calls (no parsing in the builder).
-* **Type‑Safe DI:** Generic registry + unified factory signature.
-* **Stages, not god‑methods:** Orchestrators assemble small, testable stages.
-* **Context everywhere:** `context.Context` is mandatory for all factories and runtime calls.
-* **Observability by default:** Metrics, structured logging, and closers are first‑class.
-* **No magic strings:** Typed options/contracts over `map[string]any`.
-
----
-
-## 4. Component Taxonomy (Neuro‑Symbolic)
-
-Manglekit recognizes the following **kinds**. Each kind is implemented by **providers** registered in the registry.
-
-* **LLM** — Text generation / reasoning engines.
-* **Embedder** — Vectorization for dense retrieval/similarity.
-* **Retriever** — Evidence discovery (BM25, dense, hybrid, KG search).
-* **Reranker** — Re‑ordering / scoring (cosine or learned).
-* **RuleSet** — Policy & logic evaluation for Pre/Post stages and mid‑flow guards.
-* **Reasoner** — Symbolic/constraint solvers (Datalog, Prolog‑like, SMT wrappers) with structured I/O.
-* **Planner** — Task/Tool planners (symbolic or LLM‑assisted) producing execution plans.
-* **Tool** — Executable capabilities (functions, APIs) invoked by orchestrators or planners.
-* **SchemaParser** — Validates/parses schemas (JSON Schema, RDF/OWL).
-* **FactConverter** — Normalizes/derives facts for the logic layer.
-* **KnowledgeStore** — Graph/relational stores and vector stores (KGs, SQL, vector DBs).
-* **StateProvider** — Conversation/session state persistence.
-
-> All kinds share the **same factory shape** and DI approach, so adding new kinds is non‑breaking.
-
-### 4.1 First‑Class Integrations: Genkit & Mangle
-
-**Genkit**
-
-* **Role:** Provider family for embedders, vector stores (e.g., `localvec`), and tools; optionally a planning layer.
-* **How it plugs in:** Ships as providers implementing the standard factory signature. Registered under `embed/`, `vectorstore/`, and `tool/` kinds.
-* **Contracts:** Uses `diapi.Deps` for logger/metrics/state; honors ctx for timeouts; contributes `ResourceClosers`.
-* **Examples:** `internal/vectorstores/localvec` for corpus indexing; Genkit tools callable from the Declarative Orchestrator via the **Tool** kind.
-* **Why first‑class:** Enables local/offline experimentation, fast iteration, and unified observability with the rest of the stack.
-
-**Mangle (Rules & Converters)**
-
-* **Role:** The built‑in **RuleSet** and **FactConverter** family for policy, gating, redaction, and symbolic normalization.
-* **How it plugs in:** Providers under `internal/providers/mangle/*` implement `RuleSet` and `FactConverter`; `SchemaParser` options allow structural validation before/after model calls.
-* **Contracts:** Pre/Post rule stages receive typed inputs, may **deny** or **mutate** the flow; denials carry `denial_reason` and redaction metadata into `Answer.Meta`.
-* **Declarative Flow:** Rules guard **Planner/Tool** execution; plans must be approved by Mangle rules before side‑effects occur.
-* **Why first‑class:** Guarantees explainability and compliance; keeps neural components bounded by explicit symbolic policy.
-
----
-
-## 5. Core Contracts
-
-### 5.1 Factory Signature (Uniform)
-
-```go
-func(ctx context.Context, deps diapi.Deps, cfg any) (T, error)
-```
-
-* **ctx:** cancellation, deadlines, tracing.
-* **deps:** typed sub‑dependencies supplied by the builder (e.g., an embedder a retriever needs, a vector store for dense search, a logger, etc.).
-* **cfg:** provider options (typed by the caller; registry validates/decodes).
-
-### 5.2 Provider Options Contract (Self‑Identifying)
-
-```go
-type ProviderOptions interface {
-    ProviderName() string   // e.g., "openai-chat", "bm25", "datalog"
-    ProviderKind() Kind     // e.g., KindLLM, KindReasoner
-}
-```
-
-### 5.3 Orchestrator Contract
-
-Orchestrators accept a **typed Resolved** bundle (no `any`) and drive execution through stages. They must:
-
-* propagate ctx;
-* record stage metrics;
-* honor rule denials/guards;
-* flush resource closers on `Close()`.
-
----
-
-## 6. Architecture Overview
-
-### 6.1 Build & Run (Happy Path)
-
-1. **Config** is loaded & validated.
-2. **Bridge** (`from_config`) converts config to typed options and calls the builder.
-3. **Builder** uses the **spec table** and **registry** to construct components in dependency order, accumulating `ResourceClosers`.
-4. **Orchestrator** (Sandwich or Declarative) receives a **Resolved** struct and executes stages.
-5. **Metrics & Logs** are recorded uniformly; `Close()` drains closers LIFO.
-
-### 6.2 Dependency Rules
-
-* `core` is foundational (no project imports).
-* Contracts (`llm`, `retrieve`, `reasoner`, etc.) depend only on `core`.
-* Providers implement contracts; they **never** import the builder.
-* Orchestrators depend on contracts, not provider implementations.
-* Config package depends on nothing but stdlib and its own types.
-
-### 6.3 Component Interaction (Visual)
+<!-- end list -->
 
 ```mermaid
 graph TD
-  %% Inputs
-  CFG[Config YAML/ENV] -->|Load| SDK[sdk.FromConfig]
-  SDK -->|With(opts)| BLD[Builder]
+    subgraph "External World"
+        App[Host Application]
+        LLM[LLM Provider]
+        Tool[External Tool]
+    end
 
-  %% Builder + Registry
-  subgraph Construction
-    BLD -- GetHandler(kind) --> REG[Registry]
-    REG -- Returns --> HND[ComponentHandler]
-    BLD -- GetFactory(kind,name) --> REG
-    REG -- Returns --> FAC[Typed Factory]
-    HND -- BuildComponent(ctx, diapi.*Deps, cfg) --> FAC
-    FAC --> RES[core.Resolved]
-  end
+    subgraph "Manglekit System"
+        subgraph "Orchestration Layer"
+            SDK[SDK Client]
+        end
 
-  %% Orchestrators
-  RES --> ORCH_S[Orchestrator: Sandwich]
-  RES --> ORCH_D[Orchestrator: Declarative]
+        subgraph "Governance Layer"
+            Guard[The Guard]
+        end
 
-  %% Runtime stages
-  subgraph Runtime
-    ORCH_S --> PR[PreRules]
-    PR --> RET[Retrieve]
-    RET --> RR[Rerank]
-    RR --> LLM[LLM]
-    LLM --> PO[PostRules]
-    PO --> ANS[Answer]
+        subgraph "Core Kernel"
+            Engine[Policy Engine]
+            Runtime[Datalog Runtime]
+            Reflector[Type Reflector]
+        end
 
-    ORCH_D --> TOOLS[Tools Sequence]
-    TOOLS --> ANS
-  end
+        subgraph "Integration Layer"
+            DriverAI[AI Driver]
+            DriverTool[Tool Driver]
+        end
+    end
 
-  %% Observability
-  OBS[(Logger/Tracer/Meter)]
-  RES -- Obs --> OBS
-  PR & RET & RR & LLM & PO -. metrics/logs .-> OBS
+    App -->|Uses| SDK
+    SDK -->|Delegates| Guard
+    Guard <-->|Authorizes| Engine
+    Engine <-->|Consults| Runtime
+    Engine <-->|Maps| Reflector
+    Guard -->|Executes| DriverAI
+    Guard -->|Executes| DriverTool
+    DriverAI -->|Calls| LLM
+    DriverTool -->|Calls| Tool
 ```
 
-```mermaid
-sequenceDiagram
-  autonumber
-  participant User
-  participant SDK as sdk.FromConfig
-  participant Builder
-  participant Registry
-  participant Handler
-  participant Factory
-  participant Orchestrator
+-----
 
-  User->>SDK: Load YAML
-  SDK->>Builder: With(name, Options)
-  User->>Builder: Build(ctx)
-  loop per kind in order
-    Builder->>Registry: GetHandler(kind)
-    Registry-->>Builder: Handler
-    Builder->>Registry: Get(kind, providerName)
-    Registry-->>Builder: GenericFactory
-    Builder->>Handler: BuildComponent(ctx, diapi.Builder, factory, resolved, cfg, name)
-    Handler->>Factory: Build(ctx, diapi.*Deps, Options)
-    Factory-->>Handler: Component
-    Handler->>Builder: Assign into Resolved (+closer)
-  end
-  Builder-->>User: Orchestrator, Updatable?
-  User->>Orchestrator: Execute(ctx, sessionID, Query)
-  Orchestrator->>Orchestrator: Run stages (rules→retrieve→rerank→llm→rules)
-  Orchestrator-->>User: Answer (+metrics, citations)
-```
+## 3. Logical Component View
 
-### 6.4 Component Interaction (Text Diagram)
+This section decomposes the system into functional blocks (Black Boxes) regardless of their code location.
 
-Build time (config → orchestrator):
+### 3.1 Orchestration Layer (The Client)
 
-```
-┌──────────────┐   With(opts)   ┌───────────┐   GetHandler/Factory   ┌──────────┐
-│  Config YAML │ ─────────────▶ │  sdk.From │ ──────────────────────▶ │ Registry │
-│   / ENV      │                │  Config   │                         └────┬─────┘
-└──────┬───────┘                └─────┬─────┘                              │
-       │  Parse/Decode                 │ Build(ctx)                         │
-       ▼                               ▼                                    │
-┌──────────────┐       diapi.*Deps  ┌────────────┐   Build(ctx,deps,cfg)    │
-│   Builder    │ ─────────────────▶ │  Handler   │ ────────────────────────▶│
-└────┬─────────┘                    └────┬───────┘                          │
-     │ Assign into Resolved              │ Component + closer                │
-     ▼                                   ▼                                    
- ┌───────────────┐                  ┌──────────────┐
- │ core.Resolved │◀──────────────── │  Factory     │
- └──────┬────────┘                  └──────────────┘
-        │
-        ▼
-   ┌───────────────┐
-   │ Orchestrators │ (Sandwich | Declarative)
-   └───────────────┘
-```
+  * **Responsibility:** Provides the public API and manages the "Semantic State Machine".
+  * **Components:**
+      * **Config Loader:** Bootstraps the system from declarative configuration (YAML).
+      * **Loop Manager:** Handles the retry/route logic for autonomous agents based on Kernel signals.
+      * **Volatile Memory:** Manages transient session state during an execution loop.
 
-Run time (Sandwich stages):
+### 3.2 Governance Layer (The Interceptor)
 
-```
-Query → PreRules → Retrieve → Rerank → LLM → PostRules → Answer
-        (mutate)   (docs)     (scores)  (text)    (filter)     (text+citations)
-```
+  * **Responsibility:** Enforces the "Guarded Action" lifecycle. This is the **Policy Enforcement Point (PEP)**.
+  * **Components:**
+      * **The Guard:** A decorator that intercepts execution requests.
+      * **Tracer:** Emits observability data (Spans, Logs) linked to logic execution.
+      * **Fail-Safe Mechanism:** Decides whether to block or allow execution if the Kernel fails (Open/Closed mode).
 
-Run time (Declarative):
+### 3.3 The Logic Kernel (The Brain)
 
-```
-Query → [Tool 1] → [Tool 2] → ... → [LLM Tool] → Answer
-         (params via Options.Steps; shared ExecutionContext across tools)
-```
+  * **Responsibility:** The **Policy Decision Point (PDP)**. Pure logic execution.
+  * **Components:**
+      * **Policy Solver:** The coordinator that runs logic queries (`allow?`, `deny?`, `next_step?`).
+      * **Reflector:** A translation engine that converts Domain Objects (Application State) into Logical Facts.
+      * **Knowledge Base:** An in-memory graph store for static facts (RDF/Turtle).
 
----
+### 3.4 Integration Layer (The Drivers)
 
-## 7. Orchestrators
+  * **Responsibility:** Translates internal commands into external API calls.
+  * **Components:**
+      * **AI Driver:** Adapts the internal protocol to AI Frameworks (e.g., Genkit).
+      * **MCP Driver:** Connects to Model Context Protocol servers.
+      * **Native Driver:** Wraps standard business logic functions.
 
-### 7.1 Sandwich (Deterministic RAG‑plus)
+-----
 
-A strongly‑typed, fixed‑order pipeline suitable for classic RAG and many hybrid flows:
+## 4. Process View (Data Flow)
 
-* **Pre‑Rules → Retrieve → Rerank → (Reasoner optional) → LLM → Post‑Rules**
-* Captures timings in `Answer.Meta` and retains `original_docs` for audit.
+### 4.1 Flow A: The Guarded Action Lifecycle
 
-### 7.2 Declarative (Flow‑Driven, Neuro‑Symbolic)
+This is the atomic flow for a single operation.
 
-A first‑class orchestrator for **logic‑rich control flow**:
+1.  **Ingest:** The Guard receives an **Envelope** containing the request payload.
+2.  **Contextualize:** Trace IDs and Lineage Metadata are injected.
+3.  **Reflection (Input):** The Payload is converted into a set of **Input Facts**.
+4.  **Authorization:** The Kernel evaluates `deny(Input)`.
+      * *Deny:* Return `PolicyViolationError`.
+      * *Allow:* Proceed.
+5.  **Execution:** The payload is passed to the selected **Driver**.
+6.  **Reflection (Output):** The Driver's result is converted into **Output Facts**.
+7.  **Validation:** The Kernel evaluates `deny(Output)` and checks for Data Leakage.
+8.  **Return:** The validated Envelope is returned to the caller.
 
-* **Flow Controller** determines stage order and tool binding.
-* **Guards** via `RuleSet` decide skips/denials/mutations.
-* **Tool/Planner** integration for agentic sequences with explicit safety gates.
-* Keeps a shared, typed execution context (no map‑of‑any), enabling **symbolic constraints** to govern neural calls.
+### 4.2 Flow B: The Semantic Control Loop
 
----
+This flow describes how the Orchestrator manages an Agentic workflow.
 
-## 8. Configuration Model
+1.  **Start:** Orchestrator calls an Action.
+2.  **Evaluate:** After the Action returns, the Orchestrator asks the Kernel for **Steering**.
+3.  **Decision:** The Kernel returns a signal:
+      * **`STOP`**: Task complete. Return result.
+      * **`RETRY`**: A validation error occurred. Inject feedback and re-run the *same* Action.
+      * **`ROUTE(X)`**: Logic dictates the next step is Action X. Switch context and run Action X.
+4.  **Loop:** Repeat until `STOP` or `MaxSteps` exceeded.
 
-* Config files define: orchestrator, component kinds & providers, and options.
-* The **config→builder bridge** validates and converts into typed options; any failure occurs **before** runtime construction.
-* Declarative flows may embed logical predicates/policies and tool plans.
+-----
 
-Example sketch:
+## 5. Data Model (Logical)
 
-```yaml
-orchestrator: declarative
-components:
-  - kind: retriever
-    use: hybrid
-    options: { top_k: 16, rrf_k: 60 }
-  - kind: reasoner
-    use: datalog
-    options: { ruleset: "policies/records.dl" }
-  - kind: tool
-    use: http
-    options: { endpoint: https://api.example.com, auth: env:API_TOKEN }
-```
+### 5.1 The Envelope (Universal Protocol)
 
----
+Components communicate exclusively via Envelopes to remain loosely coupled.
 
-## 9. Observability & Lifecycle
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| **ID** | UUID | Unique correlation ID for lineage tracking. |
+| **Payload** | Generic | The actual domain data (Struct, Map, or String). |
+| **Metadata** | Key-Value | Control signals (Latency, Model Params, Audit Tags). |
+| **Labels** | List | Security tags (e.g., `CONFIDENTIAL`, `PII`) propagated through the flow. |
 
-* **Logger:** A structured logger is installed if none provided.
-* **Metrics:** Stage timings (`retrieve_ms`, `rerank_ms`, `llm_ms`, `rules_pre_ms`, `rules_post_ms`, plus reasoner/planner/tool timings) are standardized.
-* **Tracing Hooks:** Optional interfaces for spans at stage boundaries.
-* **Closers:** All providers that hold resources register closers; orchestrators drain LIFO.
+### 5.2 The Fact Base (State Representation)
 
----
+The Kernel views the world as a flat list of Predicates (Datalog Facts).
 
-## 10. Security, Safety, and Policy
+  * **Transient Facts:** Derived from the current Envelope (e.g., `request.amount(100)`).
+  * **Static Facts:** Loaded from Knowledge Base (e.g., `user.role("alice", "admin")`).
+  * **Steering Facts:** Derived signals (e.g., `decision.next_step("approval_tool")`).
 
-* **Pre/Post RuleSets** for content policy, PII redaction, safety blocks.
-* **Schema Parsers** enforce structural constraints on inputs/outputs.
-* **State Providers** can implement rate‑limits/quotas per session.
-* **Tool Execution** requires explicit allow‑lists and typed inputs; planner outputs are validated by rules before execution.
+-----
 
----
+## 6. Deployment View
 
-## 11. Extension & Provider Authoring
+  * **Packaging:** The system is compiled as a standard library.
+  * **Runtime:** Runs within the host Application Process (In-Process).
+  * **Isolation:** Logic execution is CPU-bound and memory-safe (No external sidecars or network calls required for policy checks).
+  * **Configuration:** Behavior is defined by external YAML and `.dl` files, loaded at startup.
 
-### 11.1 Registering a Provider
+-----
 
-* Implement the contract interface (e.g., `reasoner.Reasoner`).
-* Provide `Options` implementing `ProviderOptions`.
-* Register with the registry and (optionally) a helper set like `providers/all`.
+## 7. Quality Attributes (Non-Functional Requirements)
 
-### 11.2 Dependencies Between Providers
-
-* Complex providers (e.g., **Hybrid Retriever**, **Tool‑using Reasoner**) receive **builder delegates** in `deps` to build subcomponents without knowing the builder itself.
-
----
-
-## 12. Example Patterns (Neuro‑Symbolic)
-
-1. **Policy‑Aware Data QA**
-   Retrieve records → Reason over constraints (Datalog) → LLM explains discrepancies → Post‑rules redact.
-
-2. **Tool‑Grounded Agent**
-   Planner proposes API/tool calls → Rules vet plan → Tools execute → LLM synthesizes response with provenance.
-
-3. **KG‑Augmented Answering**
-   Dense retrieval → KG lookup (KnowledgeStore) → Reasoner derives canonical facts → LLM composes answer.
-
----
-
-## 13. Compatibility & Migration
-
-* Legacy per‑type `With…` builder calls are replaced by **generic `With(opts)`** + spec‑driven build.
-* Orchestrators now receive typed **Resolved** deps; remove runtime type assertions.
-* Provider factories must adopt the **uniform signature** and `ProviderOptions`.
-
----
-
-## 14. Performance & Reliability
-
-* **Budgeted stages:** enforce timeouts/token limits via ctx and options.
-* **Back‑pressure:** downstream denials/short‑circuiting to preserve quotas.
-* **Warm‑ups/caches:** future ADR will cover client warm‑up and connection pooling policies.
-
----
-
-## 15. Roadmap
-
-* **Centralize conversation/state handling** across orchestrators.
-* **Token limit conformance** in LLM clients (honor `MaxTokens`).
-* **Expose hybrid RRF params** as options.
-* **Schema export** (JSON Schema) for all options.
-* **Build‑graph introspection & DOT export**.
-* **WASM/plugin sandbox** for untrusted providers.
-* **Orchestrator handler generalization** so the Builder can construct both Sandwich and Declarative orchestrators.
-
----
-
-## 16. Appendix — Package Layout (Authoritative)
-
-```
-github.com/duynguyendang/manglekit
-├── builder.go
-├── registry.go
-├── sdk/
-├── config/
-├── core/
-├── retrieve/
-├── rerank/
-├── embed/
-├── llm/
-├── pipeline/
-│   ├── sandwich.go
-│   └── declarative/
-├── internal/
-│   ├── providers/... (bm25, dense, hybrid, llm, mangle, rerank/cosine, schemaparsers, state, tools)
-│   ├── vectorstores/localvec/
-│   └── logger/
-├── providers/all/
-├── examples/
-└── docs/
-```
-
----
-
-## 17. Glossary
-
-* **Neuro‑symbolic:** Systems that combine numerical/statistical methods (e.g., neural nets) with symbolic logic/constraints.
-* **Resolved:** The fully constructed, typed set of runtime dependencies provided to an orchestrator.
-* **Spec Table:** Data structure describing dependency order and required injections for builder construction.
+  * **Determinism:** Given the same Input and Policy, the Kernel MUST always produce the same Decision.
+  * **Latency:** The Authorization and Validation overhead MUST be sub-millisecond (excluding Driver execution time).
+  * **Observability:** Every Logic Decision MUST be traceable to a specific Policy Rule ID.
+  * **Fail-Safety:** The system MUST support a configurable "Failure Mode" (Open/Closed) to handle Kernel panics or timeouts gracefully.

@@ -8,21 +8,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ParseConfig unmarshals a byte slice into a Config object.
+// Load reads a YAML configuration file from the given path and returns a Config object.
 // It also expands environment variables in the YAML content.
-func ParseConfig(data []byte) (*Config, error) {
-	expandedContent := []byte(os.ExpandEnv(string(data)))
-
-	var cfg Config
-	if err := yaml.Unmarshal(expandedContent, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal YAML: %w", err)
-	}
-
-	return &cfg, nil
-}
-
-// LoadConfig reads a YAML configuration file from the given path.
-func LoadConfig(path string) (*Config, error) {
+// This function ports the legacy loading logic to the new architecture.
+//
+// Environment variable expansion supports the standard ${VAR_NAME} syntax.
+// Example: ${API_KEY} will be replaced with the value of the API_KEY environment variable.
+func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file %q: %w", path, err)
@@ -30,9 +22,26 @@ func LoadConfig(path string) (*Config, error) {
 	return ParseConfig(data)
 }
 
-// LoadFromYAML reads a YAML configuration from the provided reader and returns a
-// Config object. It also expands environment variables in the YAML content.
-func LoadFromYAML(r io.Reader) (*Config, error) {
+// ParseConfig unmarshals a byte slice into a Config object.
+// It also expands environment variables in the YAML content before unmarshaling.
+func ParseConfig(data []byte) (*Config, error) {
+	// Expand environment variables in the YAML content
+	expandedContent := []byte(os.ExpandEnv(string(data)))
+
+	var cfg Config
+	if err := yaml.Unmarshal(expandedContent, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal YAML: %w", err)
+	}
+
+	// Apply defaults
+	applyDefaults(&cfg)
+
+	return &cfg, nil
+}
+
+// LoadFromReader reads a YAML configuration from the provided reader and returns a Config object.
+// It also expands environment variables in the YAML content.
+func LoadFromReader(r io.Reader) (*Config, error) {
 	content, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read from reader: %w", err)
@@ -40,12 +49,13 @@ func LoadFromYAML(r io.Reader) (*Config, error) {
 	return ParseConfig(content)
 }
 
-// LoadFromEnv loads configuration from environment variables.
-// This is a placeholder for now and will be implemented based on the final
-// environment variable strategy.
-func LoadFromEnv() (*Config, error) {
-	// TODO: Implement environment variable loading logic.
-	// This will involve reading MANGLEKIT_* variables and mapping them
-	// to the Config struct, likely using a library or reflection.
-	return &Config{}, nil
+// applyDefaults applies sensible defaults to the configuration if not already set.
+func applyDefaults(cfg *Config) {
+	if cfg.Observability.ServiceName == "" {
+		cfg.Observability.ServiceName = "manglekit-app"
+	}
+
+	if cfg.Observability.LogLevel == "" {
+		cfg.Observability.LogLevel = "info"
+	}
 }

@@ -1,249 +1,265 @@
 package core
 
 import (
-	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
 
-	"github.com/firebase/genkit/go/ai"
+	"github.com/google/uuid"
 )
 
-// Message represents a single message in a conversation from a specific role.
+// --- CONSTANTS: The Ubiquitous Language ---
+
+// Standard Metadata Keys used for Control Plane signaling.
+const (
+	// Governance & Routing
+	KeyDecision     = "manglekit.decision"  // Values: "PROCEED", "HALT", "RETRY", "ROUTE"
+	KeyFeedback     = "manglekit.feedback"  // Human/LLM readable reason
+	KeyPrevFeedback = "prev_feedback"       // Loopback for retry
+	KeyNextStep     = "manglekit.next_step" // Next action routing
+
+	// Risk & Analysis
+	KeyRiskScore = "manglekit.risk_score" // 0-100
+
+	// Performance & Observability
+	KeyLatencyMs = "manglekit.latency_ms"
+	KeyTraceID   = "manglekit.trace_id"
+	KeyModel     = "manglekit.model"
+	KeyHistory   = "manglekit_history"
+	KeyContext   = "manglekit.context" // RAG data injected here
+	KeySummary   = "manglekit.summary" // Conversation summary
+
+	// Configuration
+	PrefixPromptConfig = "prompt."
+)
+
+// Standard Decision Values
+const (
+	DecisionProceed = "PROCEED" // Formerly "ALLOW"
+	DecisionHalt    = "HALT"    // Formerly "DENY"
+	DecisionRetry   = "RETRY"
+	DecisionRoute   = "ROUTE"
+)
+
+// Datalog System Constants
+const (
+	EntityInput   = "Req"           // ID for Input Envelope
+	EntityOutput  = "Output"        // ID for Output Envelope
+	PredHalt      = "halt"          // Was "deny" or "infeasible"
+	PredRetry     = "retry"         // Correction signal
+	PredRoute     = "route"         // Dynamic routing signal
+	PredViolation = "violation_msg" // To extract error messages
+)
+
+// Observability & Trace Attributes
+const (
+	// Span Names
+	SpanPreCheck  = "Datalog.Assess"  // Formerly "Datalog.PreCheck"
+	SpanPostCheck = "Datalog.Reflect" // Formerly "Datalog.PostCheck"
+	SpanMemory    = "Mangle.Recall"   // RAG lookup
+
+	// Attribute Keys
+	AttrPolicyName   = "policy.name"
+	AttrPolicyType   = "policy.type"
+	AttrDecisionType = "decision.type"
+	AttrOutcome      = "outcome"       // "PROCEED", "HALT"
+	AttrLabels       = "mangle.labels" // Taint Propagation
+	AttrActionName   = "action.name"
+	AttrActionType   = "action.type"
+	AttrRuleID       = "mangle.rule_id" // Replaces AttrPolicyRuleID
+	AttrAttempt      = "mangle.attempt" // Replaces AttrPolicyAttempt
+)
+
+// Outcome Values (for Tracing)
+const (
+	OutcomeProceed = "PROCEED" // Formerly "ALLOWED"
+	OutcomeHalt    = "HALT"    // Formerly "DENIED"
+	OutcomeSuccess = "success"
+)
+
+// --- STRUCTS ---
+
+// ContentType defines the nature of the data payload.
+type ContentType string
+
+const (
+	// TypeStruct indicates the payload is a strong Go struct.
+	// This is the default mode, optimized for internal services.
+	TypeStruct ContentType = "STRUCT"
+
+	// TypeJSON indicates the payload is a flexible map[string]any.
+	// This is used for AI agents and external webhooks.
+	TypeJSON ContentType = "JSON"
+)
+
+// Envelope: The unified data container.
+type Envelope struct {
+	// ID is the unique identifier for this specific data envelope.
+	ID uuid.UUID `json:"id"`
+	// Payload is the actual data being transported.
+	// Note: Field name preserved as Payload for compatibility, tagged as "data".
+	Payload any `json:"data"`
+	// Metadata stores key-value pairs for control plane signaling.
+	Metadata map[string]any `json:"metadata,omitempty"`
+	// Error stores any error encountered during processing.
+	Error error `json:"error,omitempty"`
+
+	// SecurityLabels holds taint tags (e.g., "secret", "pii") for information flow control.
+	SecurityLabels []string `json:"security_labels,omitempty"`
+	// Facts holds structured logical facts extracted from the payload.
+	Facts []string `json:"facts,omitempty"`
+	// ContentType indicates whether the payload is a Struct or JSON.
+	ContentType ContentType `json:"content_type,omitempty"`
+}
+
+// NewEnvelope creates a new envelope with the provided payload.
+func NewEnvelope(payload any) Envelope {
+	return Envelope{
+		ID:             uuid.New(),
+		Payload:        payload,
+		Metadata:       make(map[string]any),
+		SecurityLabels: []string{},
+		ContentType:    TypeStruct, // Default to Typed Mode
+	}
+}
+
+// SetMeta sets a value in the envelope's metadata map.
+func (e *Envelope) SetMeta(k string, v any) {
+	if e.Metadata == nil {
+		e.Metadata = make(map[string]any)
+	}
+	e.Metadata[k] = v
+}
+
+// GetMeta retrieves a value from the envelope's metadata map as a string.
+// If the value is not a string, it returns an empty string (or simple string representation).
+func (e *Envelope) GetMeta(k string) string {
+	if e.Metadata == nil {
+		return ""
+	}
+	v, ok := e.Metadata[k]
+	if !ok {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+// SetFeedback injects the "Teacher's" feedback into metadata
+func (e *Envelope) SetFeedback(msg string) {
+	e.SetMeta(KeyFeedback, msg)
+}
+
+// GetFeedback retrieves the feedback for the "Student" (AI/Logic)
+func (e *Envelope) GetFeedback() string {
+	return e.GetMeta(KeyFeedback)
+}
+
+// AddLabel adds a security label to the envelope if it does not already exist.
+func (e *Envelope) AddLabel(label string) {
+	if !e.HasLabel(label) {
+		e.SecurityLabels = append(e.SecurityLabels, label)
+	}
+}
+
+// HasLabel checks for the existence of a specific security label on the envelope.
+func (e *Envelope) HasLabel(label string) bool {
+	for _, l := range e.SecurityLabels {
+		if l == label {
+			return true
+		}
+	}
+	return false
+}
+
+// MergeLabels appends distinct labels from another source to this one.
+func (e *Envelope) MergeLabels(other []string) {
+	for _, l := range other {
+		e.AddLabel(l)
+	}
+}
+
+// SetHistory serializes a list of chat messages into the envelope's metadata.
+func (e *Envelope) SetHistory(msgs []Message) {
+	b, err := json.Marshal(msgs)
+	if err == nil {
+		e.SetMeta(KeyHistory, string(b))
+	}
+}
+
+// Decision: Structured result from the Policy Engine.
+type Decision struct {
+	Outcome string            // Matches DecisionProceed, DecisionHalt, etc.
+	Target  string            // Used if Outcome == DecisionRoute
+	Reasons []string          // Explanations
+	Meta    map[string]string // Side-channel data (risk scores, latency budget)
+}
+
+// ConfigEvent: For Hot-Swap mechanisms.
+type ConfigEvent struct {
+	Key     string
+	Content []byte
+	Type    string
+}
+
+// ActionMetadata provides metadata about an action.
+type ActionMetadata struct {
+	// Name is the unique identifier for the action.
+	Name string
+	// Type describes the category of the action.
+	Type string
+	// InputContentType specifies the expected input format.
+	InputContentType ContentType
+	// InputType is the string name of the Go input type.
+	InputType string
+	// OutputType is the string name of the Go output type.
+	OutputType string
+	// IsDynamic indicates if the input type is generic.
+	IsDynamic bool
+}
+
+// Message represents a single message in a conversation flow.
 type Message struct {
-	Role    string `json:"role"` // "user" or "model"
+	// Role indicates the sender of the message.
+	Role string `json:"role"`
+	// Content is the textual body of the message.
 	Content string `json:"content"`
 }
 
-// ConversationHistory stores the list of messages for a session.
+// ConversationHistory represents a sequence of messages in a dialogue.
 type ConversationHistory struct {
+	// Messages is the ordered list of messages in the conversation.
 	Messages []Message `json:"messages"`
 }
 
-// Doc represents a single document chunk, which is the fundamental unit of
-// information for retrieval and generation. It contains the content as well as
-// metadata about its origin.
-type Doc struct {
-	// ID is the unique identifier for the document chunk.
-	ID string
-	// Source is an identifier for the origin of the document, e.g., a file path or URL.
-	Source string
-	// URI is a Uniform Resource Identifier that provides a locator for the document source.
-	URI string
-	// Text is the main content of the document chunk.
-	Text string
-	// Meta is a map of arbitrary metadata associated with the document,
-	// such as author, creation date, or other annotations.
-	Meta map[string]any
-}
-
-
-// VectorStore defines the standard interface for vector database operations,
-// allowing for pluggable vector storage backends. Implementations of this
-// interface handle the storage and retrieval of documents based on vector similarity.
-type VectorStore interface {
-	// AddDocuments embeds and adds a slice of documents to the vector store.
-	// This method is responsible for processing the documents, generating vectors
-	// if necessary, and indexing them for future searches.
-	//
-	// ctx is the context for the operation.
-	// docs is a slice of documents to be added to the store.
-	// It returns an error if the documents could not be added.
-	AddDocuments(ctx context.Context, docs []Doc) error
-
-	// Search retrieves the most relevant documents for a given query vector.
-	//
-	// ctx is the context for the operation.
-	// queryVector is the vector representation of the search query.
-	// topK specifies the maximum number of documents to return.
-	// filter is an optional map of metadata to filter documents before searching.
-	// It returns a slice of documents ranked by similarity and an error if the search fails.
-	Search(ctx context.Context, queryText string, queryVector []float32, topK int, filter map[string]any) ([]Doc, error)
-}
-
-// Orchestrator is the central behavioral interface for the MangleKit SDK. It is
-// a pure executor, responsible for running a configured pipeline but not for
-// exposing the components within it. Typed components should be returned by the
-// builder at construction time.
-type Orchestrator interface {
-	// Execute runs the full processing pipeline for a given query.
-	//
-	// ctx is the context for the entire operation.
-	// sessionID is the unique identifier for the session.
-	// q is the user's query to be processed.
-	// It returns a final Answer containing the generated text and citations,
-	// or an error if any part of the process fails.
-	Execute(ctx context.Context, sessionID string, q Query) (Answer, error)
-
-	// Close releases any resources (such as API clients) associated with the
-	// orchestrator's components. It should be invoked when the orchestrator is
-	// no longer needed. Implementations should be idempotent.
-	Close(ctx context.Context) error
-}
-
-// Query represents a user's request to the orchestrator. It contains the query
-// text and any associated metadata.
+// Query represents a structured user request.
 type Query struct {
-	// Text is the natural language query string from the user.
-	Text string `json:"text"`
-	// Meta is a map for arbitrary user-supplied metadata. This can be used by
-	// rules or other pipeline components to influence their behavior, for example,
-	// by passing user identity or session information.
+	Text string         `json:"text"`
 	Meta map[string]any `json:"meta,omitempty"`
 }
 
-// Answer represents the final result of a query processed by the orchestrator.
-// It includes the generated text, supporting citations, and operational metadata.
+// GenerationConfig holds standard LLM parameters.
+type GenerationConfig struct {
+	Temperature   float64
+	MaxTokens     int
+	TopP          float64
+	StopSequences []string
+	Model         string
+	JSONMode      bool
+	// OutputType is used by Genkit to enforce structured output (schema).
+	OutputType any
+}
+
+// Document represents a snippet of knowledge/memory.
+type Document struct {
+	Content  string         `json:"content"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+	Score    float32        `json:"score,omitempty"` // Re-ranking score
+}
+
+// Answer represents a structured system response.
 type Answer struct {
-	// Text is the generated textual answer to the query, synthesized by the LLM.
-	Text string `json:"text"`
-	// Citations is a slice of references to the source documents that were used
-	// to generate the answer. This provides traceability and allows users to
-	// verify the information.
-	Citations []Citation `json:"citations,omitempty"`
-	// Meta is a map containing operational metadata about the pipeline execution,
-	// such as component timings, token usage, confidence scores, or debugging information.
+	Text string         `json:"text"`
 	Meta map[string]any `json:"meta,omitempty"`
 }
-
-// Citation is a reference to a source document that supports the Answer. It helps
-// ground the generated response in verifiable evidence.
-type Citation struct {
-	// ID is the unique identifier of the cited document chunk.
-	ID string `json:"id"`
-	// Source is the identifier for the origin of the document (e.g., file path).
-	Source string `json:"source"`
-	// URI is a link to the original source document, allowing for easy access.
-	URI string `json:"uri,omitempty"`
-	// Snippet is the specific text excerpt from the document that is most
-	// relevant to the answer.
-	Snippet string `json:"snippet,omitempty"`
-	// Score is the relevance or confidence score of the citation, often produced
-	// by a retriever or reranker.
-	Score float64 `json:"score,omitempty"`
-}
-
-// Resolved is the final, strongly-typed container of all built components and
-// configuration settings. It is passed to the orchestrator factory, ensuring
-// that orchestrators receive their dependencies in a type-safe manner, free
-// from `any` types and runtime assertions.
-type Resolved struct {
-	Retrievers     map[string]Retriever
-	VectorStores   map[string]VectorStore
-	Rerankers      map[string]Reranker
-	Rules          map[string]RuleSet
-	LLMs           map[string]LLMClient
-	Embedders      map[string]ai.Embedder
-	StateProviders map[string]StateProvider
-	Orchestrators  map[string]Orchestrator
-	SchemaParsers  map[string]SchemaParser
-
-	Obs               Observability
-	TopK              int
-	MaxTokens         int
-	FallbackThreshold float64
-	Closers           []ResourceCloser
-}
-
-// GetToolByName finds a component by its registered name and returns it wrapped
-// in a `core.Tool` adapter. This allows the declarative orchestrator to look up
-// its steps in a generic, type-safe way.
-func (r *Resolved) GetToolByName(name string) (Tool, error) {
-	if t, ok := r.Retrievers[name]; ok {
-		return &RetrieverTool{R: t}, nil
-	}
-	if t, ok := r.Rerankers[name]; ok {
-		return &RerankerTool{Rr: t}, nil
-	}
-	if t, ok := r.LLMs[name]; ok {
-		return &LLMTool{Llm: t}, nil
-	}
-	// Note: VectorStores, Embedders, and StateProviders are not currently adapted
-	// as tools because they don't represent standalone pipeline steps.
-	return nil, fmt.Errorf("tool with name '%s' not found", name)
-}
-
-// OptionsLike is a temporary struct to hold global settings during the build process.
-// It will be replaced by a more robust configuration management system in the future.
-type OptionsLike struct {
-	TopK              int
-	MaxTokens         int
-	FallbackThreshold float64
-	Obs               Observability
-	ResourceClosers   []ResourceCloser
-}
-
-// Observability provides a set of interfaces for integrating logging, tracing,
-// and metrics into the MangleKit pipeline. This allows for detailed monitoring
-// and debugging of the system's behavior.
-type Observability struct {
-	// Logger is the structured logger instance for recording events.
-	Logger Logger
-	// Tracer is the distributed tracing instance for creating and managing spans.
-	Tracer Tracer
-	// Meter is the metrics recording instance for capturing performance data.
-	Meter Meter
-}
-
-// Logger defines a vendor-neutral interface for structured logging. The
-// methods follow a "message + key/value" calling convention so callers can
-// attach context without committing to any specific backend semantics.
-type Logger interface {
-	// Debugf records verbose diagnostic information about control flow or
-	// intermediate state. Arguments are interpreted as key/value pairs.
-	Debugf(msg string, kv ...any)
-	// Infof records high-level lifecycle events such as component start or
-	// stop. Arguments are interpreted as key/value pairs.
-	Infof(msg string, kv ...any)
-	// Warnf records recoverable issues that deserve operator attention but
-	// do not stop execution.
-	Warnf(msg string, kv ...any)
-	// Errorf records failures. Implementations should treat the "error"
-	// key specially when present.
-	Errorf(msg string, kv ...any)
-	// With returns a child logger that automatically appends the supplied
-	// key/value pairs to every log record.
-	With(kv ...any) Logger
-}
-
-// Tracer defines a basic interface for creating spans for distributed tracing.
-// It is designed to be compatible with systems like OpenTelemetry.
-type Tracer interface {
-
-	// StartSpan begins a new trace span with the given name.
-	// It returns a function that, when called, ends the span. The end function
-	// can optionally accept attributes to be added to the span upon completion.
-	StartSpan(name string) (end func(attrs ...any))
-}
-
-// Meter defines a basic interface for recording metrics, suitable for integration
-// with monitoring systems like Prometheus or OpenTelemetry Metrics.
-type Meter interface {
-	// Record captures a measurement for a named metric.
-	//
-	// metric is the name of the metric (e.g., "manglekit.retrieve_ms").
-	// value is the numerical value to record.
-	// attrs is a sequence of key-value pairs for labeling the metric.
-	Record(metric string, value float64, attrs ...any)
-}
-
-// ResourceCloser defines a cleanup callback that releases external resources.
-// The provided context can be used by the closer to respect deadlines or propagate
-// cancellation signals while shutting down the resource.
-type ResourceCloser func(ctx context.Context) error
-
-// NopCloser is a ResourceCloser that does nothing.
-func NopCloser(ctx context.Context) error { return nil }
-
-var (
-	// ErrInvalidOptions is returned when the SDK is initialized with missing
-	// or invalid options, such as a nil Retriever or LLM, or when component
-	// types are mismatched.
-	ErrInvalidOptions = errors.New("invalid_options")
-	// ErrNoEvidence is returned when the retriever finds no documents or evidence
-	// to answer the query, either because none exist or because all candidates
-	// were filtered out by rules or other mechanisms.
-	ErrNoEvidence = errors.New("insufficient_evidence")
-	// ErrDenied is returned when a Mangle rule evaluation explicitly denies the
-	// request, halting the pipeline as a matter of policy.
-	ErrDenied = errors.New("rules_denied")
-)

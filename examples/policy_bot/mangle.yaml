@@ -1,0 +1,10 @@
+# Policy Bot Configuration
+memory:
+  provider: "inmem"
+
+actions:
+  chat_policy:
+    type: "llm"
+    provider: "google"
+    options:
+      model: "gemini-2.5-flash"

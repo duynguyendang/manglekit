@@ -1,15 +1,27 @@
-# AGENTS.md — Manglekit Coding Agent Configuration (2025.10)
+# AGENTS.md — Manglekit Coding Agent Configuration
 
-*Last updated: 2025-10-23*
+*Last updated: 2025-12-17*
 
 ---
 
 ## Overview
 
-This document defines how coding agents interact with the **Manglekit** codebase.
+This document defines how coding agents interact with the **Manglekit v1.0** codebase.
 It specifies conventions, automated tasks, and safety rules to ensure that all AI-driven modifications stay consistent with the system design and context documentation.
 
 Agents use this file as an **operational manual** to perform reasoning, refactoring, documentation updates, and observability instrumentation within the Go SDK.
+
+Agents must treat the documentation set (`CONTEXT.md`, `HLD.md`, `LLD.md`, `ADR.md`, `ARCHITECTURE_RULES.md`) as the synchronized **architecture source of truth**.
+
+🔥 CRITICAL INSTRUCTION: 
+
+You are PROHIBITED from generating code unless you have loaded docs/CONTEXT.md into your context window first. You must treat CONTEXT.md as a variable that must be mutated whenever source code is mutated.
+
+Before marking ANY task as complete, you MUST verify if docs/CONTEXT.md needs synchronization. You cannot output code without subsequently outputting the updated documentation in the same response block or immediately suggesting it. Steps for every request:
+- Plan the Code Change.
+- Execute Code Change.
+- IMMEDIATELY Read docs/CONTEXT.md.
+- IMMEDIATELY Update docs/CONTEXT.md to reflect the change.
 
 ---
 
@@ -17,10 +29,10 @@ Agents use this file as an **operational manual** to perform reasoning, refactor
 
 Coding agents working in this repository should be capable of:
 
-* Understanding the full architecture from `docs/HLD.md`.
+* Understanding the **Universal AI Governance Kernel** architecture (`Client` -> `Supervisor` -> `Engine`).
 * Updating context and documentation automatically when code changes in `docs/CONTEXT.md`.
 * Maintaining observability and performance best practices.
-* Identifying gaps and inconsistencies in provider registration, orchestrator wiring, or options mapping.
+* Identifying gaps and inconsistencies in adapter implementation or policy logic.
 
 ---
 
@@ -28,151 +40,109 @@ Coding agents working in this repository should be capable of:
 
 Agents must recognize the following key locations and their purposes (aligned with repo layout):
 
-* `core/`: Contracts, types, diapi, handler/factory interfaces, observability.
-* Root: `builder.go`, `registry.go` (builder + registry), `go.mod`.
-* `sdk/`: Config→builder bridge (`sdk.FromConfig`).
-* `config/`: YAML parsing, normalization, validation.
-* `pipeline/`: Orchestrators and stages (Sandwich, Declarative).
-* `internal/providers/`: Families of retrievers, rerankers, LLMs, rules, state, schema parsers.
-* `internal/embedders/`, `internal/vectorstores/`: Embedder and vector store providers and handlers.
-* `providers/all/`: Convenience registrar for standard providers.
-* `docs/`: Technical docs and architecture rules (`docs/rules/manglekit-arch.yml`).
+* `manglekit.go`: The main entry point (`Client`, `Protect`).
+* `core/`: Contracts (`Action`, `Envelope`, `Logger`, `Tracer`).
+* `internal/supervisor/`: The `SupervisedAction` implementation (Trace -> Assess -> Execute -> Reflect).
+* `internal/engine/`: The Policy Engine and Mangle Runtime.
+* `adapters/`: Universal adapters (`ai`, `mcp`, `resilience`).
+* `config/`: Configuration loading.
+* `docs/`: Technical docs and architecture rules.
 
 ---
 
 ## 3. Context-Aware Reasoning
 
-Before performing any modification, agents must:
+Agents must treat `docs/CONTEXT.md` as the **live architectural memory** of the repository.
 
-1. Load and parse `docs/CONTEXT.md` completely.
-2. Use it as a single source of truth for architecture, module dependencies, and known gaps.
-3. Reflect any significant change in the code (e.g., API signature, module behavior, new provider) back into the `CONTEXT.md` file.
+### 3.1 Context Loading and Validation
 
-Agents should avoid scanning the entire repo blindly; instead, rely on structured summaries and cross-references within `CONTEXT.md`.
+Before performing any modification, the agent must:
+
+1. **Load the full content** of `docs/CONTEXT.md`.
+2. **Verify freshness:** compare the `last_updated:` field to the most recent code commit.
+   - If the context is **older than 3 days**, treat it as *potentially stale* and rely on the code diff as the authoritative source.
+   - If up-to-date, use it directly as the architectural baseline.
+
+### 3.2 How to Use the Context for Reasoning
+
+Use the document’s internal structure as a guide:
+
+| Section | Purpose |
+|----------|----------|
+| **Implementation Snapshot** | Understand the Client/Guard/Engine relationship. |
+| **Dependency Rules** | Validate layering — ensure `guard` doesn't depend on `adapters`. |
+| **Core Contracts** | Retrieve `Action` and `Envelope` definitions. |
+| **Supervised Action Lifecycle** | Understand the Trace -> Assess -> Exec -> Reflect flow. |
+| **Semantic State Machine** | Understand the Loop (Action -> Decision -> Retry/Route). |
+| **Known Gaps** | Identify open architectural issues (e.g., Lineage). |
+| **Changelog** | Understand recent architectural shifts (e.g., v1.0). |
+
+### 3.3 Reflecting Code Changes
+
+When code changes introduce **new features, functions, or modify workflows**, or affect architecture, interfaces, or runtime behavior, the agent must **edit `docs/CONTEXT.md` directly** —
+updating sections, known gaps, and timestamps. This guarantees that the documentation always mirrors the true, current state of the system.
 
 ---
 
 ## 4. Editing Policies
 
-When proposing or committing changes:
-
 * Never remove sections or metadata blocks from `CONTEXT.md`.
-* Maintain the YAML front-matter.
-* Use stability icons (✅ / ⚠️ / ❌) consistently.
-* Preserve Markdown headings, tables, and code references.
-* Prefer minimal, targeted updates with accurate summaries.
+* Maintain YAML front-matter integrity.
+* Use status icons (✅ / ⚠️ / ❌) consistently.
+* Preserve Markdown headings, tables, and code formatting.
+* Apply minimal, targeted updates with precise summaries.
 
 ---
 
 ## 5. Commit Conventions
 
-Agents should follow semantic commit conventions:
+Agents must follow semantic commit conventions:
 
 ```
-feat: introduce new feature or provider
+feat: introduce new feature or adapter
 fix: resolve bug or panic
 refactor: improve structure without changing behavior
 docs: update documentation (includes CONTEXT.md)
-chore(context): auto-update CONTEXT.md after code change
+chore(context): auto-sync CONTEXT.md after code change
 test: add or fix unit tests
 ```
 
 ---
 
-## 6. Automatic Context Update (New)
+## 6. Self-Managed Context Synchronization
 
-### Keeping the Project Context Updated (Automated Task) ✅
+> Goal: Whenever source changes affect architecture or runtime behavior, the **coding agent must directly update** `docs/CONTEXT.md` (and related docs) itself.
 
-Every time the source code changes in a way that may affect architecture or runtime behavior,
-the coding agent must **refresh the project context** in `docs/CONTEXT.md`.
-
-#### 1. When to Trigger an Update
-
-Run or trigger the **context refresh** automatically whenever any of these happen:
-
-* A Go file under `builder`, `pipeline`, `core`, or `internal/providers` is modified.
-* A new provider, retriever, reranker, or LLM client is added.
-* A field or contract is changed in `core/types.go` or `core/options.go`.
-* A new configuration key or environment variable is introduced.
-* Known gaps, lifecycle contracts, or observability hooks change.
-* The orchestration pattern (Sandwich, Declarative, etc.) is modified.
-
-#### 2. The Command Interface
-
-```bash
-# TOOL: update-context
-#
-# DESCRIPTION:
-#   Analyzes the diff or file list and regenerates the relevant sections of `docs/CONTEXT.md`.
-#   The agent must summarize architecture, affected modules, and known gaps.
-#
-# SYNTAX:
-#   update-context --files "<list-of-files>" --summary "<short summary>" [--auto]
-#
-# OPTIONS:
-#   --files    Files that changed (space-separated)
-#   --summary  One-line human-readable summary of what changed
-#   --auto     (optional) When specified, run automatically after commits or code edits
-#
-# EXAMPLES:
-#   agent_tool_call: update-context --files "builder.go sdk.go" --summary "Refactored builder to support dynamic provider resolution."
-#   agent_tool_call: update-context --files "internal/providers/dense/chroma.go" --summary "Added new Chroma vector retriever."
-```
-
-#### 3. Agent Automation Logic
-
-When operating as a coding agent (e.g., in Cursor, Claude Projects, Copilot Studio, or Cody):
-
-1. **Monitor** recent file edits, commits, or merges.
-2. If relevant files match the patterns above, automatically:
-
-   * Extract module/function names from diffs.
-   * Summarize what was added, removed, or refactored.
-   * Update the matching sections of `docs/CONTEXT.md` (Architecture, Components, Known Gaps, etc.).
-   * Bump the `last_updated:` timestamp in the YAML frontmatter.
-3. **Validate** that the machine-readable tables remain consistent (e.g., status icons, Known Gaps table).
-4. **Commit the update** with message:
-
-   ```
-   chore(context): auto-update CONTEXT.md to reflect recent code changes
-   ```
-
-#### 4. Agent Safety Rules
-
-* Never hallucinate: only update based on code actually present in the repo.
-* Never delete large sections of CONTEXT.md; update only what has changed.
-* Always preserve Markdown formatting and YAML metadata.
-* Include file paths and line references when adding new Known Gaps.
+1. **Collect diff context**: Identify modified files in this session.
+2. **Infer impact scope**: Identify affected components.
+3. **Edit `docs/CONTEXT.md` directly**: Update Snapshot, Contracts, Gaps, Changelog.
+4. **Edit `docs/LLD.md` and `docs/HLD.md` if needed**.
+5. **Commit format**: `chore(context): auto-sync ...`
 
 ---
 
-## 7. Auto-Update Hook
+## 7. Hooks & Optional Automation
 
-Agents operating inside this repo must run:
+> No CLI commands are required. The agent must self-update documentation as described in §6.
+> This section only defines optional automation policies for CI enforcement.
 
-```bash
-make context-refresh
+- **Pre-commit (recommended):**
+  If a patch modifies files in §6.1 but does not include doc updates (`docs/CONTEXT.md`, `LLD.md`, `HLD.md`), the agent should **automatically append** a commit:
+```
+chore(context): auto-sync CONTEXT.md (+LLD/HLD)
 ```
 
-or
-
-```bash
-agent_tool_call: update-context --auto
-```
-
-after any commit that modifies Go source files under `core/`, root `builder.go`, or `pipeline/`.
-If `make context-refresh` is unavailable, prefer the agent tool call.
+- **CI lint (recommended):**
+- Ensure `docs/CONTEXT.md`'s `last_updated` is within ±3 days of the latest commit touching core/guard/engine.
 
 ---
 
 ## 8. Observability and Logging Rules
 
-Agents must preserve the following principles:
-
 * Never print directly to stdout in production paths.
-* Use `core.Logger`, `core.Tracer`, and `core.Meter` interfaces.
-* Ensure proper `Close()` and cleanup of registered resources.
-* Always record latencies and token usage in metrics when calling LLMs or retrievers.
+* Use `core.Logger` injected via Context (`core.LoggerFromContext(ctx)`).
+* Use `core.Tracer` via `Client` or `SupervisedAction`.
+* Ensure `SupervisedAction` always starts a parent span.
 
 ---
 
@@ -180,88 +150,168 @@ Agents must preserve the following principles:
 
 Agents must maintain or extend test coverage when altering code in these areas:
 
-* Pipeline orchestrator and stages: `pipeline/sandwich_test.go`, `pipeline/sandwich_selection_test.go`, `pipeline/stage_llm_test.go`, `pipeline/pipeline_test.go`; add or update `pipeline/declarative/*_test.go` when modifying declarative.
-* Provider families under `internal/providers/*`.
+* `internal/supervisor/`: Trace hierarchy and error handling.
+* `engine/`: Policy evaluation and reflection.
+* `adapters/`: Adapter correctness (mocking external drivers).
 
-Test names should follow `Test<Component>_<Behavior>` naming pattern.
-
----
-
-## 10. Summary
-
-This file defines how coding agents maintain, reason about, and update Manglekit.
-The automation described here ensures that `docs/CONTEXT.md` always mirrors the true state of the codebase.
-
-> *“An agent is only as smart as its context — keep it fresh, structured, and faithful.”*
+Use naming pattern `Test<Component>_<Behavior>`.
 
 ---
 
-## 11. Architecture Rules (Enforced)
+## 10. Architecture Rules (Enforced)
 
-These rules codify the new Builder/Registry/Factory/Provider pattern. Agents must adhere to them for every change.
+Agents must strictly adhere to the **Veto Rules** defined in `docs/ARCHITECTURE_RULES.md`.
+Any code violating these rules must be rejected or refactored immediately.
 
-- Layered dependencies
-  - core must not import internal/providers, pipeline, or the root module.
-  - pipeline must not import internal/providers (or any concrete providers).
-  - Providers import only core (and standard/external libs). No provider imports the builder.
-- Provider registration
-  - Every provider exposes an Options struct implementing `core.ProviderOptions` (name + kind) with `yaml` tags for config.
-  - Register providers via the generic `manglekit.Register[T, D, O]` with a typed factory; avoid ad‑hoc maps or stringly registration.
-  - Use typed Deps (from `core/diapi`) in factories. Do not accept the builder as a dependency in factories; handlers construct deps.
-- Handlers per kind
-  - Build logic belongs to `core.ComponentHandler` implementations, one per kind. Handlers assemble `diapi.*Deps` and call factories.
-  - When adding a new kind, include: (1) a handler, (2) a build order slot in `builder.go`, and (3) provider registration.
-- Orchestrators
-  - Orchestrator options implement `core.ProviderOptions` with kind `core.KindOrchestrator`.
-  - Register an orchestrator factory and a matching handler; selection of component names must be explicit in options (no map iteration).
-  - State provider selection must be configured (not “first entry”).
-- Configuration binding
-  - All options must be yaml‑tagged and mapstructure‑friendly; file path fields should use `path:"resolve"` when applicable.
-  - `sdk.FromConfig` is the only bridge from YAML to builder calls; do not parse config inside providers or orchestrators.
-- Observability & lifecycle
-  - No direct stdout prints in production paths; use `core.Logger`.
-  - Collect `core.ResourceCloser` from components (via handler) and drain LIFO in orchestrators.
-  - Record standard metrics for stages and LLM token usage; wire `core.Tracer` if provided.
-
-Automated checks:
-- Keep `docs/rules/manglekit-arch.yml` passing. If a rule must be relaxed, add rationale to `docs/ADR.md` and update the rule.
-- If you add or modify kinds/handlers/factories, update diagrams and Known Gaps in `docs/CONTEXT.md`.
+**Key Constraints Summary:**
+- **⛔ STRICT IMPORT BOUNDARIES**: User-space code must NEVER import `internal/`.
+- **⛔ NO MANUAL LOGGING**: Use Guard Middleware; no `fmt.Println`.
+- **⛔ TYPE SAFETY**: Use `manglekit.Define[In, Out]`.
+- **⛔ NO 3RD-PARTY DEPS IN CORE**: Keep `core` lightweight.
+- **⛔ CONTEXT PROPAGATION**: `ctx` is mandatory everywhere.
+- **Layered dependencies**:
+    - `supervisor` depends on `engine` and `core`.
+    - `engine` depends on `core` and `google/mangle`.
+    - `adapters` depend on `core` and external drivers.
+    - `core` has NO dependencies.
 
 ---
 
-## 12. Implementation Checklists
+## 11. Implementation Checklists
 
-When adding or changing components, follow the checklists below.
+### New Adapter
 
-- New provider (retriever, reranker, embedder, LLM, vector store, rules, state)
-  - Define `Options` implementing `core.ProviderOptions` with proper `yaml` tags.
-  - If dependencies are required, declare through `diapi` dep marker interfaces (e.g., `EmbedderDep`, `VectorStoreDep`, `SubRetrieversDep`).
-  - Register with `manglekit.Register[T, D, O]` using a typed factory that accepts the matching `diapi.*Deps`.
-  - Ensure a handler for the kind exists (or add one under `internal/providers/<kind>/handler.go`).
-  - Add tests under the provider folder; ensure determinism and lifecycle coverage.
-  - Run context refresh and update Known Gaps if behavior or wiring differs from the standard.
+- Implement `core.Action` interface.
+- Define `Metadata()` returning name and type.
+- Ensure `Execute(ctx, env)` passes context through.
+- Do NOT start spans (leave that to Guard).
 
-- New orchestrator
-  - Create `Options` implementing `core.ProviderOptions` (kind = `core.KindOrchestrator`).
-  - Register a typed factory and a dedicated handler; avoid arbitrary dependency selection (require names in options).
-  - Cover stage metrics, logging, and closers. Add tests for explicit component selection.
-  - Refresh docs and Known Gaps; update HLD/LLD diagrams if flow semantics differ.
+### Policy Logic Change
 
-- Core or DI changes
-  - Never import providers or pipeline from core.
-  - If `diapi` contracts change, update all handlers and factories to keep signatures aligned.
-  - Bump `last_updated` across `CONTEXT.md`, `LLD.md`, and refresh `docs/rules/` as needed.
-
-Reject / fix anti‑patterns:
-- Factories that accept the builder directly (use typed deps instead).
-- Orchestrators or providers picking the “first” dependency from a map.
-- init() registration inside providers (use explicit `Register` functions).
-- Magic strings for execution context; use typed contexts or adapters where applicable.
+- Update `engine/solver.go` or `engine/runtime.go`.
+- Ensure `Assess` and `Reflect` methods are updated.
+- Update `docs/LLD.md` reflection section if needed.
 
 ---
 
-## 13. Post‑Change Actions
+## 12. Architectural Patterns (Reference)
 
-- Run tests: `go test ./...` and ensure provider/orchestrator coverage.
-- Run static checks that use `docs/rules/manglekit-arch.yml`.
-- Trigger context update: `make context-refresh` or `agent_tool_call: update-context --auto`.
+This section documents key architectural patterns for v1.0.
+
+### 12.1 The "Supervised Action" Pattern
+
+**Context:** We need to enforce policy and observability on *any* operation without modifying the operation itself.
+
+**Implementation:**
+- Use the Decorator pattern.
+- `SupervisedAction` implements `core.Action`.
+- It wraps an inner `core.Action`.
+- It executes `Trace -> Assess -> Inner.Execute -> Reflect`.
+
+**When Implementing:** The `sdk.Client` automatically wraps registered actions. Never manually construct `supervisor.SupervisedAction` in user code.
+
+### 12.2 The "Universal Adapter" Pattern
+
+**Context:** We want to support many external libraries (Genkit, LangChain) without tight coupling.
+
+**Implementation:**
+- Define a thin adapter struct that holds the external client.
+- Implement `core.Action` on the adapter.
+- Map `core.Envelope` (Payload) to the external client's input format.
+- Map the external client's output back to `core.Envelope`.
+
+**When Implementing:** Create new packages in `adapters/` for new external libraries. Keep them thin.
+
+### 12.3 Zero-Config Reflection
+
+**Context:** We need to validate arbitrary Go structs in Datalog without writing manual mappers.
+
+**Implementation:**
+- Use `core/reflection` to walk the struct.
+- Generate facts: `field(ID, "FieldName", Value)`.
+- Use `engine.Reflector` in the Policy Engine.
+
+**When Implementing:** Rely on `engine.Assess/Reflect` to handle conversion. Do not write custom `ToFacts` methods unless absolutely necessary for performance.
+
+---
+
+## 13. Provider Test Architecture
+
+### 13.1 Strategy 1: Unit Test (Adapter Logic)
+
+*   **Use Case:** Testing that an adapter correctly marshals data to/from the external driver.
+*   **Method:** Mock the external driver (e.g., use a mock Genkit model or HTTP client).
+*   **Goal:** Verify `core.Envelope` conversion.
+
+### 13.2 Strategy 2: Integration Test (Policy Enforcement)
+
+*   **Use Case:** Testing that `client.Protect()` correctly enforces rules.
+*   **Method:**
+    1.  Create a real `manglekit.Client` with a test policy file.
+    2.  Wrap a mock Action.
+    3.  Execute and assert that `AlignmentError` occurs when expected.
+*   **Goal:** Verify the Supervisor/Engine interaction.
+
+---
+
+## 14. Documentation Cross-References
+
+| Document | Purpose | When to Use |
+|-----------|---------|------------|
+| `docs/CONTEXT.md` | Live architecture snapshot | Reasoning about current system state |
+| `docs/HLD.md` | High-level design & layering | Understanding system boundaries |
+| `docs/LLD.md` | Low-level implementation details | Implementing new adapters or engine logic |
+| `docs/ADR.md` | Architecture decisions | Understanding *why* (e.g., why Builder was removed) |
+| `docs/LOGGING.md` | Observability conventions | Implementing logging |
+| `docs/TRACING.md` | OTel span hierarchy | Debugging trace issues |
+| `docs/ARCHITECTURE_RULES.md` | Architecture rules |  |
+
+---
+
+## 15. Agent Diagnostic Checklist
+
+Before committing any code changes, verify:
+
+### Code Quality Checks
+- [ ] All new functions/types have clear documentation
+- [ ] No global state
+- [ ] Context used for Logger/Tracer access
+
+### Architecture Compliance Checks
+- [ ] **Veto Rules Check**: Verified against `docs/ARCHITECTURE_RULES.md`
+- [ ] No illegal cross-layer imports
+- [ ] Adapters do not depend on Supervisor or Engine
+- [ ] Supervisor always creates a span
+
+### Documentation Checks
+- [ ] `docs/CONTEXT.md` updated
+- [ ] `docs/LLD.md` updated if logic changed
+- [ ] `last_updated` timestamp bumped in all modified docs
+
+### Safety Checks
+- [ ] No hallucinated code — all changes based on diff evidence
+- [ ] YAML metadata preserved in all docs
+- [ ] No removal of documented sections or warnings
+- [ ] Commit is atomic and logically coherent
+
+### DEFINITION OF DONE (MANDATORY)
+The agent must NOT consider a task finished until:
+- The code logic is implemented.
+- Tests are updated.
+- `docs/CONTEXT.md` has been checked and updated (ChangeLog + Architecture Snapshot).
+- The `last_updated` field in `CONTEXT.md` matches today's date.
+
+If you produce code but do not produce the diff for `CONTEXT.md`, you are violating the system rules.
+
+---
+
+## 16. Summary & Core Principles
+
+**The Manglekit SDK embodies these core principles:**
+
+1.  **Universal Governance**: Everything is an Action; every Action is Supervised.
+2.  **Composition**: Wrap existing objects; don't reinvent them.
+3.  **Observability**: Tracing and Logging are first-class citizens.
+4.  **Policy-Driven**: Logic Engine controls execution flow.
+
+> *"An agent is only as smart as its context — keep it fresh, structured, and faithful."*

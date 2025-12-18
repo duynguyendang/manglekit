@@ -1,0 +1,65 @@
+% --- Manglekit Standard Library (v2.0) ---
+% Auto-loaded on engine startup.
+
+% ==========================================
+% 1. DATA REFLECTION (DO NOT REMOVE)
+% These predicates allow the engine to read JSON inputs and Graph data.
+% ==========================================
+
+% JSON Primitives (Flattened)
+Decl json_str(Parent, Key, Val).
+Decl json_num(Parent, Key, Val).
+Decl json_bool(Parent, Key, Val).
+Decl json_link(Parent, Key, Child).
+Decl json_null(Parent, Key).
+
+% Knowledge Graph Primitives (N-Quads/Triples)
+Decl quad(S, P, O, G).
+Decl triple(S, P, O).
+triple(S, P, O) :- quad(S, P, O, _).
+
+% ==========================================
+% 2. SYSTEM CONTROL (Standard Vocabulary)
+% ==========================================
+
+% Arity 1: Global/Single-Context (JSON) 
+Decl deny(Reason). 
+Decl halt(Reason).
+Decl route(NextStep). 
+Decl retry(Feedback).
+
+% Arity 2: Entity-Specific (Graph/Batch) 
+% Allows pinning the decision to a specific node (Entity). 
+Decl deny(Entity, Reason). 
+Decl halt(Entity, Reason).
+Decl route(Entity, NextStep). 
+Decl retry(Entity, Feedback).
+
+% Config is always Key-Value (Arity 2) or Entity-Key-Value (Arity 3) 
+Decl config(Key, Value). 
+Decl config(Entity, Key, Value).
+
+% Semantic Alias for backward compatibility
+halt(Reason) :- deny(Reason).
+halt(Entity, Reason) :- deny(Entity, Reason).
+
+% ==========================================
+% 3. CONTEXT INJECTION
+% These predicates are injected by the runtime environment.
+% ==========================================
+
+Decl attempt(N).            % Current retry count (0, 1, 2...).
+Decl meta(Key, Value).      % Envelope metadata (e.g., user_id, session_id).
+Decl label(Tag).            % Security taint labels (e.g., "pii", "unsafe").
+
+% Telemetry Predicate (Arity 2: Entity, RuleID)
+Decl violation_rule(Entity, RuleID).
+
+% --- Helper: String Matching ---
+
+% input_contains(Req, Keyword)
+% Checks if the input text payload contains the keyword (case-insensitive if supported).
+% NOTE: fn:contains is not supported in Mangle v0.3.0, so this helper is currently disabled.
+% input_contains(Req, Keyword) :-
+%    value(Req, "text", Text),
+%    fn:contains(Text, Keyword).

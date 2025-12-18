@@ -1,0 +1,34 @@
+% protocol.dl
+% Declarations
+topic("decl").
+sentiment("decl").
+
+% 1. Human Manager: Angry Billing or Angry Technical (High Urgency/Escalation)
+next_step("Req", "human_manager") :-
+    topic("billing"),
+    sentiment("negative").
+
+next_step("Req", "human_manager") :-
+    topic("technical"),
+    sentiment("negative").
+
+% 2. Tech Support: Technical (Neutral/Positive)
+next_step("Req", "tech_support_bot") :-
+    topic("technical"),
+    sentiment("neutral").
+
+next_step("Req", "tech_support_bot") :-
+    topic("technical"),
+    sentiment("positive").
+
+% 3. General Bot: General Inquiry OR Non-Angry Billing
+next_step("Req", "general_chat_bot") :-
+    topic("general_inquiry").
+
+next_step("Req", "general_chat_bot") :-
+    topic("billing"),
+    sentiment("neutral").
+
+next_step("Req", "general_chat_bot") :-
+    topic("billing"),
+    sentiment("positive").

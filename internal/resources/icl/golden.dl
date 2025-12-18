@@ -1,0 +1,34 @@
+% --- Manglekit Golden Rules (Best Practices) ---
+
+% Pattern 1: Simple Check (Primitives)
+% Logic: Deny if risk_level is "critical".
+Decl is_high_risk(R).
+is_high_risk(R) :- json_str(R, "risk_level", "critical").
+deny(R, "High Risk detected") :- is_high_risk(R).
+
+% Pattern 2: Nested Object Traversal (Use json_link)
+% JSON: { "user": { "profile": { "age": 15 } } }
+% Logic: Deny if user is under 18.
+Decl user_underage(R).
+user_underage(R) :-
+    json_link(R, "user", U),       % Traverse to 'user' object
+    json_link(U, "profile", P),    % Traverse to 'profile' object
+    json_num(P, "age", Age),       % Extract 'age'
+    Age < 18.
+deny(R, "User Underage") :- user_underage(R).
+
+% Pattern 3: Array Scanning (Implicit OR)
+% JSON: { "roles": ["admin", "editor"] }
+% Logic: Check if "admin" exists in the list.
+Decl is_admin(R).
+is_admin(R) :-
+    json_link(R, "roles", List),
+    json_str(List, _, "admin").    % The '_' matches any index in the array
+
+% Pattern 4: Steering (Retry with Feedback)
+% Logic: If execution fails (attempt > 0) and validation fails, retry with Chain-of-Thought
+route("escalation_agent") :-
+    attempt(N), N > 2.
+
+config("prompt.strategy", "cot") :-
+    attempt(N), N > 0.

@@ -1,0 +1,26 @@
+# Manglekit Safety Policy
+
+# Declarations for EDB predicates (External/Reflected facts)
+Decl req_operation(Req, Op).
+Decl metadata_namespace(Pod, Ns).
+Decl metadata_labels(Pod, Key, Val).
+Decl is_peak_hour(Req, Val).
+
+# 1. Predicates for Deep Traversal
+pod_namespace(Pod, Namespace) :- metadata_namespace(Pod, Namespace).
+pod_label(Pod, Key, Value) :- metadata_labels(Pod, Key, Value).
+
+# 2. High-Risk Denial Rules
+
+# Rule 1: Deny deletion of a critical pod (Checks metadata/labels - deep traversal)
+deny(Req) :-
+    req_operation(Req, "DELETE"),
+    pod_label(Req, "tier", "critical").
+
+# Rule 2: Deny any operation on the 'production' namespace during peak hours
+# Checks nested field + external fact (simulating function)
+deny(Req) :-
+    pod_namespace(Req, "production"),
+    req_operation(Req, Op),
+    Op != "READ",
+    is_peak_hour(Req, "true").

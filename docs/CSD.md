@@ -1,73 +1,107 @@
-# Conceptual Solution Design (CSD) for Manglekit
+# Conceptual Solution Design (CSD) — Manglekit
 
-## Overview
-Manglekit addresses key business needs in AI-driven knowledge management by providing a lightweight framework for controlled Retrieval-Augmented Generation (RAG). It integrates rule-based logic, semantic retrieval, and AI orchestration to deliver explainable, policy-compliant responses, reducing risks like hallucinations or data leaks in enterprise applications. This CSD maps high-level business requirements to a conceptual solution, ensuring alignment with product goals such as scalability for growing user bases, compliance with regulations (e.g., GDPR for redaction), and cost efficiency through modular integration.
+**Edition:** 1.0
+**Concept:** The Neuro-Symbolic Engine for Agents
+**Core Tech:** Go, Google Genkit, Google Mangle.
 
-The solution enables organizations to build trustworthy AI tools – from internal support systems to customer-facing chatbots – without vendor lock-in, supporting rapid iteration and ROI through embeddable Go-based deployment.
+## 1. The Challenge: Taming the Stochastic Runtime
 
-## Business Requirements
-Based on stakeholder inputs, core requirements include:
-- **Functional**: Support ontology-aware search with expansion to handle ambiguous queries (e.g., "app crash" → domain-specific troubleshooting), while enforcing policies for access control and content filtering.
-- **Non-Functional**: Achieve <500ms response times for 100+ concurrent users; ensure 99% uptime via resilient design; maintain explainability for audit trails (e.g., regulatory compliance in finance/healthcare).
-- **Product Goals**: Modular framework for easy adoption (e.g., integrate into existing apps); cost-effective (open-source core, pluggable paid LLMs); scalable to handle 1M+ documents without performance degradation.
-- **Constraints**: Focus on text-based RAG; avoid complex graph databases to keep development lean (under 3 months to MVP); prioritize developer productivity over full enterprise features.
+Building reliable agents on probabilistic models (LLMs) presents a fundamental engineering paradox:
+1. **Probabilistic Core:** LLMs are non-deterministic and creative.
+2. **Deterministic Requirement:** Applications require strict adherence to logic, protocols, and type safety.
 
-## Mapping Requirements to Solution
-- **Requirement: Controlled Query Handling** → Solution: Sandwich Pattern (rules pre/post RAG) prevents drift, mapping to business need for accurate, scoped responses in knowledge-intensive workflows.
-- **Requirement: Explainability & Compliance** → Solution: Rule annotations and redaction ensure traceable decisions, addressing audit needs and reducing liability (e.g., "why was this info filtered?").
-- **Requirement: Scalability & Integration** → Solution: Pluggable components (e.g., Vector DB, LLM providers) allow horizontal scaling and easy embedding, supporting business growth without re-architecting.
-- **Requirement: Cost Efficiency** → Solution: Go-based library minimizes runtime overhead; hybrid retrieval optimizes API calls to expensive LLMs.
+Current frameworks often over-abstract this problem or rely on fragile prompt engineering. Manglekit solves this by introducing a **Deterministic Control Plane** that wraps the probabilistic runtime.
 
-## Key Concepts (Business Perspective)
-- **Sandwich Pattern**: Wraps RAG with rules to align AI outputs with business policies, ensuring responses are relevant and safe – critical for trust in AI adoption.
-- **Hybrid Retrieval**: Semantic + keyword search improves result quality, directly supporting requirements for high-recall knowledge discovery (e.g., in support tickets).
-- **Rule Engine (Mangle)**: Declarative policies on facts (e.g., user roles, ontologies) enable customization per business unit, like restricting sensitive data in HR vs. engineering.
-- **Orchestration (Genkit)**: Manages flows to route intents (e.g., Q&A vs. exploration), optimizing resource use and aligning with UX goals for seamless interactions.
-- **Guardrails & Traceability**: Built-in annotations promote accountability, meeting compliance reqs while providing insights for product improvements (e.g., analyze rule firings for feature gaps).
+The Mission: To provide a rigorous **Neuro-Symbolic Runtime** that enables developers to build agents that are inherently observable, reliable, and self-correcting.
 
-## Use Cases
-- **Internal Knowledge Base**: Developers query docs with role-based access; business benefit: Faster onboarding, reduced support tickets (20-30% time savings).
-- **Compliance-Checked Chatbot**: Customer service bots redact PII and explain denials; ROI: Avoid fines, improve satisfaction via transparent AI.
-- **Exploratory Analytics**: Sales teams expand queries over reports; value: Deeper insights without data scientist involvement, accelerating decisions.
-- **Edge Deployment**: Offline-capable library in mobile/field apps; advantage: Low-latency, no cloud dependency for remote ops.
+---
 
-## Component Interactions and Data Flows (High-Level)
-- **Query Flow**: User input → Orchestration (intent routing) → Pre-rules (scope/expand) → Retrieval (hybrid search) → Post-rules (validate/redact) → Synthesis (AI response with citations).
-- **Ingestion Flow**: Async document upload → Chunking/embedding → Index update, supporting business need for dynamic knowledge updates.
-- **Diagram**:
-  ```
-  [Business User/App] --> [Orchestrator (Flow Mgmt)]
-                          |
-                          v
-  [Pre-Rules (Policy Scope)] --> [Retrieval (Semantic + Keyword)]
-                          |                          |
-                          v                          v
-  [Post-Rules (Compliance Check)] --> [AI Synthesis (Guarded Response)]
-                          |                          |
-                          v                          |
-  [Traceable Output (Auditable)] <-------------------
-  ```
-  Flows ensure end-to-end compliance, with modularity for business-specific customizations.
+## 2. The Solution: Dual-Brain Architecture
 
-## Design Decisions and Rationale (Tied to Requirements)
-- **Modular, Pluggable Design**: Addresses integration reqs by allowing swaps (e.g., open-source vs. enterprise Vector DBs), reducing vendor costs by 40-50%.
-- **Rule-First Approach**: Prioritizes business control over raw AI power, mitigating risks like biased outputs – essential for regulated industries.
-- **Lightweight Go Framework**: Meets performance/scalability goals with low overhead; rationale: Embeddable for diverse environments (cloud/edge), faster dev cycles.
-- **Hybrid Over Pure Semantic**: Balances accuracy/cost; business impact: Higher user satisfaction, fewer follow-up queries.
-- **Non-Functional Alignment**:
-  - **Scalability**: Horizontal design supports growth; e.g., auto-scale for peak loads.
-  - **Resilience/Security**: Fallbacks and policies ensure availability/compliance.
-  - **Observability**: Metrics for ROI tracking (e.g., query success rate).
+Manglekit unifies logic and execution into a single **"Supervised Action"**. It follows a **Left Brain / Right Brain architecture** to separate concerns:
 
-## Assumptions and Constraints
-- Assumes pre-defined ontologies/policies provided by business; no auto-learning (to avoid complexity).
-- Text-focused; multi-modal as phase 2.
-- Budget: Open-source dev, optional cloud costs for prod DBs.
-- Team: 3-5 engineers familiar with Go/AI.
+### System Topology
 
-## Next Steps
-- Validate with stakeholders: Map to specific reqs via workshop.
-- Prototype key use cases to demo business value.
-- Refine based on feedback; transition to technical HLD/LLD.
+| Component | Technology | Role | Responsibility |
+| :--- | :--- | :--- | :--- |
+| **The Left Brain** | **Google Mangle** | **The Logic Engine** | Holds the **Blueprints**. Performs deterministic reasoning, State Evaluation, and Routing. |
+| **The Right Brain** | **Genkit / LLM** | **The Intuition** | Wraps the LLMs (Gemini, OpenAI, Llama). Performs probabilistic tasks (Reasoning, Generation). |
+| **The Body** | **Go (Golang)** | **The Runtime** | The high-concurrency nervous system that binds Logic and Intuition together. |
 
-This CSD ensures Manglekit delivers tangible business outcomes, from enhanced productivity to risk reduction.
+### The Philosophy: "Wrap, Don't Build"
+
+Manglekit is not a framework that dictates your application structure. It is a **Middleware Engine**.
+* You bring the capabilities (Genkit flows, Tools, APIs).
+* Manglekit wraps them in a **Supervisor** shell.
+* The shell handles the **Feedback Loop**: If the Intuition fails (Logic Alignment Error), the Logic generates corrective feedback for a retry.
+
+---
+
+## 3. Core Architecture: The "Supervised Action"
+
+The fundamental atomic unit of Manglekit is the **Supervised Action**. It wraps raw AI capabilities inside a deterministic logic shell.
+
+**The Execution Lifecycle:**
+
+1.  **Context Injection (Go):** The SDK captures the request and injects context (User Role, Budget, History) into the Runtime.
+2.  **Blueprint Check (Mangle):** The Engine consults the **Blueprint** (Datalog).
+    * *Logic:* "Does this request meet the preconditions?"
+    * *Outcome:* If valid, proceed. If invalid, return a structured `AlignmentError`.
+3.  **Execution (Genkit):** The Request is passed to the AI Adapter. The AI performs the task (e.g., Generate Code).
+4.  **Evaluation & Steering (Mangle):** The output is checked against the Blueprint. The Engine makes a Decision:
+    * *Correction (Retry):* If the error is recoverable (e.g., Syntax Error), feed feedback to AI and loop.
+    * *Steering (Route):* If the result requires escalation (e.g., High Risk), route to a different handler (e.g., Human Review) without re-prompting the AI.
+    * *Rejection (Deny):* If the violation is critical, halt execution immediately.
+
+---
+
+## 4. System Building Blocks
+
+| Component | New Terminology | Role |
+| :--- | :--- | :--- |
+| **Logic Store** | **The Blueprint** | The "Source of Truth". Defines the SOP and Logic Structure. Decoupled from execution. |
+| **SDK** | **Client** | The entry point. Developers use client.Manage() to wrap capabilities. |
+| **Interceptor** | **Supervisor** | The middleware that enforces the **Blueprint**. Manages the state machine. |
+| **Drivers** | **Integrations** | Bridges to external capabilities (LLMs, Vector DBs). Uses the **Clean Adapter Pattern**. |
+
+---
+
+## 5. Technical Capabilities
+
+### 5.1 Neuro-Symbolic Steering
+We use logic predicates to control the execution flow.
+* **Mechanism:** `next_step("review_phase") :- output.confidence < 0.9.`
+* **Result:** The runtime dynamically routes the execution based on logic inference, not hardcoded switches.
+
+### 5.2 Resilience Layer (Circuit Breaker)
+* **Problem:** Downstream AI providers may experience outages or latency spikes.
+* **Solution:** A native, zero-dependency **Circuit Breaker** ensures the runtime Fails Fast to preserve system resources.
+
+### 5.3 Zero-Config Reflection
+* **Feature:** Automatic mapping of Go structs to Datalog facts.
+* **Benefit:** Your Go types *are* the schema. No manual serialization code required.
+
+### 5.4 Logical Observability
+* **Feature:** Deep tracing of the reasoning process.
+* **Output:** OpenTelemetry spans show exactly which **Logic Rule** triggered a decision, providing full auditability of the agent's behavior.
+
+---
+
+## 6. Developer Experience:
+
+1.  **Go-Native:** No Python bloat. No sidecars. Manglekit compiles to a single, lightweight binary perfect for Kubernetes or Edge.
+2.  **Protocol-First Development:** Don't bury logic in if/else statements. Write protocols in .dl files and hot-swap them instantly without recompiling.
+3.  **Zero-Guesswork:** With `GenerateStruct[T]`, your Go types are the schema. The AI speaks your language, not the other way around.
+4. **Type-Safety:** Enforces strong typing at the boundaries between Neural (AI) and Symbolic (Logic) components.
+5.  **Observability:** Every "thought" (LLM call) and every "decision" (Mangle rule) is traced via OpenTelemetry. You can see exactly *why* the Agent acted the way it did.
+
+---
+
+## 7. Summary
+
+**Manglekit is the Neuro-Symbolic Engine for Go**
+
+It provides the **Control Plane** for probabilistic AI, ensuring that agents are:
+* **Deterministic** (Guided by Blueprints)
+* **Reliable** (Self-Correcting)
+* **Observable** (Logical Tracing)

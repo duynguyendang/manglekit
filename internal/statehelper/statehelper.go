@@ -21,7 +21,7 @@ func (cm *ConversationManager) LoadHistory(ctx context.Context, sessionID string
 	if sp != nil && sessionID != "" {
 		rawState, err := sp.Get(ctx, sessionID)
 		if err != nil {
-			logger.Warnf("Failed to retrieve state for session %s: %v", sessionID, err)
+			logger.Warn("Failed to retrieve state for session", "sessionID", sessionID, "error", err)
 			// Do not fail the request, just proceed without history.
 		}
 
@@ -30,7 +30,7 @@ func (cm *ConversationManager) LoadHistory(ctx context.Context, sessionID string
 			// For simplicity, we assume the state is stored as a JSON string.
 			if stateBytes, ok := rawState.([]byte); ok {
 				if err := json.Unmarshal(stateBytes, history); err != nil {
-					logger.Warnf("Failed to unmarshal state for session %s: %v", sessionID, err)
+					logger.Warn("Failed to unmarshal state for session", "sessionID", sessionID, "error", err)
 				}
 			}
 		}
@@ -49,10 +49,10 @@ func (cm *ConversationManager) UpdateAndSaveHistory(ctx context.Context, session
 		// Marshal the updated history to JSON before saving.
 		updatedStateBytes, err := json.Marshal(history)
 		if err != nil {
-			logger.Warnf("Failed to marshal updated state for session %s: %v", sessionID, err)
+			logger.Warn("Failed to marshal updated state for session", "sessionID", sessionID, "error", err)
 		} else {
 			if err := sp.Set(ctx, sessionID, updatedStateBytes); err != nil {
-				logger.Warnf("Failed to save state for session %s: %v", sessionID, err)
+				logger.Warn("Failed to save state for session", "sessionID", sessionID, "error", err)
 			}
 		}
 	}

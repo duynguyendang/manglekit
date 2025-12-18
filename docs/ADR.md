@@ -1,315 +1,261 @@
-# ADR — Consolidated Architecture Decisions for Manglekit Core
+# ADR — Manglekit Architecture Masterplan
 
-**Status:** Accepted
-**Scope:** Core SDK (registry, builder, orchestrators, providers, config bridge)
-**Period:** Oct 2025
-**Audience:** Core maintainers, provider/orchestrator authors, contributors
+**Project:** Manglekit Core
+**Status:** Live Document
+**Version:** v1.2 (Cognitive Systems)
+**Last Updated:** 2025-12-17
 
----
+## 1\. Architecture Roadmap (The Shift)
 
-## 1) Architecture becomes **Config-First & Declarative**
+This table illustrates the evolution from the legacy "Builder/DI" pattern to the modern "Composition/Plugin" architecture.
 
-### Context
+| ID | Title | Era | Status | Replaces/Evolves |
+|----|-------|-----|--------|------------------|
+| **1** | [Config-First & Declarative Strategy](https://www.google.com/search?q=%23adr-1-config-first--declarative-strategy) | Foundation | Accepted | N/A |
+| **2** | [Observability-Native Lifecycle](https://www.google.com/search?q=%23adr-2-observability-native-lifecycle) | Foundation | Accepted | N/A |
+| **3** | [Universal Context Propagation](https://www.google.com/search?q=%23adr-3-universal-context-propagation) | Foundation | Accepted | N/A |
+| **4** | [Composition-Based Governance Kernel](https://www.google.com/search?q=%23adr-4-composition-based-governance-kernel) | Renaissance (v1.0) | Accepted | *Old ADR 4 (Generic Builder)* |
+| **5** | [Domain-Driven Core Abstractions](https://www.google.com/search?q=%23adr-5-domain-driven-core-abstractions) | Expansion (v1.1) | Accepted | *Legacy `core/*` structure* |
+| **6** | [Hybrid "Low-Code" Gateway Pattern](https://www.google.com/search?q=%23adr-6-hybrid-low-code-gateway-pattern) | Expansion (v1.1) | Accepted | *Old ADR 10 (Dual-Path)* |
+| **7** | [Decoupled Provider Registry (Plugins)](https://www.google.com/search?q=%23adr-7-decoupled-provider-registry-plugins) | Expansion (v1.1) | Accepted | *Old ADR 7 (Per-Kind Handlers)* |
+| **8** | [Functional Options for Providers](https://www.google.com/search?q=%23adr-8-functional-options-for-providers) | Expansion (v1.1) | Accepted | *Old ADR 11 (DependencyResolver)* |
+| **9** | [Strict Dependency Inversion in Governance](https://www.google.com/search?q=%23adr-9-strict-dependency-inversion-in-governance) | Expansion (v1.1) | Accepted | *N/A (Fix)* |
+| **10** | [Architectural Boundaries Enforcement](https://www.google.com/search?q=%23adr-10-architectural-boundaries-enforcement) | Process | Accepted | *Old ADR 8 (Static Rules)* |
+| **11** | [Dual-Tier Testing Strategy](https://www.google.com/search?q=%23adr-11-dual-tier-testing-strategy) | Process | Accepted | *Old ADR 6 (Testing)* |
+| **12** | [Unified Governance Gates](https://www.google.com/search?q=%23adr-12-unified-governance-gates) | Integration (v1.2) | Accepted | *Legacy distinct Assess/Validate* |
+| **13** | [Semantic State Machine (The Loop)](https://www.google.com/search?q=%23adr-13-semantic-state-machine-the-loop) | Integration (v1.2) | Accepted | *Legacy linear execution* |
+| **14** | [Native Structured Envelopes](https://www.google.com/search?q=%23adr-14-native-structured-envelopes) | Integration (v1.2) | Accepted | *Legacy JSON text parsing* |
 
-Early versions mixed runtime construction with ad-hoc configuration, making examples brittle and pipelines hard to reproduce/migrate.
+-----
 
-### Decision
+## I. The Foundation (Immutable Principles)
 
-Adopt a **config-first** stance: YAML/ENV become first-class inputs. Introduce a thin **config→builder bridge** (`from_config`), which validates/normalizes config and then calls the builder with typed options.
+*These decisions established the bedrock of the system and remain active.*
 
-### Rationale
+### ADR 1: Config-First & Declarative Strategy
 
-* Reproducibility (pipelines can be checked in, diffed, and promoted).
-* Cleaner separation of concerns: parsing/validation vs. construction.
+**Context:**
+Early versions mixed runtime construction with ad-hoc configuration.
+**Decision:**
+Configuration (YAML/ENV) is a first-class citizen. System behavior must be definable declaratively.
+**Rationale:**
+Allows "Manglekit as a Service" deployments where artifacts are immutable.
+**Consequences:**
+The `config` package is a foundational dependency.
 
-### Consequences
+### ADR 2: Observability-Native Lifecycle
 
-* Config parsing and path resolution are decoupled from the builder.
-* Examples and docs center on declarative usage.
-* A minimal `DecodeOptions` utility maps config maps → typed options.
+**Context:**
+AI applications are non-deterministic; resource leaks (goroutines/connections) were common.
+**Decision:**
+Observability and Lifecycle are mandatory.
 
-### Migration
+  * **Trace:** Every Action emits spans.
+  * **Log:** Unified `core.Logger` via Context.
+  * **Close:** Graceful shutdown via `ResourceCloser`.
+    **Rationale:**
+    "If it's not traced, it didn't happen." Essential for debugging AI policies.
 
-* Move any parsing from the builder into the config bridge.
-* Keep the builder free of YAML/ENV specifics.
+### ADR 3: Universal Context Propagation
 
----
+**Context:**
+Request-scoped data (Trace ID, Cancellation) was lost across async boundaries.
+**Decision:**
+`context.Context` is mandatory as the first argument of every API.
+**Rationale:**
+Ensures distributed tracing continuity and proper timeout handling.
 
-## 2) **Observability & Lifecycle** are First-Class
+-----
 
-### Context
+## II. The Renaissance (v1.0 - The Kernel Shift)
 
-Resource leaks and inconsistent logging made debugging and operations difficult.
+*This era marks the move from a complex "Dependency Injection Framework" to a lightweight "Composition" model.*
 
-### Decision
+### ADR 4: Composition-Based Governance Kernel
 
-Unify logging/observability contracts and implement **graceful shutdown** for local/indexed stores and API clients. Resource closers are tracked centrally by the builder.
+*(Supersedes Legacy ADR 4: Generic Type-Safe Registry & Builder)*
 
-### Rationale
+**Context:**
+The v0.x architecture (Legacy ADR 4) used a massive "Generic Builder" and "DIAPI" to construct graphs. This created high cognitive load; adding a component required writing Handlers, Factories, and DI logic. The system was too rigid.
+**Decision:**
+**Abandon the monolithic Builder Pattern.** Adopt a **Composition Root** pattern.
 
-* Predictable, uniform logs across modules.
-* Safe teardown for tests, CLIs, and long-running services.
+1.  **Client:** A lightweight coordinator.
+2.  **Guard:** A `Supervise(action)` method that wraps *any* implementation with governance (Trace -\> AuthZ -\> Exec -\> Validate).
+3.  **Engine:** A dedicated Datalog runtime.
+    **Rationale:**
 
-### Consequences
+<!-- end list -->
 
-* Standard “closer” pattern and structured logging defaults.
-* Builders register closers when components are created.
+  * **Simplicity:** "Wrap, Don't Build." The framework governs objects instantiated by the user (or factory), rather than trying to be a "God Builder".
+  * **Flexibility:** Users can bring any library (Genkit, LangChain) and simply wrap it.
+    **Consequences:**
+  * **Deleted:** `builder` package, `diapi` package.
+  * **Introduced:** `sdk.Client`, `supervisor.SupervisedAction`.
 
-### Migration
+-----
 
-* Ensure every provider implements (or clearly opts out of) closer semantics.
-* Replace ad-hoc loggers with the unified interface.
+## III. The Expansion (v1.1 - Low Code & Modularity)
 
----
+*This era introduces the "Gateway" capabilities to support YAML-driven bots without compromising the clean kernel.*
 
-## 3) **Context Propagation** throughout the SDK
+### ADR 5: Domain-Driven Core Abstractions
 
-### Context
+**Context:**
+The `core` package became a "junk drawer" of mixed logic and interfaces (`action.go`, `memory.go`, `constants.go`), causing circular dependencies.
+**Decision:**
+Refactor `core` into 5 strict domain files containing **only Interfaces and Types**:
 
-Some APIs ignored `context.Context`, blocking cancellation, deadlines, and tracing.
+1.  `types.go`: Vocabulary (Constants, Envelope).
+2.  `logic.go`: Execution Contracts (AI/Actions).
+3.  `data.go`: Storage Contracts.
+4.  `governance.go`: Policy Contracts.
+5.  `infra.go`: Observability Contracts.
+    **Rationale:**
+    Creates a stable "Ubiquitous Language". Separates *Definitions* from *Implementations*.
 
-### Decision
+### ADR 6: Hybrid "Low-Code" Gateway Pattern
 
-Make `context.Context` explicit and mandatory across all factories and runtime calls.
+*(Evolved from Legacy ADR 10: Dual-Path Build)*
 
-### Rationale
+**Context:**
+ADR 4 optimized for "Pro-Code" (Go devs). However, Ops teams require defining Bot topology via `mangle.yaml` without writing code.
+**Decision:**
+Implement a **Dual-Mode Initialization Strategy**:
 
-* Enables cancellation, deadlines, and tracing.
-* Aligns with modern Go service patterns.
+1.  **Pro-Code:** `sdk.NewClient()` + Manual `RegisterAction()`.
+2.  **Low-Code:** `sdk.NewClientFromConfig()` which uses a **Factory Layer** (`sdk/config_loader.go`) to hydrate actions from YAML.
+    **Rationale:**
+    Balances flexibility for developers with ease-of-use for operators.
+    **Consequences:**
+    The SDK now contains logic to map YAML strings to Go structs via the Registry (ADR 7).
 
-### Consequences
+### ADR 7: Decoupled Provider Registry (Plugins)
 
-* Touches many signatures; simplifies test control and instrumentation.
-* More predictable behavior under load and during shutdown.
+*(Supersedes Legacy ADR 7: Per-Kind Handlers)*
 
-### Migration
+**Context:**
+To support ADR 6, the SDK initially hard-coded dependencies (e.g., `googleai`) in the loader. This violated OCP and bloated the SDK. Legacy ADR 7's "Handlers" were too complex and coupled to the Builder.
+**Decision:**
+Adopt a **Registry Pattern** with **External Providers**.
 
-* Thread `ctx` through all call chains (providers, orchestrators, stores).
+  * **SDK:** Exposes `sdk.RegisterProvider()`.
+  * **Providers:** (`providers/google`, `providers/openai`) register themselves at runtime.
+    **Rationale:**
+  * **Zero-Bloat:** SDK core has no heavy AI dependencies.
+  * **Extensibility:** Users can write custom providers without modifying SDK.
+    **Consequences:**
+    Users must explicitly import providers in `main.go` (e.g., `google.Register()`).
 
----
+### ADR 8: Functional Options for Providers
 
-## 4) The Core Shift: **Generic, Type-Safe Registry & Builder**
+*(Supersedes Legacy ADR 11: DependencyResolver)*
 
-### Context
+**Context:**
+Legacy ADR 11 tried to resolve complex dependencies via a "Resolver" pattern. This was over-engineered. Providers just need flexible configuration.
+**Decision:**
+Use the **Functional Options Pattern (FOP)** for all Provider Constructors.
 
-The original builder/registry had per-type maps, per-type `With…` methods, and `build…` functions with duplicated wiring; orchestrators consumed an `any` options blob, causing type erasure and runtime casts.
+  * **Pattern:** `New(ctx, opts...)`
+  * **Adapter:** Each provider implements a `NewGenerator` to map YAML to Options.
+    **Rationale:**
+  * **Type Safety:** Go developers get explicit options (`WithModel`).
+  * **Cleanliness:** Separates the "YAML mapping" logic from the "Instance creation" logic.
 
-### Decision (4 parts)
+### ADR 9: Strict Dependency Inversion in Governance
 
-**4.1 Generic Registry**
+**Context:**
+The `SupervisedAction` (App Layer) was casting `core.Evaluator` to `*engine.PolicyEngine` (Implementation) to access `GetActionConfig`, coupling the layers.
+**Decision:**
+Promote `GetActionConfig` to the `core.Evaluator` interface.
+**Rationale:**
+High-level modules must not depend on low-level modules. Enables mocking of config logic.
 
-* Replace per-type registries with **one generic registry** of typed factories.
-* Factory signature is standardized: `func(ctx, deps, cfg) (T, error)`.
-* Registration uses generics; the registry holds a catalog keyed by **Kind** (llm, retriever, vector_store, …).
+-----
 
-**4.2 Provider Self-Identification**
+## IV. The Guardrails (Process & Quality)
 
-* Each provider’s **Options** type implements:
+### ADR 10: Architectural Boundaries Enforcement
 
-  ```go
-  type ProviderOptions interface {
-      ProviderName() string   // e.g., "openai-chat"
-      ProviderKind() Kind     // e.g., KindLLM
-  }
-  ```
-* Registration takes an **options sample** instead of a string literal:
-  `Register(registry, OptionsSample{}, Factory)`.
-  (No magic strings; name/kind come from the type.)
+*(Replaces Legacy ADR 8)*
+**Context:**
+To maintain the integrity of ADR 5 & 7, we must prevent dependency leaking.
+**Decision:**
+Enforce strict import rules:
 
-**4.3 Generic Builder (DRY) with a Spec Table**
+1.  **Core:** MUST NOT import `sdk`, `internal`, or `providers`.
+2.  **SDK:** MUST NOT import `providers` or specific AI libraries.
+3.  **Providers:** CAN import `sdk` (to register) and `core`.
 
-* Collapse all per-type `With…`/`build…` into a single `With(opts any)` and a **data-driven build loop**.
-* A **spec table** defines dependency order and assignment (e.g., embedder → vector store → retriever → reranker → rules → LLM → state provider).
-* Hybrid retrievers are supported via a typed `BuildRetriever` hook (using the registry).
+### ADR 11: Dual-Tier Testing Strategy
 
-**4.4 Typed Orchestrator Inputs**
+*(Replaces Legacy ADR 6)*
+**Context:**
+With the Hybrid Gateway (ADR 6), unit tests are not enough.
+**Decision:**
+Adopt two tiers:
 
-* Replace `core.Options any` with a **typed `Resolved` struct** (Retriever, VectorStore, Reranker, Rules, LLM, Embedder, StateProvider, Observability, etc.).
-* Orchestrator factories now consume `Resolved` directly—no runtime casts.
+1.  **Unit Tests:** Test logic using Mocks (Pro-Code path).
+2.  **Integration Tests:** Test the full pipeline by loading a real `mangle.yaml` (Low-Code path).
 
-### Rationale
+-----
 
-* Eliminates duplication, enforces Open/Closed Principle, and maximizes compile-time guarantees.
-* Streamlines developer experience (DX): add a provider by registering one typed factory—no edits to core builder/registry.
+## V. The Integration (v1.2 - Cognitive Systems)
 
-### Consequences
+*This era focuses on the deep convergence of the Deterministic Engine and the Probabilistic LLM, enabling "Self-Correction" and "Structured Intelligence".*
 
-* **Massive** reduction in builder boilerplate.
-* Type-safety end-to-end (providers, builder, orchestrators).
-* Clean plugin surface for third parties.
-* Slight reflection for options type lookups (acceptable, limited to wiring).
+### ADR 12: Unified Governance Gates
 
-### Migration
+**(Standardizes Policy Engine Interaction)**
 
-* Update all providers to implement `ProviderOptions` on their Options type and to accept **typed** `cfg` in factories.
-* Register with `Register(registry, OptionsSample{}, Factory)`.
-* Remove per-type `With…` and `build…` from the builder; use `With(opts)` and spec-driven `buildAll`.
-* Update orchestrators to accept `Resolved`.
+**Context:**
+The internal logic for "Pre-Check" (`Assess`) and "Post-Check" (`Reflect`) was diverging. Pre-checks used `deny` predicates while Post-checks were ad-hoc. There was no consistent way to block an action based on Datalog results across different stages.
+**Decision:**
+Implement a **Unified Gate Mechanism** (`evaluateGate`):
 
----
+1.  **Protocol:** Both input and output checks use the same underlying Datalog query logic.
+2.  **Predicates:** Standardize on `halt(Entity, Reason)` (replacing `deny` and `infeasible`).
+3.  **Flow:** Check `halt` first. If derived, return `AlignmentError`.
+    **Rationale:**
+    Reduces cognitive load by having a single "mental model" for how the Engine blocks actions. "Everything is a Gate."
 
-## 5) **Orchestrator Modernization** (Stage-Based, Typed)
+### ADR 13: Semantic State Machine (The Loop)
 
-### Context
+**(The "Self-Correcting" Architecture)**
 
-The “Sandwich” orchestrator started monolithic, with `any`-based accessors and inlined logic.
+**Context:**
+Simple linear execution (Input -> Action -> Output) is brittle for AI. Agents need to retry failed steps, route based on intent, or remember feedback.
+**Decision:**
+Transform the `sdk.Client` execution model into a **Semantic State Machine**:
 
-### Decision
+1.  **State:** The `Envelope` + `FeedbackHistory`.
+2.  **Transitions:** Driven by Engine "Steering" signals (`retry(Hint)`, `route(Target)`).
+3.  **Loop:** A robust `runLoopInternal` that handles Context Injection, Execution, Evaluation, and Correction.
+    **Rationale:**
+    Moves Manglekit from a "Pipeline Runner" to an "Agentic Runtime". It enables the **Stochastic Runtime Paradox** by wrapping probabilistic actions in deterministic control loops.
 
-Refactor into a **stage-based pipeline** consuming typed `Resolved` dependencies (retrieval, rerank, rules, LLM calls, state), removing casts and allowing easier unit tests and targeted changes.
+### ADR 14: Native Structured Envelopes
 
-### Rationale
+**(Schema-First Generation)**
 
-* Composability and testability.
-* Strict interface boundaries with typed inputs/outputs.
+**Context:**
+Relying on LLMs to output raw JSON text and then parsing it with Regex is flaky and slow. Modern providers (Genkit, OpenAI) support native schema enforcement.
+**Decision:**
+Enforce **Structured Generation** contracts:
 
-### Consequences
+1.  `ContentType: STRUCT` is the privileged mode.
+2.  Adapters MUST support `OutputType` in `GenerationConfig`.
+3.  The `Envelope` carries typed Go structs, not just `map[string]any`.
+    **Rationale:**
+    Type safety shouldn't stop at the LLM API. The Policy Engine requires structured facts; getting them directly from the LLM reduces translation errors.
 
-* Clear separation of retrieval/rerank/generation/state logic.
-* Easier to add new stages or swap implementations.
+-----
 
-### Migration
+## VI. Appendix: Superseded Concepts (The Graveyard)
 
-* Move stage logic into small, focused units; wire via the orchestrator using `Resolved`.
+*The following concepts from the legacy architecture (v0.x) are deprecated and removed:*
 
----
-
-## 6) **Testing & DX Uplift**
-
-### Context
-
-Brittle tests, many fixtures bound to legacy APIs, and gaps in coverage.
-
-### Decision
-
-Increase test coverage across config, builder, providers, and orchestrators; remove obsolete tests; adopt typed factories and `Resolved` in tests; unify logging to reduce noise.
-
-### Rationale
-
-* Confidence in refactors and faster iteration.
-* Easier contributor onboarding.
-
-### Consequences
-
-* Smaller, more targeted tests.
-* Fewer integration-only test paths.
-
-### Migration
-
-* Replace legacy tests that assert `any` contents with typed expectations.
-* Prefer table-driven tests with typed options/factories.
-
----
-
-## Resulting System (Snapshot)
-
-* **One Registry** (generic, typed) for all components.
-* **One Builder** (generic, spec-driven) that constructs pipelines in dependency order.
-* **Providers self-identify** via their Options type; no string literals when registering.
-* **Orchestrators** receive **typed dependencies** (`Resolved`) and run **stage-based** flows.
-* **Config bridge** cleanly translates YAML/ENV → typed Options → builder.
-* **Observability & lifecycle** standardized; **context propagation** is universal.
-* **Testing & DX** significantly improved.
-
----
-
-## Known Trade-offs & Risks
-
-* Requires Go generics and minimal reflection for type→name/kind mapping.
-* Breaking API (per-type `With…`/`build…` removed).
-* Orchestrator factories must be migrated to typed `Resolved`.
-
----
-
-## What’s Next (Future ADRs)
-
-* Build-graph introspection & visualization.
-* Pluggable runtime (Go plugin/WASM) & sandboxing.
-* Options schema validation + JSON-Schema export.
-* Warm-up/caching policies for heavy clients.
-* Performance budgets & benchmarks for stage pipelines.
-
----
-
-## 7) Per-Kind Handlers and Typed DI Enforcement (2025‑10‑23)
-
-### Context
-
-As the generic registry and builder landed, providers still varied in how they received dependencies. Some factories accepted the builder directly; orchestrator construction logic was sometimes embedded instead of routed through kind handlers.
-
-### Decision
-
-Adopt a strict separation of responsibilities:
-
-* Per-kind `core.ComponentHandler` encapsulates build logic for that kind (assembling `diapi.*Deps`, calling the typed factory, storing the result on `Resolved`).
-* Provider factories MUST accept typed deps (`diapi.*Deps`) and MUST NOT accept the builder.
-* Every orchestrator must have a matching handler to be buildable via the builder.
-
-### Rationale
-
-* Keeps factories pure and testable; avoids leaking builder concerns into providers.
-* Centralizes DI in handlers, enabling static validation and consistent lifecycle handling.
-* Ensures the builder constructs all kinds, including orchestrators, deterministically.
-
-### Consequences
-
-* Some providers (e.g., hybrid retriever) require refactoring factory signatures to typed deps.
-* An orchestrator handler is required for Sandwich (currently missing), otherwise Sandwich cannot be built via the builder.
-
-### Migration
-
-* Refactor factories to use `diapi.*Deps`; remove any `diapi.Builder` parameters.
-* Add an orchestrator handler for Sandwich mirroring the Declarative handler pattern.
-
----
-
-## 8) Static Architecture Rules & Tooling (2025‑10‑23)
-
-### Context
-
-To keep the codebase aligned with the architecture, we introduced static rules under `docs/rules/manglekit-arch.yml` and corresponding guidance in `AGENTS.md`.
-
-### Decision
-
-Codify rules for layering, registration, DI, and observability/lifecycle via static checks:
-
-* R2: forbid `init()` in providers (explicit registration only).
-* R3: pipeline must not import concrete providers.
-* R10: discourage magic numbers/names in hybrid.
-* R13: core must not import providers, pipeline, or root.
-* R14: factories must not accept `diapi.Builder` (typed deps only).
-* R15: declarative must not pick the first state provider (require config).
-* R18: no direct stdout logging in prod paths (use `core.Logger`).
-* R19: providers/orchestrators must not parse env directly (bind via config).
-
-### Rationale
-
-Automated enforcement reduces drift and speeds reviews. Agents can rely on clear failure signals to correct violations.
-
-### Consequences
-
-Short-term rule violations will surface (e.g., hybrid factory); they document the remaining migration work.
-
-### Migration
-
-Fix flagged findings as part of ongoing refactors; adjust severities as needed when transitioning.
-
----
-
-## 9) Remediation Plan for Current Gaps (2025‑10‑23)
-
-### Context
-
-Recent review identified the following open gaps (see `docs/CONTEXT.md` Known Gaps and `docs/code-review.md`).
-
-### Items
-
-1. Orchestrator handler coverage — add Sandwich handler so the builder can construct Sandwich.
-2. Hybrid factory signature — change to `diapi.RetrieverDeps` and use `diapi.SubRetrieversDep` on options; avoid passing the builder.
-3. Declarative state provider — add explicit selection to options and stop using the first map entry.
-
-### Acceptance
-
-All static rules pass; tests cover deterministic selection; CONTEXT/LLD/HLD updated; changelog entries added.
-
----
+  * **Generic Builder (`diapi`):** Removed. Replaced by `sdk.Client` composition.
+  * **Component Handlers:** Removed. Replaced by `providers/` packages.
+  * **DependencyResolver:** Removed. Replaced by FOP Adapters.
+  * **Typed Resolved Structs:** Removed. The SDK now relies on dynamic `core.Envelope` passing rather than rigid compile-time structs for pipeline stages.
