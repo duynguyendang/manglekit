@@ -8,10 +8,8 @@ import (
 
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/supervisor"
-	"github.com/duynguyendang/manglekit/internal/telemetry"
 )
 
 const (
@@ -65,21 +63,16 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		failureMode: "closed", // Default to closed
 	}
 
-	c.otelTracer = trace.NewNoopTracerProvider().Tracer(TracerName)
-	c.tracer = telemetry.NewOTelTracer(c.otelTracer)
-
-	// Initialize Engine with defaults
-	eng, err := engine.NewWithObservability(c.tracer, c.logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize policy engine: %w", err)
-	}
-	c.engine = eng
-
 	// Apply options
 	for _, opt := range opts {
 		if err := opt(c); err != nil {
 			return nil, err
 		}
+	}
+
+	// Ensure dependencies (Engine/Tracer) are initialized if JIT init didn't happen
+	if err := ensureDependencies(c); err != nil {
+		return nil, err
 	}
 
 	// Ensure LLM consistency
