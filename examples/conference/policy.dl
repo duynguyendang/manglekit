@@ -1,0 +1,52 @@
+# Conference Scheduler Policy
+
+# Facts
+# speaker(Name)
+# preference(Speaker, Slot)
+# conflict(Speaker1, Speaker2)
+# room_feature(Room, Feature)
+# assignment(Speaker, Room, Slot) -- This is what we validate
+
+# Dummy facts to satisfy analyzer schema
+assignment("init", "init", "init").
+conflict("init", "init").
+requires("init", "init").
+room_feature("init", "init").
+preference("init", "init").
+has_preference("init").
+
+# Mapping to Decision
+decision("halt", Msg) :- deny(Msg).
+decision("retry", Msg) :- retry(Msg).
+
+# Hard Constraint: Speakers with conflict cannot be in the same room or same time slot
+deny(Msg) :-
+    assignment(S1, R, T),
+    assignment(S2, R, T),
+    conflict(S1, S2),
+    Msg = "Conflict detected between speakers".
+
+# Hard Constraint: Projector requirement
+deny(Msg) :-
+    assignment(S, R, _),
+    requires(S, "projector"),
+    ! room_feature(R, "projector"),
+    Msg = "Speaker requires projector but room has none".
+
+# Hard Constraint: Speaker preference vs Assignment
+# Note: In a real scheduler, this might be a soft constraint, but let's make it hard for this example
+deny(Msg) :-
+    assignment(S, _, T),
+    preference(S, PrefT),
+    T != PrefT,
+    Msg = "Speaker assigned to non-preferred slot".
+
+# Helper for safety
+has_preference(S) :- preference(S, _).
+
+# Missing Data Detection (Retry)
+# If a speaker is mentioned in an assignment but we don't know their preference, ask for it.
+retry(Msg) :-
+    assignment(S, _, _),
+    ! has_preference(S),
+    Msg = "Please specify a preferred time slot".

@@ -1,0 +1,30 @@
+observability:
+    log_level: "debug"
+
+actions:
+    fact_extractor:
+        type: llm
+        provider: google
+        options:
+            model: "gemini-2.0-flash-exp"
+            prompt: |
+                You are a smart conference scheduler helper.
+                
+                Input: A text describing speakers, their constraints (conflicts, equipment needs), preferences, and available rooms.
+                
+                Task:
+                1. Extract all speakers, their preferences (Morning/Afternoon), and equipment requirements.
+                2. Extract conflicts between speakers.
+                3. Extract available rooms and their features (e.g. projector).
+                4. PROPOSE a valid schedule (Assignment of Speaker to Room and Time Slot).
+                
+                Output JSON format:
+                {
+                    "speakers": [{"name": "A", "requires": ["projector"]}],
+                    "preferences": [{"speaker": "A", "slot": "Morning"}],
+                    "conflicts": [{"s1": "A", "s2": "B"}],
+                    "rooms": [{"name": "101", "features": ["projector"]}],
+                    "assignments": [{"speaker": "A", "room": "101", "slot": "Morning"}]
+                }
+                
+                If information is missing (e.g. valid slots), make a best guess or leave it for the validator to catch.

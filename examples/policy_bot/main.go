@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	_ "github.com/duynguyendang/manglekit/providers/google"
 	"github.com/duynguyendang/manglekit/providers/memory/inmem"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/joho/godotenv"
@@ -43,7 +44,7 @@ func main() {
 	seedKnowledge(ctx, client)
 
 	// 5. Ask a question that requires this knowledge
-	question := "Tôi có được phép làm việc từ xa (WFH) vào thứ Sáu không?"
+	question := "Am I allowed to work from home (WFH) on Friday?"
 	fmt.Printf("\n❓ User: %s\n", question)
 
 	// 6. Execute
@@ -61,8 +62,8 @@ func main() {
 		}
 	}
 
-	// Note: Currently, the SDK registers Google Actions by their model name (googleai/...), ignoring the config alias.
-	resp, err := client.ExecuteByName(ctx, "googleai/gemini-2.5-flash", question)
+	// Note: We use the alias defined in mangle.yaml
+	resp, err := client.ExecuteByName(ctx, "chat_policy", question)
 	if err != nil {
 		log.Fatalf("Execution failed: %v", err)
 	}
@@ -83,8 +84,8 @@ func seedKnowledge(ctx context.Context, c *sdk.Client) {
 	// Knowledge 1: WFH Policy
 	// Note: We use simple text for InMem keyword search.
 	err := mem.Memorize(ctx,
-		"chính sách làm việc từ xa WFH remote work",
-		"FACT: Nhân viên được phép WFH tối đa 2 ngày/tuần. Tuy nhiên, THỨ SÁU là ngày họp toàn công ty, bắt buộc phải lên văn phòng, không được WFH.",
+		"remote work WFH policy",
+		"FACT: Employees are allowed to WFH up to 2 days/week. However, FRIDAY is the all-hands meeting day, attendance at the office is mandatory, WFH is not allowed.",
 	)
 	if err != nil {
 		log.Printf("Failed to seed WFH policy: %v", err)
@@ -92,8 +93,8 @@ func seedKnowledge(ctx context.Context, c *sdk.Client) {
 
 	// Knowledge 2: Expense Policy
 	mem.Memorize(ctx,
-		"chính sách hoàn tiền grab taxi expense",
-		"FACT: Công ty chỉ hoàn tiền Grab sau 22h đêm hoặc đi gặp khách hàng.",
+		"grab taxi expense reimbursement policy",
+		"FACT: The company only reimburses Grab expenses for rides after 10 PM or for client meetings.",
 	)
 
 	// Sleep briefly to ensure async write finishes (though inmem is fast)
