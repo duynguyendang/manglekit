@@ -1,0 +1,106 @@
+name: Daily Security Scan
+
+on: [push, pull_request]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: google-labs-code/jules-invoke@v1
+        with:
+          prompt: |
+            Manglekit Context Resync Protocol
+            
+            **Role:** Senior Codebase Auditor
+            **Objective:** Regenerate `docs/CONTEXT.md` to capture the **Kernel & Logic** of Manglekit.
+            **Philosophy:** "High Signal, Low Noise". We need the *brain* of the framework, not the *wiring*.
+            
+            ---
+            
+            ### ⚠️ INSTRUCTION: INTELLIGENT DEEP SCAN
+            
+            **Targets (Priority Order):**
+            1.  `cmd/` (All subdirectories)
+            2.  `internal/` (All subdirectories: engine, supervisor, util, logger, etc.)
+            3.  `sdk/` (All files)
+            4.  `adapters/` (All subdirectories: ai, knowledge, vector, func, mcp, etc.)
+            5.  `core/` (All interfaces)
+            6.  `config/` (All loaders)
+            7.  `providers/` (All providers)
+            8.  Root files (`go.mod`, `Makefile`)
+            
+            **EXCLUSIONS (Do NOT Dump Code for these, just list in File Map):**
+            * `cmd/` (CLI boilerplate is low value).
+            * `examples/` & `*_test.go`.
+            
+            ---
+            
+            ### OUTPUT FORMAT: Update `docs/CONTEXT.md`
+            
+            #### 1. METADATA
+            ```yaml
+            ---
+            context_type: kernel_source_dump
+            project: manglekit
+            language: go, datalog
+            last_updated: [Current Timestamp]
+            scan_mode: logic_focused
+            ---
+            #### 2. THE COMPLETE FILE MAP
+            
+              * Execute a mental `tree -a` command.
+              * List ALL files in ASCII tree format
+              * Action: Add a brief comment next to directories explaining their intent. 
+                * Example: internal/engine # The Neuro-Symbolic Core (Mangle Runtime) 
+            
+            #### 3. COMPONENTS (The Logic)
+              * For each component (core, adapter, internal, providers, config, sdk), provide a summary for the component and all the sub components (if have): 
+                  * **Responsibilities:** What does this component actually DO now?
+                  * **Structs:** The main **IMPORTANT** types found in the code with the detail information about what does this component actually DO now.
+                  * **Key Functions:** The **IMPORTANT** go functions found in the code with the detail information what does this component actually DO now. 
+            
+            #### 4. CRITICAL PATH & DATA (The Flow)
+            * Visualize the flows in mermaid:
+              * Wiring flow
+              * Execution flow
+            
+            * Describe detail information for each flow:
+              * **Execution Flow:** Briefly trace the lifecycle of a request (e.g., `ExecuteByName`).
+              * **Data Structures:** Define the core data models (Envelope, Facts, Lineage).
+              * *Update Check:* If new data formats were added (e.g., Knowledge Triples), document them here.
+            
+            #### 5. SOURCE CODE DUMP (The "What" - CRITICAL) 
+              * Iterate through the Targets listed above and dump the full content. 
+              * **Exclude:** `_test.go` files (unless they define shared test mocks), `vendor/`, `.git/`, `examples/`, `cmd`
+              * Strict Rules for Dumping: 
+                * Datalog First: Always dump .dl files first. They are the system's constitution. 
+                * Logic over Boilerplate: 
+                  * INCLUDE: Struct definitions, Interface definitions, Logic flow (loops, conditionals), Reflection logic, Error handling. 
+                  * OMIT: Comments that just repeat the function name, extensive licensing headers. 
+              * **Anti-Hallucination Check:** Do not write `// ... code ...`. You must write the actual code.
+              * Specific File Checklist (Do Not Miss): 
+                - internal/engine/resources/std.dl (Standard Library)  
+                - internal/engine/reflection.go (Struct->Fact Logic) 
+                - internal/engine/flattener.go (JSON->Fact Logic) 
+                - internal/supervisor/supervisor.go (The Action Sandwich) 
+                - sdk/loop.go (The Semantic State Machine) 
+                - core/types.go & core/governance.go (The Contracts) 
+            
+              * **Format:**
+            ---
+            ## [Relative Path, e.g., internal/util/schema/validator.go]
+            ```go
+            [Paste the important content of the file here]
+            ```
+            ---
+            
+            #### 6. CHANGELOG
+            
+              * Append entry: [Date]: Kernel Resync. Added Datalog StdLib and Reflection Logic. 
+            
+            **Action:**
+            Start the recursive scan and generate the `CONTEXT.md` now.
+
+          jules_api_key: ${{ secrets.JULES_API_KEY }}
