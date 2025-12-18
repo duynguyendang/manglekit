@@ -13,12 +13,21 @@ import (
 	mcpAdapter "github.com/duynguyendang/manglekit/adapters/mcp"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/telemetry"
 )
 
 // ClientOption configures the Manglekit Client during initialization.
 type ClientOption func(*Client) error
+
+// WithEngine allows injecting a custom or mock core.Evaluator.
+func WithEngine(e core.Evaluator) ClientOption {
+	return func(c *Client) error {
+		c.engine = e
+		return nil
+	}
+}
 
 // WithBlueprintPath specifies the file path to load Datalog rules from.
 // "Blueprint" is the new terminology for "Policy".
@@ -27,7 +36,18 @@ type ClientOption func(*Client) error
 //   - path: A file path to the .dl blueprint file.
 func WithBlueprintPath(path string) ClientOption {
 	return func(c *Client) error {
+		if err := ensureDependencies(c); err != nil {
+			return err
+		}
 		c.blueprintPath = path
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read policy file %q: %w", path, err)
+		}
+		// Use background context as option doesn't provide one
+		if err := c.engine.LoadPolicy(context.Background(), string(content)); err != nil {
+			return fmt.Errorf("failed to load policy from %q: %w", path, err)
+		}
 		return nil
 	}
 }
@@ -133,12 +153,13 @@ func WithConfig(cfg *config.Config) ClientOption {
 			c.logger = logger.New(cfg.Observability.LogLevel)
 		}
 
+		// Ensure dependencies (Engine/Tracer) now that logger is set
+		if err := ensureDependencies(c); err != nil {
+			return err
+		}
+
 		// 2. Load Policy (Blueprint)
 		if cfg.Policy.Path != "" {
-			// Ensure engine is ready (NewClient initializes it, but we might need to be sure)
-			if c.engine == nil {
-				return fmt.Errorf("engine not initialized")
-			}
 			content, err := os.ReadFile(cfg.Policy.Path)
 			if err != nil {
 				return fmt.Errorf("failed to read policy file %q: %w", cfg.Policy.Path, err)
@@ -354,4 +375,25 @@ func WithMetadataMap(meta map[string]any) ExecuteOption {
 			}
 		}
 	}
+}
+
+// ensureDependencies initializes defaults for the Engine and Tracer if they haven't been injected.
+func ensureDependencies(c *Client) error {
+	// 1. Ensure Tracer
+	if c.tracer == nil {
+		if c.otelTracer == nil {
+			c.otelTracer = trace.NewNoopTracerProvider().Tracer(TracerName)
+		}
+		c.tracer = telemetry.NewOTelTracer(c.otelTracer)
+	}
+
+	// 2. Ensure Engine
+	if c.engine == nil {
+		eng, err := engine.NewWithObservability(c.tracer, c.logger)
+		if err != nil {
+			return fmt.Errorf("failed to initialize default engine: %w", err)
+		}
+		c.engine = eng
+	}
+	return nil
 }
