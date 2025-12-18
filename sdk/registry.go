@@ -56,6 +56,12 @@ func WithProviderConfig(name string, cfg config.ActionConfig) ClientOption {
 			return nil
 		}
 
+		// Inject action name into options map
+		if cfg.Options == nil {
+			cfg.Options = make(map[string]any)
+		}
+		cfg.Options["_action_name"] = name
+
 		// Create the option using the factory.
 		opt, err := factory(cfg.Options)
 		if err != nil {

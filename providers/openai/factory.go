@@ -3,6 +3,7 @@ package openai
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/core"
@@ -10,8 +11,8 @@ import (
 )
 
 // Enable returns a ClientOption that wires the OpenAI provider.
-// usage: client.New(..., openai.Enable("key", "gpt-4o", ""))
-func Enable(apiKey, modelName, baseURL string) sdk.ClientOption {
+// usage: client.New(..., openai.Enable("key", "gpt-4o", "", "my_action"))
+func Enable(apiKey, modelName, baseURL, actionName string) sdk.ClientOption {
 	return func(c *sdk.Client) error {
 		ctx := context.Background()
 
@@ -44,6 +45,10 @@ func Enable(apiKey, modelName, baseURL string) sdk.ClientOption {
 			return fmt.Errorf("openai action does not implement TextGenerator")
 		}
 
+		if actionName != "" {
+			c.RegisterAction(actionName, action)
+		}
+
 		return nil
 	}
 }
@@ -54,6 +59,10 @@ func Factory(opts map[string]any) (sdk.ClientOption, error) {
 	baseURL, _ := opts["base_url"].(string)
 	model, _ := opts["model"].(string)
 
+	if apiKey == "" {
+		apiKey = os.Getenv("OPENAI_API_KEY")
+	}
+
 	if apiKey == "" && baseURL == "" {
 		return nil, fmt.Errorf("openai factory: missing 'api_key' (or 'base_url' for local setup)")
 	}
@@ -61,7 +70,9 @@ func Factory(opts map[string]any) (sdk.ClientOption, error) {
 		model = "gpt-4o"
 	}
 
-	return Enable(apiKey, model, baseURL), nil
+	actionName, _ := opts["_action_name"].(string)
+
+	return Enable(apiKey, model, baseURL, actionName), nil
 }
 
 // Auto-register the factory with the SDK

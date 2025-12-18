@@ -3,6 +3,7 @@ package google
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/core"
@@ -10,8 +11,8 @@ import (
 )
 
 // Enable returns a ClientOption that wires the Google provider.
-// usage: client.New(..., google.Enable("key", "gemini-pro"))
-func Enable(apiKey, modelName string) sdk.ClientOption {
+// usage: client.New(..., google.Enable("key", "gemini-pro", "my_action"))
+func Enable(apiKey, modelName, actionName string) sdk.ClientOption {
 	return func(c *sdk.Client) error {
 		// 1. Prepare Context (Use Background for init-time wiring)
 		ctx := context.Background()
@@ -40,7 +41,9 @@ func Enable(apiKey, modelName string) sdk.ClientOption {
 		}
 
 		// Optional: Register as a named action for explicit lookup
-		// c.RegisterAction("llm", action)
+		if actionName != "" {
+			c.RegisterAction(actionName, action)
+		}
 
 		return nil
 	}
@@ -53,14 +56,19 @@ func Factory(opts map[string]any) (sdk.ClientOption, error) {
 
 	// Validation
 	if apiKey == "" {
+		apiKey = os.Getenv("GOOGLE_API_KEY")
+	}
+	if apiKey == "" {
 		return nil, fmt.Errorf("google factory: missing 'api_key'")
 	}
 	if model == "" {
 		model = "gemini-1.5-flash" // Safe default
 	}
 
+	actionName, _ := opts["_action_name"].(string)
+
 	// Delegate to Code-First logic
-	return Enable(apiKey, model), nil
+	return Enable(apiKey, model, actionName), nil
 }
 
 // Auto-register the factory with the SDK
