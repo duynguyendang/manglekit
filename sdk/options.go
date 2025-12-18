@@ -88,11 +88,18 @@ func WithTracerProvider(tp trace.TracerProvider) ClientOption {
 // WithMemory configures a custom persistence store for chat history.
 //
 // Parameters:
-//   - store: A core.MemoryStore implementation (e.g., Redis backed).
-func WithMemory(store core.MemoryStore) ClientOption {
+//   - store: A core.HistoryStore implementation (e.g., Redis backed).
+func WithMemory(store core.HistoryStore) ClientOption {
 	return func(c *Client) error {
-		if store != nil {
-			c.memory = store
+		if store == nil {
+			return nil
+		}
+		// If agentMemory is already a HybridMemory, update its History component.
+		if hm, ok := c.agentMemory.(*HybridMemory); ok {
+			hm.History = store
+		} else {
+			// Otherwise wrap it in a new HybridMemory (losing previous non-hybrid memory if any)
+			c.agentMemory = NewHybridMemory(store, core.NopVectorStore{}, core.NopEmbedder{})
 		}
 		return nil
 	}
@@ -239,11 +246,11 @@ type ExecutionParams struct {
 	Timeout time.Duration
 
 	// State fields (Managed by ExecuteSingleStep/Loop)
-	Store           core.MemoryStore `json:"-"` // Internal store reference
-	CurrentHistory  []core.Message   `json:"history,omitempty"`
-	FeedbackHistory []string         `json:"feedback_history,omitempty"`
-	LastFeedback    string           `json:"last_feedback,omitempty"`
-	RetryCount      int              `json:"retry_count,omitempty"`
+	Store           core.HistoryStore `json:"-"` // Internal store reference
+	CurrentHistory  []core.Message    `json:"history,omitempty"`
+	FeedbackHistory []string          `json:"feedback_history,omitempty"`
+	LastFeedback    string            `json:"last_feedback,omitempty"`
+	RetryCount      int               `json:"retry_count,omitempty"`
 }
 
 // ExecuteOption configures a single execution call (e.g., ExecuteByName).

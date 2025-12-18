@@ -31,9 +31,7 @@ type Client struct {
 	otelTracer trace.Tracer
 	// logger is the structured logger used by the client and its components.
 	logger core.Logger
-	// memory is the persistence layer for chat history (optional).
-	memory core.MemoryStore
-	// agentMemory is the semantic memory (RAG) provider (optional).
+	// agentMemory is the unified memory provider (History + RAG).
 	agentMemory core.AgentMemory
 	// registry holds registered actions for dynamic routing.
 	registry map[string]core.Action
@@ -60,9 +58,10 @@ type Client struct {
 //   - A pointer to the initialized Client, or an error if initialization fails.
 func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	c := &Client{
-		logger:      logger.NewDefault(),
+		logger: logger.NewDefault(),
+		// Default to HybridMemory with Nop stores
+		agentMemory: NewHybridMemory(core.NopStore{}, core.NopVectorStore{}, core.NopEmbedder{}),
 		registry:    make(map[string]core.Action),
-		memory:      core.NopStore{},
 		failureMode: "closed", // Default to closed
 	}
 

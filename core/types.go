@@ -253,7 +253,9 @@ type GenerationConfig struct {
 
 // Document represents a snippet of knowledge/memory.
 type Document struct {
+	ID       string         `json:"id,omitempty"`
 	Content  string         `json:"content"`
+	Vector   []float32      `json:"vector,omitempty"`
 	Metadata map[string]any `json:"metadata,omitempty"`
 	Score    float32        `json:"score,omitempty"` // Re-ranking score
 }

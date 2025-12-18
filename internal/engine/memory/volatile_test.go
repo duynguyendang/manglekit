@@ -14,7 +14,7 @@ func TestVolatileStore(t *testing.T) {
 
 	// Write
 	msgs := []core.Message{{Role: "user", Content: "hello"}}
-	if err := store.Write(ctx, "session1", msgs); err != nil {
+	if err := store.Append(ctx, "session1", msgs); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 

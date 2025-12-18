@@ -13,16 +13,47 @@ import (
 
 // InMemoryStore is a naive implementation for testing.
 // In a real scenario, this would use embeddings and cosine similarity.
+// InMemoryStore is a naive implementation for testing.
+// In a real scenario, this would use embeddings and cosine similarity.
 type InMemoryStore struct {
-	mu    sync.RWMutex
-	facts []string
+	mu      sync.RWMutex
+	facts   []string
+	history map[string][]core.Message
 }
 
 // New creates a new InMemoryStore.
 func New(ctx context.Context, cfg config.MemoryConfig) (core.AgentMemory, error) {
 	return &InMemoryStore{
-		facts: []string{},
+		facts:   []string{},
+		history: make(map[string][]core.Message),
 	}, nil
+}
+
+// Read retrieves the chat history for a given session.
+func (m *InMemoryStore) Read(ctx context.Context, sessionID string) ([]core.Message, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.history == nil {
+		return nil, nil
+	}
+	// Return copy
+	if msgs, ok := m.history[sessionID]; ok {
+		dst := make([]core.Message, len(msgs))
+		copy(dst, msgs)
+		return dst, nil
+	}
+	return nil, nil
+}
+
+// Append adds new messages to the history.
+func (m *InMemoryStore) Append(ctx context.Context, sessionID string, msgs []core.Message) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.history == nil {
+		m.history = make(map[string][]core.Message)
+	}
+	m.history[sessionID] = append(m.history[sessionID], msgs...)
+	return nil
 }
 
 func (m *InMemoryStore) Init(ctx context.Context) error { return nil }

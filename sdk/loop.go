@@ -40,7 +40,7 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 	// 1. Determine Store Strategy
 	switch params.MemoryMode {
 	case core.MemoryModePersist:
-		params.Store = c.memory
+		params.Store = c.agentMemory
 		if params.SessionID != "" {
 			var err error
 			// Load initial history
@@ -194,7 +194,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 
 	// 5. Persist
 	if params.Store != nil && params.SessionID != "" && params.MemoryMode == core.MemoryModePersist {
-		if err := params.Store.Write(ctx, params.SessionID, params.CurrentHistory); err != nil && c.logger != nil {
+		if err := params.Store.Append(ctx, params.SessionID, params.CurrentHistory); err != nil && c.logger != nil {
 			c.logger.Warn("RunLoop failed to persist history", "error", err)
 		}
 	}

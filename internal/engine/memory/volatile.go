@@ -32,8 +32,8 @@ func (s *VolatileStore) Read(ctx context.Context, sessionID string) ([]core.Mess
 	return dst, nil
 }
 
-// Write saves the chat history for a given session.
-func (s *VolatileStore) Write(ctx context.Context, sessionID string, msgs []core.Message) error {
+// Append saves the chat history for a given session.
+func (s *VolatileStore) Append(ctx context.Context, sessionID string, msgs []core.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
