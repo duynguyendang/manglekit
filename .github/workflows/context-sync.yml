@@ -1,4 +1,4 @@
-name: Daily Security Scan
+name: Context sync
 
 on: [push, pull_request]
 
@@ -9,7 +9,7 @@ jobs:
       contents: read
     steps:
       - name: Invoke Jules for Context sync
-        uses: google-labs-code/jules-invoke@v1
+        uses: BeksOmega/jules-action@v1.0.0
         with:
           prompt: |
             Manglekit Context Resync Protocol
