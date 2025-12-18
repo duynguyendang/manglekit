@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/duynguyendang/manglekit/adapters/ai"
-	"github.com/duynguyendang/manglekit/config"
+
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/providers/google"
@@ -64,41 +64,56 @@ func (a *JsonLLMAction) Execute(ctx context.Context, env core.Envelope) (core.En
 }
 
 // GoogleJsonFactory creates the custom JSON-parsing LLM Action.
-func GoogleJsonFactory(ctx context.Context, name string, cfg config.ActionConfig) (core.Action, error) {
-	// Initialize a local Genkit registry
-	g := genkit.Init(context.Background(), nil)
+// GoogleJsonFactory creates the custom JSON-parsing LLM Action.
+func GoogleJsonFactory(opts map[string]any) (sdk.ClientOption, error) {
+	return func(c *sdk.Client) error {
+		ctx := context.Background()
 
-	apiKey := os.Getenv("GOOGLE_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("GOOGLE_API_KEY environment variable is required")
-	}
+		// Initialize a local Genkit registry
+		g := genkit.Init(ctx)
 
-	modelID := "gemini-1.5-flash"
-	if m, ok := cfg.Options["model"].(string); ok {
-		modelID = m
-	}
+		apiKey := os.Getenv("GOOGLE_API_KEY")
+		if apiKey == "" {
+			return fmt.Errorf("GOOGLE_API_KEY environment variable is required")
+		}
 
-	// Init Google Provider (registers model in registry)
-	modelName, err := google.Init(ctx, g, apiKey, modelID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to init google: %w", err)
-	}
+		modelID := "gemini-1.5-flash"
+		if m, ok := opts["model"].(string); ok {
+			modelID = m
+		}
 
-	// Lookup Model
-	model := genkit.LookupModel(g, modelName)
-	if model == nil {
-		return nil, fmt.Errorf("model %q not found", modelName)
-	}
+		name := "solve_seating"
+		if n, ok := opts["action_name"].(string); ok {
+			name = n
+		}
 
-	// Create Standard Adapter & Action
-	adapter := ai.NewGenkitAdapter(model, g)
-	llmAction, err := ai.NewLLMAction(name, adapter)
-	if err != nil {
-		return nil, err
-	}
+		// Init Google Provider (registers model in registry)
+		modelName, err := google.Init(ctx, g, apiKey, modelID)
+		if err != nil {
+			return fmt.Errorf("failed to init google: %w", err)
+		}
 
-	// Wrap in custom JSON parser
-	return &JsonLLMAction{internal: llmAction}, nil
+		// Lookup Model
+		model := genkit.LookupModel(g, modelName)
+		if model == nil {
+			return fmt.Errorf("model %q not found", modelName)
+		}
+
+		// Create Standard Adapter & Action
+		adapter := ai.NewGenkitAdapter(model, g)
+		llmAction, err := ai.NewLLMAction(name, adapter)
+		if err != nil {
+			return err
+		}
+
+		// Wrap in custom JSON parser
+		action := &JsonLLMAction{internal: llmAction}
+
+		// Register Action
+		c.RegisterAction(name, c.Supervise(action))
+
+		return nil
+	}, nil
 }
 
 func main() {
