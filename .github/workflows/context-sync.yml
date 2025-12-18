@@ -9,7 +9,7 @@ jobs:
       contents: read
     steps:
       - name: Invoke Jules for Context sync
-        uses: google-labs-code/jules-invoke
+        uses: google-labs-code/jules-invoke@v1
         with:
           prompt: |
             Manglekit Context Resync Protocol
