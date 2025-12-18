@@ -36,19 +36,20 @@ func WithEngine(e core.Evaluator) ClientOption {
 //   - path: A file path to the .dl blueprint file.
 func WithBlueprintPath(path string) ClientOption {
 	return func(c *Client) error {
+		c.blueprintPath = path
+
+		// 1. JIT Init (Critical fix)
 		if err := ensureDependencies(c); err != nil {
 			return err
 		}
-		c.blueprintPath = path
+
+		// 2. Load Policy immediately
+		// Ensure "os" and "context" are imported!
 		content, err := os.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("failed to read policy file %q: %w", path, err)
+			return fmt.Errorf("failed to read blueprint %q: %w", path, err)
 		}
-		// Use background context as option doesn't provide one
-		if err := c.engine.LoadPolicy(context.Background(), string(content)); err != nil {
-			return fmt.Errorf("failed to load policy from %q: %w", path, err)
-		}
-		return nil
+		return c.engine.LoadPolicy(context.Background(), string(content))
 	}
 }
 
@@ -97,9 +98,9 @@ func WithAgentMemory(mem core.AgentMemory) ClientOption {
 func WithTracerProvider(tp trace.TracerProvider) ClientOption {
 	return func(c *Client) error {
 		if tp != nil {
-			otelTracer := tp.Tracer(TracerName)
-			c.otelTracer = otelTracer
-			c.tracer = telemetry.NewOTelTracer(otelTracer)
+			// Initialize the tracer immediately so it's available for JIT init later
+			c.otelTracer = tp.Tracer(TracerName)
+			c.tracer = telemetry.NewOTelTracer(c.otelTracer)
 		}
 		return nil
 	}
