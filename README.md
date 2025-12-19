@@ -47,54 +47,50 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 
-	"github.com/duynguyendang/manglekit"
-	"github.com/duynguyendang/manglekit/adapters/ai"
-	"github.com/duynguyendang/manglekit/providers/google"
+	_ "github.com/duynguyendang/manglekit/providers/google" // Auto-registers the "google" provider
+	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/joho/godotenv"
 )
 
 func main() {
 	ctx := context.Background()
+	_ = godotenv.Load() // Load GOOGLE_API_KEY from .env
 
-	// 1. Initialize Manglekit Client (The Kernel)
-	// Loads the "Blueprint" which defines the rules.
-	// We use Must() to panic on initialization error for brevity.
-	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithBlueprintPath("blueprint.dl")))
-
-	// 2. Initialize the AI Driver (Gemini via Genkit)
-	// We use the Google Provider to register the model.
-	// Ensure GOOGLE_API_KEY is set in environment.
-	genkitInstance := ai.GetGenkit(ctx)
-	modelName, err := google.Init(ctx, genkitInstance, os.Getenv("GOOGLE_API_KEY"), "gemini-2.5-flash")
+	// 1. Initialize Client from YAML Configuration
+	// This loads the Blueprint policy and configures the LLM action.
+	client, err := sdk.NewClientFromFile(ctx, "mangle.yaml")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("❌ Client Init Failed: %v", err)
 	}
+	defer client.Shutdown(ctx)
 
-	// 3. Create & Supervise the Action
-	// Wrap the basic Genkit model in a "Supervised Action"
-	// The Client.Supervise() method applies the Blueprint logic.
-	llmAction, err := ai.NewGenkitAction(ctx, modelName)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Apply Governance
-	safeAction := client.Supervise(llmAction)
-
-	// 4. Register for the Loop
-	// Registering allows the engine to route and retry automatically
-	client.RegisterAction("jester", safeAction)
-
-	// 5. Execute with Self-Correction
-	// The Supervisor will check the output against blueprint.dl.
-	// If it violates policy, it sends feedback to Gemini and retries automatically.
-	result, err := client.ExecuteByName(ctx, "jester", "Tell me a joke about security.")
+	// 2. Execute with Self-Correction
+	// client.Action("jester") returns a handle usable as core.Action.
+	// The Supervisor automatically checks output against blueprint.dl.
+	// If it violates policy, it sends feedback to Gemini and retries.
+	result, err := client.Action("jester").Execute(ctx, sdk.NewEnvelope("Tell me a joke about security."))
 	if err != nil {
 		log.Fatalf("❌ Task Failed: %v", err)
 	}
 
 	fmt.Printf("✅ Result: %s\n", result.Payload)
 }
+```
+
+### Configuration File (`mangle.yaml`)
+
+```yaml
+actions:
+  jester:
+    type: "llm"
+    provider: "google"
+    options:
+      model: "gemini-2.5-flash"
+      prompt: "You are a comedian who tells jokes."
+policy:
+  path: "blueprint.dl"
+failure_mode: "closed"
 ```
 
 ### Defining The Blueprint (`blueprint.dl`)
