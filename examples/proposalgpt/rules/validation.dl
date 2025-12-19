@@ -1,0 +1,16 @@
+% Rule: Modernization proposals MUST mention "Strangler Fig".
+retry("Compliance Error: Modernization strategy requires the 'Strangler Fig' pattern.") :-
+    selected_playbook("modernization"),
+    value(_, "proposal_content", Content),
+    not input_contains(Content, "Strangler Fig").
+
+% Rule: Greenfield proposals MUST define an "MVP".
+retry("Strategy Error: Greenfield projects must explicitly define an MVP scope.") :-
+    selected_playbook("greenfield"),
+    value(_, "proposal_content", Content),
+    not input_contains(Content, "MVP").
+
+% Rule: Halt if Budget < $50k for Databricks (Business Rule).
+halt("Budget insufficient for Databricks architecture.") :-
+    platform_choice("databricks"),
+    value(_, "budget", B), B < 50000.

@@ -1,0 +1,11 @@
+actions:
+  google_llm:
+    type: "llm"
+    provider: "google"
+    options:
+      model: "gemini-1.5-flash"
+      max_tokens: 8192
+
+observability:
+  enabled: true
+  log_level: "info"

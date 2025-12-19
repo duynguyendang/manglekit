@@ -1,0 +1,10 @@
+% Alert if Budget is missing
+missing_info("budget") :- not value(_, "budget", _).
+
+% Alert if Cloud Preference is missing (unless agnostic)
+missing_info("cloud_pref") :- 
+    not value(_, "cloud_pref", _), 
+    not has_keyword("multi-cloud").
+
+% Steering: If critical info missing, ask questions instead of proposing.
+route("ask_clarification") :- missing_info("budget").
