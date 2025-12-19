@@ -44,22 +44,9 @@ func (c *Client) Plan(ctx context.Context, goalName string) ([]PlanStep, error) 
 
 	goalFact := fmt.Sprintf("goal(\"%s\")", goalName)
 
-	// 2. Query for steps: plan_step(Action, Order)
-	// We pass goalFact as a temporary fact.
+	// 2. Query the engine for planning steps
 	query := "plan_step(Action, Order)"
-
-	// core.Evaluator does not have Query. We must cast or update interface.
-	// Using type assertion for now as Planner is tightly coupled to Datalog engine.
-	type Queryable interface {
-		Query(ctx context.Context, facts []string, queryStr string) ([]map[string]string, error)
-	}
-
-	queryable, ok := c.engine.(Queryable)
-	if !ok {
-		return nil, fmt.Errorf("engine does not support querying")
-	}
-
-	results, err := queryable.Query(ctx, []string{goalFact}, query)
+	results, err := c.engine.Query(ctx, []string{goalFact}, query)
 	if err != nil {
 		return nil, fmt.Errorf("planning query failed: %w", err)
 	}

@@ -33,9 +33,7 @@ func (c *Client) ExecuteByName(ctx context.Context, actionName string, input any
 // It iterates through steps, managing memory storage, handling decisions (Retry/Route),
 // and enforcing the execution limits (max steps, timeouts).
 func (c *Client) runLoopInternal(ctx context.Context, startAction string, payload any, params ExecutionParams) (core.Envelope, error) {
-	if c.logger != nil {
-		ctx = core.ContextWithLogger(ctx, c.logger)
-	}
+	ctx = core.ContextWithLogger(ctx, c.logger)
 
 	// 1. Determine Store Strategy
 	switch params.MemoryMode {
@@ -64,9 +62,7 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 			return core.Envelope{}, err
 		}
 
-		if c.logger != nil {
-			c.logger.Info("RunLoop step", "step", step, "action", currentAction)
-		}
+		c.logger.Info("RunLoop step", "step", step, "action", currentAction)
 
 		result, err := c.ExecuteSingleStep(ctx, currentAction, currentPayload, &params)
 		if err != nil {
@@ -82,9 +78,7 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 			}
 
 			// Validate/Log Payload Handover
-			if c.logger != nil {
-				c.logger.Info("RunLoop: Routing to next action", "from", currentAction, "to", next, "payload_type", fmt.Sprintf("%T", result.Payload))
-			}
+			c.logger.Info("RunLoop: Routing to next action", "from", currentAction, "to", next, "payload_type", fmt.Sprintf("%T", result.Payload))
 
 			currentAction = next
 			currentPayload = result.Payload
@@ -105,7 +99,7 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 }
 
 // ExecuteSingleStep runs one step of the action and returns the decision.
-// It handles: Action Execution, History Persistence, Blueprint Alignment Backoff, and Steering Logic (Retry/Route updates).
+// It orchestrates: Context Injection → Execution → History → Decision Handling.
 func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, payload any, params *ExecutionParams) (core.Envelope, error) {
 	// 1. Resolve Action
 	action, ok := c.registry[actionName]
@@ -113,11 +107,28 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		return core.Envelope{}, fmt.Errorf("action not found: %s", actionName)
 	}
 
+	// 2. Create envelope and inject context
 	env := core.NewEnvelope(payload)
 	env.ContentType = action.Metadata().InputContentType
+	c.injectContext(ctx, &env, payload, params)
 
-	// --- Phase 1: Context Injection ---
-	// 1.1 Inject Feedback (History & Last Hint)
+	// 3. Execute action (includes Blueprint pre-check)
+	result, err := action.Execute(ctx, env)
+	if err != nil {
+		return c.handleExecutionError(ctx, err, payload, params)
+	}
+	params.LastFeedback = ""
+
+	// 4. Update and persist history
+	c.updateHistory(ctx, payload, result, params)
+
+	// 5. Handle decision (Retry/Route/Proceed/Halt)
+	return c.handleDecision(ctx, actionName, result, payload, params)
+}
+
+// injectContext populates the envelope with feedback, history, RAG context, metadata, and facts.
+func (c *Client) injectContext(ctx context.Context, env *core.Envelope, payload any, params *ExecutionParams) {
+	// Inject feedback history
 	if len(params.FeedbackHistory) > 0 {
 		env.Metadata[core.KeyPrevFeedback] = strings.Join(params.FeedbackHistory, "; ")
 	}
@@ -126,141 +137,132 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		env.Metadata["mangle_feedback"] = params.LastFeedback
 	}
 
-	// 1.2 Inject Chat History
+	// Inject chat history
 	if len(params.CurrentHistory) > 0 && params.MemoryMode != core.MemoryModeNone {
 		env.SetHistory(params.CurrentHistory)
 	}
 
-	// 1.3 Inject Semantic Memory (RAG)
-	c.recallContext(ctx, payload, &env)
+	// Inject semantic memory (RAG)
+	c.recallContext(ctx, payload, env)
 
-	// 1.3 Inject Explicit Metadata
-	if params.Metadata != nil {
-		for k, v := range params.Metadata {
-			env.Metadata[k] = v
-		}
+	// Inject explicit metadata
+	for k, v := range params.Metadata {
+		env.Metadata[k] = v
 	}
 
-	// 1.4 Inject Context Facts (e.g. User Role, Budget from sdk.WithFact)
-	// This ensures facts propagate to the Engine for Blueprint Checks.
-	if facts := core.ContextFacts(ctx); facts != nil {
-		for k, v := range facts {
-			env.Metadata[k] = v
-		}
+	// Inject context facts
+	for k, v := range core.ContextFacts(ctx) {
+		env.Metadata[k] = v
 	}
+}
 
-	// --- Phase 2: Blueprint Check (Pre-check) & Phase 3: Execution (Intuition) ---
-	// The Action.Execute wrapper handles the Pre-check (Blueprint) and the actual Genkit Execution.
-	result, err := action.Execute(ctx, env)
-	if err != nil {
-		var pve *core.AlignmentError
-		if errors.As(err, &pve) {
-			if params.RetryCount >= DefaultMaxRetries {
-				return core.Envelope{}, fmt.Errorf("max retries exceeded: %w", err)
-			}
-			params.RetryCount++
-			params.LastFeedback = pve.Message
-
-			if c.logger != nil {
-				c.logger.Warn("RunLoop: Blueprint Alignment Issue", "feedback", params.LastFeedback, "attempt", params.RetryCount)
-			}
-
-			// Context-aware Backoff
-			if err := c.backoff(ctx, params.RetryCount); err != nil {
-				return core.Envelope{}, err
-			}
-
-			// Return a mock result to signal RETRY to caller
-			res := core.NewEnvelope(payload)
-			res.Metadata[core.KeyDecision] = core.DecisionRetry
-			return res, nil
-		}
+// handleExecutionError processes errors from action execution, handling alignment errors with retry logic.
+func (c *Client) handleExecutionError(ctx context.Context, err error, payload any, params *ExecutionParams) (core.Envelope, error) {
+	var alignErr *core.AlignmentError
+	if !errors.As(err, &alignErr) {
 		return core.Envelope{}, err
 	}
 
-	params.LastFeedback = ""
-
-	// 4. Update History
-	if params.MemoryMode != core.MemoryModeNone {
-		userContent := safelyStringify(payload)
-		assistContent := safelyStringify(result.Payload)
-
-		newExchange := []core.Message{
-			{Role: "user", Content: userContent},
-			{Role: "assistant", Content: assistContent},
-		}
-		params.CurrentHistory = append(params.CurrentHistory, newExchange...)
+	if params.RetryCount >= DefaultMaxRetries {
+		return core.Envelope{}, fmt.Errorf("max retries exceeded: %w", err)
 	}
 
-	// 5. Persist
+	params.RetryCount++
+	params.LastFeedback = alignErr.Message
+
+	c.logger.Warn("RunLoop: Blueprint Alignment Issue", "feedback", params.LastFeedback, "attempt", params.RetryCount)
+
+	if err := c.backoff(ctx, params.RetryCount); err != nil {
+		return core.Envelope{}, err
+	}
+
+	// Signal RETRY to caller
+	res := core.NewEnvelope(payload)
+	res.Metadata[core.KeyDecision] = core.DecisionRetry
+	return res, nil
+}
+
+// updateHistory appends the exchange to history and persists if configured.
+func (c *Client) updateHistory(ctx context.Context, payload any, result core.Envelope, params *ExecutionParams) {
+	if params.MemoryMode == core.MemoryModeNone {
+		return
+	}
+
+	newExchange := []core.Message{
+		{Role: "user", Content: safelyStringify(payload)},
+		{Role: "assistant", Content: safelyStringify(result.Payload)},
+	}
+	params.CurrentHistory = append(params.CurrentHistory, newExchange...)
+
+	// Persist if configured
 	if params.Store != nil && params.SessionID != "" && params.MemoryMode == core.MemoryModePersist {
 		if err := params.Store.Append(ctx, params.SessionID, params.CurrentHistory); err != nil && c.logger != nil {
 			c.logger.Warn("RunLoop failed to persist history", "error", err)
 		}
 	}
+}
 
-	// --- Phase 4: Evaluation & Correction (Post-check) ---
-	// The Engine evaluates the result against the Blueprint and decides next steps (Retry/Route/Allow).
+// handleDecision processes the steering decision and returns the appropriate result.
+func (c *Client) handleDecision(ctx context.Context, actionName string, result core.Envelope, payload any, params *ExecutionParams) (core.Envelope, error) {
 	decision := result.Metadata[core.KeyDecision]
 
-	// --- HOOK: MEMORIZE ---
-	// Only learn if no error and Decision is PROCEED (or empty/legacy)
-	if err == nil && (decision == "" || decision == core.DecisionProceed) {
+	// Memorize on success
+	if decision == "" || decision == core.DecisionProceed {
 		c.asyncMemorize(payload, result.Payload)
 	}
 
-	if c.logger != nil {
-		c.logger.Debug("RunLoop decision", "decision", decision, "action", actionName)
-	}
+	c.logger.Debug("RunLoop decision", "decision", decision, "action", actionName)
 
 	switch decision {
 	case core.DecisionRetry:
-		if params.RetryCount >= DefaultMaxRetries {
-			return core.Envelope{}, fmt.Errorf("max retries exceeded for action %s", actionName)
-		}
-		params.RetryCount++
-		hint := result.GetFeedback()
-		params.LastFeedback = hint
-		params.FeedbackHistory = append(params.FeedbackHistory, hint)
-
-		if c.logger != nil {
-			c.logger.Warn("RunLoop: RETRY triggered", "feedback", hint)
-		}
-
-		// Context-aware Backoff
-		if err := c.backoff(ctx, params.RetryCount); err != nil {
-			return core.Envelope{}, err
-		}
-		// Return result so caller loops
-		return result, nil
+		return c.handleRetryDecision(ctx, actionName, result, params)
 
 	case core.DecisionRoute:
-		// Reset retry count for new action
 		params.RetryCount = 0
 		params.FeedbackHistory = nil
-
-		if c.logger != nil {
-			c.logger.Info("RunLoop: Feedback history cleared for new action route")
-		}
-		// Return result so caller loops
+		c.logger.Info("RunLoop: Feedback history cleared for new action route")
 		return result, nil
 
 	case core.DecisionProceed, "":
 		return result, nil
 
 	case core.DecisionHalt:
-		reason := result.Metadata["reason"]
-		if reason == "" {
-			reason = result.Metadata["violation_msg"]
-		}
-		if reason == "" {
-			reason = "blueprint violation"
-		}
-		return core.Envelope{}, fmt.Errorf("action halted by blueprint: %s", reason)
+		return core.Envelope{}, c.buildHaltError(result)
 	}
 
-	// Should not reach here for standard decisions
 	return result, nil
+}
+
+// handleRetryDecision processes a RETRY decision with backoff.
+func (c *Client) handleRetryDecision(ctx context.Context, actionName string, result core.Envelope, params *ExecutionParams) (core.Envelope, error) {
+	if params.RetryCount >= DefaultMaxRetries {
+		return core.Envelope{}, fmt.Errorf("max retries exceeded for action %s", actionName)
+	}
+
+	params.RetryCount++
+	hint := result.GetFeedback()
+	params.LastFeedback = hint
+	params.FeedbackHistory = append(params.FeedbackHistory, hint)
+
+	c.logger.Warn("RunLoop: RETRY triggered", "feedback", hint)
+
+	if err := c.backoff(ctx, params.RetryCount); err != nil {
+		return core.Envelope{}, err
+	}
+
+	return result, nil
+}
+
+// buildHaltError extracts the reason from metadata and builds the halt error.
+func (c *Client) buildHaltError(result core.Envelope) error {
+	reason := result.Metadata["reason"]
+	if reason == "" {
+		reason = result.Metadata["violation_msg"]
+	}
+	if reason == "" {
+		reason = "blueprint violation"
+	}
+	return fmt.Errorf("action halted by blueprint: %s", reason)
 }
 
 // backoff handles the sleep and context cancellation check
@@ -302,9 +304,7 @@ func (c *Client) recallContext(ctx context.Context, payload any, env *core.Envel
 		// Ask: requires(Req, "memory") ?
 		needed, err := c.engine.CheckRequirement(ctx, *env, "memory")
 		if err != nil {
-			if c.logger != nil {
-				c.logger.Warn("Engine check failed, skipping memory", "err", err)
-			}
+			c.logger.Warn("Engine check failed, skipping memory", "err", err)
 			return
 		}
 		if !needed {
@@ -324,9 +324,7 @@ func (c *Client) recallContext(ctx context.Context, payload any, env *core.Envel
 	// Call Memory Provider
 	contextData, err := c.agentMemory.Recall(ctx, inputStr)
 	if err != nil {
-		if c.logger != nil {
-			c.logger.Warn("Memory Recall failed", "error", err)
-		}
+		c.logger.Warn("Memory Recall failed", "error", err)
 		if span != nil {
 			span.RecordError(err)
 		}
@@ -336,9 +334,7 @@ func (c *Client) recallContext(ctx context.Context, payload any, env *core.Envel
 	// Inject if found
 	if contextData != "" {
 		env.SetMeta(core.KeyContext, contextData)
-		if c.logger != nil {
-			c.logger.Debug("Injected memory context", "len", len(contextData))
-		}
+		c.logger.Debug("Injected memory context", "len", len(contextData))
 	}
 }
 
@@ -358,9 +354,7 @@ func (c *Client) asyncMemorize(input any, output any) {
 		defer cancel()
 
 		if err := c.agentMemory.Memorize(ctx, q, a); err != nil {
-			if c.logger != nil {
-				c.logger.Warn("Memory Memorize failed", "error", err)
-			}
+			c.logger.Warn("Memory Memorize failed", "error", err)
 		}
 	}(inputStr, outputStr)
 }

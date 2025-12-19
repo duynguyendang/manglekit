@@ -15,6 +15,10 @@ import (
 const (
 	// TracerName is the instrumentation scope name for Manglekit tracing.
 	TracerName = "github.com/duynguyendang/manglekit/sdk"
+
+	// Failure modes determine the system's resilience strategy.
+	FailModeOpen   = "open"   // Allow execution on system error (Fail-Open)
+	FailModeClosed = "closed" // Block execution on system error (Fail-Closed)
 )
 
 // Client is the primary entry point for the Manglekit system.
@@ -39,9 +43,7 @@ type Client struct {
 	blueprintPath string
 	// shutdownFunc is a cleanup function to stop exporters/tracers.
 	shutdownFunc func(context.Context) error
-	// defaultLLM is the plugged-in text generation backend.
-	defaultLLM core.TextGenerator
-	// llm is alias for defaultLLM to maintain internal compatibility.
+	// llm is the plugged-in text generation backend (e.g., Google, OpenAI).
 	llm core.TextGenerator
 }
 
@@ -60,7 +62,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		// Default to HybridMemory with Nop stores
 		agentMemory: NewHybridMemory(core.NopStore{}, core.NopVectorStore{}, core.NopEmbedder{}),
 		registry:    make(map[string]core.Action),
-		failureMode: "closed", // Default to closed
+		failureMode: FailModeClosed, // Default to closed
 	}
 
 	// Apply options
@@ -73,13 +75,6 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	// Ensure dependencies (Engine/Tracer) are initialized if JIT init didn't happen
 	if err := ensureDependencies(c); err != nil {
 		return nil, err
-	}
-
-	// Ensure LLM consistency
-	if c.llm != nil && c.defaultLLM == nil {
-		c.defaultLLM = c.llm
-	} else if c.defaultLLM != nil && c.llm == nil {
-		c.llm = c.defaultLLM
 	}
 
 	return c, nil
@@ -140,13 +135,10 @@ func NewDefault() (*Client, error) {
 	return NewClient(context.Background())
 }
 
-// SetLLM manually configures the default TextGenerator (LLM) for the client.
+// SetLLM manually configures the TextGenerator (LLM) for the client.
 // This is useful for code-first wiring or when using provider factories.
 func (c *Client) SetLLM(gen core.TextGenerator) {
 	c.llm = gen
-	if c.defaultLLM == nil {
-		c.defaultLLM = gen
-	}
 }
 
 // RegisterAction adds an action to the client's internal registry.

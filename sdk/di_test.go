@@ -61,6 +61,14 @@ func (m *MockEvaluator) AssessPlan(ctx context.Context, input core.Envelope) (co
 	return args.Get(0).(core.Decision), args.Error(1)
 }
 
+func (m *MockEvaluator) Query(ctx context.Context, facts []string, queryStr string) ([]map[string]string, error) {
+	args := m.Called(ctx, facts, queryStr)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]map[string]string), args.Error(1)
+}
+
 func (m *MockEvaluator) Logger() core.Logger {
 	// Return nil or a mock logger if needed
 	return nil

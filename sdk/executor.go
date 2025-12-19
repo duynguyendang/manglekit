@@ -22,9 +22,7 @@ func (c *Client) ExecutePlan(ctx context.Context, steps []PlanStep, initialInput
 	currentEnvelope := initialInput
 
 	for i, step := range steps {
-		if c.logger != nil {
-			c.logger.Info("Executing plan step", "step", i+1, "total", len(steps), "action", step.ActionName)
-		}
+		c.logger.Info("Executing plan step", "step", i+1, "total", len(steps), "action", step.ActionName)
 
 		// Execute the action by name
 		// We extract the payload from the current envelope to pass as input.

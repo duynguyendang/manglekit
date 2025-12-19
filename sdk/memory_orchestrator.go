@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 
@@ -11,21 +12,22 @@ import (
 // HybridMemory implements core.AgentMemory by combining:
 // 1. HistoryStore (Sequential Chat Logs)
 // 2. VectorStore (Semantic Search / RAG)
-// HybridMemory implements core.AgentMemory by combining:
-// 1. HistoryStore (Sequential Chat Logs)
-// 2. VectorStore (Semantic Search / RAG)
 type HybridMemory struct {
-	History  core.HistoryStore
-	Vectors  core.VectorStore
-	Embedder core.Embedder
+	History        core.HistoryStore
+	Vectors        core.VectorStore
+	Embedder       core.Embedder
+	CollectionName string // Vector collection name (default: "default")
+	TopK           int    // Number of results to retrieve (default: 3)
 }
 
-// NewHybridMemory creates a new memory orchestrator.
+// NewHybridMemory creates a new memory orchestrator with default RAG settings.
 func NewHybridMemory(h core.HistoryStore, v core.VectorStore, e core.Embedder) *HybridMemory {
 	return &HybridMemory{
-		History:  h,
-		Vectors:  v,
-		Embedder: e,
+		History:        h,
+		Vectors:        v,
+		Embedder:       e,
+		CollectionName: "default",
+		TopK:           3,
 	}
 }
 
@@ -65,7 +67,15 @@ func (m *HybridMemory) Recall(ctx context.Context, query string) (string, error)
 	}
 
 	// 2. Search Vector DB
-	docs, err := m.Vectors.Search(ctx, "default", vec, 3) // Top 3
+	collection := m.CollectionName
+	if collection == "" {
+		collection = "default"
+	}
+	topK := m.TopK
+	if topK <= 0 {
+		topK = 3
+	}
+	docs, err := m.Vectors.Search(ctx, collection, vec, topK)
 	if err != nil {
 		return "", fmt.Errorf("failed to search vectors: %w", err)
 	}
@@ -99,14 +109,23 @@ func (m *HybridMemory) Memorize(ctx context.Context, query string, answer string
 	}
 
 	// 2. Upsert to Vector DB
+	collection := m.CollectionName
+	if collection == "" {
+		collection = "default"
+	}
+
+	// Generate a deterministic ID based on content hash to avoid collisions
+	hash := sha256.Sum256([]byte(content))
+	docID := fmt.Sprintf("%x", hash[:8]) // Use first 16 hex chars (8 bytes)
+
 	doc := core.Document{
-		ID:       fmt.Sprintf("%d", len(content)), // Simple ID, would imply hashing in real sys
+		ID:       docID,
 		Content:  content,
 		Vector:   vec,
 		Metadata: map[string]any{"type": "chat"},
 	}
 
-	return m.Vectors.Upsert(ctx, "default", []core.Document{doc})
+	return m.Vectors.Upsert(ctx, collection, []core.Document{doc})
 }
 
 // Init performs any necessary setup.

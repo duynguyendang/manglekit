@@ -160,8 +160,8 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 	}
 
 	span.SetAttributes(map[string]any{
-		core.AttrOutcome:     core.OutcomeProceed,
-		"mangle.output_id":   result.ID.String(),
+		core.AttrOutcome:   core.OutcomeProceed,
+		"mangle.output_id": result.ID.String(),
 	})
 	return result, nil
 }
@@ -199,127 +199,142 @@ func (g *SupervisedAction) shouldBlock(err error) bool {
 }
 
 // executeInternal contains the actual execution logic.
-// It receives the context with the active span so child spans can be created.
-// The logger is injected into the context here, ensuring all downstream code
-// can access it via core.LoggerFromContext(ctx).
+// It orchestrates: Logger Setup → Pre-Check → Config → Execute → Post-Check → Steering.
 func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	// Inject the logger into the context for downstream access
+	// Inject logger and get metadata
 	ctx = core.ContextWithLogger(ctx, g.engine.Logger())
-
 	logger := core.LoggerFromContext(ctx)
 	meta := g.inner.Metadata()
-	logger.Info("Action started",
-		"action", meta.Name,
-		"input_id", input.ID.String(),
-	)
 
-	// 1. Ingestion: Link Input to Parent (Tracing only)
-	// if parentID, ok := core.GetParentID(ctx); ok {
-	// 	// Evaluator doesn't support RecordLineage directly.
-	// 	// g.engine.RecordLineage(ctx, input.ID.String(), parentID)
-	// }
+	logger.Info("Action started", "action", meta.Name, "input_id", input.ID.String())
 
-	// 2. Pre-Check: Assessment
-	// Formerly: Authorize
-	if err := g.engine.Assess(ctx, g.inner.Metadata(), input); err != nil {
+	// Phase 1: Pre-Check (Assessment)
+	if err := g.performAssessment(ctx, logger, meta, input); err != nil {
+		return core.Envelope{}, err
+	}
+
+	// Phase 2: Dynamic Configuration Injection
+	g.injectDynamicConfig(ctx, logger, &input)
+
+	// Phase 3: Execute Inner Action
+	result, err := g.executeAction(ctx, logger, meta, input)
+	if err != nil {
+		return core.Envelope{}, err
+	}
+
+	// Phase 4: Post-Check (Reflection)
+	validatedResult, err := g.performReflection(ctx, logger, meta, result)
+	if err != nil {
+		return core.Envelope{}, err
+	}
+
+	// Phase 5: Steering
+	validatedResult = g.applySteering(ctx, logger, meta, validatedResult)
+
+	logger.Info("Action completed", "action", meta.Name, "result", "success")
+	return validatedResult, nil
+}
+
+// performAssessment executes the pre-check phase (blueprint validation of input).
+func (g *SupervisedAction) performAssessment(ctx context.Context, logger core.Logger, meta core.ActionMetadata, input core.Envelope) error {
+	if err := g.engine.Assess(ctx, meta, input); err != nil {
 		if g.shouldBlock(err) {
 			msg := "assessment failed"
 			if core.IsInputError(err) {
 				msg = "assessment blocked due to invalid input"
 			}
-			logger.Warn(msg,
-				core.AttrActionName, meta.Name,
-				"error", err.Error(),
-			)
-			return core.Envelope{}, fmt.Errorf("%s: %w", msg, err)
+			logger.Warn(msg, core.AttrActionName, meta.Name, "error", err.Error())
+			return fmt.Errorf("%s: %w", msg, err)
 		}
 		// Fail-Open
 		logger.Warn("engine assessment failed but Fail-Open active. Proceeding.", "error", err)
 	}
+	return nil
+}
 
-	// [NEW] Dynamic Configuration Injection
-	// We query the engine for any configuration overrides (e.g. prompt params)
-	config, err := g.engine.GetActionConfig(ctx, input)
+// injectDynamicConfig queries the engine for configuration overrides and injects them into input metadata.
+func (g *SupervisedAction) injectDynamicConfig(ctx context.Context, logger core.Logger, input *core.Envelope) {
+	config, err := g.engine.GetActionConfig(ctx, *input)
 	if err != nil {
 		logger.Warn("failed to retrieve action config", "error", err)
-	} else if len(config) > 0 {
-		if input.Metadata == nil {
-			input.Metadata = make(map[string]any)
-		}
-		for k, v := range config {
-			input.Metadata[core.PrefixPromptConfig+k] = v
-		}
+		return
 	}
 
-	// 3. Context Propagation: Pass the Gene
-	// Propagate the current input ID as the new parent for the inner action
+	if len(config) == 0 {
+		return
+	}
+
+	if input.Metadata == nil {
+		input.Metadata = make(map[string]any)
+	}
+	for k, v := range config {
+		input.Metadata[core.PrefixPromptConfig+k] = v
+	}
+}
+
+// executeAction runs the inner action with context propagation and security label inheritance.
+func (g *SupervisedAction) executeAction(ctx context.Context, logger core.Logger, meta core.ActionMetadata, input core.Envelope) (core.Envelope, error) {
+	// Context Propagation: set input ID as parent
 	childCtx := core.WithParentID(ctx, input.ID.String())
 
-	// 4. Execution: Run inner action
+	// Execute
 	result, err := g.inner.Execute(childCtx, input)
 	if err != nil {
-		logger.Error("action execution failed",
-			core.AttrActionName, meta.Name,
-			"error", err.Error(),
-		)
+		logger.Error("action execution failed", core.AttrActionName, meta.Name, "error", err.Error())
 		return core.Envelope{}, fmt.Errorf("action execution failed: %w", err)
 	}
 
-	// 5. Propagation: Output inherits Input's security labels
+	// Security label propagation
 	if len(input.SecurityLabels) > 0 {
 		result.MergeLabels(input.SecurityLabels)
 	}
 
-	// 6. Linking: Link Output to Input (Tracing only)
-	// g.engine.RecordLineage(ctx, result.ID.String(), input.ID.String())
+	// Link output to input
 	if result.Metadata == nil {
 		result.Metadata = make(map[string]any)
 	}
 	result.Metadata["derived_from"] = input.ID.String()
 
-	// 7. Post-Check: Reflection
-	// Formerly: Validate
-	validatedResult, err := g.engine.Reflect(ctx, g.inner.Metadata(), result)
+	return result, nil
+}
+
+// performReflection executes the post-check phase (blueprint validation of output).
+func (g *SupervisedAction) performReflection(ctx context.Context, logger core.Logger, meta core.ActionMetadata, result core.Envelope) (core.Envelope, error) {
+	validatedResult, err := g.engine.Reflect(ctx, meta, result)
 	if err != nil {
 		if g.shouldBlock(err) {
 			msg := "reflection failed"
 			if core.IsInputError(err) {
 				msg = "reflection blocked due to invalid input"
 			}
-			logger.Warn(msg,
-				"action", meta.Name,
-				"error", err.Error(),
-			)
+			logger.Warn(msg, "action", meta.Name, "error", err.Error())
 			return core.Envelope{}, fmt.Errorf("%s: %w", msg, err)
 		}
-		// Fail-Open: use result as validatedResult
+		// Fail-Open: use original result
 		logger.Warn("engine reflection failed but Fail-Open active. Proceeding.", "error", err)
 		validatedResult = result
 	}
+	return validatedResult, nil
+}
 
-	// 8. Steering: Evaluate next steps (Correction/Routing)
-	decision, steeringMeta, err := g.engine.EvaluateSteering(ctx, validatedResult)
+// applySteering evaluates steering decisions and stamps metadata.
+func (g *SupervisedAction) applySteering(ctx context.Context, logger core.Logger, meta core.ActionMetadata, result core.Envelope) core.Envelope {
+	decision, steeringMeta, err := g.engine.EvaluateSteering(ctx, result)
 	if err != nil {
-		logger.Warn("steering evaluation failed",
-			"action", meta.Name,
-			"error", err.Error(),
-		)
-		return core.Envelope{}, fmt.Errorf("steering evaluation failed: %w", err)
+		logger.Warn("steering evaluation failed", "action", meta.Name, "error", err.Error())
+		// Continue with empty decision on steering error
+		decision = ""
+		steeringMeta = nil
 	}
 
 	// Stamp metadata
-	if validatedResult.Metadata == nil {
-		validatedResult.Metadata = make(map[string]any)
+	if result.Metadata == nil {
+		result.Metadata = make(map[string]any)
 	}
-	validatedResult.Metadata[core.KeyDecision] = decision
+	result.Metadata[core.KeyDecision] = decision
 	for k, v := range steeringMeta {
-		validatedResult.Metadata[k] = v
+		result.Metadata[k] = v
 	}
 
-	logger.Info("Action completed",
-		"action", meta.Name,
-		"result", "success", // Simplified as per doc
-	)
-
-	return validatedResult, nil
+	return result
 }

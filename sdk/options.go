@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"go.opentelemetry.io/otel/trace"
 
@@ -264,8 +263,6 @@ type ExecutionParams struct {
 	MemoryMode core.MemoryMode
 	// Metadata contains additional context to be injected into the execution envelope.
 	Metadata map[string]string
-	// Timeout (unused currently) specifies the max duration for the execution.
-	Timeout time.Duration
 
 	// State fields (Managed by ExecuteSingleStep/Loop)
 	Store           core.HistoryStore `json:"-"` // Internal store reference

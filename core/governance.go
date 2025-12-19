@@ -36,6 +36,10 @@ type Evaluator interface {
 	// RegisterAction registers action metadata for discovery/planning.
 	RegisterAction(meta ActionMetadata) error
 
+	// Query executes a Datalog query and returns all matching solutions.
+	// It is used by the planner to reason about goals and generate action sequences.
+	Query(ctx context.Context, facts []string, queryStr string) ([]map[string]string, error)
+
 	// Logger returns the engine's logger.
 	Logger() Logger
 }
