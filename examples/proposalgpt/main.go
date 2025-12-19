@@ -37,7 +37,7 @@ func main() {
 
 	// 3. Setup Actions
 	// Create a proxy to the "google_llm" defined in YAML
-	llmProxy := &ClientActionProxy{client: client, name: "google_llm"}
+	llmProxy := client.Action("google_llm")
 
 	// Extractor
 	extractor, err := actions.NewExtractor(llmProxy)
@@ -178,19 +178,4 @@ func convertToDatalog(f types.ExtractedFacts) []string {
 	}
 
 	return facts
-}
-
-// ClientActionProxy adapts sdk.Client.ExecuteByName to core.Action interface
-type ClientActionProxy struct {
-	client *sdk.Client
-	name   string
-}
-
-func (p *ClientActionProxy) Execute(ctx context.Context, env core.Envelope) (core.Envelope, error) {
-	// ExecuteByName uses the internal registry
-	return p.client.ExecuteByName(ctx, p.name, env.Payload)
-}
-
-func (p *ClientActionProxy) Metadata() core.ActionMetadata {
-	return core.ActionMetadata{Name: p.name, Type: "llm_proxy"}
 }

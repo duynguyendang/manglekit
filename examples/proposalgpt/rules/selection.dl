@@ -1,3 +1,7 @@
+Decl selected_playbook(Playbook).
+Decl config(Key, Val).
+Decl platform_choice(Platform).
+
 % Select "Modernization" if keywords "legacy" or "monolith" exist.
 selected_playbook("modernization") :- has_keyword("monolith").
 selected_playbook("modernization") :- has_keyword("legacy").
@@ -8,7 +12,9 @@ selected_playbook("greenfield") :- has_keyword("new app").
 
 % Select "Data Platform Modernization" if "data warehouse" and "slow queries" exist.
 selected_playbook("data_platform_mod") :- 
-    has_keyword("data warehouse"), 
+    has_keyword("data warehouse"),
+    has_keyword("performance issues").
+
 % Map selection to config for Go retrieval
 config("playbook_id", P) :- selected_playbook(P).
 

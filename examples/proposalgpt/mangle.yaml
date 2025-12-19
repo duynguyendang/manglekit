@@ -3,8 +3,7 @@ actions:
     type: "llm"
     provider: "google"
     options:
-      model: "gemini-1.5-flash"
-      max_tokens: 8192
+      model: "gemini-3-flash-preview"
 
 observability:
   enabled: true
