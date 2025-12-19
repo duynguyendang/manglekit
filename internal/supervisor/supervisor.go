@@ -186,6 +186,10 @@ func (g *SupervisedAction) shouldBlock(err error) bool {
 	if core.IsAlignmentError(err) {
 		return true
 	}
+	// Always block on Input/Validation errors (bypass fail-open)
+	if core.IsInputError(err) {
+		return true
+	}
 	// If mode is "open" (Fail-Open), allow execution (return false)
 	// Otherwise (default/closed), block execution (return true)
 	if g.failureMode == "open" {
@@ -219,11 +223,15 @@ func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envel
 	// Formerly: Authorize
 	if err := g.engine.Assess(ctx, g.inner.Metadata(), input); err != nil {
 		if g.shouldBlock(err) {
-			logger.Warn("assessment failed",
+			msg := "assessment failed"
+			if core.IsInputError(err) {
+				msg = "assessment blocked due to invalid input"
+			}
+			logger.Warn(msg,
 				core.AttrActionName, meta.Name,
 				"error", err.Error(),
 			)
-			return core.Envelope{}, fmt.Errorf("assessment failed: %w", err)
+			return core.Envelope{}, fmt.Errorf("%s: %w", msg, err)
 		}
 		// Fail-Open
 		logger.Warn("engine assessment failed but Fail-Open active. Proceeding.", "error", err)
@@ -274,11 +282,15 @@ func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envel
 	validatedResult, err := g.engine.Reflect(ctx, g.inner.Metadata(), result)
 	if err != nil {
 		if g.shouldBlock(err) {
-			logger.Warn("reflection failed",
+			msg := "reflection failed"
+			if core.IsInputError(err) {
+				msg = "reflection blocked due to invalid input"
+			}
+			logger.Warn(msg,
 				"action", meta.Name,
 				"error", err.Error(),
 			)
-			return core.Envelope{}, fmt.Errorf("reflection failed: %w", err)
+			return core.Envelope{}, fmt.Errorf("%s: %w", msg, err)
 		}
 		// Fail-Open: use result as validatedResult
 		logger.Warn("engine reflection failed but Fail-Open active. Proceeding.", "error", err)

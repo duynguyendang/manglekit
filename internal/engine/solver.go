@@ -416,8 +416,8 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		if e.logger != nil {
 			e.logger.Debug("failed to convert payload to facts", "error", err)
 		}
-		// Return actual error to allow Fail-Open handling if configured upstream
-		return fmt.Errorf("fact conversion error: %w", err)
+		// Wrap in InputError to ensure it is BLOCKED upstream
+		return &core.InputError{Err: fmt.Errorf("fact conversion error: %w", err)}
 	}
 
 	// 2. Inject Extra Facts (e.g. Action Operation)
@@ -429,7 +429,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		if e.logger != nil {
 			e.logger.Error("failed to generate label facts", "error", err)
 		}
-		return fmt.Errorf("label conversion error: %w", err)
+		return &core.InputError{Err: fmt.Errorf("label conversion error: %w", err)}
 	}
 	for _, f := range labelFacts {
 		atom, err := parse.Atom(f)
@@ -437,7 +437,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 			if e.logger != nil {
 				e.logger.Error("failed to parse label fact", "fact", f, "error", err)
 			}
-			return fmt.Errorf("label parsing error: %w", err)
+			return &core.InputError{Err: fmt.Errorf("label parsing error: %w", err)}
 		}
 		facts = append(facts, atom)
 	}
@@ -449,7 +449,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 			if e.logger != nil {
 				e.logger.Error("failed to parse envelop fact", "fact", f, "error", err)
 			}
-			return fmt.Errorf("envelope fact parsing error: %w", err)
+			return &core.InputError{Err: fmt.Errorf("envelope fact parsing error: %w", err)}
 		}
 		facts = append(facts, atom)
 	}
