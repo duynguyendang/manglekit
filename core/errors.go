@@ -10,6 +10,8 @@ var (
 	ErrAlignment = errors.New("alignment error")
 	// ErrSystemError is returned when an unexpected error occurs.
 	ErrSystemError = errors.New("system error")
+	// ErrInputValidation is returned when input conversion or parsing fails.
+	ErrInputValidation = errors.New("input validation error")
 )
 
 // AlignmentError is a structured error that carries a specific intervention message.
@@ -37,4 +39,27 @@ func (e *AlignmentError) Unwrap() error {
 // IsAlignmentError checks if the error is an AlignmentError.
 func IsAlignmentError(err error) bool {
 	return errors.Is(err, ErrAlignment)
+}
+
+// InputError is a structured error that indicates a failure in input validation or fact conversion.
+// It wraps ErrInputValidation to ensure distinction from system errors.
+type InputError struct {
+	Err error
+}
+
+func (e *InputError) Error() string {
+	return fmt.Sprintf("input validation error: %v", e.Err)
+}
+
+func (e *InputError) Is(target error) bool {
+	return target == ErrInputValidation
+}
+
+func (e *InputError) Unwrap() error {
+	return e.Err
+}
+
+// IsInputError checks if the error is an InputError.
+func IsInputError(err error) bool {
+	return errors.Is(err, ErrInputValidation)
 }
