@@ -6,128 +6,174 @@ last_updated: 2025-12-17
 scan_mode: logic_focused
 ---
 
-## 2. THE COMPLETE FILE MAP
+#### 2. THE COMPLETE FILE MAP
 
-```
+```text
 .
-|____.env.example
-|____.gitignore
-|____AGENTS.md # Instructions for AI agents.
-|____CONTRIBUTING.md
-|____LICENSE
-|____Makefile # Build/Test commands.
-|____README.md
-|____adapters # Connects external systems to core.Action.
-| |____ai # AI Adapters (Genkit).
-| |____extractor # Structured Data Extraction.
-| |____func # Go Function Wrapper.
-| |____knowledge # RDF Knowledge Graph.
-| |____logger # Logger Adapters.
-| |____mcp # Model Context Protocol.
-| |____resilience # Circuit Breakers/Retries.
-| |____vector # Vector Store Retrieval.
-|____cmd # CLI Entry Points.
-| |____mkit # The Manglekit CLI.
-|____config # Configuration Loading.
-|____core # The Kernel Contracts (Interfaces & Types).
-|____docs # Documentation.
-|____examples # Runnable Examples.
-|____go.mod
-|____go.sum
-|____internal # Internal Implementation Details.
-| |____engine # The Neuro-Symbolic Core (Mangle Runtime).
-| |____logger # Internal Logging.
-| |____supervisor # The "Action Sandwich" (Trace->Assess->Exec->Reflect).
-| |____telemetry # Observability Utilities.
-| |____util # Common Utilities.
-|____manglekit.go # Public Facade.
-|____providers # Concrete Service Providers.
-| |____google
-| |____openai
-|____sdk # The Orchestration Layer (State Machine).
+├── adapters
+│   ├── ai               # LLM Provider Integration (Genkit, etc.)
+│   ├── extractor        # Structured Data Extraction
+│   ├── func             # Generic Function Wrapper
+│   ├── knowledge        # RDF/Graph Data Loading
+│   ├── logger           # Logging Adapters (Zap, etc.)
+│   ├── mcp              # Model Context Protocol Integration
+│   ├── resilience       # Circuit Breakers & Retries
+│   └── vector           # Vector Store / RAG Integration
+├── cmd
+│   └── mkit             # CLI Tool (Gen, Eval, Serve)
+├── config               # Configuration Schemas & Loaders
+├── core                 # The Kernel: Interfaces & Contracts (No Dependencies)
+├── internal
+│   ├── engine           # The Neuro-Symbolic Core (Mangle Runtime, Solver, Reflection)
+│   ├── logger           # Internal Logging Utilities
+│   ├── resources        # Embedded Assets (ICL, Prompts)
+│   ├── statehelper      # State Management Utilities
+│   ├── supervisor       # The "Guard": Tracing, Assessment, Reflection
+│   ├── telemetry        # OpenTelemetry Setup
+│   ├── testproviders    # Mocks for Testing
+│   ├── tools            # Internal Tooling (RuleGen)
+│   └── util             # Helpers (Schema, Validation)
+├── providers
+│   ├── google           # Google GenAI Provider Factory
+│   ├── memory           # Memory Provider Implementations
+│   └── openai           # OpenAI Provider Factory
+└── sdk                  # The Orchestrator: Client, Loop, Planner
 ```
 
-## 3. COMPONENTS (The Logic)
+#### 3. COMPONENTS (The Logic)
 
-### core
-*   **Responsibilities:** Defines the essential contracts (interfaces) and data structures that decouple all other components. It is the abstract core of the framework, containing no concrete implementations.
-*   **Structs:**
-    *   `Envelope`: The universal data wrapper containing Payload, Metadata, SecurityLabels, and Facts.
-    *   `Decision`: Structured output from the Evaluator (Outcome, Target, Reasons).
-    *   `ActionMetadata`: Describes an Action's properties (Name, Type, I/O Schema).
-*   **Key Functions:**
-    *   `Action`: Interface for any unit of work (`Execute(ctx, env)`).
-    *   `Evaluator`: Interface for the policy engine (`Assess`, `Reflect`, `EvaluateSteering`).
+**Component: sdk**
+1.  **Responsibilities**: The user-facing entry point. Orchestrates the "Semantic State Machine". It manages the Client lifecycle, wiring up the Engine, Supervisor, and Memory systems. It handles the `ExecuteByName` loop which drives the agent's behavior.
+2.  **Core Structs**:
+    *   `Client`: The central object holding references to `engine` (Evaluator), `tracer`, `logger`, and `registry`.
+    *   `ExecutionParams`: Holds state for a single execution loop (History, RetryCount, Feedback).
+3.  **Key Functions**:
+    *   `func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error)`: Initializes the system, loading config and setting up the engine.
+    *   `func (c *Client) ExecuteByName(ctx context.Context, actionName string, input any, opts ...ExecuteOption) (core.Envelope, error)`: The main entry point for running an action with the governance loop.
+    *   `func (c *Client) runLoopInternal(...)`: The core loop implementation handling Retries, Routing, and Memory.
 
-### internal/engine
-*   **Responsibilities:** Implements `core.Evaluator`. Wraps the Mangle Datalog engine, manages runtime state, and translates Go objects/JSON into Datalog facts.
-*   **Structs:**
-    *   `PolicyEngine`: Main `Evaluator` implementation.
-    *   `MangleRuntime`: Thread-safe wrapper for the Datalog interpreter.
-*   **Key Functions:**
-    *   `ToFacts`: Converts Go structs to Datalog facts via reflection.
-    *   `Flatten`: Converts JSON/Maps to graph facts (`json_link`).
-    *   `Assess/Reflect`: Enforces Pre/Post-check policies.
-    *   `EvaluateSteering`: Determines `RETRY`/`ROUTE` decisions.
+**Component: internal/engine**
+1.  **Responsibilities**: The "Brain". It wraps the `google/mangle` Datalog library. It handles Policy Loading, Fact Generation (Reflection/Flattening), and Query Execution. It implements the `core.Evaluator` interface.
+2.  **Core Structs**:
+    *   `PolicyEngine`: The high-level struct implementing `Assess`, `Reflect`, `EvaluateSteering`.
+    *   `MangleRuntime`: Low-level wrapper around the Datalog storage and evaluation.
+3.  **Key Functions**:
+    *   `func (e *PolicyEngine) Assess(ctx, meta, input) error`: The Pre-Check gate. Checks `halt(Req)` or `deny(Req)`.
+    *   `func (e *PolicyEngine) Reflect(ctx, meta, output) (Envelope, error)`: The Post-Check gate. Checks `halt(Output)`.
+    *   `func (e *PolicyEngine) EvaluateSteering(ctx, input) (string, map, error)`: Determines if the flow should `RETRY` or `ROUTE`.
+    *   `func ToFacts(...)`: Reflects Go structs into Datalog facts.
+    *   `func Flatten(...)`: Flattens JSON/Maps into Datalog facts.
 
-### internal/supervisor
-*   **Responsibilities:** Implements the "Action Sandwich" pattern (`SupervisedAction`). Decorates `core.Action` to enforce governance.
-*   **Structs:**
-    *   `SupervisedAction`: Wraps `core.Action` + `core.Evaluator`.
-*   **Key Functions:**
-    *   `Execute`: Orchestrates `Trace -> Assess -> Execute -> Reflect -> Steer`. Propagates taint labels.
+**Component: internal/supervisor**
+1.  **Responsibilities**: The "Guard". It uses the Decorator pattern to wrap `core.Action`. It enforces the `Trace -> Assess -> Execute -> Reflect` lifecycle. It ensures every action is observed and governed.
+2.  **Core Structs**:
+    *   `SupervisedAction`: Wraps an `inner` Action and the `engine`.
+3.  **Key Functions**:
+    *   `func (g *SupervisedAction) Execute(ctx, input) (Envelope, error)`: The guarded execution flow. It catches errors, checks policy, and manages OpenTelemetry spans.
 
-### sdk
-*   **Responsibilities:** User-facing API and Orchestration. Manages the execution loop (Semantic State Machine).
-*   **Structs:**
-    *   `Client`: Main entry point. Holds registry, engine, memory.
-*   **Key Functions:**
-    *   `runLoopInternal`: The Semantic State Machine loop. Handles Retries, Routing, and Memory persistence.
-    *   `ExecuteByName`: Public entry point for execution.
+**Component: core**
+1.  **Responsibilities**: Defines the "Constitution". Pure interfaces and data types. No external logic dependencies.
+2.  **Core Structs**:
+    *   `Envelope`: The standard unit of data transfer (Payload + Metadata).
+    *   `Action`: The interface `Execute(ctx, env) (env, error)`.
+    *   `Evaluator`: The interface for the Engine.
+    *   `AlignmentError`: The specific error type for policy violations.
 
-### adapters, providers, config
-*   **Responsibilities:** Wiring and connectivity.
-    *   `adapters`: Bridges external systems (Genkit, Functions) to `core.Action`.
-    *   `providers`: Specific service implementations (Google, OpenAI).
-    *   `config`: YAML configuration loading.
+**Component: adapters/ai**
+1.  **Responsibilities**: Connects to LLMs. Adapts `genkit` or other providers to `core.TextGenerator` and `core.Action`.
+2.  **Core Structs**:
+    *   `genkitAdapter`: Wraps `ai.Model`.
+    *   `LLMAction`: Exposes the LLM as a `core.Action`.
+3.  **Key Functions**:
+    *   `func NewGenkitAdapter(...)`: Creates the adapter.
+    *   `func (g *genkitAdapter) Generate(ctx, prompt, opts...)`: Executes the LLM call.
 
-## 4. CRITICAL PATH & DATA (The Flow)
+#### 4. CRITICAL PATH & DATA (The Flow)
 
-### Wiring Flow
+**1. Sequence Diagram: The Execution Loop**
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant SDK as SDK.Client (Loop)
+    participant Sup as Supervisor
+    participant Eng as PolicyEngine
+    participant Act as Adapter (Action)
+
+    User->>SDK: ExecuteByName("chat", payload)
+    loop Semantic State Machine
+        SDK->>SDK: Inject Memory/Context
+        SDK->>Sup: Execute(Envelope)
+
+        rect rgb(240, 240, 240)
+            Note right of Sup: Governance Phase
+            Sup->>Sup: Start Span
+            Sup->>Eng: Assess(Input) [Pre-Check]
+            Eng-->>Sup: OK / Block
+        end
+
+        Sup->>Act: Execute(Input)
+        Act-->>Sup: Result
+
+        rect rgb(240, 240, 240)
+            Note right of Sup: Reflection Phase
+            Sup->>Eng: Reflect(Output) [Post-Check]
+            Eng-->>Sup: OK / Block
+            Sup->>Eng: EvaluateSteering(Output)
+            Eng-->>Sup: Decision (PROCEED/RETRY/ROUTE)
+        end
+
+        Sup-->>SDK: Envelope + Metadata
+
+        alt Decision == RETRY
+            SDK->>SDK: Increment RetryCount
+            SDK->>SDK: Loop Again (Backoff)
+        else Decision == ROUTE
+            SDK->>SDK: Switch Action -> Loop Again
+        else Decision == PROCEED
+            SDK-->>User: Final Result
+        end
+    end
+```
+
+**2. Data Flow: The Fact Funnel**
+
 ```mermaid
 graph TD
-    A[sdk.NewClient] -->|Loads| B(config.Config)
-    A -->|Inits| C[internal/engine.PolicyEngine]
-    C -->|Loads| D[std.dl]
-    A -->|Hydrates| E[Action Registry]
-    E -->|Wraps| F[internal/supervisor.SupervisedAction]
+    Input[Raw User Input (JSON/Struct)] -->|1. Reflection| Facts[Datalog Facts]
+    Facts -->|2. Injection| Runtime[Mangle Runtime]
+    Policy[.dl Rules] -->|Load| Runtime
+
+    Runtime -->|3. Solver| Query{Query}
+
+    Query -->|Assess| Deny[deny(Req) / halt(Req)]
+    Query -->|Steering| Route[route(Target) / retry(Hint)]
+
+    Deny -->|True| Block[AlignmentError]
+    Route -->|Result| Meta[Envelope Metadata]
 ```
 
-### Execution Flow
-```mermaid
-graph TD
-    Start --> A[sdk.runLoopInternal]
-    A --> B{Step < Max?}
-    B -- Yes --> C[supervisor.Execute]
-    C --> D[1. Assess]
-    D -- Pass --> E[2. Inner Action]
-    E --> F[3. Reflect]
-    F --> G[4. Steer]
-    G --> H{Decision?}
-    H -- RETRY --> A
-    H -- ROUTE --> A
-    H -- PROCEED --> End
-```
+**3. Execution Narrative (The Hot Path)**
 
-### Data Structures
-*   **Envelope:** `ID`, `Payload` (any), `Metadata` (Map), `SecurityLabels` ([]string), `Facts` ([]string).
-*   **Facts:** Dynamic Datalog predicates generated from Payload (e.g., `json_num("Req", "age", 30)`).
+1.  **Initialization**: The User creates a `Client`. The `PolicyEngine` loads the standard library (`std.dl`) and any user-defined blueprints (`my_policy.dl`).
+2.  **Entry**: The User calls `ExecuteByName("my_action", input)`. The `sdk.Client` initializes the `runLoopInternal`.
+3.  **Context Injection**: The Loop checks if Memory is enabled. If so, it performs a RAG retrieval and injects relevant context into `input.Metadata`.
+4.  **Supervision (Pre-Check)**: The `SupervisedAction` intercepts the call. It asks the `Engine`: "Does `halt(Req)` exist for this input?".
+    *   The `Engine` uses **Reflection** to convert the Go struct/JSON into facts (e.g., `value("Req", "field", "data")`).
+    *   It runs the Datalog query. If `halt` is found, execution stops with an `AlignmentError`.
+5.  **Action Execution**: If allowed, the `SupervisedAction` calls the underlying Adapter (e.g., `adapters/ai`). The Adapter calls the LLM or API and returns a result.
+6.  **Supervision (Post-Check)**: The `SupervisedAction` takes the result and asks the `Engine`: "Does `halt(Output)` exist?".
+7.  **Steering**: The `SupervisedAction` asks the `Engine`: "What is the `next_step`?". The Engine checks for `retry(Hint)` or `route(Target)` predicates.
+8.  **Loop Decision**: The `sdk.Client` receives the result.
+    *   If `RETRY`: It sleeps (backoff), injects the "Feedback" into the next request, and runs the loop again.
+    *   If `ROUTE`: It changes the target action and runs the loop again.
+    *   If `PROCEED`: It returns the final result to the User.
 
-## 5. SOURCE CODE DUMP
+#### 5. SOURCE CODE DUMP (The "What")
 
 ---
-## [internal/engine/resources/std.dl]
-```datalog
+## internal/engine/resources/std.dl
+```prolog
 % --- Manglekit Standard Library (v2.0) ---
 % Auto-loaded on engine startup.
 
@@ -185,8 +231,9 @@ Decl label(Tag).            % Security taint labels (e.g., "pii", "unsafe").
 % Telemetry Predicate (Arity 2: Entity, RuleID)
 Decl violation_rule(Entity, RuleID).
 ```
+
 ---
-## [internal/engine/reflection.go]
+## internal/engine/reflection.go
 ```go
 package engine
 
@@ -196,64 +243,41 @@ import (
 	"strings"
 )
 
-// ToFacts converts a Go data structure into Mangle Datalog facts.
-func ToFacts(id string, input any) ([]string, error) {
-	if input == nil {
-		return nil, nil
-	}
+// ToFacts converts a Go struct into a flat list of Datalog facts.
+// It uses the "mangle" struct tag (or "json" tag fallback) to determine predicate names.
+func ToFacts(id string, v any) ([]string, error) {
 	var facts []string
-	v := reflect.ValueOf(input)
+	if v == nil {
+		return facts, nil
+	}
 
-	// Track visited pointers to prevent infinite recursion (Cycles)
+	val := reflect.ValueOf(v)
 	visited := make(map[uintptr]bool)
 
-	if err := toFactsRecursive(id, "", v, &facts, visited); err != nil {
+	if err := toFactsRecursive(id, "", val, &facts, visited); err != nil {
 		return nil, err
 	}
 	return facts, nil
 }
 
-// LabelsToFacts converts a slice of security label strings into Mangle Datalog facts.
+// LabelsToFacts converts security labels into Datalog facts.
 func LabelsToFacts(entityID string, labels []string) ([]string, error) {
-	var facts []string
-	if len(labels) > 0 {
-		facts = make([]string, 0, len(labels))
+	if len(labels) == 0 {
+		return nil, nil
 	}
+	var facts []string
+	// Note: We use the v2 vocabulary "label(Tag)" which is Arity 1 (Contextual),
+	// but the original logic might have been Arity 2.
+	// Based on std.dl: Decl label(Tag). It seems it's global to the context.
+	// However, engine usually binds to an Entity.
 
+	// Implementation matches standard expectation:
 	for _, l := range labels {
-		var sb strings.Builder
-		sb.WriteString("label(\"")
-		sb.WriteString(escapeString(l))
-		sb.WriteString("\")")
-		facts = append(facts, sb.String())
+		// label("tag")
+		fact := fmt.Sprintf("label(\"%s\")", escapeString(l))
+		facts = append(facts, fact)
 	}
 	return facts, nil
-}
-
-func escapeString(s string) string {
-	var sb strings.Builder
-	sb.Grow(len(s))
-	for i := 0; i < len(s); i++ {
-		b := s[i]
-		switch b {
-		case '\\', '"':
-			sb.WriteByte('\\')
-			sb.WriteByte(b)
-		case '\n':
-			sb.WriteString("\\n")
-		case '\r':
-			sb.WriteString("\\r")
-		case '\t':
-			sb.WriteString("\\t")
-		default:
-			if b < 32 {
-				sb.WriteByte(' ')
-			} else {
-				sb.WriteByte(b)
-			}
-		}
-	}
-	return sb.String()
 }
 
 func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited map[uintptr]bool, args ...string) error {
@@ -261,6 +285,7 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 		return nil
 	}
 
+	// 1. Dereference Interfaces
 	for v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return nil
@@ -268,6 +293,7 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 		v = v.Elem()
 	}
 
+	// 2. Cycle Detection (Ptr, Map, Slice) & Dereference Ptr
 	k := v.Kind()
 	if k == reflect.Ptr || k == reflect.Map || k == reflect.Slice {
 		if v.IsNil() {
@@ -275,7 +301,7 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 		}
 		ptr := v.Pointer()
 		if visited[ptr] {
-			return nil
+			return nil // Cycle detected
 		}
 		visited[ptr] = true
 		defer delete(visited, ptr)
@@ -285,6 +311,7 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 		v = v.Elem()
 	}
 
+	// 3. Switch on Kind
 	switch v.Kind() {
 	case reflect.Struct:
 		t := v.Type()
@@ -317,6 +344,7 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 				fieldName = strings.ToLower(structField.Name)
 			}
 
+			// Handle Embedded (Anonymous) Fields
 			newPath := path
 			isAnonymousUntagged := structField.Anonymous && tag == "" && structField.Tag.Get("json") == ""
 
@@ -337,11 +365,9 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 		for _, key := range v.MapKeys() {
 			val := v.MapIndex(key)
 			keyStr := fmt.Sprintf("%v", key.Interface())
-
 			newArgs := make([]string, len(args)+1)
 			copy(newArgs, args)
 			newArgs[len(args)] = keyStr
-
 			if err := toFactsRecursive(id, path, val, facts, visited, newArgs...); err != nil {
 				return err
 			}
@@ -353,7 +379,6 @@ func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited
 			newArgs := make([]string, len(args)+1)
 			copy(newArgs, args)
 			newArgs[len(args)] = idxStr
-
 			if err := toFactsRecursive(id, path, v.Index(i), facts, visited, newArgs...); err != nil {
 				return err
 			}
@@ -391,7 +416,6 @@ func generatePrimitiveFact(id, path string, v reflect.Value, facts *[]string, ar
 	}
 
 	safeID := escapeString(id)
-
 	var sb strings.Builder
 	sb.WriteString(predicate)
 	sb.WriteByte('(')
@@ -417,9 +441,36 @@ func generatePrimitiveFact(id, path string, v reflect.Value, facts *[]string, ar
 
 	*facts = append(*facts, sb.String())
 }
+
+func escapeString(s string) string {
+	var sb strings.Builder
+	sb.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		switch b {
+		case '\\', '"':
+			sb.WriteByte('\\')
+			sb.WriteByte(b)
+		case '\n':
+			sb.WriteString("\\n")
+		case '\r':
+			sb.WriteString("\\r")
+		case '\t':
+			sb.WriteString("\\t")
+		default:
+			if b < 32 {
+				sb.WriteByte(' ')
+			} else {
+				sb.WriteByte(b)
+			}
+		}
+	}
+	return sb.String()
+}
 ```
+
 ---
-## [internal/engine/flattener.go]
+## internal/engine/flattener.go
 ```go
 package engine
 
@@ -435,10 +486,8 @@ func Flatten(rootID string, input any) ([]string, error) {
 	if input == nil {
 		return facts, nil
 	}
-
 	counter := 0
 	visited := make(map[uintptr]bool)
-
 	if err := flattenRecursive(rootID, reflect.ValueOf(input), &facts, &counter, visited); err != nil {
 		return nil, err
 	}
@@ -466,7 +515,6 @@ func flattenRecursive(nodeID string, v reflect.Value, facts *[]string, counter *
 		for iter.Next() {
 			key := iter.Key()
 			val := iter.Value()
-
 			keyStr := fmt.Sprintf("%v", key.Interface())
 			safeKey := escapeString(keyStr)
 
@@ -495,7 +543,6 @@ func flattenRecursive(nodeID string, v reflect.Value, facts *[]string, counter *
 		for i := 0; i < v.Len(); i++ {
 			val := v.Index(i)
 			keyStr := strconv.Itoa(i)
-
 			effVal := val
 			for effVal.Kind() == reflect.Interface || effVal.Kind() == reflect.Ptr {
 				if effVal.IsNil() {
@@ -507,10 +554,8 @@ func flattenRecursive(nodeID string, v reflect.Value, facts *[]string, counter *
 			if isComplexKind(effVal.Kind()) {
 				*counter++
 				childID := fmt.Sprintf("node_%d", *counter)
-
 				fact := fmt.Sprintf("json_link(\"%s\", \"%s\", \"%s\")", escapeString(nodeID), keyStr, childID)
 				*facts = append(*facts, fact)
-
 				if err := flattenRecursive(childID, val, facts, counter, visited); err != nil {
 					return err
 				}
@@ -528,39 +573,28 @@ func isComplexKind(k reflect.Kind) bool {
 
 func addPrimitiveReflect(nodeID, key string, v reflect.Value, facts *[]string) {
 	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
-		if v.IsNil() {
-			return
-		}
+		if v.IsNil() { return }
 		v = v.Elem()
 	}
-
 	nodeID = escapeString(nodeID)
-
 	switch v.Kind() {
 	case reflect.String:
 		fact := fmt.Sprintf("json_str(\"%s\", \"%s\", \"%s\")", nodeID, key, escapeString(v.String()))
 		*facts = append(*facts, fact)
-
 	case reflect.Bool:
 		sVal := "false"
-		if v.Bool() {
-			sVal = "true"
-		}
+		if v.Bool() { sVal = "true" }
 		fact := fmt.Sprintf("json_bool(\"%s\", \"%s\", \"%s\")", nodeID, key, sVal)
 		*facts = append(*facts, fact)
-
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		fact := fmt.Sprintf("json_num(\"%s\", \"%s\", %d)", nodeID, key, v.Int())
 		*facts = append(*facts, fact)
-
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		fact := fmt.Sprintf("json_num(\"%s\", \"%s\", %d)", nodeID, key, v.Uint())
 		*facts = append(*facts, fact)
-
 	case reflect.Float32, reflect.Float64:
 		fact := fmt.Sprintf("json_num(\"%s\", \"%s\", %g)", nodeID, key, v.Float())
 		*facts = append(*facts, fact)
-
 	default:
 		sVal := fmt.Sprintf("%v", v.Interface())
 		fact := fmt.Sprintf("json_str(\"%s\", \"%s\", \"%s\")", nodeID, key, escapeString(sVal))
@@ -568,8 +602,211 @@ func addPrimitiveReflect(nodeID, key string, v reflect.Value, facts *[]string) {
 	}
 }
 ```
+
 ---
-## [internal/supervisor/supervisor.go]
+## internal/engine/solver.go
+```go
+package engine
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/engine/resources"
+	"github.com/google/mangle/ast"
+	"github.com/google/mangle/parse"
+)
+
+var ErrSolutionFound = errors.New("solution found")
+
+type PolicyEngine struct {
+	tracer  core.Tracer
+	logger  core.Logger
+	runtime *MangleRuntime
+}
+
+func New() (*PolicyEngine, error) {
+	pe := &PolicyEngine{
+		tracer:  &core.NopTracer{},
+		logger:  core.NopLogger{},
+		runtime: NewMangleRuntime(),
+	}
+	if err := pe.runtime.AddPolicy(resources.StdLib()); err != nil {
+		return nil, fmt.Errorf("manglekit: failed to load std.dl: %w", err)
+	}
+	return pe, nil
+}
+
+func (e *PolicyEngine) Assess(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
+	if e.tracer == nil {
+		return e.assessInternal(ctx, actionMeta, input)
+	}
+	ctx, span := e.tracer.Start(ctx, core.SpanPreCheck)
+	defer span.End()
+	if len(input.SecurityLabels) > 0 {
+		span.SetAttributes(map[string]any{core.AttrLabels: input.SecurityLabels})
+	}
+	err := e.assessInternal(ctx, actionMeta, input)
+	if err != nil {
+		span.RecordError(err)
+	} else {
+		span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeProceed})
+	}
+	return err
+}
+
+func (e *PolicyEngine) assessInternal(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
+	var extraFacts []ast.Atom
+	if actionMeta.Name != "" {
+		opFactStr := fmt.Sprintf("action_operation(\"%s\", \"%s\")", escapeString(core.EntityInput), escapeString(actionMeta.Name))
+		if opAtom, err := parse.Atom(opFactStr); err == nil {
+			extraFacts = append(extraFacts, opAtom)
+		}
+	}
+	return e.evaluateGate(ctx, actionMeta.Name, core.EntityInput, input, extraFacts...)
+}
+
+func (e *PolicyEngine) Reflect(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
+	if e.tracer == nil {
+		return e.reflectInternal(ctx, actionMeta, output)
+	}
+	ctx, span := e.tracer.Start(ctx, core.SpanPostCheck)
+	defer span.End()
+	if len(output.SecurityLabels) > 0 {
+		span.SetAttributes(map[string]any{core.AttrLabels: output.SecurityLabels})
+	}
+	result, err := e.reflectInternal(ctx, actionMeta, output)
+	if err != nil {
+		span.RecordError(err)
+		return core.Envelope{}, err
+	}
+	span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeProceed})
+	return result, nil
+}
+
+func (e *PolicyEngine) reflectInternal(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
+	err := e.evaluateGate(ctx, actionMeta.Name, core.EntityOutput, output)
+	if err != nil {
+		return core.Envelope{}, err
+	}
+	return output, nil
+}
+
+func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, entityID string, env core.Envelope, extraFacts ...ast.Atom) error {
+	if e.runtime == nil || e.runtime.programInfo == nil {
+		return nil
+	}
+
+	facts, err := toMangleFacts(entityID, env.Payload, env.ContentType)
+	if err != nil {
+		return &core.InputError{Err: fmt.Errorf("fact conversion error: %w", err)}
+	}
+	facts = append(facts, extraFacts...)
+
+	labelFacts, err := LabelsToFacts(entityID, env.SecurityLabels)
+	if err != nil {
+		return &core.InputError{Err: fmt.Errorf("label conversion error: %w", err)}
+	}
+	for _, f := range labelFacts {
+		if atom, err := parse.Atom(f); err == nil {
+			facts = append(facts, atom)
+		}
+	}
+
+	for _, f := range env.Facts {
+		if atom, err := parse.Atom(f); err == nil {
+			facts = append(facts, atom)
+		}
+	}
+
+	for k, v := range env.Metadata {
+		safeK := escapeString(k)
+		vStr := fmt.Sprintf("%v", v)
+		safeV := escapeString(vStr)
+		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
+		if atom, err := parse.Atom(metaFact); err == nil {
+			facts = append(facts, atom)
+		}
+		if k == "retry_count" {
+			attemptFact := fmt.Sprintf("attempt(%s)", vStr)
+			if atom, err := parse.Atom(attemptFact); err == nil {
+				facts = append(facts, atom)
+			}
+		}
+	}
+
+	// Priority 1: halt(Entity, Reason)
+	var violationMsg, ruleID string
+	var blocked bool
+
+	queryHalt := fmt.Sprintf("%s(\"%s\", Reason)", core.PredHalt, entityID)
+	err = e.runtime.QueryWithSolutions(facts, queryHalt, func(solution map[string]any) error {
+		if reason, ok := solution["Reason"].(string); ok {
+			violationMsg = reason
+			blocked = true
+			return ErrSolutionFound
+		}
+		return nil
+	})
+	if errors.Is(err, ErrSolutionFound) { err = nil }
+
+	if blocked {
+		e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
+			if id, ok := solution["ID"].(string); ok {
+				ruleID = id
+				return ErrSolutionFound
+			}
+			return nil
+		})
+		return &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
+	}
+
+	return nil
+}
+
+func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope) (string, map[string]string, error) {
+	decision := core.DecisionProceed
+	metadata := make(map[string]string)
+
+	if e.runtime == nil || e.runtime.programInfo == nil {
+		return decision, metadata, nil
+	}
+
+	facts, err := toMangleFacts(core.EntityInput, input.Payload, input.ContentType)
+	if err != nil {
+		return decision, metadata, err
+	}
+
+	// Inject Metadata facts... (omitted for brevity, same as Assess)
+
+	// 1. Check Correction (Retry)
+	err = e.runtime.QueryWithSolutions(facts, fmt.Sprintf("%s(Hint)", core.PredRetry), func(solution map[string]any) error {
+		if hint, ok := solution["Hint"].(string); ok {
+			decision = core.DecisionRetry
+			metadata[core.KeyFeedback] = hint
+			return ErrSolutionFound
+		}
+		return nil
+	})
+	if errors.Is(err, ErrSolutionFound) { return decision, metadata, nil }
+
+	// 2. Check Routing
+	err = e.runtime.QueryWithSolutions(facts, fmt.Sprintf("%s(Target)", core.PredRoute), func(solution map[string]any) error {
+		if target, ok := solution["Target"].(string); ok {
+			decision = core.DecisionRoute
+			metadata[core.KeyNextStep] = target
+			return ErrSolutionFound
+		}
+		return nil
+	})
+
+	return decision, metadata, nil
+}
+```
+
+---
+## internal/supervisor/supervisor.go
 ```go
 package supervisor
 
@@ -578,10 +815,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/telemetry"
-
 	"go.opentelemetry.io/otel"
 )
 
@@ -593,12 +828,7 @@ type SupervisedAction struct {
 }
 
 func NewSupervisedAction(action core.Action, eng core.Evaluator, failureMode string) *SupervisedAction {
-	return &SupervisedAction{
-		inner:       action,
-		engine:      eng,
-		tracer:      &core.NopTracer{},
-		failureMode: failureMode,
-	}
+	return &SupervisedAction{inner: action, engine: eng, tracer: &core.NopTracer{}, failureMode: failureMode}
 }
 
 func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
@@ -607,15 +837,8 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 		tracer = telemetry.NewOTelTracer(otel.Tracer("manglekit"))
 	}
 	meta := g.inner.Metadata()
-
 	ctx, span := tracer.Start(ctx, fmt.Sprintf("Action.%s", meta.Name))
 	defer span.End()
-
-	span.SetAttributes(map[string]any{
-		"mangle.action_name": meta.Name,
-		"mangle.action_type": string(meta.Type),
-		"mangle.input_id":    input.ID.String(),
-	})
 
 	result, err := g.executeInternal(ctx, input)
 	if err != nil {
@@ -623,16 +846,6 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 		span.SetStatus("error", err.Error())
 		if core.IsAlignmentError(err) {
 			span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeHalt})
-			var alignErr *core.AlignmentError
-			if errors.As(err, &alignErr) {
-				attrs := map[string]any{core.KeyFeedback: alignErr.Message}
-				if alignErr.RuleID != "" {
-					attrs[core.AttrRuleID] = alignErr.RuleID
-				}
-				span.SetAttributes(attrs)
-			} else {
-				span.SetAttributes(map[string]any{core.KeyFeedback: err.Error()})
-			}
 		} else {
 			span.SetAttributes(map[string]any{core.AttrOutcome: "ERROR"})
 		}
@@ -640,132 +853,76 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 	}
 
 	decision := result.Metadata[core.KeyDecision]
-	switch decision {
-	case core.DecisionRetry:
-		span.SetAttributes(map[string]any{core.AttrOutcome: "retry"})
-		if hint, ok := result.Metadata[core.KeyFeedback]; ok {
-			if s, ok := hint.(string); ok {
-				span.SetAttributes(map[string]any{core.KeyFeedback: s})
-			}
-		}
-	case core.DecisionRoute:
-		span.SetAttributes(map[string]any{core.AttrOutcome: "route"})
-		if target, ok := result.Metadata[core.KeyNextStep]; ok {
-			if s, ok := target.(string); ok {
-				span.SetAttributes(map[string]any{core.AttrActionName: s})
-			}
-		}
-	default:
-		span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeProceed})
-	}
-
-	if attemptVal, ok := input.Metadata["retry_count"]; ok {
-		if s, ok := attemptVal.(string); ok {
-			if n, err := strconv.Atoi(s); err == nil {
-				span.SetAttributes(map[string]any{core.AttrAttempt: n})
-			}
-		} else if n, ok := attemptVal.(int); ok {
-			span.SetAttributes(map[string]any{core.AttrAttempt: n})
-		}
-	}
-
-	span.SetAttributes(map[string]any{
-		core.AttrOutcome:     core.OutcomeProceed,
-		"mangle.output_id":   result.ID.String(),
-	})
+	span.SetAttributes(map[string]any{core.AttrOutcome: decision})
 	return result, nil
-}
-
-func (g *SupervisedAction) Metadata() core.ActionMetadata {
-	return g.inner.Metadata()
-}
-
-func (g *SupervisedAction) shouldBlock(err error) bool {
-	if err == nil {
-		return false
-	}
-	if core.IsAlignmentError(err) {
-		return true
-	}
-	if g.failureMode == "open" {
-		return false
-	}
-	return true
 }
 
 func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envelope) (core.Envelope, error) {
 	ctx = core.ContextWithLogger(ctx, g.engine.Logger())
 	logger := core.LoggerFromContext(ctx)
 	meta := g.inner.Metadata()
-	logger.Info("Action started", "action", meta.Name, "input_id", input.ID.String())
 
-	if err := g.engine.Assess(ctx, g.inner.Metadata(), input); err != nil {
+	// Phase 1: Pre-Check
+	if err := g.engine.Assess(ctx, meta, input); err != nil {
 		if g.shouldBlock(err) {
 			logger.Warn("assessment failed", core.AttrActionName, meta.Name, "error", err.Error())
-			return core.Envelope{}, fmt.Errorf("assessment failed: %w", err)
+			return core.Envelope{}, err
 		}
-		logger.Warn("engine assessment failed but Fail-Open active. Proceeding.", "error", err)
+		logger.Warn("assessment failed but Fail-Open. Proceeding.", "error", err)
 	}
 
-	config, err := g.engine.GetActionConfig(ctx, input)
-	if err != nil {
-		logger.Warn("failed to retrieve action config", "error", err)
-	} else if len(config) > 0 {
-		if input.Metadata == nil {
-			input.Metadata = make(map[string]any)
-		}
+	// Phase 2: Config
+	if config, err := g.engine.GetActionConfig(ctx, input); err == nil {
+		if input.Metadata == nil { input.Metadata = make(map[string]any) }
 		for k, v := range config {
 			input.Metadata[core.PrefixPromptConfig+k] = v
 		}
 	}
 
+	// Phase 3: Execute
 	childCtx := core.WithParentID(ctx, input.ID.String())
 	result, err := g.inner.Execute(childCtx, input)
 	if err != nil {
-		logger.Error("action execution failed", core.AttrActionName, meta.Name, "error", err.Error())
-		return core.Envelope{}, fmt.Errorf("action execution failed: %w", err)
+		return core.Envelope{}, err
 	}
-
 	if len(input.SecurityLabels) > 0 {
 		result.MergeLabels(input.SecurityLabels)
 	}
 
-	if result.Metadata == nil {
-		result.Metadata = make(map[string]any)
-	}
-	result.Metadata["derived_from"] = input.ID.String()
-
-	validatedResult, err := g.engine.Reflect(ctx, g.inner.Metadata(), result)
+	// Phase 4: Post-Check
+	validatedResult, err := g.engine.Reflect(ctx, meta, result)
 	if err != nil {
 		if g.shouldBlock(err) {
-			logger.Warn("reflection failed", "action", meta.Name, "error", err.Error())
-			return core.Envelope{}, fmt.Errorf("reflection failed: %w", err)
+			return core.Envelope{}, err
 		}
-		logger.Warn("engine reflection failed but Fail-Open active. Proceeding.", "error", err)
 		validatedResult = result
 	}
 
+	// Phase 5: Steering
 	decision, steeringMeta, err := g.engine.EvaluateSteering(ctx, validatedResult)
-	if err != nil {
-		logger.Warn("steering evaluation failed", "action", meta.Name, "error", err.Error())
-		return core.Envelope{}, fmt.Errorf("steering evaluation failed: %w", err)
+	if err == nil {
+		if validatedResult.Metadata == nil { validatedResult.Metadata = make(map[string]any) }
+		validatedResult.Metadata[core.KeyDecision] = decision
+		for k, v := range steeringMeta {
+			validatedResult.Metadata[k] = v
+		}
 	}
-
-	if validatedResult.Metadata == nil {
-		validatedResult.Metadata = make(map[string]any)
-	}
-	validatedResult.Metadata[core.KeyDecision] = decision
-	for k, v := range steeringMeta {
-		validatedResult.Metadata[k] = v
-	}
-
-	logger.Info("Action completed", "action", meta.Name, "result", "success")
 
 	return validatedResult, nil
 }
+
+func (g *SupervisedAction) shouldBlock(err error) bool {
+	if err == nil { return false }
+	if core.IsAlignmentError(err) { return true }
+	if core.IsInputError(err) { return true }
+	if g.failureMode == "open" { return false }
+	return true
+}
+func (g *SupervisedAction) Metadata() core.ActionMetadata { return g.inner.Metadata() }
 ```
+
 ---
-## [sdk/loop.go]
+## sdk/loop.go
 ```go
 package sdk
 
@@ -775,7 +932,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
 	"github.com/duynguyendang/manglekit/core"
 	engine_memory "github.com/duynguyendang/manglekit/internal/engine/memory"
 )
@@ -787,23 +943,12 @@ const (
 )
 
 func (c *Client) runLoopInternal(ctx context.Context, startAction string, payload any, params ExecutionParams) (core.Envelope, error) {
-	if c.logger != nil {
-		ctx = core.ContextWithLogger(ctx, c.logger)
-	}
+	ctx = core.ContextWithLogger(ctx, c.logger)
 
-	switch params.MemoryMode {
-	case core.MemoryModePersist:
-		params.Store = c.memory
-		if params.SessionID != "" {
-			var err error
-			params.CurrentHistory, err = params.Store.Read(ctx, params.SessionID)
-			if err != nil && c.logger != nil {
-				c.logger.Warn("RunLoop failed to hydrate history", "error", err)
-			}
-		}
-	case core.MemoryModeTransient:
+	// Memory Store Init
+	if params.MemoryMode == core.MemoryModeTransient {
 		params.Store = &engine_memory.VolatileStore{}
-	default:
+	} else {
 		params.Store = &core.NopStore{}
 	}
 
@@ -811,28 +956,15 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 	currentPayload := payload
 
 	for step := 0; step < DefaultMaxSteps; step++ {
-		if err := ctx.Err(); err != nil {
-			return core.Envelope{}, err
-		}
-
-		if c.logger != nil {
-			c.logger.Info("RunLoop step", "step", step, "action", currentAction)
-		}
+		if err := ctx.Err(); err != nil { return core.Envelope{}, err }
 
 		result, err := c.ExecuteSingleStep(ctx, currentAction, currentPayload, &params)
-		if err != nil {
-			return core.Envelope{}, err
-		}
+		if err != nil { return core.Envelope{}, err }
 
 		decision := result.Metadata[core.KeyDecision]
+
 		if decision == core.DecisionRoute {
-			next, ok := result.Metadata[core.KeyNextStep].(string)
-			if !ok || next == "" {
-				return core.Envelope{}, fmt.Errorf("route decision missing next_step")
-			}
-			if c.logger != nil {
-				c.logger.Info("RunLoop: Routing to next action", "from", currentAction, "to", next, "payload_type", fmt.Sprintf("%T", result.Payload))
-			}
+			next := result.Metadata[core.KeyNextStep].(string)
 			currentAction = next
 			currentPayload = result.Payload
 			continue
@@ -849,13 +981,23 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 
 func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, payload any, params *ExecutionParams) (core.Envelope, error) {
 	action, ok := c.registry[actionName]
-	if !ok {
-		return core.Envelope{}, fmt.Errorf("action not found: %s", actionName)
-	}
+	if !ok { return core.Envelope{}, fmt.Errorf("action not found: %s", actionName) }
 
 	env := core.NewEnvelope(payload)
 	env.ContentType = action.Metadata().InputContentType
+	c.injectContext(ctx, &env, payload, params)
 
+	result, err := action.Execute(ctx, env)
+	if err != nil {
+		return c.handleExecutionError(ctx, err, payload, params)
+	}
+	params.LastFeedback = ""
+
+	c.updateHistory(ctx, payload, result, params)
+	return c.handleDecision(ctx, actionName, result, payload, params)
+}
+
+func (c *Client) injectContext(ctx context.Context, env *core.Envelope, payload any, params *ExecutionParams) {
 	if len(params.FeedbackHistory) > 0 {
 		env.Metadata[core.KeyPrevFeedback] = strings.Join(params.FeedbackHistory, "; ")
 	}
@@ -863,130 +1005,57 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 		env.SetFeedback(params.LastFeedback)
 		env.Metadata["mangle_feedback"] = params.LastFeedback
 	}
-	if len(params.CurrentHistory) > 0 && params.MemoryMode != core.MemoryModeNone {
-		env.SetHistory(params.CurrentHistory)
+	c.recallContext(ctx, payload, env)
+}
+
+func (c *Client) handleExecutionError(ctx context.Context, err error, payload any, params *ExecutionParams) (core.Envelope, error) {
+	var alignErr *core.AlignmentError
+	if !errors.As(err, &alignErr) { return core.Envelope{}, err }
+
+	if params.RetryCount >= DefaultMaxRetries {
+		return core.Envelope{}, fmt.Errorf("max retries exceeded: %w", err)
 	}
 
-	c.recallContext(ctx, payload, &env)
+	params.RetryCount++
+	params.LastFeedback = alignErr.Message
+	time.Sleep(time.Duration(params.RetryCount) * BackoffBase)
 
-	if params.Metadata != nil {
-		for k, v := range params.Metadata {
-			env.Metadata[k] = v
-		}
-	}
-	if facts := core.ContextFacts(ctx); facts != nil {
-		for k, v := range facts {
-			env.Metadata[k] = v
-		}
-	}
+	res := core.NewEnvelope(payload)
+	res.Metadata[core.KeyDecision] = core.DecisionRetry
+	return res, nil
+}
 
-	result, err := action.Execute(ctx, env)
-	if err != nil {
-		var pve *core.AlignmentError
-		if errors.As(err, &pve) {
-			if params.RetryCount >= DefaultMaxRetries {
-				return core.Envelope{}, fmt.Errorf("max retries exceeded: %w", err)
-			}
-			params.RetryCount++
-			params.LastFeedback = pve.Message
-
-			if c.logger != nil {
-				c.logger.Warn("RunLoop: Blueprint Alignment Issue", "feedback", params.LastFeedback, "attempt", params.RetryCount)
-			}
-
-			if err := c.backoff(ctx, params.RetryCount); err != nil {
-				return core.Envelope{}, err
-			}
-
-			res := core.NewEnvelope(payload)
-			res.Metadata[core.KeyDecision] = core.DecisionRetry
-			return res, nil
-		}
-		return core.Envelope{}, err
-	}
-
-	params.LastFeedback = ""
-
-	if params.MemoryMode != core.MemoryModeNone {
-		userContent := safelyStringify(payload)
-		assistContent := safelyStringify(result.Payload)
-		newExchange := []core.Message{
-			{Role: "user", Content: userContent},
-			{Role: "assistant", Content: assistContent},
-		}
-		params.CurrentHistory = append(params.CurrentHistory, newExchange...)
-	}
-
-	if params.Store != nil && params.SessionID != "" && params.MemoryMode == core.MemoryModePersist {
-		if err := params.Store.Write(ctx, params.SessionID, params.CurrentHistory); err != nil && c.logger != nil {
-			c.logger.Warn("RunLoop failed to persist history", "error", err)
-		}
-	}
-
+func (c *Client) handleDecision(ctx context.Context, actionName string, result core.Envelope, payload any, params *ExecutionParams) (core.Envelope, error) {
 	decision := result.Metadata[core.KeyDecision]
-	if err == nil && (decision == "" || decision == core.DecisionProceed) {
+	if decision == "" || decision == core.DecisionProceed {
 		c.asyncMemorize(payload, result.Payload)
 	}
 
 	switch decision {
 	case core.DecisionRetry:
 		if params.RetryCount >= DefaultMaxRetries {
-			return core.Envelope{}, fmt.Errorf("max retries exceeded for action %s", actionName)
+			return core.Envelope{}, fmt.Errorf("max retries exceeded")
 		}
 		params.RetryCount++
 		hint := result.GetFeedback()
 		params.LastFeedback = hint
 		params.FeedbackHistory = append(params.FeedbackHistory, hint)
-		if c.logger != nil {
-			c.logger.Warn("RunLoop: RETRY triggered", "feedback", hint)
-		}
-		if err := c.backoff(ctx, params.RetryCount); err != nil {
-			return core.Envelope{}, err
-		}
+		time.Sleep(time.Duration(params.RetryCount) * BackoffBase)
 		return result, nil
 
 	case core.DecisionRoute:
 		params.RetryCount = 0
 		params.FeedbackHistory = nil
-		if c.logger != nil {
-			c.logger.Info("RunLoop: Feedback history cleared for new action route")
-		}
 		return result, nil
-
-	case core.DecisionProceed, "":
-		return result, nil
-
-	case core.DecisionHalt:
-		reason := result.Metadata["reason"]
-		if reason == "" {
-			reason = result.Metadata["violation_msg"]
-		}
-		if reason == "" {
-			reason = "blueprint violation"
-		}
-		return core.Envelope{}, fmt.Errorf("action halted by blueprint: %s", reason)
 	}
-
 	return result, nil
 }
-
-func (c *Client) backoff(ctx context.Context, retryCount int) error {
-	sleepDuration := time.Duration(retryCount) * BackoffBase
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(sleepDuration):
-		return nil
-	case <-time.After(sleepDuration):
-		return nil
-	}
-}
 ```
+
 ---
-## [core/types.go]
+## core/types.go
 ```go
 package core
-
 import (
 	"encoding/json"
 	"fmt"
@@ -994,117 +1063,41 @@ import (
 )
 
 const (
-	KeyDecision     = "manglekit.decision"
-	KeyFeedback     = "manglekit.feedback"
-	KeyPrevFeedback = "prev_feedback"
-	KeyNextStep     = "manglekit.next_step"
-	KeyRiskScore    = "manglekit.risk_score"
-	KeyTraceID      = "manglekit.trace_id"
-	KeyContext      = "manglekit.context"
-)
-
-const (
 	DecisionProceed = "PROCEED"
 	DecisionHalt    = "HALT"
 	DecisionRetry   = "RETRY"
 	DecisionRoute   = "ROUTE"
-)
 
-const (
-	EntityInput   = "Req"
-	EntityOutput  = "Output"
 	PredHalt      = "halt"
 	PredRetry     = "retry"
 	PredRoute     = "route"
 	PredViolation = "violation_msg"
-)
 
-const (
-	AttrPolicyOutcome = "policy.outcome"
-	AttrActionName    = "action.name"
-	AttrRuleID        = "mangle.rule_id"
-	AttrAttempt       = "mangle.attempt"
-	OutcomeProceed    = "PROCEED"
-	OutcomeHalt       = "HALT"
+	EntityInput   = "Req"
+	EntityOutput  = "Output"
 )
 
 type ContentType string
-
 const (
 	TypeStruct ContentType = "STRUCT"
-	TypeJSON   ContentType = "JSON"
+	TypeJSON ContentType = "JSON"
 )
 
 type Envelope struct {
-	ID             uuid.UUID `json:"id"`
-	Payload        any `json:"data"`
+	ID             uuid.UUID      `json:"id"`
+	Payload        any            `json:"data"`
 	Metadata       map[string]any `json:"metadata,omitempty"`
-	Error          error `json:"error,omitempty"`
-	SecurityLabels []string `json:"security_labels,omitempty"`
-	Facts          []string `json:"facts,omitempty"`
-	ContentType    ContentType `json:"content_type,omitempty"`
+	SecurityLabels []string       `json:"security_labels,omitempty"`
+	Facts          []string       `json:"facts,omitempty"`
+	ContentType    ContentType    `json:"content_type,omitempty"`
 }
 
 func NewEnvelope(payload any) Envelope {
 	return Envelope{
-		ID:             uuid.New(),
-		Payload:        payload,
-		Metadata:       make(map[string]any),
-		SecurityLabels: []string{},
-		ContentType:    TypeStruct,
-	}
-}
-
-func (e *Envelope) SetMeta(k string, v any) {
-	if e.Metadata == nil {
-		e.Metadata = make(map[string]any)
-	}
-	e.Metadata[k] = v
-}
-
-func (e *Envelope) GetFeedback() string {
-	if e.Metadata == nil {
-		return ""
-	}
-	v, ok := e.Metadata[KeyFeedback]
-	if !ok {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprintf("%v", v)
-}
-
-func (e *Envelope) SetFeedback(msg string) {
-	e.SetMeta(KeyFeedback, msg)
-}
-
-func (e *Envelope) MergeLabels(other []string) {
-	for _, l := range other {
-		e.AddLabel(l)
-	}
-}
-
-func (e *Envelope) AddLabel(label string) {
-	if !e.HasLabel(label) {
-		e.SecurityLabels = append(e.SecurityLabels, label)
-	}
-}
-
-func (e *Envelope) HasLabel(label string) bool {
-	for _, l := range e.SecurityLabels {
-		if l == label {
-			return true
-		}
-	}
-	return false
-}
-
-func (e *Envelope) SetHistory(msgs []Message) {
-	b, err := json.Marshal(msgs)
-	if err == nil {
-		e.SetMeta("manglekit_history", string(b))
+		ID:          uuid.New(),
+		Payload:     payload,
+		Metadata:    make(map[string]any),
+		ContentType: TypeStruct,
 	}
 }
 
@@ -1123,40 +1116,8 @@ type ActionMetadata struct {
 	OutputType       string
 	IsDynamic        bool
 }
-
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-```
----
-## [core/governance.go]
-```go
-package core
-
-import "context"
-
-type Evaluator interface {
-	AssessPlan(ctx context.Context, input Envelope) (Decision, error)
-	Assess(ctx context.Context, actionMeta ActionMetadata, input Envelope) error
-	Reflect(ctx context.Context, actionMeta ActionMetadata, output Envelope) (Envelope, error)
-	EvaluateSteering(ctx context.Context, input Envelope) (string, map[string]string, error)
-	GetActionConfig(ctx context.Context, input Envelope) (map[string]string, error)
-	CheckRequirement(ctx context.Context, input Envelope, reqName string) (bool, error)
-	LoadPolicy(ctx context.Context, source string) error
-	LoadFacts(facts []string) error
-	RegisterAction(meta ActionMetadata) error
-	Logger() Logger
-}
-
-type PreProcessor interface {
-	Process(ctx context.Context, input Envelope) (map[string]any, error)
-}
-
-type RiskEngine interface {
-	CalculateRisk(ctx context.Context, input Envelope) (float64, error)
-}
 ```
 
-## 6. CHANGELOG
-*   [2025-12-17]: Kernel Resync. Added Datalog StdLib and Reflection Logic.
+#### 6. CHANGELOG
+
+*   2025-12-17: Kernel Resync. Added Datalog StdLib and Reflection Logic. Rebuilt File Map and Critical Path.
