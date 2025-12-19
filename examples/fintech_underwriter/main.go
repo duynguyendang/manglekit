@@ -42,7 +42,7 @@ deny(Req) :- loan_id(Req, ID), deny(ID).
 	defer os.Remove("governance.dl")
 
 	// Combine policies
-	creditPath := filepath.Join(wd, "examples/fintech_approval/credit.dl")
+	creditPath := filepath.Join(wd, "examples/fintech_underwriter/credit.dl")
 	creditContent, _ := os.ReadFile(creditPath)
 	combined := string(creditContent) + "\n" + wrapperPolicy
 	if err := os.WriteFile("combined.dl", []byte(combined), 0644); err != nil {
@@ -56,7 +56,7 @@ deny(Req) :- loan_id(Req, ID), deny(ID).
 			Path: "combined.dl",
 		},
 		Knowledge: config.KnowledgeConfig{
-			Path: filepath.Join(wd, "examples/fintech_approval/data.ttl"),
+			Path: filepath.Join(wd, "examples/fintech_underwriter/data.ttl"),
 		},
 	}
 

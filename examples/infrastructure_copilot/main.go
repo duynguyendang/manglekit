@@ -30,7 +30,7 @@ func main() {
 	// Use Facade. Load blueprint via option.
 	client := manglekit.Must(manglekit.NewClient(
 		ctx,
-		manglekit.WithBlueprintPath("examples/sre_guardrail/safety.dl"),
+		manglekit.WithBlueprintPath("examples/infrastructure_copilot/safety.dl"),
 	))
 
 	// 2. Define the high-risk operation

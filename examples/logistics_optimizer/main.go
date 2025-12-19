@@ -126,7 +126,7 @@ func main() {
 
 	// 2. Initialize Client from Config
 	// Thishydrates "solve_seating" using our factory and loads validator.dl
-	client, err := sdk.NewClientFromFile(ctx, "examples/seating_solver/mangle.yaml",
+	client, err := sdk.NewClientFromFile(ctx, "examples/logistics_optimizer/mangle.yaml",
 		sdk.WithLogger(logger.New("DEBUG")),
 	)
 	if err != nil {

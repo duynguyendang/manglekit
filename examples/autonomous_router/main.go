@@ -24,7 +24,7 @@ func main() {
 	ctx := context.Background()
 
 	// 1. Initialize Client
-	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithBlueprintPath("examples/steering/blueprint.dl")))
+	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithBlueprintPath("examples/autonomous_router/blueprint.dl")))
 
 	// 2. Register Actions
 

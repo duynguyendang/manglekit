@@ -93,7 +93,7 @@ Manglekit allows you to build systems that are:
 Navigate to any example directory and run `main.go`. For example:
 
 ```bash
-cd examples/sre_guardrail
+cd examples/infrastructure_copilot
 go run .
 ```
 

@@ -38,7 +38,7 @@ func main() {
 	// Load Inventory (Simulate Redis)
 	InventoryDB = make(map[string]int)
 	wd, _ := os.Getwd()
-	csvPath := filepath.Join(wd, "examples/dynamic_pricing/inventory.csv")
+	csvPath := filepath.Join(wd, "examples/structured_data_bridge/dynamic_pricing/inventory.csv")
 	file, err := os.Open(csvPath)
 	if err != nil {
 		log.Fatalf("Failed to open inventory: %v", err)
@@ -54,7 +54,7 @@ func main() {
 	fmt.Printf("Loaded %d products.\n", len(InventoryDB))
 
 	// Initialize Client (Use Facade)
-	policyPath := filepath.Join(wd, "examples/dynamic_pricing/pricing.dl")
+	policyPath := filepath.Join(wd, "examples/structured_data_bridge/dynamic_pricing/pricing.dl")
 
 	client := manglekit.Must(manglekit.NewClient(context.Background(),
 		sdk.WithStdoutTracer(),
