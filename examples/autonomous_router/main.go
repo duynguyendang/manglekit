@@ -40,7 +40,8 @@ func main() {
 
 	// 3. RunLoop - Scenario 1: Retry
 	fmt.Println("--- Scenario 1: Retry (Bad SQL) ---")
-	res, err := client.ExecuteByName(ctx, "generate_sql", nil)
+	// Execute via client.Action proxy
+	res, err := client.Action("generate_sql").Execute(ctx, core.NewEnvelope(nil))
 	if err != nil {
 		fmt.Printf("RunLoop failed: %v\n", err)
 	} else {
@@ -55,7 +56,7 @@ func main() {
 	// 3. RunLoop - Scenario 2: Route
 	fmt.Println("\n--- Scenario 2: Route (Gold Tier) ---")
 	// Note: We use Input struct which maps to payload.tier
-	res, err = client.ExecuteByName(ctx, "classify", Input{Tier: "gold"})
+	res, err = client.Action("classify").Execute(ctx, core.NewEnvelope(Input{Tier: "gold"}))
 	if err != nil {
 		fmt.Printf("RunLoop failed: %v\n", err)
 	} else {

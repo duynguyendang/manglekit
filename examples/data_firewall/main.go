@@ -61,8 +61,8 @@ func main() {
 	// 3. Register Action
 	echo := &EchoAction{}
 	// Use client.RegisterAction to attach the action to the client (and thus the guard)
-	// Note: client.RegisterAction wraps the action with Protect() automatically.
-	client.RegisterAction("echo", echo)
+	// We wrap it with Supervise BEFORE registration so client.Action("echo") returns the guarded version.
+	client.RegisterAction("echo", client.Supervise(echo))
 
 	// 4. Test Case 1: Input has "secret" label. Output should inherit it and be blocked.
 	fmt.Println("Test Case 1: Input with 'secret' label")
@@ -79,7 +79,8 @@ func main() {
 	// If we use `Protect`, we get a `core.Action` back.
 	// We can run `Execute` on that guarded action with our pre-labeled envelope.
 
-	guardedEcho := client.Supervise(echo)
+	// Retrieve the guarded action via the SDK proxy
+	guardedEcho := client.Action("echo")
 
 	result1, err := guardedEcho.Execute(context.Background(), input1)
 	if err == nil {

@@ -141,7 +141,7 @@ func main() {
 	// We send the specific problem statement just in case.
 	question := "Please solve the seating arrangement for An, Binh, Cuong, Dung."
 
-	res, err := client.ExecuteByName(ctx, "solve_seating", question)
+	res, err := client.Action("solve_seating").Execute(ctx, core.NewEnvelope(question))
 	if err != nil {
 		log.Fatalf("Execution failed: %v", err)
 	}

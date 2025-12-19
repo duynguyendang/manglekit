@@ -33,19 +33,23 @@ func main() {
 
 	// 2. Define Components
 	llm := &MockLLM{}
+	client.RegisterAction("mock_llm", llm)
 
-	ext, err := extractor.New("order_parser", llm, Order{})
+	// Use client.Action("mock_llm") to wire into Extractor
+	// This proves that Extractor accepts the generic core.Action interface via the proxy.
+	ext, err := extractor.New("order_parser", client.Action("mock_llm"), Order{})
 	if err != nil {
 		log.Fatalf("Failed to create extractor: %v", err)
 	}
 
 	// 3. Protect Action via Facade (Required for Governance)
 	// We wrap the extractor action with client.Supervise to ensure all policies are enforced.
-	guardedExt := client.Supervise(ext)
+	// And register it so we can use it via the client.
+	client.RegisterAction("order_parser", client.Supervise(ext))
 
 	// Execute
 	input := core.NewEnvelope("I need a Laptop ASAP, just one.")
-	result, err := guardedExt.Execute(context.Background(), input)
+	result, err := client.Action("order_parser").Execute(context.Background(), input)
 	if err != nil {
 		log.Fatalf("Execution failed: %v", err)
 	}
