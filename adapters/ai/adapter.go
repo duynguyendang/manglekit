@@ -3,9 +3,13 @@ package ai
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/duynguyendang/manglekit/core"
 )
+
+// Compile-time interface satisfaction checks
+var _ core.Action = (*LLMAction)(nil)
 
 // LLMAction is a concrete implementation of core.Action that wraps a core.TextGenerator.
 // It adapts the specific TextGenerator interface to the universal core.Action envelope interface.
@@ -57,7 +61,7 @@ func (a *LLMAction) Execute(ctx context.Context, input core.Envelope) (core.Enve
 	// Inject dynamic config into context
 	for k, v := range input.Metadata {
 		// Justification: We specifically look for "prompt." prefix injected by Supervisor
-		if len(k) > len(core.PrefixPromptConfig) && k[:len(core.PrefixPromptConfig)] == core.PrefixPromptConfig {
+		if strings.HasPrefix(k, core.PrefixPromptConfig) {
 			vStr := fmt.Sprintf("%v", v)
 			ctx = core.WithFact(ctx, k, vStr)
 		}

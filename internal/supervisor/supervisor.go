@@ -159,8 +159,8 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 		}
 	}
 
+	// Set output ID without overwriting the outcome
 	span.SetAttributes(map[string]any{
-		core.AttrOutcome:   core.OutcomeProceed,
 		"mangle.output_id": result.ID.String(),
 	})
 	return result, nil
