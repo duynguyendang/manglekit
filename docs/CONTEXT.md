@@ -6,7 +6,7 @@ last_updated: 2025-12-19
 scan_mode: logic_focused
 ---
 
-#### 2. THE COMPLETE FILE MAP
+## 1. THE COMPLETE FILE MAP
 
 .
 ├── adapters
@@ -901,7 +901,7 @@ func (g *SupervisedAction) applySteering(ctx context.Context, logger core.Logger
 ---
 ## [internal/engine/solver.go]
 ```go
-package engine
+package supervisor
 
 import (
 	"context"
@@ -909,12 +909,18 @@ import (
 	"fmt"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/engine/resources"
-	"github.com/google/mangle/ast"
-	"github.com/google/mangle/parse"
+	"github.com/duynguyendang/manglekit/internal/telemetry"
+
+	"go.opentelemetry.io/otel"
 )
 
-var ErrSolutionFound = errors.New("solution found")
+// SupervisedAction is a decorator that wraps any `core.Action` to enforce governance blueprints.
+type SupervisedAction struct {
+	inner       core.Action
+	engine      core.Evaluator
+	tracer      core.Tracer
+	failureMode string
+}
 
 // PolicyEngine is the core decision-making component of Manglekit.
 // It orchestrates the loading of policies, maintaining the Datalog runtime,
@@ -1112,11 +1118,44 @@ func (e *PolicyEngine) Assess(ctx context.Context, actionMeta core.ActionMetadat
 	err := e.assessInternal(ctx, actionMeta, input)
 	if err != nil {
 		span.RecordError(err)
-	} else {
+		span.SetStatus("error", err.Error())
+		if g.isAlignmentIssue(err) {
+			span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeHalt})
+			var alignErr *core.AlignmentError
+			if errors.As(err, &alignErr) {
+				attrs := map[string]any{core.KeyFeedback: alignErr.Message}
+				if alignErr.RuleID != "" {
+					attrs[core.AttrRuleID] = alignErr.RuleID
+				}
+				span.SetAttributes(attrs)
+			} else {
+				span.SetAttributes(map[string]any{core.KeyFeedback: err.Error()})
+			}
+		} else {
+			span.SetAttributes(map[string]any{core.AttrOutcome: "ERROR"})
+		}
+		return core.Envelope{}, err
+	}
+
+	decision := result.Metadata[core.KeyDecision]
+	switch decision {
+	case core.DecisionRetry:
+		span.SetAttributes(map[string]any{core.AttrOutcome: "retry"})
+		if hint, ok := result.Metadata[core.KeyFeedback]; ok {
+			if s, ok := hint.(string); ok {
+				span.SetAttributes(map[string]any{core.KeyFeedback: s})
+			}
+		}
+	case core.DecisionRoute:
+		span.SetAttributes(map[string]any{core.AttrOutcome: "route"})
+		if target, ok := result.Metadata[core.KeyNextStep]; ok {
+			if s, ok := target.(string); ok {
+				span.SetAttributes(map[string]any{core.AttrActionName: s})
+			}
+		}
+	default:
 		span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeProceed})
 	}
-	return err
-}
 
 func (e *PolicyEngine) assessInternal(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
 	var extraFacts []ast.Atom
@@ -1129,7 +1168,11 @@ func (e *PolicyEngine) assessInternal(ctx context.Context, actionMeta core.Actio
 			extraFacts = append(extraFacts, opAtom)
 		}
 	}
-	return e.evaluateGate(ctx, actionMeta.Name, core.EntityInput, input, extraFacts...)
+
+	span.SetAttributes(map[string]any{
+		"mangle.output_id": result.ID.String(),
+	})
+	return result, nil
 }
 
 // Reflect performs the Post-Check phase of governance.
@@ -1150,17 +1193,23 @@ func (e *PolicyEngine) Reflect(ctx context.Context, actionMeta core.ActionMetada
 		span.RecordError(err)
 		return core.Envelope{}, err
 	}
-	span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeProceed})
-	return result, nil
+	if g.failureMode == "open" {
+		return false
+	}
+	return true
 }
 
-func (e *PolicyEngine) reflectInternal(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
-	err := e.evaluateGate(ctx, actionMeta.Name, core.EntityOutput, output)
-	if err != nil {
+func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envelope) (core.Envelope, error) {
+	ctx = core.ContextWithLogger(ctx, g.engine.Logger())
+	logger := core.LoggerFromContext(ctx)
+	meta := g.inner.Metadata()
+
+	logger.Info("Action started", "action", meta.Name, "input_id", input.ID.String())
+
+	// Phase 1: Pre-Check (Assessment)
+	if err := g.performAssessment(ctx, logger, meta, input); err != nil {
 		return core.Envelope{}, err
 	}
-	return output, nil
-}
 
 // evaluateGate centralizes the logic for "Check -> Deny -> Explain".
 func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, entityID string, env core.Envelope, extraFacts ...ast.Atom) error {
@@ -1168,9 +1217,10 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		return nil
 	}
 
-	facts, err := toMangleFacts(entityID, env.Payload, env.ContentType)
+	// Phase 3: Execute Inner Action
+	result, err := g.executeAction(ctx, logger, meta, input)
 	if err != nil {
-		return &core.InputError{Err: fmt.Errorf("fact conversion error: %w", err)}
+		return core.Envelope{}, err
 	}
 
 	facts = append(facts, extraFacts...)
@@ -1178,12 +1228,14 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 	// Inject Labels
 	labelFacts, err := LabelsToFacts(entityID, env.SecurityLabels)
 	if err != nil {
-		return &core.InputError{Err: fmt.Errorf("label conversion error: %w", err)}
+		return core.Envelope{}, err
 	}
 	for _, f := range labelFacts {
 		atom, err := parse.Atom(f)
 		if err == nil { facts = append(facts, atom) }
 	}
+	return nil
+}
 
 	// Inject Explicit Facts
 	for _, f := range env.Facts {
@@ -1233,6 +1285,9 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 			}
 			return nil
 		})
+		if e.logger != nil {
+			e.logger.Debug("gate violation detected (halt)", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
+		}
 		return &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
 	}
 
@@ -1275,7 +1330,6 @@ func (e *PolicyEngine) CheckRequirement(ctx context.Context, input core.Envelope
 func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope) (string, map[string]string, error) {
 	decision := core.DecisionProceed
 	metadata := make(map[string]string)
-
 	if e.runtime == nil || e.runtime.programInfo == nil {
 		return decision, metadata, nil
 	}
@@ -1308,7 +1362,6 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 		}
 	}
 
-	// 1. Check Correction (Retry)
 	err = e.runtime.QueryWithSolutions(facts, fmt.Sprintf("%s(Hint)", core.PredRetry), func(solution map[string]any) error {
 		if hint, ok := solution["Hint"].(string); ok {
 			decision = core.DecisionRetry
@@ -1320,7 +1373,6 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 	if errors.Is(err, ErrSolutionFound) { err = nil }
 	if decision == core.DecisionRetry { return decision, metadata, nil }
 
-	// 2. Check Routing
 	err = e.runtime.QueryWithSolutions(facts, fmt.Sprintf("%s(Target)", core.PredRoute), func(solution map[string]any) error {
 		if target, ok := solution["Target"].(string); ok {
 			decision = core.DecisionRoute
@@ -1536,6 +1588,41 @@ func structToFacts(entityID string, entity any) ([]mangleast.Atom, error) {
 		}
 		atoms = append(atoms, atom)
 	}
+}
+```
+
+### `sdk/client.go`
+```go
+package sdk
+
+import (
+	"context"
+	"fmt"
+	"go.opentelemetry.io/otel/trace"
+	"github.com/duynguyendang/manglekit/config"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/logger"
+	"github.com/duynguyendang/manglekit/internal/supervisor"
+)
+
+const (
+	TracerName = "github.com/duynguyendang/manglekit/sdk"
+	FailModeOpen   = "open"
+	FailModeClosed = "closed"
+)
+
+type Client struct {
+	engine core.Evaluator
+	tracer core.Tracer
+	otelTracer trace.Tracer
+	logger core.Logger
+	agentMemory core.AgentMemory
+	registry map[string]core.Action
+	failureMode string
+	blueprintPath string
+	shutdownFunc func(context.Context) error
+	llm core.TextGenerator
+}
 
 	if len(atoms) == 0 {
 		return nil, fmt.Errorf("no valid facts could be extracted from entity")
@@ -1573,6 +1660,11 @@ func ToFacts(entityID string, val any) ([]string, error) {
 		}
 		v = v.Elem()
 	}
+	if err := ensureDependencies(c); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
 
 	if v.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("ToFacts expects a struct or pointer to struct, got %v", v.Kind())
@@ -1798,6 +1890,8 @@ func flattenRecursive(nodeID string, v reflect.Value, facts *[]string, counter *
 		}
 		v = v.Elem()
 	}
+	return supervisor.NewSupervisedAction(action, c.engine, c.failureMode)
+}
 
 	// Cycle detection for pointers/maps/slices
 	if v.CanAddr() {
@@ -2160,6 +2254,23 @@ func (c *Client) handleExecutionError(ctx context.Context, err error, payload an
 	return res, nil
 }
 
+func (c *Client) updateHistory(ctx context.Context, payload any, result core.Envelope, params *ExecutionParams) {
+	if params.MemoryMode == core.MemoryModeNone {
+		return
+	}
+	newExchange := []core.Message{
+		{Role: "user", Content: safelyStringify(payload)},
+		{Role: "assistant", Content: safelyStringify(result.Payload)},
+	}
+	params.CurrentHistory = append(params.CurrentHistory, newExchange...)
+
+	if params.Store != nil && params.SessionID != "" && params.MemoryMode == core.MemoryModePersist {
+		if err := params.Store.Append(ctx, params.SessionID, params.CurrentHistory); err != nil && c.logger != nil {
+			c.logger.Warn("RunLoop failed to persist history", "error", err)
+		}
+	}
+}
+
 func (c *Client) handleDecision(ctx context.Context, actionName string, result core.Envelope, payload any, params *ExecutionParams) (core.Envelope, error) {
 	decision := result.Metadata[core.KeyDecision]
 
@@ -2261,6 +2372,78 @@ func (c *Client) buildHaltError(result core.Envelope) error {
 ```
 ---
 
-#### 6. CHANGELOG
+### `adapters/func/wrapper.go`
+```go
+package function
+
+import (
+	"context"
+	"fmt"
+	"reflect"
+
+	"github.com/duynguyendang/manglekit/core"
+)
+
+type ToolFunc[In any, Out any] func(context.Context, In) (Out, error)
+
+type Wrapper[In any, Out any] struct {
+	name        string
+	fn          ToolFunc[In, Out]
+	contentType core.ContentType
+	inputType   string
+	outputType  string
+}
+
+func New[In any, Out any](name string, fn ToolFunc[In, Out]) *Wrapper[In, Out] {
+	inType := reflect.TypeOf((*In)(nil)).Elem()
+	if inType.Kind() == reflect.Ptr {
+		inType = inType.Elem()
+	}
+	inName := inType.Name()
+
+	outType := reflect.TypeOf((*Out)(nil)).Elem()
+	if outType.Kind() == reflect.Ptr {
+		outType = outType.Elem()
+	}
+	outName := outType.Name()
+
+	return &Wrapper[In, Out]{
+		name:        name,
+		fn:          fn,
+		contentType: core.TypeStruct,
+		inputType:   inName,
+		outputType:  outName,
+	}
+}
+
+func (w *Wrapper[In, Out]) SetContentType(ct core.ContentType) {
+	w.contentType = ct
+}
+
+func (w *Wrapper[In, Out]) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
+	in, ok := input.Payload.(In)
+	if !ok {
+		return core.Envelope{}, fmt.Errorf("%w: invalid input type, expected %T but got %T", core.ErrSystemError, *new(In), input.Payload)
+	}
+
+	out, err := w.fn(ctx, in)
+	if err != nil {
+		return core.Envelope{}, err
+	}
+
+	return core.NewEnvelope(out), nil
+}
+
+func (w *Wrapper[In, Out]) Metadata() core.ActionMetadata {
+	return core.ActionMetadata{
+		Name:             w.name,
+		Type:             "function",
+		InputContentType: w.contentType,
+		InputType:        w.inputType,
+		OutputType:       w.outputType,
+		IsDynamic:        false,
+	}
+}
+```
 
 * 2025-12-19: Kernel Resync. Added Datalog StdLib and Reflection Logic. Generated Component Specs.
