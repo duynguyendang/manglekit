@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/duynguyendang/manglekit/core"
 	engine_memory "github.com/duynguyendang/manglekit/internal/engine/memory"
@@ -239,8 +240,17 @@ func (c *Client) handleRetryDecision(ctx context.Context, actionName string, res
 		return core.Envelope{}, fmt.Errorf("max retries exceeded for action %s", actionName)
 	}
 
-	params.RetryCount++
 	hint := result.GetFeedback()
+
+	// Semantic Thrashing Detection
+	for _, prevFeedback := range params.FeedbackHistory {
+		if isSemanticallySimilar(prevFeedback, hint) {
+			c.logger.Warn("Semantic Thrashing detected", "new_feedback", hint, "prev_feedback", prevFeedback)
+			return core.Envelope{}, fmt.Errorf("semantic thrashing detected: feedback loop on %q", hint)
+		}
+	}
+
+	params.RetryCount++
 	params.LastFeedback = hint
 	params.FeedbackHistory = append(params.FeedbackHistory, hint)
 
@@ -357,4 +367,44 @@ func (c *Client) asyncMemorize(input any, output any) {
 			c.logger.Warn("Memory Memorize failed", "error", err)
 		}
 	}(inputStr, outputStr)
+}
+
+// normalizeString lowercases, removes punctuation, and collapses spaces.
+func normalizeString(s string) string {
+	// Fast path for empty strings
+	if s == "" {
+		return ""
+	}
+
+	// 1. Lowercase and remove punctuation efficiently
+	builder := strings.Builder{}
+	builder.Grow(len(s))
+
+	for _, r := range s {
+		if unicode.IsPunct(r) {
+			continue // Skip punctuation
+		}
+		builder.WriteRune(unicode.ToLower(r))
+	}
+
+	// 2. Collapse spaces (using strings.Fields is efficient enough for short error msgs)
+	return strings.Join(strings.Fields(builder.String()), " ")
+}
+
+// isSemanticallySimilar checks if two strings are semantically equivalent.
+func isSemanticallySimilar(s1, s2 string) bool {
+	if s1 == s2 {
+		return true
+	}
+	n1 := normalizeString(s1)
+	n2 := normalizeString(s2)
+	if n1 == n2 {
+		return true
+	}
+	// Guard against empty strings matching everything via Contains
+	if n1 == "" || n2 == "" {
+		return false
+	}
+	// Check containment for verbosity
+	return strings.Contains(n1, n2) || strings.Contains(n2, n1)
 }
