@@ -112,13 +112,25 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 			span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeHalt})
 			var alignErr *core.AlignmentError
 			if errors.As(err, &alignErr) {
-				attrs := map[string]any{core.KeyFeedback: alignErr.Message}
-				if alignErr.RuleID != "" {
-					attrs[core.AttrRuleID] = alignErr.RuleID
+				attrs := map[string]any{
+					core.AttrRuleID: alignErr.RuleID,
+				}
+				if g.isSensitive(input.SecurityLabels) {
+					attrs[core.KeyFeedback] = "[REDACTED_SENSITIVE_DATA]"
+					attrs["mangle.redacted"] = true
+				} else {
+					attrs[core.KeyFeedback] = alignErr.Message
 				}
 				span.SetAttributes(attrs)
 			} else {
-				span.SetAttributes(map[string]any{core.KeyFeedback: err.Error()})
+				if g.isSensitive(input.SecurityLabels) {
+					span.SetAttributes(map[string]any{
+						core.KeyFeedback:   "[REDACTED_SENSITIVE_DATA]",
+						"mangle.redacted":  true,
+					})
+				} else {
+					span.SetAttributes(map[string]any{core.KeyFeedback: err.Error()})
+				}
 			}
 		} else {
 			span.SetAttributes(map[string]any{core.AttrOutcome: "ERROR"})
@@ -337,4 +349,17 @@ func (g *SupervisedAction) applySteering(ctx context.Context, logger core.Logger
 	}
 
 	return result
+}
+
+// isSensitive checks if the input envelope contains sensitive security labels.
+func (g *SupervisedAction) isSensitive(labels []string) bool {
+	sensitiveTags := []string{"pii", "secret", "confidential", "auth_token"}
+	for _, l := range labels {
+		for _, tag := range sensitiveTags {
+			if l == tag {
+				return true
+			}
+		}
+	}
+	return false
 }
