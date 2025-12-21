@@ -148,7 +148,7 @@ func (g *Generator) GenerateRule(ctx context.Context, schemaSample any, policyTe
 	inputEnvelope.SetMeta("schema_sample_type", fmt.Sprintf("%T", schemaSample))
 	inputEnvelope.SetMeta("policy_text", policyText)
 
-	// Execute via core.Action interface. The action may be guarded for policy/tracing.
+	// Execute via core.Action interface. The action may be supervised for policy/tracing.
 	outputEnvelope, err := g.llmAction.Execute(ctx, inputEnvelope)
 	if err != nil {
 		return "", fmt.Errorf("llm action execution failed: %w", err)

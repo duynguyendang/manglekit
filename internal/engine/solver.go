@@ -115,13 +115,13 @@ func NewWithObservability(tracer core.Tracer, logger core.Logger) (*PolicyEngine
 //   - parentID: The ID of the source data.
 func (e *PolicyEngine) RecordLineage(ctx context.Context, childID, parentID string) {
 	if e.tracer != nil {
-		// Lineage linking is handled via context propagation in GuardedAction.
+		// Lineage linking is handled via context propagation in SupervisedAction.
 		// If explicit linking span events are needed, they can be added here.
 	}
 }
 
 // Logger returns the engine's configured Logger instance.
-// This allows other components (like GuardedAction) to reuse the engine's logger.
+// This allows other components (like SupervisedAction) to reuse the engine's logger.
 //
 // Returns:
 //   - The configured Logger, or a NopLogger if none was set.
@@ -315,6 +315,7 @@ func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope)
 //
 // Returns:
 //   - core.ErrAlignment if blocked, or nil if allowed.
+//
 // Formerly: Authorize
 func (e *PolicyEngine) Assess(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
 	if e.tracer == nil {
@@ -370,6 +371,7 @@ func (e *PolicyEngine) assessInternal(ctx context.Context, actionMeta core.Actio
 //
 // Returns:
 //   - The validated envelope (potentially modified, though currently pass-through), or an error.
+//
 // Formerly: Validate
 func (e *PolicyEngine) Reflect(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
 	if e.tracer == nil {

@@ -13,7 +13,7 @@ import (
 type ToolFunc[In any, Out any] func(context.Context, In) (Out, error)
 
 // Wrapper adapts a generic ToolFunc into the universal core.Action interface.
-// This allows any regular Go function to be managed, guarded, and traced by Manglekit.
+// This allows any regular Go function to be managed, supervised, and traced by Manglekit.
 type Wrapper[In any, Out any] struct {
 	name        string
 	fn          ToolFunc[In, Out]

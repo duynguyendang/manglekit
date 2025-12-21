@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-Manglekit uses a hierarchical OpenTelemetry (OTel) tracing architecture where the **GuardedAction** defines the transaction boundary (Parent Span) and the **PolicyEngine** defines the internal logic steps (Child Spans).
+Manglekit uses a hierarchical OpenTelemetry (OTel) tracing architecture where the **SupervisedAction** defines the transaction boundary (Parent Span) and the **PolicyEngine** defines the internal logic steps (Child Spans).
 
 This ensures that every protected action produces a consistent trace structure:
 
@@ -23,7 +23,7 @@ Action.{ActionName}           [Guard]
 
 | Layer | Component | Role | Tracing Responsibility |
 |-------|-----------|------|------------------------|
-| **Guard** | `guard.GuardedAction` | Transaction Boundary | Starts Parent Span `Action.{Name}`. Records overall success/failure. |
+| **Guard** | `guard.SupervisedAction` | Transaction Boundary | Starts Parent Span `Action.{Name}`. Records overall success/failure. |
 | **Engine** | `engine.PolicyEngine` | Policy Logic | Starts Child Spans `Datalog.PreCheck` and `Datalog.PostCheck`. |
 | **Adapters** | `adapters/*` | Execution | Pass context through. Do not start spans (rely on internal driver instrumentation). |
 
@@ -31,7 +31,7 @@ Action.{ActionName}           [Guard]
 
 #### 1. Parent Span (Guard)
 *   **Name:** `Action.{ActionName}` (e.g., `Action.CheckStock`)
-*   **Created By:** `guard.GuardedAction`
+*   **Created By:** `guard.SupervisedAction`
 *   **Attributes:**
     *   `action.name`: The name of the action.
     *   `action.type`: The type of the action (e.g., `llm`, `func`).
@@ -75,7 +75,7 @@ type Span interface {
 The Guard wraps the execution in the parent span.
 
 ```go
-func (g *GuardedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
+func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
     if g.tracer == nil {
         return g.executeInternal(ctx, input)
     }

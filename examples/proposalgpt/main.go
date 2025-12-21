@@ -123,9 +123,9 @@ func main() {
 	// We need to ensure Planner wrapper puts generic map or struct that engine can read.
 	// For simplicity, we run Planner then manually validate if needed, or let Supervise handle it.
 	// Let's use Supervise for the Planner!
-	guardedPlanner := client.Supervise(planner)
+	supervisedPlanner := client.Supervise(planner)
 
-	planRes, err := guardedPlanner.Execute(ctx, core.NewEnvelope(planInput))
+	planRes, err := supervisedPlanner.Execute(ctx, core.NewEnvelope(planInput))
 	if err != nil {
 		fmt.Printf("❌ Planning Rejected by Governance: %v\n", err)
 		// Try to show retry hint if available

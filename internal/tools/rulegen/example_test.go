@@ -101,16 +101,16 @@ func TestGuardedDogfoodingExample(t *testing.T) {
 	}
 
 	// Create a base action
-	baseAction := &ExampleAction{name: "guarded-llm"}
+	baseAction := &ExampleAction{name: "supervised-llm"}
 
 	// Wrap it with a Guard (simulated)
-	guardedAction := &GuardedExampleAction{
+	supervisedAction := &GuardedExampleAction{
 		underlying: baseAction,
 		policy:     "allow-policy-generation",
 	}
 
-	// Use the guarded action with the generator
-	generator, err := sdk.NewPolicyGenerator(guardedAction, sdk.GeneratorOptions{
+	// Use the supervised action with the generator
+	generator, err := sdk.NewPolicyGenerator(supervisedAction, sdk.GeneratorOptions{
 		RuleHead: "deny(Req)",
 	})
 	if err != nil {
@@ -127,6 +127,6 @@ func TestGuardedDogfoodingExample(t *testing.T) {
 	}
 
 	t.Logf("Generated rule with Guard: %s", rule)
-	t.Logf("✅ Generator works seamlessly with guarded actions!")
+	t.Logf("✅ Generator works seamlessly with supervised actions!")
 	t.Logf("✅ Policy checks and tracing are automatic!")
 }

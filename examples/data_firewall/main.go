@@ -61,7 +61,7 @@ func main() {
 	// 3. Register Action
 	echo := &EchoAction{}
 	// Use client.RegisterAction to attach the action to the client (and thus the guard)
-	// We wrap it with Supervise BEFORE registration so client.Action("echo") returns the guarded version.
+	// We wrap it with Supervise BEFORE registration so client.Action("echo") returns the supervised version.
 	client.RegisterAction("echo", client.Supervise(echo))
 
 	// 4. Test Case 1: Input has "secret" label. Output should inherit it and be blocked.
@@ -77,12 +77,12 @@ func main() {
 
 	// However, `client` has `Protect(action)`.
 	// If we use `Protect`, we get a `core.Action` back.
-	// We can run `Execute` on that guarded action with our pre-labeled envelope.
+	// We can run `Execute` on that supervised action with our pre-labeled envelope.
 
-	// Retrieve the guarded action via the SDK proxy
-	guardedEcho := client.Action("echo")
+	// Retrieve the supervised action via the SDK proxy
+	supervisedEcho := client.Action("echo")
 
-	result1, err := guardedEcho.Execute(context.Background(), input1)
+	result1, err := supervisedEcho.Execute(context.Background(), input1)
 	if err == nil {
 		fmt.Println("❌ Test Case 1 Failed: Expected blueprint alignment issue, but got success.")
 		fmt.Printf("   Result ID: %v\n", result1.ID)
@@ -106,7 +106,7 @@ func main() {
 	input2 := core.NewEnvelope("my public data")
 	input2.AddLabel("public")
 
-	result2, err := guardedEcho.Execute(context.Background(), input2)
+	result2, err := supervisedEcho.Execute(context.Background(), input2)
 	if err != nil {
 		fmt.Printf("❌ Test Case 2 Failed: Expected success, got error: %v\n", err)
 	} else {
