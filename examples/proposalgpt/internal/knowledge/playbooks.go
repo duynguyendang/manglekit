@@ -1,5 +1,11 @@
 package knowledge
 
+import (
+	"bufio"
+	"os"
+	"strings"
+)
+
 // Playbook represents a solution design strategy.
 type Playbook struct {
 	ID           string `mangle:"playbook_id"`
@@ -10,51 +16,101 @@ type Playbook struct {
 	ArchPattern  string `mangle:"arch_pattern"`
 }
 
-// LoadPlaybooks returns the available playbooks.
-func LoadPlaybooks() map[string]Playbook {
-	return map[string]Playbook{
-		"modernization": {
-			ID:          "modernization",
-			Name:        "Legacy Modernization",
-			Description: "Refactor legacy monoliths into microservices using the Strangler Fig pattern.",
-			CriticalNFRs: []string{
-				"Reliability",
-				"Maintainability",
-				"Scalability",
-			},
-			Risks: []string{
-				"Big Bang Integration Failure",
-				"Data Consistency during migration",
-			},
-			ArchPattern: "Strangler Fig",
-		},
-		"greenfield": {
-			ID:          "greenfield",
-			Name:        "Greenfield Cloud Native",
-			Description: "Build a new application from scratch using cloud-native principles.",
-			CriticalNFRs: []string{
-				"Time to Market",
-				"Agility",
-			},
-			Risks: []string{
-				"Scope Creep",
-				"Over-engineering",
-			},
-			ArchPattern: "Microservices",
-		},
-		"data_platform_mod": {
-			ID:          "data_platform_mod",
-			Name:        "Data Platform Modernization",
-			Description: "Upgrade legacy data warehouses to modern Lakehouse architectures.",
-			CriticalNFRs: []string{
-				"Data Integrity",
-				"Performance",
-			},
-			Risks: []string{
-				"Data Loss",
-				"Downtime",
-			},
-			ArchPattern: "Lakehouse",
-		},
+// LoadPlaybookFromFile parses a markdown playbook file.
+func LoadPlaybookFromFile(id, filepath string) (*Playbook, error) {
+	file, err := os.Open(filepath)
+	if err != nil {
+		return nil, err
 	}
+	defer file.Close()
+
+	pb := &Playbook{ID: id}
+	scanner := bufio.NewScanner(file)
+
+	var inNFRs, inRisks bool
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		if strings.HasPrefix(line, "# ") {
+			pb.Name = strings.TrimPrefix(line, "# ")
+			continue
+		}
+
+		if strings.Contains(line, "**Description:**") {
+			parts := strings.SplitN(line, "**Description:**", 2)
+			if len(parts) > 1 {
+				pb.Description = strings.TrimSpace(parts[1])
+			}
+			continue
+		}
+
+		if strings.Contains(line, "**Core Architectural Pattern:**") {
+			parts := strings.SplitN(line, "**Core Architectural Pattern:**", 2)
+			if len(parts) > 1 {
+				pb.ArchPattern = strings.TrimSpace(parts[1])
+			}
+			continue
+		}
+
+		if strings.Contains(line, "**Critical NFRs to Prioritize") {
+			inNFRs = true
+			inRisks = false
+			continue
+		}
+
+		if strings.Contains(line, "**Key Risks & Mitigations:**") {
+			inRisks = true
+			inNFRs = false
+			continue
+		}
+
+		// Stop flags if we hit a new section
+		if strings.HasPrefix(line, "- **I.") || strings.HasPrefix(line, "- **II.") || strings.HasPrefix(line, "- **III.") {
+			inNFRs = false
+			inRisks = false
+		}
+
+		if inNFRs {
+			if strings.Contains(line, "- **") && strings.Contains(line, ":**") {
+				start := strings.Index(line, "**") + 2
+				end := strings.Index(line, ":**")
+				if start < end {
+					nfr := line[start:end]
+					pb.CriticalNFRs = append(pb.CriticalNFRs, nfr)
+				}
+			}
+		}
+
+		if inRisks {
+			// **Risk: Scope Creep Delaying MVP.**
+			if strings.Contains(line, "**Risk:") {
+				start := strings.Index(line, "**Risk:") + 7
+				end := strings.LastIndex(line, "**")
+
+				// Try to find the first dot e.g. "Risk: Name."
+				dotIdx := strings.Index(line[start:], ".")
+				if dotIdx != -1 {
+					// Using dot index relative to start
+					endVal := start + dotIdx
+					if endVal < end {
+						// We found a dot before the closing **, use that
+						// But wait, "Risk: Name.**" -> dot is usually inside?
+						// The markdown is: **Risk: Name.**
+						// So end of bold is just after the dot or the dot is inside.
+					}
+				}
+
+				// Fallback to extraction between Risk: and .** or just **
+				if start < end {
+					content := line[start:end]
+					// Remove trailing dot if present
+					content = strings.TrimSuffix(content, ".")
+					pb.Risks = append(pb.Risks, strings.TrimSpace(content))
+				}
+			}
+		}
+	}
+
+	return pb, scanner.Err()
 }

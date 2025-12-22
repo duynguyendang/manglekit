@@ -49,7 +49,7 @@ func main() {
 	planner := actions.NewPlanner(llmProxy)
 
 	// 4. Execution Flow
-	rfpPath := "examples/proposalgpt/test/rfps/LegacyCRM_RFP.md"
+	rfpPath := "examples/proposalgpt/test/rfps/project_brief.md"
 	if len(os.Args) > 1 {
 		rfpPath = os.Args[1]
 	}
@@ -97,24 +97,26 @@ func main() {
 	}
 
 	playbookID := configs["playbook_id"]
+	playbookFile := configs["playbook_file"]
+
 	if playbookID == "" {
 		fmt.Println("❌ No suitable playbook found for this RFP request.")
 		return
 	}
-	fmt.Printf("✅ Selected Playbook: %s\n", playbookID)
+	fmt.Printf("✅ Selected Playbook: %s (File: %s)\n", playbookID, playbookFile)
 
 	// Step 4.5: Execute (Plan)
-	playbooks := knowledge.LoadPlaybooks()
-	pb, valid := playbooks[playbookID]
-	if !valid {
-		log.Fatalf("Playbook ID '%s' not found in knowledge base", playbookID)
+	playbookPath := "examples/proposalgpt/internal/knowledge/library/" + playbookFile
+	pb, err := knowledge.LoadPlaybookFromFile(playbookID, playbookPath)
+	if err != nil {
+		log.Fatalf("Failed to load playbook '%s' from '%s': %v", playbookID, playbookPath, err)
 	}
 
 	fmt.Printf("Generating Proposal using strategy: %s...\n", pb.Name)
 
 	planInput := actions.PlanningInput{
 		Facts:    facts,
-		Playbook: pb,
+		Playbook: *pb,
 	}
 
 	// Wrapper for Planner (Supervised if we want validation, but PlannerAction calls LLM directly)
