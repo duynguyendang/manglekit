@@ -11,7 +11,6 @@ import (
 	"github.com/duynguyendang/manglekit/adapters/ai"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/providers/google"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/firebase/genkit/go/genkit"
@@ -20,7 +19,8 @@ import (
 
 // JsonLLMAction wraps a standard LLMAction to parse output as JSON and set ContentType.
 type JsonLLMAction struct {
-	internal core.Action
+	internal     core.Action
+	systemPrompt string
 }
 
 func (a *JsonLLMAction) Metadata() core.ActionMetadata {
@@ -30,6 +30,13 @@ func (a *JsonLLMAction) Metadata() core.ActionMetadata {
 }
 
 func (a *JsonLLMAction) Execute(ctx context.Context, env core.Envelope) (core.Envelope, error) {
+	// 0. Prepend System Prompt if present
+	if a.systemPrompt != "" {
+		if input, ok := env.Payload.(string); ok {
+			env.Payload = fmt.Sprintf("%s\n\nTask: %s", a.systemPrompt, input)
+		}
+	}
+
 	// 1. Delegate execution to standard LLM
 	out, err := a.internal.Execute(ctx, env)
 	if err != nil {
@@ -64,7 +71,6 @@ func (a *JsonLLMAction) Execute(ctx context.Context, env core.Envelope) (core.En
 }
 
 // GoogleJsonFactory creates the custom JSON-parsing LLM Action.
-// GoogleJsonFactory creates the custom JSON-parsing LLM Action.
 func GoogleJsonFactory(opts map[string]any) (sdk.ClientOption, error) {
 	return func(c *sdk.Client) error {
 		ctx := context.Background()
@@ -77,7 +83,7 @@ func GoogleJsonFactory(opts map[string]any) (sdk.ClientOption, error) {
 			return fmt.Errorf("GOOGLE_API_KEY environment variable is required")
 		}
 
-		modelID := "gemini-1.5-flash"
+		modelID := "gemini-2.5-flash"
 		if m, ok := opts["model"].(string); ok {
 			modelID = m
 		}
@@ -85,6 +91,11 @@ func GoogleJsonFactory(opts map[string]any) (sdk.ClientOption, error) {
 		name := "solve_seating"
 		if n, ok := opts["action_name"].(string); ok {
 			name = n
+		}
+
+		prompt := ""
+		if p, ok := opts["prompt"].(string); ok {
+			prompt = p
 		}
 
 		// Init Google Provider (registers model in registry)
@@ -107,7 +118,10 @@ func GoogleJsonFactory(opts map[string]any) (sdk.ClientOption, error) {
 		}
 
 		// Wrap in custom JSON parser
-		action := &JsonLLMAction{internal: llmAction}
+		action := &JsonLLMAction{
+			internal:     llmAction,
+			systemPrompt: prompt,
+		}
 
 		// Register Action
 		c.RegisterAction(name, c.Supervise(action))
@@ -126,9 +140,7 @@ func main() {
 
 	// 2. Initialize Client from Config
 	// Thishydrates "solve_seating" using our factory and loads validator.dl
-	client, err := sdk.NewClientFromFile(ctx, "examples/logistics_optimizer/mangle.yaml",
-		sdk.WithLogger(logger.New("DEBUG")),
-	)
+	client, err := sdk.NewClientFromFile(ctx, "examples/logistics_optimizer/mangle.yaml")
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
 	}

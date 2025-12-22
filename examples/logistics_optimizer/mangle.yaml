@@ -9,6 +9,9 @@ actions:
         It must accept Feedback from the system if previous attempts failed.
         Entities: An, Binh, Cuong, Dung.
         Seats: 1, 2, 3, 4.
+
+policy:
+  path: "examples/logistics_optimizer/validator.dl"
         
 failure_mode: "closed"
 observability:

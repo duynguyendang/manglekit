@@ -31,12 +31,12 @@ retry("Error: An cannot sit next to Binh") :-
 % Constraint 2: Cuong must sit to the immediate right of An
 % Violation if both are seated, but not is_right.
 retry("Error: Cuong must sit to the immediate right of An") :-
-    sit("An", P_An),
-    sit("Cuong", P_Cuong),
-    not is_right(P_An, P_Cuong).
+    sit("An", P1),
+    sit("Cuong", P2),
+    !is_right(P1, P2).
 
-% Constraint 3: Dung is sitting opposite to Binh
-retry("Error: Dung must sit opposite to Binh") :-
-    sit("Dung", P_Dung),
-    sit("Binh", P_Binh),
-    not is_opposite(P_Dung, P_Binh).
+% Constraint 3: Dung is sitting next to Binh
+retry("Error: Dung must sit next to Binh") :-
+    sit("Dung", P1),
+    sit("Binh", P2),
+    !is_next(P1, P2).
