@@ -6,17 +6,6 @@ import (
 
 // --- Knowledge (RAG) ---
 
-// VectorStore abstracts Semantic Search.
-type VectorStore interface {
-	Search(ctx context.Context, collection string, vector []float32, k int) ([]Document, error)
-	Upsert(ctx context.Context, collection string, docs []Document) error
-}
-
-// Embedder abstracts the conversion of text to vector embeddings.
-type Embedder interface {
-	Embed(ctx context.Context, text string) ([]float32, error)
-}
-
 // FactLoader loads external data (Graph/RDF) into the Engine.
 type FactLoader interface {
 	LoadFacts(ctx context.Context, source string) ([]string, error)
@@ -55,18 +44,3 @@ func (n NopStore) Read(_ context.Context, _ string) ([]Message, error) { return 
 
 // Append returns nil (successful no-op).
 func (n NopStore) Append(_ context.Context, _ string, _ []Message) error { return nil }
-
-// NopVectorStore is a no-op implementation of VectorStore.
-type NopVectorStore struct{}
-
-func (n NopVectorStore) Search(_ context.Context, _ string, _ []float32, _ int) ([]Document, error) {
-	return nil, nil
-}
-func (n NopVectorStore) Upsert(_ context.Context, _ string, _ []Document) error { return nil }
-
-// NopEmbedder is a no-op implementation of Embedder.
-type NopEmbedder struct{}
-
-func (n NopEmbedder) Embed(_ context.Context, _ string) ([]float32, error) {
-	return nil, nil
-}
