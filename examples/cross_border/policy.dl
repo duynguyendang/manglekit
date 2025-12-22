@@ -1,0 +1,44 @@
+% Policy for Cross-Border Transfers
+
+% Declare standard predicates for static analysis
+Decl input_value(Req, Key, Val).
+Decl output_value(Req, Key, Val).
+Decl amount(Req, Val).
+Decl country(Req, Val).
+Decl recipient(Req, Val).
+Decl status(Req, Val).
+Decl ref_code(Req, Val).
+Decl has_disclaimer(Req, Val).
+
+% --- Bridge Rules: Map Generated Facts to Standard Schema ---
+input_value(R, "amount", V) :- amount(R, V).
+input_value(R, "country", V) :- country(R, V).
+input_value(R, "recipient", V) :- recipient(R, V).
+
+output_value(R, "status", V) :- status(R, V).
+output_value(R, "ref_code", V) :- ref_code(R, V).
+output_value(R, "has_disclaimer", V) :- has_disclaimer(R, V).
+
+% --- Business Logic ---
+
+% Rule 1: Halt if amount > 5000 (Safety)
+halt(Req, "ERR_AMOUNT_LIMIT") :-
+    input_value(Req, "amount", A),
+    :gt(A, 5000).
+
+% Rule 2: Route to "human_reviewer" if Country == "HighRisk"
+% We check "status" is NOT "UNDER_REVIEW" to avoid infinite routing loops.
+route("human_reviewer") :-
+    input_value(_, "country", "HighRisk"),
+    output_value(_, "status", Status),
+    Status != "UNDER_REVIEW".
+
+% Rule 3: Retry if disclaimer is missing (Self-Correction)
+% Condition: Response exists (output_value present) AND has_disclaimer is false.
+% Priority: Retry > Route. If we want Route to win, we must negate retry or ensure route condition matches.
+% But EvaluateSteering checks Retry first.
+% To fix Scenario B (should Route, but is Retrying due to disclaimer), we can disable Retry for HighRisk.
+retry("Missing Legal Disclaimer") :-
+    output_value(Req, "has_disclaimer", "false"),
+    input_value(Req, "country", Country),
+    Country != "HighRisk".
