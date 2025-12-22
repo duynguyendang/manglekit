@@ -105,11 +105,11 @@ func WithTracerProvider(tp trace.TracerProvider) ClientOption {
 	}
 }
 
-// WithMemory configures a custom persistence store for chat history.
+// WithHistory configures a custom persistence store for chat history.
 //
 // Parameters:
 //   - store: A core.HistoryStore implementation (e.g., Redis backed).
-func WithMemory(store core.HistoryStore) ClientOption {
+func WithHistory(store core.HistoryStore) ClientOption {
 	return func(c *Client) error {
 		if store == nil {
 			return nil
@@ -121,6 +121,14 @@ func WithMemory(store core.HistoryStore) ClientOption {
 			// Otherwise wrap it in a new HybridMemory (losing previous non-hybrid memory if any)
 			c.agentMemory = NewHybridMemory(store, core.NopVectorStore{}, core.NopEmbedder{})
 		}
+		return nil
+	}
+}
+
+// WithMemory allows injecting a custom memory implementation (e.g., Hybrid HNSW).
+func WithMemory(mem core.AgentMemory) ClientOption {
+	return func(c *Client) error {
+		c.agentMemory = mem
 		return nil
 	}
 }

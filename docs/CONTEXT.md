@@ -11,6 +11,7 @@ scan_mode: logic_focused
 .
 ├── adapters
 │   ├── ai                  # Genkit Wrapper (LLM Integration)
+│   ├── memory              # Hybrid HNSW+Graph Memory
 │   ├── extractor           # Structured Data Extraction
 │   ├── func                # Go Function Wrapper
 │   ├── knowledge           # Graph/RDF Loading
