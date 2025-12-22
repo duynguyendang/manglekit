@@ -41,7 +41,8 @@ func WithBlueprintPath(path string) ClientOption { return sdk.WithBlueprintPath(
 func WithPolicyPath(path string) ClientOption         { return sdk.WithBlueprintPath(path) }
 func WithFailMode(mode string) ClientOption           { return sdk.WithFailMode(mode) }
 func WithLogger(l core.Logger) ClientOption           { return sdk.WithLogger(l) }
-func WithMemory(store core.HistoryStore) ClientOption { return sdk.WithMemory(store) }
+func WithHistory(store core.HistoryStore) ClientOption { return sdk.WithHistory(store) }
+func WithMemory(mem core.AgentMemory) ClientOption    { return sdk.WithMemory(mem) }
 
 func WithSessionID(id string) ExecuteOption        { return sdk.WithSessionID(id) }
 func WithTransientMemory() ExecuteOption           { return sdk.WithTransientMemory() }
