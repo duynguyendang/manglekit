@@ -39,38 +39,43 @@ func (a *PlannerAction) Execute(ctx context.Context, input core.Envelope) (core.
 
 	// Build Prompt
 	prompt := fmt.Sprintf(`SYSTEM: You are a Solution Architect.
-Using the following RFP Facts and Playbook, generate a structured Proposal Draft.
+Using the following RFP Facts and Playbook, generate a comprehensive, detailed, and professional Proposal Draft.
 
-PLAYBOOK:
-Name: %s
-Description: %s
-Architecture: %s
-Risks: %v
-NFRs: %v
+PLAYBOOK GUIDELINE:
+"""%s"""
 
 RFP FACTS:
 Summary: %s
+Original Content: """%s"""
 Keywords: %v
 Budget: %f
 Compliance: %v
 
 TASK:
-Write a proposal draft in JSON format matching this schema:
+Write a LONG-FORM proposal draft in JSON format matching this schema:
 {
-	"title": "string",
-	"executive_summary": "string",
-	"architecture": "string",
-	"platform": "string",
-	"risk_analysis": "string",
-	"implementation": "string",
-	"content": "string (full markdown)"
+	"title": "Professional Title",
+	"executive_summary": "High-level summary",
+	"architecture": "Selected architecture strategy name",
+	"platform": "Proposed technology stack",
+	"risk_analysis": "Summary of risks and mitigations",
+	"implementation": "High-level roadmap",
+	"content": "FULL MARKDOWN CONTENT (This is the most important part)"
 }
-Ensure the content mentions the Architecture strategy explicitly.
+
+Instructions for "content" field:
+- Use the "PLAYBOOK GUIDELINE" above as the structural and content guide for the proposal.
+- The proposal must be comprehensive and professional (multi-page).
+- Use the original RFP content to tailor the proposal specifically to the client's needs.
+- Do not use placeholders. Write actual, persuasive content.
+
 Return ONLY valid JSON.
 `,
-		in.Playbook.Name, in.Playbook.Description, in.Playbook.ArchPattern, in.Playbook.Risks, in.Playbook.CriticalNFRs,
-		in.Facts.Summary, in.Facts.Keywords, in.Facts.Budget, in.Facts.Compliance,
+		in.Playbook.RawContent,
+		in.Facts.Summary, in.Facts.OriginalContent, in.Facts.Keywords, in.Facts.Budget, in.Facts.Compliance,
 	)
+
+	fmt.Println("Prompt:", prompt)
 
 	// Call LLM
 	resp, err := a.llm.Execute(ctx, core.NewEnvelope(prompt))

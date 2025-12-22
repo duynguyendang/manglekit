@@ -7,6 +7,7 @@ import (
 )
 
 // Playbook represents a solution design strategy.
+// Playbook represents a solution design strategy.
 type Playbook struct {
 	ID           string `mangle:"playbook_id"`
 	Name         string
@@ -14,18 +15,23 @@ type Playbook struct {
 	CriticalNFRs []string `mangle:"nfrs"`
 	Risks        []string
 	ArchPattern  string `mangle:"arch_pattern"`
+	RawContent   string `mangle:"-"`
 }
 
 // LoadPlaybookFromFile parses a markdown playbook file.
 func LoadPlaybookFromFile(id, filepath string) (*Playbook, error) {
-	file, err := os.Open(filepath)
+	contentBytes, err := os.ReadFile(filepath)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	content := string(contentBytes)
 
-	pb := &Playbook{ID: id}
-	scanner := bufio.NewScanner(file)
+	pb := &Playbook{
+		ID:         id,
+		RawContent: content,
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(content))
 
 	var inNFRs, inRisks bool
 
@@ -112,5 +118,5 @@ func LoadPlaybookFromFile(id, filepath string) (*Playbook, error) {
 		}
 	}
 
-	return pb, scanner.Err()
+	return pb, nil
 }

@@ -138,6 +138,7 @@ func main() {
 	fmt.Printf("\n✅ Proposal Generated: %s\n", proposal.Title)
 	fmt.Printf("Architecture: %s\n", proposal.Architecture)
 	fmt.Printf("Summary: %s\n", proposal.ExecutiveSummary)
+	fmt.Printf("\n--- Full Application Proposal ---\n\n%s\n", proposal.Content)
 
 	// Optional warning if validation passed but had non-critical issues (not implemented)
 }

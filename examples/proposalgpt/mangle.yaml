@@ -7,4 +7,4 @@ actions:
 
 observability:
   enabled: true
-  log_level: "info"
+  log_level: "debug"

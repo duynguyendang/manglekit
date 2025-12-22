@@ -2,13 +2,14 @@ package types
 
 // ExtractedFacts represents the structured data extracted from an RFP.
 type ExtractedFacts struct {
-	Summary    string   `json:"summary"`
-	Keywords   []string `json:"keywords"`
-	Budget     float64  `json:"budget,omitempty"`
-	Deadline   string   `json:"deadline,omitempty"`
-	PainPoints []string `json:"pain_points"`
-	CloudPref  string   `json:"cloud_pref,omitempty"`
-	Compliance []string `json:"compliance,omitempty"`
+	Summary         string   `json:"summary"`
+	Keywords        []string `json:"keywords"`
+	Budget          float64  `json:"budget,omitempty"`
+	Deadline        string   `json:"deadline,omitempty"`
+	PainPoints      []string `json:"pain_points"`
+	CloudPref       string   `json:"cloud_pref,omitempty"`
+	Compliance      []string `json:"compliance,omitempty"`
+	OriginalContent string   `json:"-"`
 }
 
 // ProposalDraft represents the generated proposal content.

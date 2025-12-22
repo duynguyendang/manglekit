@@ -79,6 +79,8 @@ USER: %s`, inputText)
 		return core.Envelope{}, fmt.Errorf("failed to unmarshal extracted facts: %v (response: %s)", err, respText)
 	}
 
+	facts.OriginalContent = inputText
+
 	return core.NewEnvelope(facts), nil
 }
 
