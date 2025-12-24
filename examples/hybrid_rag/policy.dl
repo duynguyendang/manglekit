@@ -1,0 +1,32 @@
+% Policy for Hybrid RAG Access Control
+
+% Declare predicates for static analysis
+Decl requires(Req, Capability).
+Decl memory_hit(DocID).
+Decl user_level(Level).
+Decl halt(Req, Reason).
+Decl triple(S, P, O).
+Decl meta(Key, Value).
+Decl type(Entity, Value).
+Decl text(Entity, Value).
+Decl action_operation(Entity, Op).
+
+% 1. Requirement
+requires(Req, "memory") :- type(Req, "query").
+
+% 2. Access Control (HALT)
+
+% Extract memory hits from metadata
+memory_hit(DocID) :- meta("memory_hit", DocID).
+
+% Extract user level from metadata
+user_level(Level) :- meta("user_level", Level).
+
+% Access Control Rule
+halt(Req, "Access Denied: Insufficient Clearance for Context") :-
+    type(Req, "query"),
+    user_level(UserLevel),
+    memory_hit(DocID),
+    triple(DocID, "requires_clearance", ReqLevel),
+    ReqLevel = "level_3",
+    UserLevel != "level_3".

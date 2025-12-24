@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/duynguyendang/manglekit/core"
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
 )

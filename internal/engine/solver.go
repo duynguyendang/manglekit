@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine/resources"
@@ -264,23 +265,35 @@ func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope)
 
 	// Inject Metadata facts: meta(Key, Value) and attempt(N)
 	for k, v := range input.Metadata {
-		// Ensure k is string
 		safeK := escapeString(k)
-		// Ensure v is string or convertible to string
-		vStr := fmt.Sprintf("%v", v)
-		safeV := escapeString(vStr)
 
-		// meta("key", "val")
-		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
-		if atom, err := parse.Atom(metaFact); err == nil {
-			facts = append(facts, atom)
-		}
+		// Handle slice values: meta("key", "val1"), meta("key", "val2")
+		rv := reflect.ValueOf(v)
+		if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
+			for i := 0; i < rv.Len(); i++ {
+				item := rv.Index(i).Interface()
+				itemStr := fmt.Sprintf("%v", item)
+				metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, escapeString(itemStr))
+				if atom, err := parse.Atom(metaFact); err == nil {
+					facts = append(facts, atom)
+				}
+			}
+		} else {
+			// Single value
+			vStr := fmt.Sprintf("%v", v)
+			safeV := escapeString(vStr)
 
-		// attempt(N) from retry_count
-		if k == "retry_count" {
-			attemptFact := fmt.Sprintf("attempt(%s)", vStr)
-			if atom, err := parse.Atom(attemptFact); err == nil {
+			metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
+			if atom, err := parse.Atom(metaFact); err == nil {
 				facts = append(facts, atom)
+			}
+
+			// attempt(N) from retry_count
+			if k == "retry_count" {
+				attemptFact := fmt.Sprintf("attempt(%s)", vStr)
+				if atom, err := parse.Atom(attemptFact); err == nil {
+					facts = append(facts, atom)
+				}
 			}
 		}
 	}
@@ -459,18 +472,34 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 	// 5. Inject Metadata
 	for k, v := range env.Metadata {
 		safeK := escapeString(k)
-		vStr := fmt.Sprintf("%v", v)
-		safeV := escapeString(vStr)
-		// meta("key", "val")
-		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
-		if atom, err := parse.Atom(metaFact); err == nil {
-			facts = append(facts, atom)
-		}
-		// attempt(N) from retry_count
-		if k == "retry_count" {
-			attemptFact := fmt.Sprintf("attempt(%s)", vStr)
-			if atom, err := parse.Atom(attemptFact); err == nil {
+
+		// Handle slice values: meta("key", "val1"), meta("key", "val2")
+		rv := reflect.ValueOf(v)
+		if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
+			for i := 0; i < rv.Len(); i++ {
+				item := rv.Index(i).Interface()
+				itemStr := fmt.Sprintf("%v", item)
+				metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, escapeString(itemStr))
+				if atom, err := parse.Atom(metaFact); err == nil {
+					facts = append(facts, atom)
+				}
+			}
+		} else {
+			// Single value
+			vStr := fmt.Sprintf("%v", v)
+			safeV := escapeString(vStr)
+
+			metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
+			if atom, err := parse.Atom(metaFact); err == nil {
 				facts = append(facts, atom)
+			}
+
+			// attempt(N) from retry_count
+			if k == "retry_count" {
+				attemptFact := fmt.Sprintf("attempt(%s)", vStr)
+				if atom, err := parse.Atom(attemptFact); err == nil {
+					facts = append(facts, atom)
+				}
 			}
 		}
 	}
@@ -479,6 +508,13 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 	// Priority 1: halt(Entity, Reason)
 	var violationMsg, ruleID string
 	var blocked bool
+
+	if e.logger != nil {
+		e.logger.Debug("Evaluating Gate Facts", "count", len(facts))
+		for _, f := range facts {
+			e.logger.Debug("Fact", "f", f.String())
+		}
+	}
 
 	// Query: halt(Entity, Reason)
 	queryHalt := fmt.Sprintf("%s(\"%s\", Reason)", core.PredHalt, entityID)
