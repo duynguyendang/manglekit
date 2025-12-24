@@ -332,7 +332,23 @@ func (c *Client) recallContext(ctx context.Context, payload any, env *core.Envel
 	inputStr := safelyStringify(payload)
 
 	// Call Memory Provider
-	contextData, err := c.agentMemory.Recall(ctx, inputStr)
+	var contextData string
+	var err error
+
+	// Extended Interface Check
+	if memWithFacts, ok := c.agentMemory.(core.AgentMemoryWithFacts); ok {
+		var facts map[string]any
+		contextData, facts, err = memWithFacts.RecallWithFacts(ctx, inputStr)
+		if err == nil && len(facts) > 0 {
+			// Merge facts into metadata
+			for k, v := range facts {
+				env.Metadata[k] = v
+			}
+		}
+	} else {
+		contextData, err = c.agentMemory.Recall(ctx, inputStr)
+	}
+
 	if err != nil {
 		c.logger.Warn("Memory Recall failed", "error", err)
 		if span != nil {

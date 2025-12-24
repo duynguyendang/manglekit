@@ -20,3 +20,11 @@ type AgentMemory interface {
 	// Init performs any necessary setup (e.g. connecting to DB).
 	Init(ctx context.Context) error
 }
+
+// AgentMemoryWithFacts is an optional interface for Memory providers that can return
+// additional metadata (facts) along with the text context.
+type AgentMemoryWithFacts interface {
+	AgentMemory
+	// RecallWithFacts retrieves context and associated metadata (e.g. doc IDs).
+	RecallWithFacts(ctx context.Context, query string) (string, map[string]any, error)
+}
