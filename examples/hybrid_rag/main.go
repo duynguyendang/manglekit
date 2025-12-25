@@ -8,11 +8,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/duynguyendang/manglekit/adapters/func"
+	function "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/adapters/vector"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/duynguyendang/manglekit/providers/google"
+	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/joho/godotenv"
 )
 
 // Document represents a knowledge base item
@@ -79,6 +80,7 @@ func (m *CustomHybridMemory) RecallWithFacts(ctx context.Context, query string) 
 
 func main() {
 	ctx := context.Background()
+	_ = godotenv.Load()
 
 	// 1. Setup Components
 	var embedder core.Embedder
@@ -172,7 +174,6 @@ func main() {
 	safeAct := client.Supervise(act)
 	client.RegisterAction("simulate_llm", safeAct)
 
-
 	// 3. Run Scenarios
 	runScenario(ctx, client, "Scenario A (Level 1 User)", "level_1", "What are the launch codes for Project X?", true)
 	runScenario(ctx, client, "Scenario B (Level 3 User)", "level_3", "What are the launch codes for Project X?", false)
@@ -208,6 +209,7 @@ func runScenario(ctx context.Context, client *sdk.Client, name, userLevel, query
 
 // MockEmbedder for testing without API Key
 type MockEmbedder struct{}
+
 func (m *MockEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	if strings.Contains(text, "launch") || strings.Contains(text, "Project X") {
 		return []float32{0.9, 0.1}, nil
