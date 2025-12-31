@@ -202,6 +202,36 @@ func (e *PolicyEngine) LoadPolicy(ctx context.Context, policy string) error {
 	return nil
 }
 
+// LoadGherkinPolicy loads a Gherkin feature file and compiles it to Datalog.
+// This enables BDD-style policy definitions using natural language.
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - featureContent: The Gherkin feature file content.
+//
+// Returns:
+//   - An error if parsing, compilation, or loading fails.
+func (e *PolicyEngine) LoadGherkinPolicy(ctx context.Context, featureContent string) error {
+	if featureContent == "" {
+		return nil
+	}
+
+	// Compile Gherkin to Datalog
+	compiler := NewGherkinCompiler()
+	datalog, err := compiler.CompileFromString(featureContent)
+	if err != nil {
+		return fmt.Errorf("failed to compile Gherkin policy: %w", err)
+	}
+
+	// Log the generated Datalog if logger is available
+	if e.logger != nil {
+		e.logger.Debug("compiled Gherkin to Datalog", "datalog", datalog)
+	}
+
+	// Load the compiled Datalog into the runtime
+	return e.LoadPolicy(ctx, datalog)
+}
+
 // AssessPlan implements the core.Evaluator interface.
 // It performs a high-level assessment of the input, mapping Assess logic to a Decision.
 // Formerly: Assess

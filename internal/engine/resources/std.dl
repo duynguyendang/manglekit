@@ -51,6 +51,7 @@ halt(Entity, Reason) :- deny(Entity, Reason).
 Decl attempt(N).            % Current retry count (0, 1, 2...).
 Decl meta(Key, Value).      % Envelope metadata (e.g., user_id, session_id).
 Decl label(Tag).            % Security taint labels (e.g., "pii", "unsafe").
+Decl action_operation(Entity, Op). % Action being performed (e.g., action_operation("Req", "llm_generate")).
 
 % Telemetry Predicate (Arity 2: Entity, RuleID)
 Decl violation_rule(Entity, RuleID).
