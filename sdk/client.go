@@ -45,6 +45,12 @@ type Client struct {
 	shutdownFunc func(context.Context) error
 	// llm is the plugged-in text generation backend (e.g., Google, OpenAI).
 	llm core.TextGenerator
+	// stateManager handles durable state persistence and recovery.
+	stateManager interface {
+		Hydrate(ctx context.Context, sessionID string) (*core.SessionState, error)
+		Checkpoint(ctx context.Context, state *core.SessionState) error
+		ExtractFacts(ctx context.Context, envelope core.Envelope) ([]string, error)
+	}
 }
 
 // NewClient initializes a new Manglekit Client with the provided options.

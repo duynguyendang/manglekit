@@ -54,6 +54,29 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 		params.Store = &core.NopStore{}
 	}
 
+	// 2. Hydrate from durable state if available
+	// This restores the full execution context including logical facts
+	if c.stateManager != nil && params.SessionID != "" {
+		state, err := c.stateManager.Hydrate(ctx, params.SessionID)
+		if err == nil && state != nil {
+			// Restore execution context
+			params.CurrentHistory = state.ExecutionCtx.CurrentHistory
+			params.FeedbackHistory = state.ExecutionCtx.FeedbackHistory
+			params.RetryCount = state.ExecutionCtx.RetryCount
+
+			// Restore envelope as starting payload
+			// The envelope contains the last successful state
+			payload = state.ActiveEnvelope.Payload
+
+			c.logger.Info("Hydrated session state",
+				"session_id", params.SessionID,
+				"retry_count", params.RetryCount,
+				"history_length", len(params.CurrentHistory))
+		} else if err != nil {
+			c.logger.Warn("Failed to hydrate durable state", "error", err)
+		}
+	}
+
 	currentAction := startAction
 	currentPayload := payload
 
@@ -123,7 +146,39 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	// 4. Update and persist history
 	c.updateHistory(ctx, payload, result, params)
 
-	// 5. Handle decision (Retry/Route/Proceed/Halt)
+	// 5. Checkpoint state after successful execution (Atomic Checkpoint)
+	// Only checkpoint if decision is PROCEED to prevent persisting invalid states
+	if c.stateManager != nil && params.SessionID != "" {
+		decision := result.Metadata[core.KeyDecision]
+		if decision == "" || decision == core.DecisionProceed {
+			// Extract current facts from the result envelope
+			facts, err := c.stateManager.ExtractFacts(ctx, result)
+			if err != nil {
+				c.logger.Warn("Failed to extract facts for checkpoint", "error", err)
+				facts = []string{} // Continue with empty facts
+			}
+
+			// Create session state snapshot
+			state := &core.SessionState{
+				SessionID:      params.SessionID,
+				ActiveEnvelope: result,
+				ExecutionCtx: core.ExecutionContext{
+					RetryCount:      params.RetryCount,
+					FeedbackHistory: params.FeedbackHistory,
+					CurrentHistory:  params.CurrentHistory,
+				},
+				LogicalFacts: facts,
+			}
+
+			// Persist the checkpoint
+			if err := c.stateManager.Checkpoint(ctx, state); err != nil {
+				c.logger.Warn("Failed to checkpoint state", "error", err)
+				// Don't fail the execution, just log the warning
+			}
+		}
+	}
+
+	// 6. Handle decision (Retry/Route/Proceed/Halt)
 	return c.handleDecision(ctx, actionName, result, payload, params)
 }
 

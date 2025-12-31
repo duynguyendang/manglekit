@@ -219,6 +219,17 @@ type ActionMetadata struct {
 	IsDynamic bool
 }
 
+// ExecutionContext captures the runtime state of an execution session.
+// This is used by the Durable State Manager to preserve execution continuity across restarts.
+type ExecutionContext struct {
+	// RetryCount tracks the number of retry attempts for the current action.
+	RetryCount int `json:"retry_count"`
+	// FeedbackHistory stores all feedback messages from previous retry attempts.
+	FeedbackHistory []string `json:"feedback_history,omitempty"`
+	// CurrentHistory contains the conversation history for this session.
+	CurrentHistory []Message `json:"current_history,omitempty"`
+}
+
 // Message represents a single message in a conversation flow.
 type Message struct {
 	// Role indicates the sender of the message.

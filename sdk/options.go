@@ -14,6 +14,7 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/duynguyendang/manglekit/internal/logger"
+	"github.com/duynguyendang/manglekit/internal/statemanager"
 	"github.com/duynguyendang/manglekit/internal/telemetry"
 )
 
@@ -146,6 +147,64 @@ func WithLLM(gen core.TextGenerator) ClientOption {
 		}
 		return nil
 	}
+}
+
+// WithStateProvider configures the state provider for durable session persistence.
+// This enables automatic checkpointing and recovery of session state across restarts.
+//
+// Parameters:
+//   - provider: A core.StateProvider implementation (e.g., disk, Redis).
+func WithStateProvider(provider core.StateProvider) ClientOption {
+	return func(c *Client) error {
+		if provider != nil {
+			// Ensure dependencies are initialized first
+			if err := ensureDependencies(c); err != nil {
+				return err
+			}
+
+			// Create state manager with the provider
+			// We'll use a lazy initialization approach
+			c.stateManager = &lazyStateManager{
+				provider: provider,
+				client:   c,
+			}
+		}
+		return nil
+	}
+}
+
+// lazyStateManager defers actual statemanager creation until first use
+// This avoids import cycles and ensures all dependencies are ready
+type lazyStateManager struct {
+	provider core.StateProvider
+	client   *Client
+	actual   interface {
+		Hydrate(ctx context.Context, sessionID string) (*core.SessionState, error)
+		Checkpoint(ctx context.Context, state *core.SessionState) error
+		ExtractFacts(ctx context.Context, envelope core.Envelope) ([]string, error)
+	}
+}
+
+func (l *lazyStateManager) init() {
+	if l.actual == nil {
+		// Create the actual state manager using the statemanager package
+		l.actual = statemanager.New(l.provider, l.client.engine, l.client.logger)
+	}
+}
+
+func (l *lazyStateManager) Hydrate(ctx context.Context, sessionID string) (*core.SessionState, error) {
+	l.init()
+	return l.actual.Hydrate(ctx, sessionID)
+}
+
+func (l *lazyStateManager) Checkpoint(ctx context.Context, state *core.SessionState) error {
+	l.init()
+	return l.actual.Checkpoint(ctx, state)
+}
+
+func (l *lazyStateManager) ExtractFacts(ctx context.Context, envelope core.Envelope) ([]string, error) {
+	l.init()
+	return l.actual.ExtractFacts(ctx, envelope)
 }
 
 // WithConfig applies settings from a loaded configuration struct.
