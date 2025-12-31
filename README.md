@@ -6,9 +6,10 @@
 
 It solves the **Stochastic Runtime Paradox** of modern AI: applications require **Deterministic Reliability** (strict protocols, type safety, logic), but LLMs are inherently **Probabilistic** (creative, non-deterministic).
 
-Manglekit bridges this gap with a **Dual-Brain Architecture**:
-*   **The Left Brain (Symbolic)**: The Logic Engine (Google Mangle) that holds the **Blueprints** and performs reasoning.
-*   **The Right Brain (Neural)**: The Execution Runtime (Genkit) that handles **Intuition** and generation.
+Manglekit bridges this gap with a **"Power Trio" Architecture**:
+1.  **The Left Brain (Symbolic)**: The Logic Engine (Google Mangle) that holds the **Blueprints** and performs reasoning.
+2.  **The Right Brain (Neural)**: The Execution Runtime (Genkit) that handles **Intuition** and generation.
+3.  **The Supervisor (Strategic)**: The Interceptor that binds them, enforcing safety and steering execution.
 
 It acts as a **Middleware Engine** following the *"Wrap, Don't Build"* philosophy. You bring your capabilities (Genkit flows, tools), and Manglekit wraps them in a **Supervisor** shell that handles safety, self-correction, and flow control.
 

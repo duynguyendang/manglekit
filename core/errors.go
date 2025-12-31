@@ -23,9 +23,9 @@ type AlignmentError struct {
 
 func (e *AlignmentError) Error() string {
 	if e.RuleID != "" {
-		return fmt.Sprintf("[ALIGNMENT INTERVENTION] [%s]: %s", e.RuleID, e.Message)
+		return fmt.Sprintf("[INTERVENTION] [%s]: %s", e.RuleID, e.Message)
 	}
-	return fmt.Sprintf("[ALIGNMENT INTERVENTION]: %s", e.Message)
+	return fmt.Sprintf("[INTERVENTION]: %s", e.Message)
 }
 
 func (e *AlignmentError) Is(target error) bool {
@@ -56,10 +56,23 @@ func (e *InputError) Is(target error) bool {
 }
 
 func (e *InputError) Unwrap() error {
-	return e.Err
+	return ErrInputValidation
 }
 
 // IsInputError checks if the error is an InputError.
 func IsInputError(err error) bool {
 	return errors.Is(err, ErrInputValidation)
+}
+
+// NewAlignmentError creates a new AlignmentError with the given message and rule ID.
+func NewAlignmentError(message, ruleID string) *AlignmentError {
+	return &AlignmentError{
+		Message: message,
+		RuleID:  ruleID,
+	}
+}
+
+// WrapInputError wraps an error as an InputError.
+func WrapInputError(err error) *InputError {
+	return &InputError{Err: err}
 }

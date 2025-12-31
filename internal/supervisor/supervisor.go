@@ -16,11 +16,11 @@ import (
 // It implements the standard "Trace -> Assess -> Execute -> Reflect" lifecycle.
 //
 // Lifecycle:
-//  1. Trace: Starts an OpenTelemetry span for the operation.
-//  2. Assess: Checks Pre-Check blueprints (e.g., "infeasible(Req)").
-//  3. Execute: Runs the inner action (e.g., calls the LLM).
-//  4. Reflect: Checks Post-Check blueprints (e.g., "infeasible(Output)").
-//  5. Steering: Evaluates steering blueprints for routing or correction.
+// 1. Trace: Starts an OpenTelemetry span for the operation.
+// 2. Assess: Checks Pre-Check blueprints (e.g., "infeasible(Req)").
+// 3. Execute: Runs the inner action (e.g., calls the LLM).
+// 4. Reflect: Checks Post-Check blueprints (e.g., "infeasible(Output)").
+// 5. Steering: Evaluates steering blueprints for routing or correction.
 type SupervisedAction struct {
 	inner       core.Action
 	engine      core.Evaluator
@@ -71,13 +71,13 @@ func NewSupervisedActionWithTracer(action core.Action, eng core.Evaluator, trace
 // Execute runs the supervised action, orchestrating the full governance lifecycle.
 //
 // It performs the following steps:
-//  1. Starts a span.
-//  2. Injects the logger into the context.
-//  3. Runs Assess(). If it fails, execution halts (unless Fail-Open).
-//  4. Runs the inner Action.Execute().
-//  5. Propagates taint labels from input to output.
-//  6. Runs Reflect(). If it fails, the result is blocked.
-//  7. Runs EvaluateSteering() to determine next steps (Retry/Route).
+// 1. Starts a span.
+// 2. Injects the logger into the context.
+// 3. Runs Assess(). If it fails, execution halts (unless Fail-Open).
+// 4. Runs the inner Action.Execute().
+// 5. Propagates taint labels from input to output.
+// 6. Runs Reflect(). If it fails, the result is blocked.
+// 7. Runs EvaluateSteering() to determine next steps (Retry/Route).
 //
 // Parameters:
 //   - ctx: The execution context.
@@ -125,8 +125,8 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 			} else {
 				if g.isSensitive(input.SecurityLabels) {
 					span.SetAttributes(map[string]any{
-						core.KeyFeedback:   "[REDACTED_SENSITIVE_DATA]",
-						"mangle.redacted":  true,
+						core.KeyFeedback:  "[REDACTED_SENSITIVE_DATA]",
+						"mangle.redacted": true,
 					})
 				} else {
 					span.SetAttributes(map[string]any{core.KeyFeedback: err.Error()})
