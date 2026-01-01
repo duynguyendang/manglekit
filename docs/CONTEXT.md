@@ -2,169 +2,439 @@
 context_type: kernel_source_dump
 project: manglekit
 language: go, datalog
-last_updated: 2025-12-31
+last_updated: 2026-01-01T07:15:00Z
 scan_mode: logic_focused
 ---
 
 ## 1. THE COMPLETE FILE MAP
 
 .
-├── adapters
-│   ├── ai                  # Genkit Wrapper (LLM Integration)
-│   ├── memory              # Hybrid HNSW+Graph Memory
-│   ├── extractor           # Structured Data Extraction
-│   ├── func                # Go Function Wrapper
-│   ├── knowledge           # Graph/RDF Loading
-│   ├── logger              # Logger Adapters (Zap, etc.)
-│   ├── mcp                 # Model Context Protocol (Tool Discovery)
-│   ├── resilience          # Circuit Breaker & Retry
-│   └── vector              # Vector Store & RAG
-├── cmd
-│   └── mkit                # CLI Tool (gen, inspect, eval, serve)
-├── config                  # Configuration Loading (YAML)
-├── core                    # The Contracts (Interfaces & Types)
-├── internal
-│   ├── engine              # The Neuro-Symbolic Core (Mangle Runtime)
-│   │   └── resources           # Embedded Datalog Rules (std.dl)
-│   ├── logger              # Default Logger Implementation
-│   ├── resources           # Shared Resources (ICL Golden Samples)
-│   ├── statehelper         # Conversation State Management
-│   ├── supervisor          # The Action Sandwich (Trace-Assess-Exec-Reflect)
-│   ├── telemetry           # OpenTelemetry Setup
-│   ├── testproviders       # Mocks for Testing
-│   ├── tools               # Internal Tooling
-│   └── util                # Utilities (Schema, etc.)
-├── providers               # Plugin Factories
-│   ├── google
-│   ├── memory
-│   └── openai
-└── sdk                     # The Orchestration Layer (Client, Loop, Planner)
+├── adapters/                    # Universal adapters for external libraries
+│   ├── ai/                     # Genkit LLM integration
+│   ├── extractor/              # Structured data extraction from LLM
+│   ├── func/                   # Go function wrapper
+│   ├── knowledge/              # RDF/Knowledge Graph loading
+│   ├── logger/                 # Logger implementations (Zap)
+│   ├── mcp/                    # Model Context Protocol tool discovery
+│   ├── memory/                 # Memory adapters (in-memory stores)
+│   ├── resilience/             # Circuit breaker pattern
+│   └── vector/                 # Vector store & RAG retrieval
+├── cmd/                         # CLI tool (excluded from dump)
+│   └── mkit/                   # CLI commands
+├── config/                      # Configuration loading (YAML)
+├── core/                        # Core contracts and interfaces
+├── docs/                        # Technical documentation
+├── examples/                    # Example applications (excluded from dump)
+├── internal/                    # Internal implementation
+│   ├── engine/                 # Neuro-Symbolic Core (Mangle Runtime)
+│   │   ├── memory/              # Memory implementations
+│   │   ├── parse/               # Datalog parsing utilities
+│   │   └── resources/           # Embedded Datalog rules
+│   ├── logger/                 # Default logger implementation
+│   ├── resources/              # Shared resources (ICL golden samples)
+│   ├── statehelper/            # Conversation state management
+│   ├── supervisor/             # Action Sandwich (Trace-Assess-Exec-Reflect)
+│   ├── telemetry/              # OpenTelemetry setup
+│   ├── testproviders/          # Mocks for testing
+│   ├── tools/                  # Internal tooling
+│   └── util/                   # Utilities (Schema, etc.)
+├── providers/                   # Plugin factories
+│   ├── google/                 # Google GenAI plugin
+│   ├── memory/                 # Memory providers
+│   └── openai/                 # OpenAI plugin
+├── sdk/                         # Orchestration layer (Client, Loop, Planner)
+├── .env.example
+├── .gitignore
+├── AGENTS.md
+├── CONTRIBUTING.md
+├── go.mod
+├── go.sum
+├── LICENSE
+├── Makefile
+├── mangle.yaml
+├── manglekit.go
+├── mkit
+└── README.md
 
-#### 3. COMPONENTS (The Logic)
+---
 
-Component: sdk
-1. Responsibilities:
-   - Orchestrates the execution lifecycle (Client).
-   - Manages the "Semantic State Machine" (RunLoop).
-   - Generates and executes plans (Planner).
-   - Connects Core interfaces to internal implementations.
-2. Core Structs:
-   - **Client**: The main entry point. Holds references to Engine, Supervisor, Memory, and Action Registry.
-   - **ExecutionParams**: Context object for the RunLoop, tracking retries and feedback.
-   - **PlanStep**: Represents a step in a generated plan.
-3. Key Functions:
-   - func NewClient(opts ...Option) *Client - [Initializes the SDK client with configured options].
-   - func (c *Client) ExecuteByName(ctx context.Context, actionName string, payload any, opts ...ExecuteOption) (core.Envelope, error) - [Executes a named action within the governance loop].
-   - func (c *Client) Plan(ctx context.Context, goalName string) ([]PlanStep, error) - [Generates a plan to achieve a goal using Datalog reasoning].
+## 2. COMPONENTS (The Logic)
 
-Component: internal/engine
-1. Responsibilities:
-   - Encapsulates the Mangle Datalog runtime.
-   - Evaluates policies (Assess, Reflect, Steering).
-   - Converts Go structs and JSON to Datalog facts (Reflection/Flattener).
-2. Core Structs:
-   - **PolicyEngine**: The main logic engine. Wraps MangleRuntime.
-   - **MangleRuntime**: Low-level wrapper around `google/mangle`.
-   - **Evaluator**: Ad-hoc rule evaluator.
-3. Key Functions:
-   - func (e *PolicyEngine) Assess(ctx, meta, input) error - [Checks Pre-Check policies].
-   - func (e *PolicyEngine) Reflect(ctx, meta, output) (Envelope, error) - [Checks Post-Check policies].
-   - func (e *PolicyEngine) EvaluateSteering(ctx, input) (string, map, error) - [Determines next step (Retry/Route)].
-   - func ToFacts(entityID string, val any) ([]string, error) - [Reflects a struct into Datalog facts].
+### Component: core
+**1. Responsibilities:**
+- Defines the system's contract interfaces and types
+- Pure abstract layer with no dependencies
+- Provides constants for metadata keys, decisions, and observability
 
-Component: internal/supervisor
-1. Responsibilities:
-   - Implements the "Guarded Action" pattern.
-   - Enforces the "Trace -> Assess -> Execute -> Reflect" lifecycle.
-2. Core Structs:
-   - **SupervisedAction**: Decorator that wraps `core.Action`.
-3. Key Functions:
-   - func (g *SupervisedAction) Execute(ctx, input) (Envelope, error) - [Executes the wrapped action with full governance].
+**2. Core Structs:**
+- **Envelope**: Standard data carrier with ID, Payload, Metadata, SecurityLabels, Facts, ContentType
+- **ActionMetadata**: Describes a registered capability (Name, Type, InputType, OutputType)
+- **Decision**: Structured result from Policy Engine (Outcome, Target, Reasons, Meta)
+- **ExecutionContext**: Captures runtime state for durable state management (RetryCount, FeedbackHistory, CurrentHistory)
+- **Message**: Represents a chat message (Role, Content)
+- **GenerationConfig**: Holds standard LLM parameters (Temperature, MaxTokens, TopP, Model, JSONMode)
+- **Document**: Represents a snippet of knowledge/memory (ID, Content, Vector, Metadata, Score)
+- **Answer**: Represents a structured system response (Text, Meta)
 
-Component: core
-1. Responsibilities:
-   - Defines the system's contract interfaces.
-   - Pure abstract layer with no dependencies.
-2. Core Structs:
-   - **Action**: Interface for executable units.
-   - **Envelope**: Standard data carrier.
-   - **Evaluator**: Interface for the Policy Engine.
-   - **AgentMemory**: Interface for RAG and History.
-3. Key Functions:
-   - type Action interface { Execute(ctx, Envelope) (Envelope, error) }
+**3. Key Functions:**
+- `func NewEnvelope(payload any) Envelope` - Creates a new Envelope with generated UUID
+- `func (e *Envelope) SetMeta(key string, value any)` - Sets a metadata key-value pair
+- `func (e *Envelope) GetMeta(k string) string` - Retrieves metadata value as string
+- `func (e *Envelope) SetFeedback(msg string)` - Injects feedback into metadata
+- `func (e *Envelope) GetFeedback() string` - Retrieves feedback for AI/Logic
+- `func (e *Envelope) AddLabel(label string)` - Adds a security label to envelope
+- `func (e *Envelope) HasLabel(label string) bool` - Checks for security label existence
+- `func (e *Envelope) MergeLabels(other []string)` - Merges distinct labels from another source
+- `func (e *Envelope) SetHistory(msgs []Message)` - Serializes chat messages into metadata
 
-Component: adapters/ai
-1. Responsibilities:
-   - Wraps Genkit AI models as `core.Action`.
-   - Handles LLM generation and streaming.
-2. Core Structs:
-   - **LLMAction**: Implements `core.Action` for Genkit models.
-   - **genkitAdapter**: Wrapper for `genkit.Genkit`.
-3. Key Functions:
-   - func NewLLMAction(name string, generator core.TextGenerator) *LLMAction - [Creates a new AI action].
+### Component: core/logic.go
+**1. Responsibilities:**
+- Defines Action interface for executable units
+- Defines TextGenerator interface for LLM abstraction
+- Defines Extractor interface for structured data extraction
 
-Component: adapters/mcp
-1. Responsibilities:
-   - Connects to Model Context Protocol servers.
-   - Discovers tools and exposes them as `core.Action`.
-2. Core Structs:
-   - **Loader**: Handles MCP connection and tool discovery.
-   - **MCPAction**: Wraps an MCP tool.
-3. Key Functions:
-   - func (l *Loader) Load(ctx) ([]Action, error) - [Connects to MCP and returns actions].
+**2. Core Structs:**
+- **LLMResponse**: Contains generated text and token usage metadata (Text, Usage)
 
-Component: adapters/extractor
-1. Responsibilities:
-   - Uses an LLM to extract structured data from text.
-   - Validates output against a generated JSON Schema.
-2. Core Structs:
-   - **ExtractorAction**: Wraps an LLM Action for extraction.
-3. Key Functions:
-   - func New(name string, generator core.Action, schema any) (*ExtractorAction, error) - [Creates an extractor for a target struct].
-   - func (e *ExtractorAction) Execute(ctx, input) (Envelope, error) - [Extracts data and returns a struct envelope].
+**3. Key Functions:**
+- `type Action interface { Execute(ctx, Envelope) (Envelope, error); Metadata() ActionMetadata }` - Defines executable unit interface
+- `type TextGenerator interface { Complete(ctx, prompt) (string, error); Generate(ctx, prompt, opts...) (*LLMResponse, error); Stream(ctx, prompt) (<-chan string, error) }` - Abstracts LLM
+- `type Extractor interface { Extract(ctx, input string, schema any) error }` - Converts text to structured data
 
-Component: adapters/func
-1. Responsibilities:
-   - Adapts any Go function (generic `func(In) (Out, error)`) into a `core.Action`.
-   - Handles type assertion and envelope wrapping.
-2. Core Structs:
-   - **Wrapper[In, Out]**: Generic wrapper struct.
-3. Key Functions:
-   - func NewWrapper[In, Out](name string, fn ToolFunc[In, Out]) *Wrapper[In, Out] - [Wraps a Go function].
-   - func (w *Wrapper[In, Out]) Execute(ctx, input) (Envelope, error) - [Invokes the function].
+### Component: core/data.go
+**1. Responsibilities:**
+- Defines interfaces for knowledge loading and memory persistence
+- Provides no-op implementations for stateless mode
 
-Component: adapters/knowledge
-1. Responsibilities:
-   - Loads Knowledge Graphs (RDF/Turtle/N-Quads) into Datalog facts.
-   - Parses external graph files.
-2. Core Structs:
-   - **RDFLoader**: Handles file parsing using `knakk/rdf`.
-3. Key Functions:
-   - func (l *RDFLoader) Parse(path string) ([]string, error) - [Parses RDF file to 'triple(S,P,O)' facts].
+**2. Core Structs:**
+- **NopStore**: No-op implementation of HistoryStore for stateless mode
 
-Component: adapters/vector
-1. Responsibilities:
-   - Abstracts Vector DB operations (Search/Upsert).
-   - Provides RAG capabilities via `RetrieverAction`.
-2. Core Structs:
-   - **RetrieverAction**: Wraps a `DocumentRetriever`.
-   - **Document**: Standard snippet format.
-3. Key Functions:
-   - func NewRetrieverAction(name string, retriever DocumentRetriever) *RetrieverAction - [Creates a retrieval action].
-   - func (r *RetrieverAction) Execute(ctx, input) (Envelope, error) - [Performs search and returns JSON doc list].
+**3. Key Functions:**
+- `type FactLoader interface { LoadFacts(ctx, source string) ([]string, error) }` - Loads external data into Engine
+- `type HistoryStore interface { Read(ctx, sessionID string) ([]Message, error); Append(ctx, sessionID string, msgs []Message) error }` - Manages chat history persistence
+- `func (n NopStore) Read(_ context.Context, _ string) ([]Message, error)` - Returns empty history
+- `func (n NopStore) Append(_ context.Context, _ string, _ []Message) error` - Successful no-op
 
-Component: providers/google
-1. Responsibilities:
-   - Initializes Google GenAI (Gemini) plugin.
-   - Implements a Proxy Pattern to handle configuration issues in the official plugin.
-2. Core Structs:
-   - N/A (Functional initialization).
-3. Key Functions:
-   - func Init(ctx, globalG, apiKey, modelName) (string, error) - [Registers Google model and returns global name].
+### Component: core/governance.go
+**1. Responsibilities:**
+- Defines Evaluator interface for policy execution
+- Defines PreProcessor, RiskEngine, ResourceMonitor interfaces
 
-#### 4. CRITICAL PATH & DATA (The Flow)
+**2. Core Structs:**
+- N/A (interface definitions only)
 
-**1. Execution Sequence (High Level)**
+**3. Key Functions:**
+- `type Evaluator interface { AssessPlan(ctx, input Envelope) (Decision, error); Assess(ctx, actionMeta ActionMetadata, input Envelope) error; Reflect(ctx, actionMeta ActionMetadata, output Envelope) (Envelope, error); EvaluateSteering(ctx, input Envelope) (string, map[string]string, error); GetActionConfig(ctx, input Envelope) (map[string]string, error); CheckRequirement(ctx, input Envelope, reqName string) (bool, error); LoadPolicy(ctx, source string) error; LoadFacts(facts []string) error; RegisterAction(meta ActionMetadata) error; Query(ctx, facts []string, queryStr string) ([]map[string]string, error); Logger() Logger }` - The Mangle Logic Engine contract
+- `type PreProcessor interface { Process(ctx, input Envelope) (map[string]any, error) }` - Fast/stateless checks
+- `type RiskEngine interface { CalculateRisk(ctx, input Envelope) (float64, error) }` - Specialized risk calculation
+- `type ResourceMonitor interface { CountTokens(ctx, text string) (int, error); CheckBudget(ctx, key string, cost int) (bool, error) }` - Cost & rate limiting
+
+### Component: sdk/client.go
+**1. Responsibilities:**
+- Primary entry point for Manglekit system
+- Manages governance kernel, blueprints, observability, and action execution
+- Handles configuration loading and dependency initialization
+
+**2. Core Structs:**
+- **Client**: Main entry point holding engine, tracer, logger, agentMemory, registry, failureMode, blueprintPath, shutdownFunc, llm, stateManager
+
+**3. Key Functions:**
+- `func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error)` - Initializes SDK client with configured options
+- `func NewClientFromFile(ctx context.Context, configPath string, opts ...ClientOption) (*Client, error)` - Initializes Client from YAML file
+- `func NewClientFromConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error)` - Initializes Client from Config object
+- `func (c *Client) Supervise(action core.Action) core.Action` - Wraps raw Action in SupervisedAction
+- `func (c *Client) Engine() core.Evaluator` - Returns underlying policy engine
+- `func (c *Client) LoadFacts(facts []string) error` - Manually injects Datalog facts into engine
+- `func (c *Client) Tracer() trace.Tracer` - Returns OpenTelemetry Tracer
+- `func (c *Client) Logger() core.Logger` - Returns configured Logger
+- `func NewDefault() (*Client, error)` - Creates Client with sensible default settings
+- `func (c *Client) SetLLM(gen core.TextGenerator)` - Manually configures TextGenerator
+- `func (c *Client) RegisterAction(name string, action core.Action)` - Adds action to internal registry
+- `func (c *Client) Shutdown(ctx context.Context) error` - Cleans up resources
+- `func (c *Client) Memory() core.AgentMemory` - Returns active memory provider
+
+### Component: sdk/loop.go
+**1. Responsibilities:**
+- Implements Semantic State Machine loop
+- Manages retry logic, routing, and execution limits
+- Handles memory storage and durable state management
+
+**2. Core Structs:**
+- **ExecutionParams**: Context object for RunLoop tracking retries and feedback
+
+**3. Key Functions:**
+- `func (c *Client) ExecuteByName(ctx context.Context, actionName string, input any, opts ...ExecuteOption) (core.Envelope, error)` - Executes named action within governance loop
+- `func (c *Client) runLoopInternal(ctx context.Context, startAction string, payload any, params ExecutionParams) (core.Envelope, error)` - Implements core Semantic State Machine loop
+- `func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, payload any, params *ExecutionParams) (core.Envelope, error)` - Runs one step of action and returns decision
+- `func (c *Client) injectContext(ctx context.Context, env *core.Envelope, payload any, params *ExecutionParams)` - Populates envelope with feedback, history, RAG context, metadata, facts
+- `func (c *Client) handleExecutionError(ctx context.Context, err error, payload any, params *ExecutionParams) (core.Envelope, error)` - Processes errors with retry logic
+- `func (c *Client) updateHistory(ctx context.Context, payload any, result core.Envelope, params *ExecutionParams)` - Appends exchange to history and persists
+- `func (c *Client) handleDecision(ctx context.Context, actionName string, result core.Envelope, payload any, params *ExecutionParams) (core.Envelope, error)` - Processes steering decision
+- `func (c *Client) handleRetryDecision(ctx context.Context, actionName string, result core.Envelope, params *ExecutionParams) (core.Envelope, error)` - Processes RETRY with backoff
+- `func (c *Client) buildHaltError(result core.Envelope) error` - Extracts reason from metadata and builds halt error
+- `func (c *Client) backoff(ctx context.Context, retryCount int) error` - Handles sleep and context cancellation
+- `func (c *Client) recallContext(ctx context.Context, payload any, env *core.Envelope)` - Handles RAG lookup logic
+- `func (c *Client) asyncMemorize(input any, output any)` - Handles fire-and-forget storage logic
+- `func normalizeString(s string) string` - Lowercases, removes punctuation, collapses spaces
+- `func isSemanticallySimilar(s1, s2 string) bool` - Checks if two strings are semantically equivalent
+
+### Component: internal/engine/runtime.go
+**1. Responsibilities:**
+- Encapsulates Google Mangle Datalog engine
+- Handles loading, parsing, analysis, and stratification of Datalog programs
+- Manages fact stores and query execution
+
+**2. Core Structs:**
+- **MangleRuntime**: Low-level wrapper around google/mangle with programInfo, strata, predToStratum, baseFactStore, ruleUnits, ready flag
+
+**3. Key Functions:**
+- `func NewMangleRuntime() *MangleRuntime` - Initializes a new, empty MangleRuntime
+- `func (r *MangleRuntime) Load(path string) error` - Loads Datalog rules and facts from specified path (REPLACES current program state)
+- `func (r *MangleRuntime) LoadFromSource(source string) error` - Parses and loads full Datalog program from a string (REPLACES current state)
+- `func (r *MangleRuntime) LoadFacts(facts []string) error` - Injects a list of raw Datalog fact strings into runtime's base knowledge
+- `func (r *MangleRuntime) LoadFromString(rule string) error` - Parses and loads Datalog from string (alias for LoadFromSource)
+- `func (r *MangleRuntime) AddPolicy(source string) error` - Adds new rules to existing program state (Incremental Loading)
+- `func (r *MangleRuntime) ExecuteQuery(facts []ast.Atom, queryStr string) (bool, error)` - Runs boolean Datalog query
+- `func (r *MangleRuntime) QueryWithSolutions(facts []ast.Atom, queryStr string, onSolution func(map[string]any) error) error` - Executes query and invokes callback for solutions
+- `func (r *MangleRuntime) evaluate(store factstore.FactStore) error` - Helper for internal evaluation
+- `func isRuleFile(p string) bool` - Checks if file is a rule file (.dlog or .dl)
+- `func isFactFile(p string) bool` - Checks if file is a fact file (.facts, .fact, .edb, .data)
+- `func cleanSource(raw string) string` - Strips UTF-8 BOM, normalizes line endings, removes comments
+- `func parseRuleFile(file string) (parse.SourceUnit, error)` - Parses a rule file into SourceUnit
+- `func constantToString(term ast.BaseTerm) (string, error)` - Converts constant term to string representation
+- `func resolveFiles(path string) ([]string, error)` - Resolves files from path (file or directory/glob)
+
+### Component: internal/engine/solver.go
+**1. Responsibilities:**
+- Core decision-making component of Manglekit
+- Orchestrates loading of policies, maintaining Datalog runtime
+- Executes authorization (Pre-Check) and validation (Post-Check) logic
+- Integrates with observability (Tracing/Logging)
+
+**2. Core Structs:**
+- **PolicyEngine**: Main logic engine wrapping MangleRuntime with tracer, logger, runtime
+
+**3. Key Functions:**
+- `func New() (*PolicyEngine, error)` - Creates new PolicyEngine with default no-op observability
+- `func NewWithTracer(tracer core.Tracer) *PolicyEngine` - Creates new PolicyEngine with tracing enabled (deprecated)
+- `func NewWithObservability(tracer core.Tracer, logger core.Logger) (*PolicyEngine, error)` - Creates new PolicyEngine with tracing and logging (recommended for production)
+- `func (e *PolicyEngine) RecordLineage(ctx context.Context, childID, parentID string)` - Records data lineage relationship
+- `func (e *PolicyEngine) Logger() core.Logger` - Returns engine's configured Logger
+- `func (e *PolicyEngine) LoadFacts(facts []string) error` - Injects raw Datalog fact strings into runtime's base knowledge
+- `func (e *PolicyEngine) RegisterAction(meta core.ActionMetadata) error` - Injects metadata about a registered action into Datalog runtime
+- `func (e *PolicyEngine) LoadPolicy(ctx context.Context, policy string) error` - Loads policy rules from a raw Datalog string
+- `func (e *PolicyEngine) LoadGherkinPolicy(ctx context.Context, featureContent string) error` - Loads Gherkin feature file and compiles to Datalog
+- `func (e *PolicyEngine) AssessPlan(ctx context.Context, input core.Envelope) (core.Decision, error)` - High-level assessment mapping Assess logic to a Decision
+- `func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope) (map[string]string, error)` - Queries engine for dynamic configuration parameters
+- `func (e *PolicyEngine) Assess(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error` - Performs Pre-Check phase (input validation)
+- `func (e *PolicyEngine) Reflect(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error)` - Performs Post-Check phase (output validation)
+- `func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope) (string, map[string]string, error)` - Determines next step (Retry/Route) based on output
+- `func (e *PolicyEngine) assessInternal(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error` - Internal core authorization logic
+- `func (e *PolicyEngine) reflectInternal(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error)` - Internal core validation logic
+- `func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, entityID string, env core.Envelope, extraFacts ...ast.Atom) error` - Centralizes logic for Check -> Deny -> Explain
+- `func (e *PolicyEngine) Query(ctx context.Context, facts []string, queryStr string) ([]map[string]string, error)` - Executes a Datalog query and returns all matching solutions
+- `func escapeString(s string) string` - Escapes special characters to ensure valid Mangle string constant
+
+### Component: internal/engine/reflection.go
+**1. Responsibilities:**
+- Converts Go data structures into Mangle Datalog facts
+- Entry point for turning runtime objects into logic predicates
+- Handles cycle detection and field tag processing
+
+**2. Core Structs:**
+- N/A (pure functions for conversion)
+
+**3. Key Functions:**
+- `func ToFacts(id string, input any) ([]string, error)` - Converts a Go data structure into Mangle Datalog facts
+- `func LabelsToFacts(entityID string, labels []string) ([]string, error)` - Converts security label strings into Mangle Datalog facts
+- `func escapeString(s string) string` - Escapes special characters to ensure valid Mangle string constant
+- `func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited map[uintptr]bool, args ...string) error` - Recursive reflection logic
+- `func generatePrimitiveFact(id, path string, v reflect.Value, facts *[]string, args ...string)` - Creates final Datalog string for primitive values
+
+### Component: internal/engine/flattener.go
+**1. Responsibilities:**
+- Converts ANY dynamic structure (maps, slices of any type) into graph facts
+- Handles JSON flattening for Datalog consumption
+- Supports cycle detection and complex type handling
+
+**2. Core Structs:**
+- N/A (pure functions for flattening)
+
+**3. Key Functions:**
+- `func Flatten(rootID string, input any) ([]string, error)` - Converts dynamic structure into graph facts
+- `func flattenRecursive(nodeID string, v reflect.Value, facts *[]string, counter *int, visited map[uintptr]bool) error` - Recursive flattening logic
+- `func isComplexKind(k reflect.Kind) bool` - Helper to check complexity based on Kind
+- `func addPrimitiveReflect(nodeID, key string, v reflect.Value, facts *[]string)` - Uses reflect.Value to handle types precisely
+
+### Component: internal/supervisor/supervisor.go
+**1. Responsibilities:**
+- Implements "Guarded Action" pattern
+- Enforces "Trace -> Assess -> Execute -> Reflect" lifecycle
+- Handles tracing, security label propagation, and failure modes
+
+**2. Core Structs:**
+- **SupervisedAction**: Decorator that wraps core.Action with inner, engine, tracer, failureMode
+
+**3. Key Functions:**
+- `func NewSupervisedAction(action core.Action, eng core.Evaluator, failureMode string) *SupervisedAction` - Creates new SupervisedAction with default settings (no tracing)
+- `func NewSupervisedActionWithTracer(action core.Action, eng core.Evaluator, tracer core.Tracer, failureMode string) *SupervisedAction` - Creates new SupervisedAction with tracing enabled
+- `func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error)` - Runs supervised action with full governance lifecycle
+- `func (g *SupervisedAction) Metadata() core.ActionMetadata` - Delegates to inner action's Metadata method
+- `func (g *SupervisedAction) shouldBlock(err error) bool` - Determines if action should be blocked based on error and failure mode
+- `func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envelope) (core.Envelope, error)` - Contains actual execution logic orchestrating phases
+- `func (g *SupervisedAction) performAssessment(ctx context.Context, logger core.Logger, meta core.ActionMetadata, input core.Envelope) error` - Executes pre-check phase
+- `func (g *SupervisedAction) injectDynamicConfig(ctx context.Context, logger core.Logger, input *core.Envelope)` - Queries engine for configuration overrides
+- `func (g *SupervisedAction) executeAction(ctx context.Context, logger core.Logger, meta core.ActionMetadata, input core.Envelope) (core.Envelope, error)` - Runs inner action with context propagation
+- `func (g *SupervisedAction) performReflection(ctx context.Context, logger core.Logger, meta core.ActionMetadata, result core.Envelope) (core.Envelope, error)` - Executes post-check phase
+- `func (g *SupervisedAction) applySteering(ctx context.Context, logger core.Logger, meta core.ActionMetadata, result core.Envelope) core.Envelope` - Evaluates steering decisions and stamps metadata
+- `func (g *SupervisedAction) isSensitive(labels []string) bool` - Checks if input envelope contains sensitive security labels
+
+### Component: adapters/ai
+**1. Responsibilities:**
+- Wraps Genkit AI models as core.Action
+- Handles LLM generation and streaming
+- Maps core.Envelope to Genkit-compatible prompts
+
+**2. Core Structs:**
+- **LLMAction**: Implements core.Action for Genkit models
+- **genkitAdapter**: Wrapper for genkit.Genkit
+
+**3. Key Functions:**
+- `func NewLLMAction(name string, generator core.TextGenerator) *LLMAction` - Creates a new AI action
+
+### Component: adapters/extractor
+**1. Responsibilities:**
+- Uses an LLM to extract structured data from text
+- Validates output against a generated JSON Schema
+
+**2. Core Structs:**
+- **ExtractorAction**: Wraps an LLM Action for extraction
+
+**3. Key Functions:**
+- `func New(name string, generator core.Action, schema any) (*ExtractorAction, error)` - Creates an extractor for a target struct
+- `func (e *ExtractorAction) Execute(ctx, input) (Envelope, error)` - Extracts data and returns a struct envelope
+
+### Component: adapters/func
+**1. Responsibilities:**
+- Adapts any Go function (generic func(In) (Out, error)) into a core.Action
+- Handles type assertion and envelope wrapping
+
+**2. Core Structs:**
+- **Wrapper[In, Out]**: Generic wrapper struct
+
+**3. Key Functions:**
+- `func NewWrapper[In, Out](name string, fn ToolFunc[In, Out]) *Wrapper[In, Out]` - Wraps a Go function
+- `func (w *Wrapper[In, Out]) Execute(ctx, input) (Envelope, error)` - Invokes function
+
+### Component: adapters/knowledge
+**1. Responsibilities:**
+- Loads Knowledge Graphs (RDF/Turtle/N-Quads) into Datalog facts
+- Parses external graph files
+
+**2. Core Structs:**
+- **RDFLoader**: Handles file parsing using knakk/rdf
+
+**3. Key Functions:**
+- `func (l *RDFLoader) Parse(path string) ([]string, error)` - Parses RDF file to 'triple(S,P,O)' facts
+
+### Component: adapters/vector
+**1. Responsibilities:**
+- Abstracts Vector DB operations (Search/Upsert)
+- Provides RAG capabilities via RetrieverAction
+
+**2. Core Structs:**
+- **RetrieverAction**: Wraps a DocumentRetriever
+- **Document**: Standard snippet format
+
+**3. Key Functions:**
+- `func NewRetrieverAction(name string, retriever DocumentRetriever) *RetrieverAction` - Creates a retrieval action
+- `func (r *RetrieverAction) Execute(ctx, input) (Envelope, error)` - Performs search and returns JSON doc list
+
+### Component: adapters/mcp
+**1. Responsibilities:**
+- Connects to Model Context Protocol servers
+- Discovers tools and exposes them as core.Action
+
+**2. Core Structs:**
+- **Loader**: Handles MCP connection and tool discovery
+- **MCPAction**: Wraps an MCP tool
+
+**3. Key Functions:**
+- `func (l *Loader) Load(ctx) ([]Action, error)` - Connects to MCP and returns actions
+
+### Component: adapters/logger
+**1. Responsibilities:**
+- Provides logger adapter implementations
+
+**2. Core Structs:**
+- **ZapAdapter**: Zap logger implementation
+
+**3. Key Functions:**
+- (Implementation details in zap_adapter.go)
+
+### Component: adapters/resilience
+**1. Responsibilities:**
+- Implements circuit breaker pattern for resilience
+
+**2. Core Structs:**
+- **CircuitBreaker**: Circuit breaker implementation
+
+**3. Key Functions:**
+- `func NewCircuitBreaker(threshold int, timeout time.Duration) *CircuitBreaker` - Creates new circuit breaker
+- `func (cb *CircuitBreaker) Execute(action core.Action) (core.Envelope, error)` - Executes action with circuit breaking
+
+### Component: adapters/memory
+**1. Responsibilities:**
+- Provides memory adapter implementations for different backends
+
+**2. Core Structs:**
+- (Implementation details in memory package)
+
+### Component: providers/google
+**1. Responsibilities:**
+- Initializes Google GenAI (Gemini) plugin
+- Implements a Proxy Pattern to handle configuration issues in the official plugin
+
+**2. Core Structs:**
+- N/A (functional initialization)
+
+**3. Key Functions:**
+- `func Init(ctx, globalG, apiKey, modelName) (string, error)` - Registers Google model and returns global name
+
+### Component: providers/openai
+**1. Responsibilities:**
+- Initializes OpenAI plugin
+
+**2. Core Structs:**
+- (Implementation details in openai package)
+
+### Component: providers/memory
+**1. Responsibilities:**
+- Provides memory provider implementations
+
+**2. Core Structs:**
+- (Implementation details in memory package)
+
+### Component: config
+**1. Responsibilities:**
+- Configuration loading from YAML files
+- Schema validation
+
+**2. Core Structs:**
+- **Config**: Configuration structure
+- **PolicyConfig**: Policy configuration section
+- **ObservabilityConfig**: Observability configuration section
+
+**3. Key Functions:**
+- `func Load(path string) (*Config, error)` - Loads configuration from YAML file
+- `func (c *Config) Validate() error` - Validates configuration against schema
+
+---
+
+## 3. CRITICAL PATH & DATA (The Flow)
+
+### Execution Sequence (High Level)
+
 ```mermaid
 sequenceDiagram
     participant User
@@ -176,10 +446,10 @@ sequenceDiagram
 
     User->>SDK: ExecuteByName("chat", payload)
     SDK->>Loop: runLoopInternal()
+    
     loop Semantic Loop
-        Loop->>Loop: Inject Context (Memory, Feedback)
         Loop->>Sup: Action.Execute(Envelope)
-
+    
         rect rgb(240, 240, 240)
             note right of Sup: Governance Lifecycle
             Sup->>Eng: Assess(Input) [Pre-Check]
@@ -191,9 +461,9 @@ sequenceDiagram
             Sup->>Eng: EvaluateSteering(Result)
             Eng-->>Sup: Decision (Retry/Route)
         end
-
+        
         Sup-->>Loop: Envelope + Metadata
-
+    
         alt Decision == RETRY
             Loop->>Loop: Increment Retry Count
             Loop->>Loop: Inject Feedback
@@ -207,36 +477,40 @@ sequenceDiagram
     SDK-->>User: Final Result
 ```
 
-**2. Data Transformation Flow**
+### Data Transformation Flow
+
 ```mermaid
 flowchart LR
-    Input[User Input (Struct/JSON)] --> Env[core.Envelope]
+    Input[User Input Struct/JSON] --> Env[core.Envelope]
     Env --> Reflector{Reflection Engine}
-
-    Reflector -- TypeStruct --> StructToFacts[internal/engine/reflection.go]
-    Reflector -- TypeJSON --> Flattener[internal/engine/flattener.go]
-
+    
+    Reflector - TypeStruct --> StructToFacts[internal/engine/reflection.go]
+    Reflector - TypeJSON --> Flattener[internal/engine/flattener.go]
+    
     StructToFacts --> Facts[(Datalog Facts)]
     Flattener --> Facts
-
+    
     Facts --> Solver[Mangle Runtime]
     Policies[std.dl / User Policies] --> Solver
-
+    
     Solver --> QueryHalt{Halt/Deny?}
     QueryHalt -- Yes --> Block[AlignmentError]
     QueryHalt -- No --> Action[Execute Action]
-
+    
     Action --> Result[Result Envelope]
     Result --> Solver
     Solver --> Steering{Steering?}
-    Steering -- retry(Hint) --> Retry[Decision: RETRY]
-    Steering -- route(Target) --> Route[Decision: ROUTE]
+    Steering -- retry Hint --> Retry[Decision: RETRY]
+    Steering -- route Target --> Route[Decision: ROUTE]
     Steering -- None --> Proceed[Decision: PROCEED]
 ```
 
-#### 5. SOURCE CODE DUMP
+---
+
+## 4. SOURCE CODE DUMP
 
 ---
+
 ## [internal/engine/resources/std.dl]
 ```prolog
 % --- Manglekit Standard Library (v2.0) ---
@@ -244,7 +518,7 @@ flowchart LR
 
 % ==========================================
 % 1. DATA REFLECTION (DO NOT REMOVE)
-% These predicates allow the engine to read JSON inputs and Graph data.
+% These predicates allow engine to read JSON inputs and Graph data.
 % ==========================================
 
 % JSON Primitives (Flattened)
@@ -263,21 +537,21 @@ triple(S, P, O) :- quad(S, P, O, _).
 % 2. SYSTEM CONTROL (Standard Vocabulary)
 % ==========================================
 
-% Arity 1: Global/Single-Context (JSON)
-Decl deny(Reason).
+% Arity 1: Global/Single-Context (JSON) 
+Decl deny(Reason). 
 Decl halt(Reason).
-Decl route(NextStep).
+Decl route(NextStep). 
 Decl retry(Feedback).
 
-% Arity 2: Entity-Specific (Graph/Batch)
-% Allows pinning the decision to a specific node (Entity).
-Decl deny(Entity, Reason).
+% Arity 2: Entity-Specific (Graph/Batch) 
+% Allows pinning decision to a specific node (Entity). 
+Decl deny(Entity, Reason). 
 Decl halt(Entity, Reason).
-Decl route(Entity, NextStep).
+Decl route(Entity, NextStep). 
 Decl retry(Entity, Feedback).
 
-% Config is always Key-Value (Arity 2) or Entity-Key-Value (Arity 3)
-Decl config(Key, Value).
+% Config is always Key-Value (Arity 2) or Entity-Key-Value (Arity 3) 
+Decl config(Key, Value). 
 Decl config(Entity, Key, Value).
 
 % Semantic Alias for backward compatibility
@@ -292,87 +566,94 @@ halt(Entity, Reason) :- deny(Entity, Reason).
 Decl attempt(N).            % Current retry count (0, 1, 2...).
 Decl meta(Key, Value).      % Envelope metadata (e.g., user_id, session_id).
 Decl label(Tag).            % Security taint labels (e.g., "pii", "unsafe").
+Decl action_operation(Entity, Op). % Action being performed (e.g., action_operation("Req", "llm_generate").
 
 % Telemetry Predicate (Arity 2: Entity, RuleID)
 Decl violation_rule(Entity, RuleID).
+```
 
-% --- Helper: String Matching ---
+---
 
-% input_contains(Req, Keyword)
-% Checks if the input text payload contains the keyword (case-insensitive if supported).
-% NOTE: fn:contains is not supported in Mangle v0.3.0, so this helper is currently disabled.
-% input_contains(Req, Keyword) :-
-%    value(Req, "text", Text),
-%    fn:contains(Text, Keyword).
+## [internal/engine/resources/planner.dl]
+```prolog
 Decl goal(Name) .
 Decl subgoal(Parent, Child, Order) .
 Decl plan_step(Action, Order) .
 
 plan_step(Action, Order) :- goal(G), subgoal(G, Action, Order).
 ```
+
 ---
+
 ## [core/types.go]
 ```go
 package core
 
 import (
-	"errors"
+	"encoding/json"
+	"fmt"
 
 	"github.com/google/uuid"
 )
 
-// Common Constants for Metadata Keys and OpenTelemetry Attributes.
 const (
-	// Metadata Keys (Vocabulary)
-	KeyReason       = "reason"
+	// Governance & Routing
 	KeyDecision     = "manglekit.decision"
 	KeyFeedback     = "manglekit.feedback"
-	KeyPrevFeedback = "prev_feedback" // History of feedback
+	KeyPrevFeedback = "prev_feedback"
 	KeyNextStep     = "manglekit.next_step"
-	KeyRiskScore    = "manglekit.risk_score"
-	KeyTraceID      = "manglekit.trace_id"
-	KeySessionID    = "manglekit.session_id"
-	KeyContext      = "manglekit.context" // RAG Context
-	KeyHistory      = "manglekit_history" // Chat History
 
-	// Decision Outcomes
+	// Risk & Analysis
+	KeyRiskScore = "manglekit.risk_score"
+
+	// Performance & Observability
+	KeyLatencyMs = "manglekit.latency_ms"
+	KeyTraceID   = "manglekit.trace_id"
+	KeyModel     = "manglekit.model"
+	KeyHistory   = "manglekit_history"
+	KeyContext   = "manglekit.context"
+	KeySummary   = "manglekit.summary"
+
+	// Configuration
+	PrefixPromptConfig = "prompt."
+)
+
+const (
 	DecisionProceed = "PROCEED"
 	DecisionHalt    = "HALT"
 	DecisionRetry   = "RETRY"
 	DecisionRoute   = "ROUTE"
+)
 
-	// OTel Attributes
-	AttrActionName = "policy.action"
-	AttrOutcome    = "policy.outcome"
-	AttrRuleID     = "policy.rule_id"
-	AttrReason     = "policy.reason"
-	AttrLatency    = "policy.latency_ms"
-	AttrLabels     = "policy.labels"
-	AttrAttempt    = "policy.attempt"
-
-	// Span Names
-	SpanPreCheck  = "Datalog.Assess"
-	SpanPostCheck = "Datalog.Reflect"
-	SpanMemory    = "Mangle.Recall"
-	SpanLLM       = "LLM.Generate"
-
-	// Standard Outcome Values
-	OutcomeProceed = "allow"
-	OutcomeHalt    = "deny"
-
-	// Datalog Predicates (Canonical)
+const (
+	EntityInput   = "Req"
+	EntityOutput  = "Output"
 	PredHalt      = "halt"
 	PredRetry     = "retry"
 	PredRoute     = "route"
 	PredViolation = "violation_msg"
-
-	// Prefixes
-	PrefixPromptConfig = "prompt_config_"
-	EntityInput        = "Req"
-	EntityOutput       = "Output"
 )
 
-// ContentType defines how the payload should be interpreted by the engine.
+const (
+	SpanPreCheck  = "Datalog.Assess"
+	SpanPostCheck = "Datalog.Reflect"
+	SpanMemory    = "Mangle.Recall"
+
+	AttrPolicyName   = "policy.name"
+	AttrPolicyType   = "policy.type"
+	AttrDecisionType = "decision.type"
+	AttrOutcome      = "outcome"
+	AttrLabels       = "mangle.labels"
+	AttrActionName   = "action.name"
+	AttrActionType   = "action.type"
+	AttrRuleID       = "mangle.rule_id"
+	AttrAttempt      = "mangle.attempt"
+
+	OutcomeProceed = "PROCEED"
+	OutcomeHalt    = "HALT"
+	OutcomeSuccess = "success"
+)
+
 type ContentType string
 
 const (
@@ -380,43 +661,33 @@ const (
 	TypeJSON   ContentType = "JSON"
 )
 
-// Envelope is the standard unit of data exchange in Manglekit.
-// It wraps the payload with metadata, identification, and security context.
 type Envelope struct {
 	ID             uuid.UUID      `json:"id"`
 	Payload        any            `json:"data"`
 	Metadata       map[string]any `json:"metadata,omitempty"`
 	Error       error          `json:"error,omitempty"`
-
-	// SecurityLabels holds taint tags (e.g., "secret", "pii") for information flow control.
 	SecurityLabels []string       `json:"security_labels,omitempty"`
-	// Facts holds structured logical facts extracted from the payload.
-	Facts          []string       `json:"facts,omitempty"` // Explicit Datalog facts
-	// ContentType indicates whether the payload is a Struct or JSON.
+	Facts          []string       `json:"facts,omitempty"`
 	ContentType    ContentType    `json:"content_type,omitempty"`
 }
 
-// NewEnvelope creates a new Envelope with a generated UUID.
 func NewEnvelope(payload any) Envelope {
 	return Envelope{
 		ID:          uuid.New(),
 		Payload:     payload,
 		Metadata:    make(map[string]any),
 		SecurityLabels: []string{},
-		ContentType: TypeStruct, // Default
+		ContentType:    TypeStruct,
 	}
 }
 
-// SetMeta sets a metadata key-value pair.
-func (e *Envelope) SetMeta(key string, value any) {
+func (e *Envelope) SetMeta(k string, v any) {
 	if e.Metadata == nil {
 		e.Metadata = make(map[string]any)
 	}
-	e.Metadata[key] = value
+	e.Metadata[k] = v
 }
 
-// GetMeta retrieves a value from the envelope's metadata map as a string.
-// If the value is not a string, it returns an empty string (or simple string representation).
 func (e *Envelope) GetMeta(k string) string {
 	if e.Metadata == nil {
 		return ""
@@ -431,12 +702,10 @@ func (e *Envelope) GetMeta(k string) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// SetFeedback injects the "Teacher's" feedback into metadata
 func (e *Envelope) SetFeedback(msg string) {
 	e.SetMeta(KeyFeedback, msg)
 }
 
-// GetFeedback retrieves the feedback for the "Student" (AI/Logic)
 func (e *Envelope) GetFeedback() string {
 	if v, ok := e.Metadata[KeyFeedback]; ok {
 		if s, ok := v.(string); ok {
@@ -446,16 +715,21 @@ func (e *Envelope) GetFeedback() string {
 	return ""
 }
 
-// SetHistory injects chat history into the payload (if it's a map) or metadata.
-// For structured prompts, it prefers metadata injection for the template to use.
-func (e *Envelope) SetHistory(msgs []Message) {
-	b, err := json.Marshal(msgs)
-	if err == nil {
-		e.SetMeta(KeyHistory, string(b))
+func (e *Envelope) AddLabel(label string) {
+	if !e.HasLabel(label) {
+		e.SecurityLabels = append(e.SecurityLabels, label)
 	}
 }
 
-// MergeLabels adds unique security labels to the envelope.
+func (e *Envelope) HasLabel(label string) bool {
+	for _, l := range e.SecurityLabels {
+		if l == label {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *Envelope) MergeLabels(other []string) {
 	existing := make(map[string]bool)
 	for _, l := range e.SecurityLabels {
@@ -469,323 +743,49 @@ func (e *Envelope) MergeLabels(other []string) {
 	}
 }
 
-// ActionMetadata describes a registered capability.
+func (e *Envelope) SetHistory(msgs []Message) {
+	b, err := json.Marshal(msgs)
+	if err == nil {
+		e.SetMeta(KeyHistory, string(b))
+	}
+}
+
+type Decision struct {
+	Outcome string            `json:"outcome"`
+	Target  string            `json:"target,omitempty"`
+	Reasons []string          `json:"reasons,omitempty"`
+	Meta    map[string]string `json:"meta,omitempty"`
+}
+
 type ActionMetadata struct {
 	Name        string `json:"name"`
-	Type        string `json:"type"` // e.g., "llm", "tool", "api"
-	Description string `json:"description,omitempty"`
+	Type        string `json:"type"`
+	InputContentType ContentType `json:"input_content_type,omitempty"`
 	InputType   string `json:"input_type,omitempty"`
 	OutputType  string `json:"output_type,omitempty"`
 	IsDynamic   bool   `json:"is_dynamic,omitempty"`
 }
 
-// Decision represents the outcome of a policy evaluation.
-type Decision struct {
-	Outcome string            `json:"outcome"` // allow, deny, retry, route
-	Reasons []string          `json:"reasons,omitempty"`
-	Meta    map[string]string `json:"meta,omitempty"`
+type ExecutionContext struct {
+	RetryCount      int              `json:"retry_count"`
+	FeedbackHistory []string        `json:"feedback_history,omitempty"`
+	CurrentHistory []Message        `json:"current_history,omitempty"`
 }
 
-// Message represents a chat message.
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
-```
----
-## [core/logic.go]
-```go
-package core
 
-import "context"
-
-// Action defines the interface for a unit of work in the Manglekit system.
-type Action interface {
-	// Execute performs the action's logic.
-	Execute(ctx context.Context, input Envelope) (Envelope, error)
-
-	// Metadata returns the action's metadata.
-	Metadata() ActionMetadata
-}
-
-// GenerateOption is a functional option for text generation.
-type GenerateOption func(o *GenerationConfig)
-
-// LLMResponse contains the generated text and token usage metadata.
-type LLMResponse struct {
-	Text  string
-	Usage map[string]int
-}
-
-// TextGenerator abstracts the LLM.
-type TextGenerator interface {
-	// Complete generates text from a prompt.
-	Complete(ctx context.Context, prompt string) (string, error)
-
-	// Generate generates text with options.
-	Generate(ctx context.Context, prompt string, opts ...GenerateOption) (*LLMResponse, error)
-
-	// Stream generates a stream of text.
-	Stream(ctx context.Context, prompt string) (<-chan string, error)
-}
-
-// Extractor converts raw text into structured data.
-type Extractor interface {
-	Extract(ctx context.Context, input string, schema any) error
-}
-```
----
-## [core/governance.go]
-```go
-package core
-
-import "context"
-
-// Evaluator: The Mangle Logic Engine.
-// It defines the contract for policy execution, validation, and steering.
-type Evaluator interface {
-	// AssessPlan evaluates the policy for a given input (General purpose).
-	// It returns a Decision struct with the outcome.
-	// Formerly: Assess
-	AssessPlan(ctx context.Context, input Envelope) (Decision, error)
-
-	// Assess performs the Pre-Check phase (input validation).
-	// Formerly: Authorize
-	Assess(ctx context.Context, actionMeta ActionMetadata, input Envelope) error
-
-	// Reflect evaluates the outcome of an action (Post-Check).
-	// Formerly: Validate
-	Reflect(ctx context.Context, actionMeta ActionMetadata, output Envelope) (Envelope, error)
-
-	// EvaluateSteering determines the next step (Retry/Route) based on the output.
-	EvaluateSteering(ctx context.Context, input Envelope) (string, map[string]string, error)
-
-	// GetActionConfig queries the engine for dynamic configuration parameters.
-	GetActionConfig(ctx context.Context, input Envelope) (map[string]string, error)
-
-	// CheckRequirement checks if a capability is needed. e.g., requires(Req, "memory").
-	CheckRequirement(ctx context.Context, input Envelope, reqName string) (bool, error)
-
-	// LoadPolicy loads policy rules from a source string or file content.
-	LoadPolicy(ctx context.Context, source string) error
-
-	// LoadFacts injects dynamic facts into the engine.
-	LoadFacts(facts []string) error
-
-	// RegisterAction registers action metadata for discovery/planning.
-	RegisterAction(meta ActionMetadata) error
-
-	// Query executes a Datalog query and returns all matching solutions.
-	// It is used by the planner to reason about goals and generate action sequences.
-	Query(ctx context.Context, facts []string, queryStr string) ([]map[string]string, error)
-
-	// Logger returns the engine's logger.
-	Logger() Logger
-}
-```
----
-## [core/memory.go]
-```go
-package core
-
-import "context"
-
-// AgentMemory defines the capability to store and retrieve past experiences.
-// It unifies sequential History (chat logs) and Semantic Memory (RAG).
-type AgentMemory interface {
-	// --- Sequential History ---
-	// Read retrieves the chat history for a given session.
-	Read(ctx context.Context, sessionID string) ([]Message, error)
-	// Append adds new messages to the history.
-	Append(ctx context.Context, sessionID string, msgs []Message) error
-
-	// --- Semantic Memory (RAG) ---
-	// Recall retrieves relevant context based on the current query.
-	Recall(ctx context.Context, query string) (string, error)
-	// Memorize stores a new interaction (Input/Output) for future recall.
-	Memorize(ctx context.Context, query string, answer string) error
-
-	// Init performs any necessary setup (e.g. connecting to DB).
-	Init(ctx context.Context) error
-}
-
-// AgentMemoryWithFacts is an optional interface for Memory providers that can return
-// additional metadata (facts) along with the text context.
-type AgentMemoryWithFacts interface {
-	AgentMemory
-	// RecallWithFacts retrieves context and associated metadata (e.g. doc IDs).
-	RecallWithFacts(ctx context.Context, query string) (string, map[string]any, error)
-}
-```
----
-## [core/infra.go]
-```go
-package core
-
-import "context"
-
-// Breaker implements the Circuit Breaker pattern.
-type Breaker interface {
-	Execute(req func() (any, error)) (any, error)
-	Name() string
-}
-
-// Meter abstracts metrics (Counters, Gauges).
-type Meter interface {
-	Counter(name string, val int64, tags map[string]string)
-	Histogram(name string, val float64, tags map[string]string)
-}
-
-// Tracer abstracts distributed tracing.
-type Tracer interface {
-	// Start creates a new span with the given name and returns a context and span.
-	Start(ctx context.Context, name string) (context.Context, Span)
-}
-
-// Span represents an active operation being traced.
-type Span interface {
-	End()
-	SetAttributes(attributes map[string]any)
-	SetStatus(code string, msg string)
-	RecordError(err error)
-}
-```
----
-## [core/errors.go]
-```go
-package core
-
-import (
-	"errors"
-	"fmt"
-)
-
-var (
-	// ErrAlignment is returned when a blueprint alignment check blocks an action.
-	ErrAlignment = errors.New("alignment error")
-	// ErrSystemError is returned when an unexpected error occurs.
-	ErrSystemError = errors.New("system error")
-	// ErrInputValidation is returned when input conversion or parsing fails.
-	ErrInputValidation = errors.New("input validation error")
-)
-
-// AlignmentError is a structured error that carries a specific intervention message.
-// It wraps ErrAlignment to ensure standard error matching works.
-type AlignmentError struct {
-	Message string
-	RuleID  string
-}
-
-func (e *AlignmentError) Error() string {
-	if e.RuleID != "" {
-		return fmt.Sprintf("[INTERVENTION] [%s]: %s", e.RuleID, e.Message)
-	}
-	return fmt.Sprintf("[INTERVENTION]: %s", e.Message)
-}
-
-func (e *AlignmentError) Is(target error) bool {
-	return target == ErrAlignment
-}
-
-func (e *AlignmentError) Unwrap() error {
-	return ErrAlignment
-}
-
-// IsAlignmentError checks if the error is an AlignmentError.
-func IsAlignmentError(err error) bool {
-	return errors.Is(err, ErrAlignment)
-}
-
-// InputError is a structured error that indicates a failure in input validation or fact conversion.
-// It wraps ErrInputValidation to ensure distinction from system errors.
-type InputError struct {
-	Err error
-}
-
-func (e *InputError) Error() string {
-	return fmt.Sprintf("input validation error: %v", e.Err)
-}
-
-func (e *InputError) Is(target error) bool {
-	return target == ErrInputValidation
-}
-
-func (e *InputError) Unwrap() error {
-	return ErrInputValidation
-}
-
-// IsInputError checks if the error is an InputError.
-func IsInputError(err error) bool {
-	return errors.Is(err, ErrInputValidation)
-}
-
-// NewAlignmentError creates a new AlignmentError with the given message and rule ID.
-func NewAlignmentError(message, ruleID string) *AlignmentError {
-	return &AlignmentError{
-		Message: message,
-		RuleID:  ruleID,
-	}
-}
-
-// WrapInputError wraps an error as an InputError.
-func WrapInputError(err error) *InputError {
-	return &InputError{Err: err}
-}
-```
----
-## [core/session_state.go]
-```go
-package core
-
-import (
-	"encoding/json"
-	"fmt"
-)
-
-// SessionState packages all components needed for full recovery of a Manglekit session.
-// It is used by the Durable State Manager to checkpoint and restore execution state.
-type SessionState struct {
-	// SessionID is the unique identifier for the persistent thread.
-	SessionID string `json:"session_id"`
-
-	// ActiveEnvelope is the current envelope including Payload, Metadata, and Labels.
-	ActiveEnvelope Envelope `json:"active_envelope"`
-
-	// ExecutionCtx contains the current RetryCount, FeedbackHistory, and CurrentHistory.
-	ExecutionCtx ExecutionContext `json:"execution_context"`
-
-	// LogicalFacts are the Datalog facts derived during the last successful reflection.
-	LogicalFacts []string `json:"logical_facts,omitempty"`
-
-	// PayloadType stores the Go type name of the payload for reconstruction.
-	// This is used during hydration to unmarshal the payload back to its original type.
-	PayloadType string `json:"payload_type,omitempty"`
-}
-
-// ExecutionContext captures the runtime state of an execution session.
-// This is used by the Durable State Manager to preserve execution continuity across restarts.
-type ExecutionContext struct {
-	// RetryCount tracks the number of retry attempts for the current action.
-	RetryCount int `json:"retry_count"`
-	// FeedbackHistory stores all feedback messages from previous retry attempts.
-	FeedbackHistory []string `json:"feedback_history,omitempty"`
-	// CurrentHistory contains the conversation history for this session.
-	CurrentHistory []Message `json:"current_history,omitempty"`
-}
-
-// ConversationHistory represents a sequence of messages in a dialogue.
 type ConversationHistory struct {
-	// Messages is the ordered list of messages in the conversation.
 	Messages []Message `json:"messages"`
 }
 
-// Query represents a structured user request.
 type Query struct {
 	Text string         `json:"text"`
 	Meta map[string]any `json:"meta,omitempty"`
 }
 
-// GenerationConfig holds standard LLM parameters.
 type GenerationConfig struct {
 	Temperature   float64
 	MaxTokens     int
@@ -793,247 +793,125 @@ type GenerationConfig struct {
 	StopSequences []string
 	Model         string
 	JSONMode      bool
-	// OutputType is used by Genkit to enforce structured output (schema).
 	OutputType any
 }
 
-// Document represents a snippet of knowledge/memory.
 type Document struct {
 	ID       string         `json:"id,omitempty"`
 	Content  string         `json:"content"`
 	Vector   []float32      `json:"vector,omitempty"`
 	Metadata map[string]any `json:"metadata,omitempty"`
-	Score    float32        `json:"score,omitempty"` // Re-ranking score
+	Score    float32        `json:"score,omitempty"`
 }
 
-// Answer represents a structured system response.
 type Answer struct {
 	Text string         `json:"text"`
 	Meta map[string]any `json:"meta,omitempty"`
 }
 ```
+
 ---
-## [core/state.go]
+
+## [core/logic.go]
 ```go
 package core
 
 import "context"
 
-// State defines the interface for state management.
-// It allows components to persist and retrieve execution state.
-type State interface {
-	// Get retrieves the state for a given session ID.
-	Get(ctx context.Context, sessionID string) (*SessionState, error)
-	// Set stores the state for a given session ID.
-	Set(ctx context.Context, sessionID string, state *SessionState) error
-	// Delete removes the state for a given session ID.
-	Delete(ctx context.Context, sessionID string) error
+type Action interface {
+	Execute(ctx context.Context, input Envelope) (Envelope, error)
+	Metadata() ActionMetadata
+}
+
+type GenerateOption func(o *GenerationConfig)
+
+type LLMResponse struct {
+	Text  string
+	Usage map[string]int
+}
+
+type TextGenerator interface {
+	Complete(ctx context.Context, prompt string) (string, error)
+	Generate(ctx context.Context, prompt string, opts ...GenerateOption) (*LLMResponse, error)
+	Stream(ctx context.Context, prompt string) (<-chan string, error)
+}
+
+type Extractor interface {
+	Extract(ctx context.Context, input string, schema any) error
 }
 ```
+
 ---
+
 ## [core/data.go]
 ```go
 package core
 
-// NopStore is a no-op implementation of State for testing.
-type NopStore struct{}
-
-func (n *NopStore) Get(ctx context.Context, sessionID string) (*SessionState, error) {
-	return nil, nil
-}
-
-func (n *NopStore) Set(ctx context.Context, sessionID string, state *SessionState) error {
-	return nil
-}
-
-func (n *NopStore) Delete(ctx context.Context, sessionID string) error {
-	return nil
-}
-```
----
-## [core/logger.go]
-```go
-package core
-
-import "context"
-
-// Logger defines the logging interface.
-type Logger interface {
-	// Debug logs a debug message with optional key-value pairs.
-	Debug(msg string, kv ...interface{})
-	// Info logs an informational message with optional key-value pairs.
-	Info(msg string, kv ...interface{})
-	// Warn logs a warning message with optional key-value pairs.
-	Warn(msg string, kv ...interface{})
-	// Error logs an error message with optional key-value pairs.
-	Error(msg string, kv ...interface{})
-}
-
-// NopLogger is a no-op implementation of Logger for testing.
-type NopLogger struct{}
-
-func (n *NopLogger) Debug(msg string, kv ...interface{}) {}
-func (n *NopLogger) Info(msg string, kv ...interface{}) {}
-func (n *NopLogger) Warn(msg string, kv ...interface{}) {}
-func (n *NopLogger) Error(msg string, kv ...interface{}) {}
-```
----
-## [core/tracer.go]
-```go
-package core
-
-import "context"
-
-// NopTracer is a no-op implementation of Tracer for testing.
-type NopTracer struct{}
-
-func (n *NopTracer) Start(ctx context.Context, name string) (context.Context, Span) {
-	return ctx, &NopSpan{}
-}
-
-// NopSpan is a no-op implementation of Span for testing.
-type NopSpan struct{}
-
-func (s *NopSpan) End() {}
-func (s *NopSpan) SetAttributes(attributes map[string]any) {}
-func (s *NopSpan) SetStatus(code string, msg string) {}
-func (s *NopSpan) RecordError(err error) {}
-```
----
-## [core/context_facts.go]
-```go
-package core
-
-import "context"
-
-// ContextWithLogger injects a logger into the context.
-func ContextWithLogger(ctx context.Context, logger Logger) context.Context {
-	return context.WithValue(loggerKey{}, logger)
-}
-
-type loggerKey struct{}
-
-// LoggerFromContext retrieves a logger from the context.
-// Returns NopLogger if no logger is present.
-func LoggerFromContext(ctx context.Context) Logger {
-	if logger, ok := ctx.Value(loggerKey{}).(*Logger); ok {
-		return logger
-	}
-	return NopLogger{}
-}
-
-// WithParentID injects a parent ID into the context for lineage tracking.
-func WithParentID(ctx context.Context, parentID string) context.Context {
-	return context.WithValue(parentIDKey{}, parentID)
-}
-
-type parentIDKey struct{}
-
-// ParentIDFromContext retrieves a parent ID from the context.
-func ParentIDFromContext(ctx context.Context) string {
-	if id, ok := ctx.Value(parentIDKey{}).(string); ok {
-		return id
-	}
-	return ""
-}
-```
----
-## [core/context_lineage.go]
-```go
-package core
-
-import "context"
-
-// LineageKey is the context key for storing lineage information.
-type lineageKey struct{}
-
-// WithLineage injects lineage information into the context.
-func WithLineage(ctx context.Context, lineage map[string]string) context.Context {
-	return context.WithValue(lineageKey{}, lineage)
-}
-
-// LineageFromContext retrieves lineage information from the context.
-func LineageFromContext(ctx context.Context) map[string]string {
-	if lineage, ok := ctx.Value(lineageKey{}).(map[string]string); ok {
-		return lineage
-	}
-	return nil
-}
-```
----
-## [core/embedder.go]
-```go
-package core
-
-import "context"
-
-// Embedder defines the interface for text embedding operations.
-type Embedder interface {
-	// Embed generates embeddings for a given text.
-	Embed(ctx context.Context, text string) ([]float32, error)
-}
-
-// NopEmbedder is a no-op implementation of Embedder for testing.
-type NopEmbedder struct{}
-
-func (n *NopEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
-	return nil, nil
-}
-```
----
-## [manglekit.go]
-```go
-package manglekit
-
 import (
 	"context"
-
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk"
 )
 
-// --- Aliases ---
-type Client = sdk.Client
-type ClientOption = sdk.ClientOption
-type ExecuteOption = sdk.ExecuteOption
+type MemoryMode string
 
-// --- Facade Functions ---
+const (
+	MemoryModeNone      MemoryMode = "none"
+	MemoryModeTransient  MemoryMode = "transient"
+	MemoryModePersist    MemoryMode = "persist"
+)
 
-// NewClient initializes a client with defaults.
-// It implements the "Batteries Included" philosophy by leveraging SDK defaults.
-func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
-	return sdk.NewClient(ctx, opts...)
+type HistoryStore interface {
+	Read(ctx context.Context, sessionID string) ([]Message, error)
+	Append(ctx context.Context, sessionID string, msgs []Message) error
 }
 
-// Must helper for panic-on-error initialization
-func Must(c *Client, err error) *Client {
-	return sdk.Must(c, err)
+type FactLoader interface {
+	LoadFacts(ctx context.Context, source string) ([]string, error)
 }
 
-// Define is the public entry point for creating Actions
-func Define[In any, Out any](
-	c *Client,
-	name string,
-	handler func(context.Context, In) (Out, error),
-) *sdk.Runnable[In, Out] {
-	return sdk.Define(c, name, handler)
-}
+type NopStore struct{}
 
-// --- Option Wrappers ---
-func WithBlueprintPath(path string) ClientOption { return sdk.WithBlueprintPath(path) }
-
-// Deprecated: Use WithBlueprintPath instead.
-func WithPolicyPath(path string) ClientOption         { return sdk.WithBlueprintPath(path) }
-func WithFailMode(mode string) ClientOption           { return sdk.WithFailMode(mode) }
-func WithLogger(l core.Logger) ClientOption           { return sdk.WithLogger(l) }
-func WithHistory(store core.HistoryStore) ClientOption { return sdk.WithHistory(store) }
-func WithMemory(mem core.AgentMemory) ClientOption    { return sdk.WithMemory(mem) }
-
-func WithSessionID(id string) ExecuteOption        { return sdk.WithSessionID(id) }
-func WithTransientMemory() ExecuteOption           { return sdk.WithTransientMemory() }
-func WithMetadata(key, value string) ExecuteOption { return sdk.WithMetadata(key, value) }
+func (n NopStore) Read(_ context.Context, _ string) ([]Message, error) { return nil, nil }
+func (n NopStore) Append(_ context.Context, _ string, _ []Message) error { return nil }
 ```
+
 ---
+
+## [core/governance.go]
+```go
+package core
+
+import "context"
+
+type Evaluator interface {
+	AssessPlan(ctx context.Context, input Envelope) (Decision, error)
+	Assess(ctx context.Context, actionMeta ActionMetadata, input Envelope) error
+	Reflect(ctx context.Context, actionMeta ActionMetadata, output Envelope) (Envelope, error)
+	EvaluateSteering(ctx context.Context, input Envelope) (string, map[string]string, error)
+	GetActionConfig(ctx context.Context, input Envelope) (map[string]string, error)
+	CheckRequirement(ctx context.Context, input Envelope, reqName string) (bool, error)
+	LoadPolicy(ctx context.Context, source string) error
+	LoadFacts(facts []string) error
+	RegisterAction(meta ActionMetadata) error
+	Query(ctx context.Context, facts []string, queryStr string) ([]map[string]string, error)
+	Logger() Logger
+}
+
+type PreProcessor interface {
+	Process(ctx context.Context, input Envelope) (map[string]any, error)
+}
+
+type RiskEngine interface {
+	CalculateRisk(ctx context.Context, input Envelope) (float64, error)
+}
+
+type ResourceMonitor interface {
+	CountTokens(ctx context.Context, text string) (int, error)
+	CheckBudget(ctx context.Context, key string, cost int) (bool, error)
+}
+```
+
+---
+
 ## [sdk/client.go]
 ```go
 package sdk
@@ -1051,39 +929,23 @@ import (
 )
 
 const (
-	// TracerName is the instrumentation scope name for Manglekit tracing.
 	TracerName = "github.com/duynguyendang/manglekit/sdk"
 
-	// Failure modes determine the system's resilience strategy.
-	FailModeOpen   = "open"   // Allow execution on system error (Fail-Open)
-	FailModeClosed = "closed" // Block execution on system error (Fail-Closed)
+	FailModeOpen   = "open"
+	FailModeClosed = "closed"
 )
 
-// Client is the primary entry point for the Manglekit system.
-// It acts as the governance kernel, managing blueprints, observability, and action execution.
-// Applications should create a single Client instance and reuse it.
 type Client struct {
-	// engine is the internal Policy Engine responsible for Datalog evaluation.
 	engine core.Evaluator
-	// tracer is the Manglekit core.Tracer wrapper.
-	tracer core.Tracer
-	// otelTracer is the raw OpenTelemetry tracer instance.
+	tracer  core.Tracer
 	otelTracer trace.Tracer
-	// logger is the structured logger used by the client and its components.
-	logger core.Logger
-	// agentMemory is the unified memory provider (History + RAG).
+	logger  core.Logger
 	agentMemory core.AgentMemory
-	// registry holds registered actions for dynamic routing.
 	registry map[string]core.Action
-	// failureMode determines the system's resilience strategy ("open" or "closed").
 	failureMode string
-	// blueprintPath stores the path loaded at startup (for debugging/reloading).
 	blueprintPath string
-	// shutdownFunc is a cleanup function to stop exporters/tracers.
 	shutdownFunc func(context.Context) error
-	// llm is the plugged-in text generation backend (e.g., Google, OpenAI).
 	llm core.TextGenerator
-	// stateManager handles durable state persistence and recovery.
 	stateManager interface {
 		Hydrate(ctx context.Context, sessionID string) (*core.SessionState, error)
 		Checkpoint(ctx context.Context, state *core.SessionState) error
@@ -1091,32 +953,20 @@ type Client struct {
 	}
 }
 
-// NewClient initializes a new Manglekit Client with the provided options.
-// It sets up the Policy Engine, Observability (Logging/Tracing), and default configurations.
-//
-// Parameters:
-//   - ctx: The initialization context.
-//   - opts: A variadic list of ClientOption configuration functions.
-//
-// Returns:
-//   - A pointer to the initialized Client, or an error if initialization fails.
 func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	c := &Client{
 		logger: logger.NewDefault(),
-		// Default to HybridMemory with Nop stores
 		agentMemory: NewHybridMemory(core.NopStore{}, core.NopVectorStore{}, core.NopEmbedder{}),
 		registry:    make(map[string]core.Action),
-		failureMode: FailModeClosed, // Default to closed
+		failureMode: FailModeClosed,
 	}
 
-	// Apply options
 	for _, opt := range opts {
 		if err := opt(c); err != nil {
 			return nil, err
 		}
 	}
 
-	// Ensure dependencies (Engine/Tracer) are initialized if JIT init didn't happen
 	if err := ensureDependencies(c); err != nil {
 		return nil, err
 	}
@@ -1124,26 +974,21 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	return c, nil
 }
 
-// NewClientFromFile initializes a Client by loading configuration from a YAML file.
 func NewClientFromFile(ctx context.Context, configPath string, opts ...ClientOption) (*Client, error) {
-	// Load configuration from file
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Prepend WithConfig to opts
 	newOpts := append([]ClientOption{WithConfig(cfg)}, opts...)
 	return NewClient(ctx, newOpts...)
 }
 
-// NewClientFromConfig initializes a Client using a pre-loaded Config object.
 func NewClientFromConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error) {
 	newOpts := append([]ClientOption{WithConfig(cfg)}, opts...)
 	return NewClient(ctx, newOpts...)
 }
 
-// Supervise wraps a raw core.Action in a SupervisedAction.
 func (c *Client) Supervise(action core.Action) core.Action {
 	if c.tracer != nil {
 		return supervisor.NewSupervisedActionWithTracer(action, c.engine, c.tracer, c.failureMode)
@@ -1151,12 +996,10 @@ func (c *Client) Supervise(action core.Action) core.Action {
 	return supervisor.NewSupervisedAction(action, c.engine, c.failureMode)
 }
 
-// Engine returns the underlying policy engine (Evaluator).
 func (c *Client) Engine() core.Evaluator {
 	return c.engine
 }
 
-// LoadFacts allows manually injecting straight Datalog facts into the engine.
 func (c *Client) LoadFacts(facts []string) error {
 	if c.engine == nil {
 		return fmt.Errorf("engine not initialized")
@@ -1164,28 +1007,22 @@ func (c *Client) LoadFacts(facts []string) error {
 	return c.engine.LoadFacts(facts)
 }
 
-// Tracer returns the OpenTelemetry Tracer used by the client.
 func (c *Client) Tracer() trace.Tracer {
 	return c.otelTracer
 }
 
-// Logger returns the configured Logger instance.
 func (c *Client) Logger() core.Logger {
 	return c.logger
 }
 
-// NewDefault initializes a Client with sensible default settings.
 func NewDefault() (*Client, error) {
 	return NewClient(context.Background())
 }
 
-// SetLLM manually configures the TextGenerator (LLM) for the client.
-// This is useful for code-first wiring or when using provider factories.
 func (c *Client) SetLLM(gen core.TextGenerator) {
 	c.llm = gen
 }
 
-// RegisterAction adds an action to the client's internal registry.
 func (c *Client) RegisterAction(name string, action core.Action) {
 	c.registry[name] = action
 	if c.engine != nil {
@@ -1195,7 +1032,6 @@ func (c *Client) RegisterAction(name string, action core.Action) {
 	}
 }
 
-// Shutdown cleans up resources used by the client.
 func (c *Client) Shutdown(ctx context.Context) error {
 	if c.shutdownFunc != nil {
 		return c.shutdownFunc(ctx)
@@ -1203,564 +1039,418 @@ func (c *Client) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// Memory returns the active memory provider (if any).
 func (c *Client) Memory() core.AgentMemory {
 	return c.agentMemory
 }
 ```
+
 ---
-## [sdk/execute_typed.go]
-```go
-package sdk
 
-import (
-	"context"
-	"encoding/json"
-	"fmt"
-)
-
-// Execute runs a typed action against the client.
-// It guarantees that the input matches TIn and attempts to convert the output to TOut.
-func Execute[TIn any, TOut any](
-	ctx context.Context,
-	c *Client,
-	handle TypedAction[TIn, TOut],
-	input TIn,
-) (TOut, error) {
-	var zero TOut
-
-	// 1. Delegate to the untyped engine
-	// The engine works with core.Envelope and dynamic types.
-	env, err := c.ExecuteByName(ctx, handle.Name, input)
-	if err != nil {
-		return zero, err
-	}
-
-	// 2. Type Assertion (Fast Path)
-	// If the payload is already the correct pointer or struct, return it.
-	if out, ok := env.Payload.(TOut); ok {
-		return out, nil
-	}
-
-	// 3. Conversion (Slow Path)
-	// If the payload is map[string]any (e.g. from JSON/HTTP), we need to convert it to TOut.
-	// We use JSON round-trip as a robust fallback.
-	return convertPayload[TOut](env.Payload)
-}
-
-// convertPayload attempts to convert any payload into T.
-func convertPayload[T any](input any) (T, error) {
-	var result T
-
-	// Quick check for nil
-	if input == nil {
-		return result, nil
-	}
-
-	// Marshal to JSON
-	bytes, err := json.Marshal(input)
-	if err != nil {
-		return result, fmt.Errorf("failed to marshal payload for type conversion: %w", err)
-	}
-
-	// Unmarshal to Target Type
-	if err := json.Unmarshal(bytes, &result); err != nil {
-		return result, fmt.Errorf("failed to unmarshal payload to target type %T: %w", result, err)
-	}
-
-	return result, nil
-}
-```
----
-## [sdk/client_execute.go]
-```go
-package sdk
-
-import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"reflect"
-
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/supervisor"
-)
-
-// ExecuteByName executes a named action within the governance loop.
-func (c *Client) ExecuteByName(ctx context.Context, actionName string, payload any, opts ...ExecuteOption) (core.Envelope, error) {
-	// Find the action in the registry
-	action, ok := c.registry[actionName]
-	if !ok {
-		return core.Envelope{}, fmt.Errorf("action not found: %s", actionName)
-	}
-
-	// Apply execute options
-	env := core.NewEnvelope(payload)
-	for _, opt := range opts {
-		if err := opt(&env); err != nil {
-			return core.Envelope{}, err
-		}
-	}
-
-	// Wrap the action with supervision
-	supervised := c.Supervise(action)
-
-	// Execute the supervised action
-	return supervised.Execute(ctx, env)
-}
-
-// ExecuteOption is a functional option for configuring execution.
-type ExecuteOption func(*core.Envelope) error
-
-// WithSessionID sets the session ID in the envelope metadata.
-func WithSessionID(id string) ExecuteOption {
-	return func(env *core.Envelope) error {
-		env.SetMeta(core.KeySessionID, id)
-		return nil
-	}
-}
-
-// WithTransientMemory sets a flag to skip memory operations.
-func WithTransientMemory() ExecuteOption {
-	return func(env *core.Envelope) error {
-		env.SetMeta("transient_memory", true)
-		return nil
-	}
-}
-
-// WithMetadata sets a metadata key-value pair.
-func WithMetadata(key, value string) ExecuteOption {
-	return func(env *core.Envelope) error {
-		env.SetMeta(key, value)
-		return nil
-	}
-}
-```
----
-## [sdk/generics.go]
-```go
-package sdk
-
-import (
-	"context"
-	"fmt"
-	"reflect"
-
-	"github.com/duynguyendang/manglekit/core"
-)
-
-// Runnable represents a typed action that can be executed by the Client.
-type Runnable[In any, Out any] struct {
-	client *Client
-	name   string
-	fn     func(context.Context, In) (Out, error)
-}
-
-// Define creates a new typed action from a handler function.
-func Define[In any, Out any](
-	c *Client,
-	name string,
-	handler func(context.Context, In) (Out, error),
-) *Runnable[In, Out] {
-	return &Runnable[In, Out]{
-		client: c,
-		name:   name,
-		fn:     handler,
-	}
-}
-
-// Metadata returns the action metadata for the runnable.
-func (r *Runnable[In, Out]) Metadata() core.ActionMetadata {
-	inType := reflect.TypeOf((*Runnable[In, Out])(nil)).In()
-	outType := reflect.TypeOf((*Runnable[In, Out])(nil)).Out()
-
-	return core.ActionMetadata{
-		Name:        r.name,
-		Type:        "typed",
-		InputType:   inType.String(),
-		OutputType:  outType.String(),
-		IsDynamic:   false,
-	}
-}
-
-// Execute implements the core.Action interface for the runnable.
-func (r *Runnable[In, Out]) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	// Type assert the input
-	typedInput, ok := input.Payload.(In)
-	if !ok {
-		return core.Envelope{}, fmt.Errorf("type assertion failed: expected %T, got %T", reflect.TypeOf((*Runnable[In, Out]).nil, reflect.TypeOf(input.Payload))
-	}
-
-	// Call the handler
-	result, err := r.fn(ctx, typedInput)
-	if err != nil {
-		return core.Envelope{}, err
-	}
-
-	// Wrap the result in an envelope
-	return core.NewEnvelope(result), nil
-}
-```
----
-## [sdk/config.go]
-```go
-package sdk
-
-import (
-	"fmt"
-
-	"github.com/duynguyendang/manglekit/config"
-)
-
-// WithConfig sets the configuration for the client.
-func WithConfig(cfg *config.Config) ClientOption {
-	return func(c *Client) error {
-		// Load the blueprint
-		if cfg.BlueprintPath != "" {
-			if c.engine != nil {
-				return fmt.Errorf("engine not initialized for blueprint loading")
-			}
-			if err := c.engine.LoadPolicy(ctx, cfg.BlueprintPath); err != nil {
-				return fmt.Errorf("failed to load blueprint: %w", err)
-			}
-		}
-
-		// Set the blueprint path
-		c.blueprintPath = cfg.BlueprintPath
-
-		// Configure logger
-		if cfg.Logger != nil {
-			c.logger = cfg.Logger
-		}
-
-		// Configure memory
-		if cfg.Memory != nil {
-			c.agentMemory = cfg.Memory
-		}
-
-		// Configure LLM
-		if cfg.LLM != nil {
-			c.llm = cfg.LLM
-		}
-
-		// Configure tracer
-		if cfg.Tracer != nil {
-			c.tracer = cfg.Tracer
-		}
-
-		// Configure failure mode
-		if cfg.FailureMode != "" {
-			c.failureMode = cfg.FailureMode
-		}
-
-		// Configure state manager
-		if cfg.StateManager != nil {
-			c.stateManager = cfg.StateManager
-		}
-
-		return nil
-	}
-```
----
-## [sdk/memory.go]
-```go
-package sdk
-
-import (
-	"context"
-
-	"github.com/duynguyendang/manglekit/core"
-)
-
-// HybridMemory combines a history store and vector store for RAG.
-type HybridMemory struct {
-	historyStore core.State
-	vectorStore  core.VectorStore
-	embedder    core.Embedder
-}
-
-// NewHybridMemory creates a new hybrid memory implementation.
-func NewHybridMemory(historyStore core.State, vectorStore core.VectorStore, embedder core.Embedder) *HybridMemory {
-	return &HybridMemory{
-		historyStore: historyStore,
-		vectorStore:  vectorStore,
-		embedder:    embedder,
-	}
-}
-
-// Read retrieves chat history for a session.
-func (h *HybridMemory) Read(ctx context.Context, sessionID string) ([]core.Message, error) {
-	return h.historyStore.Get(ctx, sessionID)
-}
-
-// Append adds messages to the history.
-func (h *HybridMemory) Append(ctx context.Context, sessionID string, msgs []core.Message) error {
-	return h.historyStore.Set(ctx, sessionID, &core.SessionState{
-		SessionID: sessionID,
-		ActiveEnvelope: core.Envelope{
-			Payload: &core.ConversationHistory{
-				Messages: msgs,
-			},
-		},
-	})
-}
-
-// Recall retrieves relevant context using RAG.
-func (h *HybridMemory) Recall(ctx context.Context, query string) (string, error) {
-	// Check if this is an AgentMemoryWithFacts implementation
-	if withFacts, ok := h.vectorStore.(core.AgentMemoryWithFacts); ok {
-		context, metadata, err := withFacts.RecallWithFacts(ctx, query)
-		if err != nil {
-			return "", err
-		}
-		// Format context with metadata
-		return formatContext(context, metadata)
-	}
-
-	// Embed generates embeddings for the query.
-func (h *HybridMemory) Embed(ctx context.Context, text string) ([]float32, error) {
-	return h.embedder.Embed(ctx, text)
-}
-
-// Memorize stores a query-answer pair for future retrieval.
-func (h *HybridMemory) Memorize(ctx context.Context, query string, answer string) error {
-	// Generate embeddings
-	embeddings, err := h.Embed(ctx, query)
-	if err != nil {
-		return err
-	}
-
-	// Store in vector store (implementation specific)
-	// This is a simplified version - real implementation would store in a vector DB
-	return h.vectorStore.Set(ctx, core.Document{
-		Content:  answer,
-		Vector:  embeddings,
-	})
-}
-
-// Init performs any necessary setup.
-func (h *HybridMemory) Init(ctx context.Context) error {
-	// Initialize history store if needed
-	if init, ok := h.historyStore.(interface{ Init(context.Context) error }); ok {
-		return init.Init(ctx)
-	}
-	// Initialize vector store if needed
-	if init, ok := h.vectorStore.(interface{ Init(context.Context) error }); ok {
-		return init.Init(ctx)
-	}
-	return nil
-}
-
-// formatContext formats the context with optional metadata.
-func formatContext(ctx context.Context, metadata map[string]any) (string, error) {
-	// This is a placeholder - real implementation would format the retrieved documents
-	return "", nil
-}
-```
----
-## [sdk/helpers.go]
-```go
-package sdk
-
-import (
-	"fmt"
-	"reflect"
-
-	"github.com/duynguyendang/manglekit/core"
-)
-
-// Must is a helper that panics on error, useful for initialization.
-func Must[T any](val T, err error) T {
-	if err != nil {
-		panic(fmt.Sprintf("manglekit initialization failed: %v", err))
-	}
-	return val
-}
-
-// ensureDependencies ensures that required dependencies are initialized.
-func ensureDependencies(c *Client) error {
-	// Initialize engine if not set
-	if c.engine == nil {
-		pe, err := engine.New()
-		if err != nil {
-			return fmt.Errorf("failed to initialize engine: %w", err)
-		}
-		c.engine = pe
-	}
-
-	// Initialize tracer if not set
-	if c.tracer == nil {
-		c.tracer = &core.NopTracer{}
-	}
-
-	return nil
-}
-```
----
-## [sdk/loader.go]
-```go
-package sdk
-
-import (
-	"context"
-
-	"github.com/duynguyendang/manglekit/adapters/ai"
-	"github.com/duynguyendang/manglekit/adapters/extractor"
-	"github.com/duynguyendang/manglekit/adapters/func"
-	"github.com/duynguyendang/manglekit/adapters/knowledge"
-	"github.com/duynguyendang/manglekit/adapters/mcp"
-	"github.com/duynguyendang/manglekit/adapters/vector"
-	"github.com/duynguyendang/manglekit/core"
-)
-
-// LoadActions loads actions from various sources into the client registry.
-func LoadActions(ctx context.Context, c *Client, actions ...core.Action) error {
-	for _, action := range actions {
-		c.RegisterAction(action.Metadata().Name, action)
-	}
-	return nil
-}
-
-// LoadAIActions loads AI actions from a text generator.
-func LoadAIActions(ctx context.Context, c *Client, name string, generator core.TextGenerator) error {
-	action := ai.NewLLMAction(name, generator)
-	return LoadActions(ctx, c, action)
-}
-
-// LoadMCPActions loads actions from an MCP server.
-func LoadMCPActions(ctx context.Context, c *Client, loader *mcp.Loader) error {
-	actions, err := loader.Load(ctx)
-	if err != nil {
-		return err
-	}
-	return LoadActions(ctx, c, actions...)
-}
-
-// LoadExtractorActions loads an extractor action.
-func LoadExtractorActions(ctx context.Context, c *Client, name string, generator core.Action, schema any) error {
-	action, err := extractor.New(name, generator, schema)
-	if err != nil {
-		return err
-	}
-	return LoadActions(ctx, c, action)
-}
-
-// LoadVectorActions loads a vector retrieval action.
-func LoadVectorActions(ctx context.Context, c *Client, name string, retriever core.DocumentRetriever) error {
-	action := vector.NewRetrieverAction(name, retriever)
-	return LoadActions(ctx, c, action)
-}
-
-// LoadKnowledgeActions loads knowledge graph facts.
-func LoadKnowledgeActions(ctx context.Context, c *Client, loader *knowledge.RDFLoader) error {
-	facts, err := loader.Parse("")
-	if err != nil {
-		return err
-	}
-	return c.LoadFacts(facts)
-}
-```
----
-## [sdk/executor.go]
-```go
-package sdk
-
-import (
-	"context"
-	"fmt"
-
-	"github.com/duynguyendang/manglekit/core"
-)
-
-// Executor handles the execution of actions with retry and routing logic.
-type Executor struct {
-	client *Client
-}
-
-// NewExecutor creates a new executor.
-func NewExecutor(c *Client) *Executor {
-	return &Executor{client: c}
-}
-
-// Execute executes an action with retry and routing support.
-func (e *Executor) Execute(ctx context.Context, actionName string, payload any, opts ...ExecuteOption) (core.Envelope, error) {
-	// Get the action
-	action, ok := e.client.registry[actionName]
-	if !ok {
-		return core.Envelope{}, fmt.Errorf("action not found: %s", actionName)
-	}
-
-	// Apply execute options
-	env := core.NewEnvelope(payload)
-	for _, opt := range opts {
-		if err := opt(&env); err != nil {
-			return core.Envelope{}, err
-		}
-	}
-
-	// Execute the action (with supervision)
-	result, err := e.client.Supervise(action).Execute(ctx, env)
-	if err != nil {
-		return core.Envelope{}, err
-	}
-
-	// Check for routing decision
-	decision := result.Metadata[core.KeyDecision]
-	switch decision {
-	case core.DecisionRoute:
-		// Route to the next action
-		nextAction, ok := result.Metadata[core.KeyNextStep].(string)
-		if !ok {
-			return core.Envelope{}, fmt.Errorf("route decision without next step")
-		}
-		return e.Execute(ctx, nextAction, payload, opts...)
-	case core.DecisionRetry:
-		// Retry with feedback
-		// Increment retry count and inject feedback
-		retryCount := 0
-		if rc, ok := env.Metadata["retry_count"].(int); ok {
-			retryCount = rc + 1
-		}
-		env.SetMeta("retry_count", retryCount)
-		env.SetFeedback(result.GetFeedback())
-		return e.Execute(ctx, actionName, payload, opts...)
-	}
-
-	return result, nil
-}
-```
----
 ## [sdk/loop.go]
 ```go
 package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
+	"time"
+	"unicode"
 
 	"github.com/duynguyendang/manglekit/core"
+	engine_memory "github.com/duynguyendang/manglekit/internal/engine/memory"
 )
 
-// RunLoop manages the semantic state machine for action execution.
-type RunLoop struct {
-	client *Client
+const (
+	DefaultMaxSteps   = 10
+	DefaultMaxRetries = 3
+	BackoffBase       = 100 * time.Millisecond
+)
+
+func (c *Client) ExecuteByName(ctx context.Context, actionName string, input any, opts ...ExecuteOption) (core.Envelope, error) {
+	params := ExecutionParams{
+		MemoryMode: core.MemoryModeNone,
+	}
+	for _, opt := range opts {
+		opt(&params)
+	}
+	return c.runLoopInternal(ctx, actionName, input, params)
 }
 
-// NewRunLoop creates a new run loop.
-func NewRunLoop(c *Client) *RunLoop {
-	return &RunLoop{client: c}
+func (c *Client) runLoopInternal(ctx context.Context, startAction string, payload any, params ExecutionParams) (core.Envelope, error) {
+	ctx = core.ContextWithLogger(ctx, c.logger)
+
+	switch params.MemoryMode {
+	case core.MemoryModePersist:
+		params.Store = c.agentMemory
+		if params.SessionID != "" {
+			var err error
+			params.CurrentHistory, err = params.Store.Read(ctx, params.SessionID)
+			if err != nil && c.logger != nil {
+				c.logger.Warn("RunLoop failed to hydrate history", "error", err)
+			}
+		}
+	case core.MemoryModeTransient:
+		params.Store = &engine_memory.VolatileStore{}
+	default:
+		params.Store = &core.NopStore{}
+	}
+
+	if c.stateManager != nil && params.SessionID != "" {
+		state, err := c.stateManager.Hydrate(ctx, params.SessionID)
+		if err == nil && state != nil {
+			params.CurrentHistory = state.ExecutionCtx.CurrentHistory
+			params.FeedbackHistory = state.ExecutionCtx.FeedbackHistory
+			params.RetryCount = state.ExecutionCtx.RetryCount
+			payload = state.ActiveEnvelope.Payload
+
+			c.logger.Info("Hydrated session state",
+				"session_id", params.SessionID,
+				"retry_count", params.RetryCount,
+				"history_length", len(params.CurrentHistory))
+		} else if err != nil {
+			c.logger.Warn("Failed to hydrate durable state", "error", err)
+		}
+	}
+
+	currentAction := startAction
+	currentPayload := payload
+
+	for step := 0; step < DefaultMaxSteps; step++ {
+		if err := ctx.Err(); err != nil {
+			return core.Envelope{}, err
+		}
+
+		c.logger.Info("RunLoop step", "step", step, "action", currentAction)
+
+		result, err := c.ExecuteSingleStep(ctx, currentAction, currentPayload, &params)
+		if err != nil {
+			return core.Envelope{}, err
+		}
+
+		decision := result.Metadata[core.KeyDecision]
+		if decision == core.DecisionRoute {
+			next, ok := result.Metadata[core.KeyNextStep].(string)
+			if !ok || next == "" {
+				return core.Envelope{}, fmt.Errorf("route decision missing next_step")
+			}
+
+			c.logger.Info("RunLoop: Routing to next action", "from", currentAction, "to", next, "payload_type", fmt.Sprintf("%T", result.Payload))
+
+			currentAction = next
+			currentPayload = result.Payload
+			continue
+		}
+
+		if decision == core.DecisionRetry {
+			continue
+		}
+
+		if decision == core.DecisionProceed || decision == "" {
+			return result, nil
+		}
+	}
+	return core.Envelope{}, fmt.Errorf("max steps exceeded")
 }
 
-// Run executes the semantic loop for an action.
-func (l *RunLoop) Run(ctx context.Context, actionName string, payload any, opts ...ExecuteOption) (core.Envelope, error) {
-	// Get the executor
-	executor := NewExecutor(l.client)
+func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, payload any, params *ExecutionParams) (core.Envelope, error) {
+	action, ok := c.registry[actionName]
+	if !ok {
+		return core.Envelope{}, fmt.Errorf("action not found: %s", actionName)
+	}
 
-	// Execute with retry and routing
-	return executor.Execute(ctx, actionName, payload, opts...)
+	env := core.NewEnvelope(payload)
+	env.ContentType = action.Metadata().InputContentType
+	c.injectContext(ctx, &env, payload, params)
+
+	result, err := action.Execute(ctx, env)
+	if err != nil {
+		return c.handleExecutionError(ctx, err, payload, params)
+	}
+	params.LastFeedback = ""
+
+	c.updateHistory(ctx, payload, result, params)
+
+	if c.stateManager != nil && params.SessionID != "" {
+		decision := result.Metadata[core.KeyDecision]
+		if decision == "" || decision == core.DecisionProceed {
+			facts, err := c.stateManager.ExtractFacts(ctx, result)
+			if err != nil {
+				c.logger.Warn("Failed to extract facts for checkpoint", "error", err)
+				facts = []string{}
+			}
+
+			state := &core.SessionState{
+				SessionID:      params.SessionID,
+				ActiveEnvelope: result,
+				ExecutionCtx: core.ExecutionContext{
+					RetryCount:      params.RetryCount,
+					FeedbackHistory: params.FeedbackHistory,
+					CurrentHistory: params.CurrentHistory,
+				},
+				LogicalFacts: facts,
+			}
+
+			if err := c.stateManager.Checkpoint(ctx, state); err != nil {
+				c.logger.Warn("Failed to checkpoint state", "error", err)
+			}
+		}
+	}
+
+	return c.handleDecision(ctx, actionName, result, payload, params)
+}
+
+func (c *Client) injectContext(ctx context.Context, env *core.Envelope, payload any, params *ExecutionParams) {
+	if len(params.FeedbackHistory) > 0 {
+		env.Metadata[core.KeyPrevFeedback] = strings.Join(params.FeedbackHistory, "; ")
+	}
+	if params.LastFeedback != "" {
+		env.SetFeedback(params.LastFeedback)
+		env.Metadata["mangle_feedback"] = params.LastFeedback
+	}
+
+	if len(params.CurrentHistory) > 0 && params.MemoryMode != core.MemoryModeNone {
+		env.SetHistory(params.CurrentHistory)
+	}
+
+	c.recallContext(ctx, payload, env)
+
+	for k, v := range params.Metadata {
+		env.Metadata[k] = v
+	}
+
+	for k, v := range core.ContextFacts(ctx) {
+		env.Metadata[k] = v
+	}
+}
+
+func (c *Client) handleExecutionError(ctx context.Context, err error, payload any, params *ExecutionParams) (core.Envelope, error) {
+	var alignErr *core.AlignmentError
+	if !errors.As(err, &alignErr) {
+		return core.Envelope{}, err
+	}
+
+	if params.RetryCount >= DefaultMaxRetries {
+		return core.Envelope{}, fmt.Errorf("max retries exceeded: %w", err)
+	}
+
+	params.RetryCount++
+	params.LastFeedback = alignErr.Message
+
+	c.logger.Warn("RunLoop: Blueprint Alignment Issue", "feedback", params.LastFeedback, "attempt", params.RetryCount)
+
+	if err := c.backoff(ctx, params.RetryCount); err != nil {
+		return core.Envelope{}, err
+	}
+
+	res := core.NewEnvelope(payload)
+	res.Metadata[core.KeyDecision] = core.DecisionRetry
+	return res, nil
+}
+
+func (c *Client) updateHistory(ctx context.Context, payload any, result core.Envelope, params *ExecutionParams) {
+	if params.MemoryMode == core.MemoryModeNone {
+		return
+	}
+
+	newExchange := []core.Message{
+		{Role: "user", Content: safelyStringify(payload)},
+		{Role: "assistant", Content: safelyStringify(result.Payload)},
+	}
+	params.CurrentHistory = append(params.CurrentHistory, newExchange...)
+
+	if params.Store != nil && params.SessionID != "" && params.MemoryMode == core.MemoryModePersist {
+		if err := params.Store.Append(ctx, params.SessionID, params.CurrentHistory); err != nil && c.logger != nil {
+			c.logger.Warn("RunLoop failed to persist history", "error", err)
+		}
+	}
+}
+
+func (c *Client) handleDecision(ctx context.Context, actionName string, result core.Envelope, payload any, params *ExecutionParams) (core.Envelope, error) {
+	decision := result.Metadata[core.KeyDecision]
+
+	if decision == "" || decision == core.DecisionProceed {
+		c.asyncMemorize(payload, result.Payload)
+	}
+
+	c.logger.Debug("RunLoop decision", "decision", decision, "action", actionName)
+
+	switch decision {
+	case core.DecisionRetry:
+		return c.handleRetryDecision(ctx, actionName, result, params)
+
+	case core.DecisionRoute:
+		params.RetryCount = 0
+		params.FeedbackHistory = nil
+		c.logger.Info("RunLoop: Feedback history cleared for new action route")
+		return result, nil
+
+	case core.DecisionProceed, "":
+		return result, nil
+
+	case core.DecisionHalt:
+		return core.Envelope{}, c.buildHaltError(result)
+	}
+
+	return result, nil
+}
+
+func (c *Client) handleRetryDecision(ctx context.Context, actionName string, result core.Envelope, params *ExecutionParams) (core.Envelope, error) {
+	if params.RetryCount >= DefaultMaxRetries {
+		return core.Envelope{}, fmt.Errorf("max retries exceeded for action %s", actionName)
+	}
+
+	hint := result.GetFeedback()
+
+	for _, prevFeedback := range params.FeedbackHistory {
+		if isSemanticallySimilar(prevFeedback, hint) {
+			c.logger.Warn("Semantic Thrashing detected", "new_feedback", hint, "prev_feedback", prevFeedback)
+			return core.Envelope{}, fmt.Errorf("semantic thrashing detected: feedback loop on %q", hint)
+		}
+	}
+
+	params.RetryCount++
+	params.LastFeedback = hint
+	params.FeedbackHistory = append(params.FeedbackHistory, hint)
+
+	c.logger.Warn("RunLoop: RETRY triggered", "feedback", hint)
+
+	if err := c.backoff(ctx, params.RetryCount); err != nil {
+		return core.Envelope{}, err
+	}
+
+	return result, nil
+}
+
+func (c *Client) buildHaltError(result core.Envelope) error {
+	reason := result.Metadata["reason"]
+	if reason == "" {
+		reason = result.Metadata["violation_msg"]
+	}
+	if reason == "" {
+		reason = "blueprint violation"
+	}
+	return fmt.Errorf("action halted by blueprint: %s", reason)
+}
+
+func (c *Client) backoff(ctx context.Context, retryCount int) error {
+	sleepDuration := time.Duration(retryCount) * BackoffBase
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(sleepDuration):
+		return nil
+	}
+}
+
+func (c *Client) recallContext(ctx context.Context, payload any, env *core.Envelope) {
+	if c.agentMemory == nil {
+		return
+	}
+
+	if c.engine != nil {
+		needed, err := c.engine.CheckRequirement(ctx, *env, "memory")
+		if err != nil {
+			c.logger.Warn("Engine check failed, skipping memory", "err", err)
+			return
+		}
+		if !needed {
+			return
+		}
+	}
+
+	var span core.Span
+	if c.tracer != nil {
+		ctx, span = c.tracer.Start(ctx, core.SpanMemory)
+		defer span.End()
+	}
+
+	inputStr := safelyStringify(payload)
+
+	var contextData string
+	var err error
+
+	if memWithFacts, ok := c.agentMemory.(core.AgentMemoryWithFacts); ok {
+		var facts map[string]any
+		contextData, facts, err = memWithFacts.RecallWithFacts(ctx, inputStr)
+		if err == nil && len(facts) > 0 {
+			for k, v := range facts {
+				env.Metadata[k] = v
+			}
+		}
+	} else {
+		contextData, err = c.agentMemory.Recall(ctx, inputStr)
+	}
+
+	if err != nil {
+		c.logger.Warn("Memory Recall failed", "error", err)
+		if span != nil {
+			span.RecordError(err)
+		}
+		return
+	}
+
+	if contextData != "" {
+		env.SetMeta(core.KeyContext, contextData)
+		c.logger.Debug("Injected memory context", "len", len(contextData))
+	}
+}
+
+func (c *Client) asyncMemorize(input any, output any) {
+	if c.agentMemory == nil {
+		return
+	}
+
+	inputStr := safelyStringify(input)
+	outputStr := safelyStringify(output)
+
+	go func(q, a string) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := c.agentMemory.Memorize(ctx, q, a); err != nil {
+			c.logger.Warn("Memory Memorize failed", "error", err)
+		}
+	}(inputStr, outputStr)
+}
+
+func normalizeString(s string) string {
+	if s == "" {
+		return ""
+	}
+
+	builder := strings.Builder{}
+	builder.Grow(len(s))
+
+	for _, r := range s {
+		if unicode.IsPunct(r) {
+			continue
+		}
+		builder.WriteRune(unicode.ToLower(r))
+	}
+
+	return strings.Join(strings.Fields(builder.String()), " ")
+}
+
+func isSemanticallySimilar(s1, s2 string) bool {
+	if s1 == s2 {
+		return true
+	}
+	n1 := normalizeString(s1)
+	n2 := normalizeString(s2)
+	if n1 == n2 {
+		return true
+	}
+	if n1 == "" || n2 == "" {
+		return false
+	}
+	return strings.Contains(n1, n2) || strings.Contains(n2, n1)
 }
 ```
+
 ---
+
 ## [internal/supervisor/supervisor.go]
 ```go
 package supervisor
@@ -1777,15 +1467,6 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
-// SupervisedAction is a decorator that wraps any `core.Action` to enforce governance blueprints.
-// It implements the standard "Trace -> Assess -> Execute -> Reflect" lifecycle.
-//
-// Lifecycle:
-// 1. Trace: Starts an OpenTelemetry span for the operation.
-// 2. Assess: Checks Pre-Check blueprints (e.g., "infeasible(Req)").
-// 3. Execute: Runs the inner action (e.g., calls the LLM).
-// 4. Reflect: Checks Post-Check blueprints (e.g., "infeasible(Output)").
-// 5. Steering: Evaluates steering blueprints for routing or correction.
 type SupervisedAction struct {
 	inner       core.Action
 	engine      core.Evaluator
@@ -1793,15 +1474,6 @@ type SupervisedAction struct {
 	failureMode string
 }
 
-// NewSupervisedAction creates a new SupervisedAction with default settings (no tracing).
-//
-// Parameters:
-//   - action: The inner action to supervise.
-//   - eng: The policy engine (evaluator) to use for governance.
-//   - failureMode: The resilience strategy ("open" or "closed").
-//
-// Returns:
-//   - A new SupervisedAction instance.
 func NewSupervisedAction(action core.Action, eng core.Evaluator, failureMode string) *SupervisedAction {
 	return &SupervisedAction{
 		inner:       action,
@@ -1811,16 +1483,6 @@ func NewSupervisedAction(action core.Action, eng core.Evaluator, failureMode str
 	}
 }
 
-// NewSupervisedActionWithTracer creates a new SupervisedAction with tracing enabled.
-//
-// Parameters:
-//   - action: The inner action to supervise.
-//   - eng: The policy engine (evaluator).
-//   - tracer: The tracer implementation.
-//   - failureMode: "open" (log only on system error) or "closed" (block on system error).
-//
-// Returns:
-//   - A new SupervisedAction instance.
 func NewSupervisedActionWithTracer(action core.Action, eng core.Evaluator, tracer core.Tracer, failureMode string) *SupervisedAction {
 	if tracer == nil {
 		tracer = &core.NopTracer{}
@@ -1833,30 +1495,12 @@ func NewSupervisedActionWithTracer(action core.Action, eng core.Evaluator, trace
 	}
 }
 
-// Execute runs the supervised action, orchestrating the full governance lifecycle.
-//
-// It performs the following steps:
-// 1. Starts a span.
-// 2. Injects the logger into the context.
-// 3. Runs Assess(). If it fails, execution halts (unless Fail-Open).
-// 4. Runs the inner Action.Execute().
-// 5. Propagates taint labels from input to output.
-// 6. Runs Reflect(). If it fails, the result is blocked.
-// 7. Runs EvaluateSteering() to determine next steps (Retry/Route).
-//
-// Parameters:
-//   - ctx: The execution context.
-//   - input: The data envelope.
-//
-// Returns:
-//   - The result envelope (possibly modified by blueprint), or an error.
 func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	// Auto-Tracing (Phase 5)
-	// We use the injected core.Tracer if available, otherwise fallback to global OTel.
 	tracer := g.tracer
 	if tracer == nil {
 		tracer = telemetry.NewOTelTracer(otel.Tracer("manglekit"))
 	}
+
 	meta := g.inner.Metadata()
 
 	ctx, span := tracer.Start(ctx, fmt.Sprintf("Action.%s", meta.Name))
@@ -1872,28 +1516,46 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus("error", err.Error())
-		// Distinguish between Blueprint HALT and System ERROR
 		if g.isAlignmentIssue(err) {
 			span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeHalt})
 			var alignErr *core.AlignmentError
 			if errors.As(err, &alignErr) {
 				attrs := map[string]any{
-					core.KeyFeedback: alignErr.Message,
+					core.AttrRuleID: alignErr.RuleID,
 				}
-				if alignErr.RuleID != "" {
-					attrs[core.AttrRuleID] = alignErr.RuleID
+				if g.isSensitive(input.SecurityLabels) {
+					attrs[core.KeyFeedback] = "[REDACTED_SENSITIVE_DATA]"
+					attrs["mangle.redacted"] = true
+				} else {
+					attrs[core.KeyFeedback] = alignErr.Message
 				}
 				span.SetAttributes(attrs)
 			} else {
+				if g.isSensitive(input.SecurityLabels) {
+					span.SetAttributes(map[string]any{
+						core.KeyFeedback: "[REDACTED_SENSITIVE_DATA]",
+						"mangle.redacted": true,
+					})
+				} else {
+					span.SetAttributes(map[string]any{core.KeyFeedback: err.Error()})
+				}
+			}
+		} else {
+			if g.isSensitive(input.SecurityLabels) {
+				span.SetAttributes(map[string]any{
+					core.KeyFeedback: "[REDACTED_SENSITIVE_DATA]",
+					"mangle.redacted": true,
+				})
+			} else {
 				span.SetAttributes(map[string]any{core.KeyFeedback: err.Error()})
 			}
+		}
 		} else {
 			span.SetAttributes(map[string]any{core.AttrOutcome: "ERROR"})
 		}
 		return core.Envelope{}, err
 	}
 
-	// Success Path: Determine outcome (Proceed/Route/Retry)
 	decision := result.Metadata[core.KeyDecision]
 	switch decision {
 	case core.DecisionRetry:
@@ -1904,7 +1566,7 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 			}
 		}
 	case core.DecisionRoute:
-			span.SetAttributes(map[string]any{core.AttrOutcome: "route"})
+		span.SetAttributes(map[string]any{core.AttrOutcome: "route"})
 		if target, ok := result.Metadata[core.KeyNextStep]; ok {
 			if s, ok := target.(string); ok {
 				span.SetAttributes(map[string]any{core.AttrActionName: s})
@@ -1914,9 +1576,7 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 		span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeProceed})
 	}
 
-	// Inject Retry Count if present
 	if attemptVal, ok := input.Metadata["retry_count"]; ok {
-		// handle both string and int
 		if s, ok := attemptVal.(string); ok {
 			if n, err := strconv.Atoi(s); err == nil {
 				span.SetAttributes(map[string]any{core.AttrAttempt: n})
@@ -1924,85 +1584,71 @@ func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (co
 		} else if n, ok := attemptVal.(int); ok {
 			span.SetAttributes(map[string]any{core.AttrAttempt: n})
 		}
-	}
+		}
 
-	// Set output ID without overwriting the outcome
 	span.SetAttributes(map[string]any{
 		"mangle.output_id": result.ID.String(),
 	})
 	return result, nil
 }
 
-// isAlignmentIssue checks if the error is a wrapped alignment check violation
 func (g *SupervisedAction) isAlignmentIssue(err error) bool {
 	return core.IsAlignmentError(err)
 }
 
-// Metadata delegates to the inner action's Metadata method.
-// This allows the SupervisedAction to transparently represent the underlying capability.
 func (g *SupervisedAction) Metadata() core.ActionMetadata {
 	return g.inner.Metadata()
 }
 
-// shouldBlock determines if the action should be blocked based on the error and failure mode.
 func (g *SupervisedAction) shouldBlock(err error) bool {
 	if err == nil {
 		return false
 	}
-	// Always block on explicit alignment issues
+
 	if core.IsAlignmentError(err) {
 		return true
 	}
-	// Always block on Input/Validation errors (bypass fail-open)
+
 	if core.IsInputError(err) {
 		return true
 	}
-	// If mode is "open" (Fail-Open), allow execution (return false)
-	// Otherwise (default/closed), block execution (return true)
+
 	if g.failureMode == "open" {
 		return false
 	}
+
 	return true
 }
 
-// executeInternal contains the actual execution logic.
-// It orchestrates: Logger Setup → Pre-Check → Config → Execute → Post-Check → Steering.
 func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	// Inject logger and get metadata
 	ctx = core.ContextWithLogger(ctx, g.engine.Logger())
 	logger := core.LoggerFromContext(ctx)
 	meta := g.inner.Metadata()
 
 	logger.Info("Action started", "action", meta.Name, "input_id", input.ID.String())
 
-	// Phase 1: Pre-Check (Assessment)
 	if err := g.performAssessment(ctx, logger, meta, input); err != nil {
 		return core.Envelope{}, err
 	}
 
-	// Phase 2: Dynamic Configuration Injection
 	g.injectDynamicConfig(ctx, logger, &input)
 
-	// Phase 3: Execute Inner Action
 	result, err := g.executeAction(ctx, logger, meta, input)
 	if err != nil {
 		return core.Envelope{}, err
 	}
 
-	// Phase 4: Post-Check (Reflection)
 	validatedResult, err := g.performReflection(ctx, logger, meta, result)
 	if err != nil {
 		return core.Envelope{}, err
 	}
 
-	// Phase 5: Steering
 	validatedResult = g.applySteering(ctx, logger, meta, validatedResult)
 
 	logger.Info("Action completed", "action", meta.Name, "result", "success")
 	return validatedResult, nil
 }
 
-// performAssessment executes the pre-check phase (blueprint validation of input).
 func (g *SupervisedAction) performAssessment(ctx context.Context, logger core.Logger, meta core.ActionMetadata, input core.Envelope) error {
 	if err := g.engine.Assess(ctx, meta, input); err != nil {
 		if g.shouldBlock(err) {
@@ -2013,13 +1659,12 @@ func (g *SupervisedAction) performAssessment(ctx context.Context, logger core.Lo
 			logger.Warn(msg, core.AttrActionName, meta.Name, "error", err.Error())
 			return fmt.Errorf("%s: %w", msg, err)
 		}
-		// Fail-Open
+
 		logger.Warn("engine assessment failed but Fail-Open active. Proceeding.", "error", err)
 	}
 	return nil
 }
 
-// injectDynamicConfig queries the engine for configuration overrides and injects them into input metadata.
 func (g *SupervisedAction) injectDynamicConfig(ctx context.Context, logger core.Logger, input *core.Envelope) {
 	config, err := g.engine.GetActionConfig(ctx, *input)
 	if err != nil {
@@ -2039,24 +1684,19 @@ func (g *SupervisedAction) injectDynamicConfig(ctx context.Context, logger core.
 	}
 }
 
-// executeAction runs the inner action with context propagation and security label inheritance.
 func (g *SupervisedAction) executeAction(ctx context.Context, logger core.Logger, meta core.ActionMetadata, input core.Envelope) (core.Envelope, error) {
-	// Context Propagation: set input ID as parent
 	childCtx := core.WithParentID(ctx, input.ID.String())
 
-	// Execute
 	result, err := g.inner.Execute(childCtx, input)
 	if err != nil {
 		logger.Error("action execution failed", core.AttrActionName, meta.Name, "error", err.Error())
 		return core.Envelope{}, fmt.Errorf("action execution failed: %w", err)
 	}
 
-	// Security label propagation
 	if len(input.SecurityLabels) > 0 {
 		result.MergeLabels(input.SecurityLabels)
 	}
 
-	// Link output to input
 	if result.Metadata == nil {
 		result.Metadata = make(map[string]any)
 	}
@@ -2065,7 +1705,6 @@ func (g *SupervisedAction) executeAction(ctx context.Context, logger core.Logger
 	return result, nil
 }
 
-// performReflection executes the post-check phase (blueprint validation of output).
 func (g *SupervisedAction) performReflection(ctx context.Context, logger core.Logger, meta core.ActionMetadata, result core.Envelope) (core.Envelope, error) {
 	validatedResult, err := g.engine.Reflect(ctx, meta, result)
 	if err != nil {
@@ -2077,24 +1716,21 @@ func (g *SupervisedAction) performReflection(ctx context.Context, logger core.Lo
 			logger.Warn(msg, "action", meta.Name, "error", err.Error())
 			return core.Envelope{}, fmt.Errorf("%s: %w", msg, err)
 		}
-		// Fail-Open: use original result
+
 		logger.Warn("engine reflection failed but Fail-Open active. Proceeding.", "error", err)
 		validatedResult = result
 	}
 	return validatedResult, nil
 }
 
-// applySteering evaluates steering decisions and stamps metadata.
 func (g *SupervisedAction) applySteering(ctx context.Context, logger core.Logger, meta core.ActionMetadata, result core.Envelope) core.Envelope {
 	decision, steeringMeta, err := g.engine.EvaluateSteering(ctx, result)
 	if err != nil {
 		logger.Warn("steering evaluation failed", "action", meta.Name, "error", err.Error())
-		// Continue with empty decision on steering error
 		decision = ""
 		steeringMeta = nil
 	}
 
-	// Stamp metadata
 	if result.Metadata == nil {
 		result.Metadata = make(map[string]any)
 	}
@@ -2106,7 +1742,6 @@ func (g *SupervisedAction) applySteering(ctx context.Context, logger core.Logger
 	return result
 }
 
-// isSensitive checks if the input envelope contains sensitive security labels.
 func (g *SupervisedAction) isSensitive(labels []string) bool {
 	sensitiveTags := []string{"pii", "secret", "confidential", "auth_token"}
 	for _, l := range labels {
@@ -2116,59 +1751,85 @@ func (g *SupervisedAction) isSensitive(labels []string) bool {
 			}
 		}
 	}
-	}
 	return false
 }
 ```
+
 ---
-## [internal/engine/runtime.go]
+
+## 5. CHANGELOG
+
+### [2026-01-01 07:15:00Z] - Kernel Resync Complete
+Full regeneration of CONTEXT.md with comprehensive codebase analysis:
+- **File Map Updated**: Complete directory tree with directory purpose annotations
+- **Components Documented**: All packages analyzed with responsibilities, structs, and key functions
+- **Critical Path & Data Flow**: Mermaid diagrams for execution sequence and data transformation
+- **Source Code Dump**: Complete source code from core, sdk, internal/engine, and internal/supervisor
+- **Standard Library**: std.dl and planner.dl documented
+- **Core Contracts**: All core interfaces and types fully documented
+- **Engine Logic**: MangleRuntime, PolicyEngine, reflection, and flattening logic captured
+- **Supervisor Pattern**: Full SupervisedAction lifecycle documented
+- **SDK Loop**: Semantic State Machine and retry logic documented
+
+**Files Analyzed:**
+- core/types.go, core/logic.go, core/data.go, core/governance.go
+- sdk/client.go, sdk/loop.go
+- internal/engine/runtime.go, internal/engine/solver.go, internal/engine/reflection.go, internal/engine/flattener.go
+- internal/supervisor/supervisor.go
+- internal/engine/resources/std.dl, internal/engine/resources/planner.dl
+
+---
+
+## 6. KNOWN GAPS & LIMITATIONS
+
+- **PII Detection**: Full string matching for PII keywords is not supported in Mangle v0.3.0. The `string_contains` function is not available, limiting automated PII detection capabilities.
+- **Egress Policy**: Egress policies are not being evaluated in test scenarios because access control policy is blocking requests first. The security labels are being propagated correctly, but egress check happens after access control.
+- **Retry Logic**: The RETRY decision is defined in the standard vocabulary, but the actual retry mechanism with feedback injection needs to be implemented in the RunLoop.
+- **Lineage Tracking**: Explicit lineage recording is minimal; currently handled via context propagation and tracing spans rather than explicit in-memory storage.
+- **Memory Persistence**: Durable state manager exists but full implementation details need verification.
+
+---
+
+## 7. DEPENDENCY RULES
+
+- `supervisor` depends on `engine` and `core`.
+- `engine` depends on `core` and `google/mangle`.
+- `adapters` depend on `core` and external drivers.
+- `core` has NO dependencies.
+
+---
+
+## 8. EXAMPLES & PATTERNS
+
+### Example: Transitive Access Control
+```prolog
+% User can access Doc if:
+% - User is a member of a Group
+% - Group owns a Project
+% - Project contains Doc
+can_access(User, Doc) :-
+    member_of(User, Group),
+    owns(Group, Project),
+    contains(Project, Doc).
+```
+
+### Example: Security Label Propagation
 ```go
-package engine
-
-import (
-	"errors"
-	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
-	"sync"
-
-	"github.com/google/mangle/analysis"
-	"github.com/google/mangle/ast"
-	"github.com/google/mangle/engine"
-	"github.com/google/mangle/factstore"
-	"github.com/google/mangle/parse"
-)
-
-// MangleRuntime encapsulates the Google Mangle Datalog engine.
-type MangleRuntime struct {
-	mu sync.RWMutex
-
-	// State fields (protected by mu)
-	programInfo   *analysis.ProgramInfo
-	strata        []analysis.Nodeset
-	predToStratum map[ast.PredicateSym]int
-	baseFactStore factstore.SimpleInMemoryStore
-	ruleUnits     []parse.SourceUnit
-	ready         bool // Flag to indicate if the runtime is initialized
+// CustomHybridMemory.RecallWithFacts() injects security labels
+switch id {
+case "doc_project_x", "doc_project_x_spec":
+    securityLabels = append(securityLabels, "TOP_SECRET")
+case "doc_project_y":
+    securityLabels = append(securityLabels, "CONFIDENTIAL")
+case "doc_remote_work":
+    securityLabels = append(securityLabels, "PUBLIC")
 }
+```
 
-// NewMangleRuntime initializes a new, empty MangleRuntime.
-func NewMangleRuntime() *MangleRuntime {
-	return &MangleRuntime{
-		predToStratum: make(map[ast.PredicateSym]int),
-		baseFactStore: factstore.NewSimpleInMemoryStore(),
-			ready:         false,
-	}
-}
+---
 
-// Load loads Datalog rules and facts from the specified path.
-// CRITICAL CHANGE: This REPLACES the current program state.
-func (r *MangleRuntime) Load(path string) error {
-	if path == "" {
-		return fmt.Errorf("path cannot be empty")
-	}
+## 9. TESTING NOTES
 
-	// 1. Resolve files (I/O
+- Use `go run examples/hybrid_rag/main.go` to test the enhanced system
+- The MockEmbedder returns `{0.9, 0.1}` for queries containing "launch" or "Project X"
+- All test scenarios use the same query "What are the launch codes for Project X?" to test access control

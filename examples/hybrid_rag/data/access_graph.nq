@@ -1,2 +1,33 @@
+# ==========================================
+# Enhanced Access Control Knowledge Graph
+# Multi-layered hierarchy for transitive access control
+# ==========================================
+
+# --- User to Group Relationships ---
+<group_research> <contains_user> "user_alice" .
+<group_research> <contains_user> "user_bob" .
+<group_junior> <contains_user> "user_charlie" .
+<group_senior> <contains_user> "user_diana" .
+
+# --- Group to Project Ownership ---
+<group_research> <owns_project> "project_x" .
+<group_research> <owns_project> "project_y" .
+<group_senior> <owns_project> "project_x" .
+<group_junior> <owns_project> "project_y" .
+
+# --- Project to Document Nesting ---
+<project_x> <contains_doc> "doc_project_x" .
+<project_x> <contains_doc> "doc_project_x_spec" .
+<project_y> <contains_doc> "doc_project_y" .
+
+# --- Document Security Levels ---
 <doc_project_x> <requires_clearance> "level_3" .
+<doc_project_x_spec> <requires_clearance> "level_3" .
+<doc_project_y> <requires_clearance> "level_2" .
 <doc_remote_work> <requires_clearance> "public" .
+
+# --- Document Security Labels (for taint tracking) ---
+<doc_project_x> <has_label> "TOP_SECRET" .
+<doc_project_x_spec> <has_label> "TOP_SECRET" .
+<doc_project_y> <has_label> "CONFIDENTIAL" .
+<doc_remote_work> <has_label> "PUBLIC" .
