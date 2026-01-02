@@ -11,7 +11,7 @@ import (
 	function "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/adapters/vector"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/providers/google"
+	"github.com/duynguyendang/manglekit/providers/openai"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/joho/godotenv"
 )
@@ -139,18 +139,18 @@ func main() {
 
 	// 1. Setup Components
 	var embedder core.Embedder
-	apiKey := os.Getenv("GOOGLE_API_KEY")
+	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		if os.Getenv("GO_TEST") == "" {
-			fmt.Println("Warning: GOOGLE_API_KEY not set, using Mock Embedder")
+			fmt.Println("Warning: OPENAI_API_KEY not set, using Mock Embedder")
 		}
 		embedder = &MockEmbedder{}
 	} else {
-		g, err := google.NewEmbedder(ctx, apiKey, "text-embedding-004")
+		o, err := openai.NewEmbedder(apiKey, "", "text-embedding-3-small")
 		if err != nil {
-			log.Fatalf("Failed to init Google Embedder: %v", err)
+			log.Fatalf("Failed to init OpenAI Embedder: %v", err)
 		}
-		embedder = g
+		embedder = o
 	}
 
 	// Vector Store

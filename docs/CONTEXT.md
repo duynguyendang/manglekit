@@ -2,7 +2,7 @@
 context_type: kernel_source_dump
 project: manglekit
 language: go, datalog
-last_updated: 2026-01-01T07:50:00Z
+last_updated: 2026-01-02T07:15:00Z
 scan_mode: logic_focused
 ---
 
@@ -43,7 +43,7 @@ scan_mode: logic_focused
 ├── providers/                   # Plugin factories
 │   ├── google/                 # Google GenAI plugin
 │   ├── memory/                 # Memory providers
-│   └── openai/                 # OpenAI plugin
+│   └── openai/                 # OpenAI plugin (LLM & Embeddings)
 ├── sdk/                         # Orchestration layer (Client, Loop, Planner)
 ├── .env.example
 ├── .gitignore
@@ -66,7 +66,7 @@ scan_mode: logic_focused
 **1. Responsibilities:**
 - Defines the system's contract interfaces and types
 - Pure abstract layer with no dependencies
-- Provides constants for metadata keys, decisions, and observability
+- Provides constants for metadata keys, decisions and observability
 
 **2. Core Structs:**
 - **Envelope**: Standard data carrier with ID, Payload, Metadata, SecurityLabels, Facts, ContentType
@@ -131,10 +131,22 @@ scan_mode: logic_focused
 - `type RiskEngine interface { CalculateRisk(ctx, input Envelope) (float64, error) }` - Specialized risk calculation
 - `type ResourceMonitor interface { CountTokens(ctx, text string) (int, error); CheckBudget(ctx, key string, cost int) (bool, error) }` - Cost & rate limiting
 
+### Component: core/embedder.go
+**1. Responsibilities:**
+- Defines Embedder interface for text-to-vector conversion
+- Defines VectorStore interface for vector storage and retrieval
+
+**2. Core Structs:**
+- N/A (interface definitions only)
+
+**3. Key Functions:**
+- `type Embedder interface { Embed(ctx context.Context, text string) ([]float32, error); EmbedBatch(ctx context.Context, texts []string) ([][]float32, error); Dimension() int }` - Defines contract for text embedding
+- `type VectorStore interface { Upsert(ctx context.Context, id string, content string) error; Search(ctx context.Context, query string, topK int) ([]string, error); Get(ctx context.Context, id string) (string, error) }` - Defines contract for vector storage
+
 ### Component: sdk/client.go
 **1. Responsibilities:**
 - Primary entry point for Manglekit system
-- Manages governance kernel, blueprints, observability, and action execution
+- Manages governance kernel, blueprints, observability and action execution
 - Handles configuration loading and dependency initialization
 
 **2. Core Structs:**
@@ -192,7 +204,7 @@ scan_mode: logic_focused
 **3. Key Functions:**
 - `func NewMangleRuntime() *MangleRuntime` - Initializes a new, empty MangleRuntime
 - `func (r *MangleRuntime) Load(path string) error` - Loads Datalog rules and facts from specified path (REPLACES current program state)
-- `func (r *MangleRuntime) LoadFromSource(source string) error` - Parses and loads full Datalog program from a string (REPLACES current state)
+- `func (r *MangleRuntime) LoadFromSource(source string) error` - Parses and loads full Datalog program from a string (REPLACES current program state)
 - `func (r *MangleRuntime) LoadFacts(facts []string) error` - Injects a list of raw Datalog fact strings into runtime's base knowledge
 - `func (r *MangleRuntime) LoadFromString(rule string) error` - Parses and loads Datalog from string (alias for LoadFromSource)
 - `func (r *MangleRuntime) AddPolicy(source string) error` - Adds new rules to existing program state (Incremental Loading)
@@ -405,10 +417,17 @@ scan_mode: logic_focused
 
 ### Component: providers/openai
 **1. Responsibilities:**
-- Initializes OpenAI plugin
+- Initializes OpenAI plugin for LLM generation
+- Provides OpenAI-compatible embedding support
 
 **2. Core Structs:**
-- (Implementation details in openai package)
+- **OpenAIEmbedder**: Implements core.Embedder using OpenAI's embedding API
+
+**3. Key Functions:**
+- `func NewEmbedder(apiKey, baseURL, modelName string) (*OpenAIEmbedder, error)` - Creates new embedder with OpenAI API
+- `func (e *OpenAIEmbedder) Embed(ctx context.Context, text string) ([]float32, error)` - Generates vector for single text
+- `func (e *OpenAIEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error)` - Generates vectors for multiple texts
+- `func (e *OpenAIEmbedder) Dimension() int` - Returns vector dimension (1536 for text-embedding-3-small, 3072 for text-embedding-3-large)
 
 ### Component: providers/memory
 **1. Responsibilities:**
@@ -451,7 +470,7 @@ sequenceDiagram
     
     loop Semantic Loop
         Loop->>Sup: Action.Execute(Envelope)
-    
+        
         rect rgb(240, 240, 240)
             note right of Sup: Governance Lifecycle
             Sup->>Eng: Assess(Input) [Pre-Check]
@@ -886,7 +905,7 @@ Full regeneration of CONTEXT.md with comprehensive codebase analysis:
 - **File Map Updated**: Complete directory tree with directory purpose annotations
 - **Components Documented**: All packages analyzed with responsibilities, structs, and key functions
 - **Critical Path & Data Flow**: Mermaid diagrams for execution sequence and data transformation
-- **Source Code Dump**: Complete source code from core, sdk, internal/engine, and internal/supervisor
+- **Source Code Dump**: Complete source code from core, sdk, internal/engine and internal/supervisor
 - **Standard Library**: std.dl and planner.dl documented
 - **Core Contracts**: All core interfaces and types fully documented
 - **Engine Logic**: MangleRuntime, PolicyEngine, reflection, and flattening logic captured
@@ -899,6 +918,19 @@ Full regeneration of CONTEXT.md with comprehensive codebase analysis:
 - internal/engine/runtime.go, internal/engine/solver.go, internal/engine/reflection.go, internal/engine/flattener.go
 - internal/supervisor/supervisor.go
 - internal/engine/resources/std.dl, internal/engine/resources/planner.dl
+
+### [2026-01-02 07:15:00Z] - OpenAI Embedder Added
+Added OpenAI-compatible embedding support to the providers/openai package:
+- **New File**: `providers/openai/embedder.go` - Implements core.Embedder interface using OpenAI's embedding API
+- **Features**: 
+  - Supports OpenAI embedding models (text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002)
+  - Configurable API key and base URL for OpenAI-compatible endpoints
+  - Batch embedding support for efficiency
+  - Vector dimensions: 1536 (text-embedding-3-small), 3072 (text-embedding-3-large)
+- **Example Updated**: `examples/hybrid_rag/main.go` migrated from Google GenAI embedder to OpenAI embedder
+  - Environment variable changed from `GOOGLE_API_KEY` to `OPENAI_API_KEY`
+  - Default model changed from "text-embedding-004" to "text-embedding-3-small"
+  - Import path updated from `providers/google` to `providers/openai`
 
 ---
 
@@ -956,3 +988,4 @@ case "doc_remote_work":
 - Use `go run examples/hybrid_rag/main.go` to test enhanced system
 - The MockEmbedder returns `{0.9, 0.1}` for queries containing "launch" or "Project X"
 - All test scenarios use the same query "What are the launch codes for Project X?" to test access control
+- Set `OPENAI_API_KEY` environment variable to use real OpenAI embeddings
