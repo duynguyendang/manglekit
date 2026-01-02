@@ -139,14 +139,14 @@ func main() {
 
 	// 1. Setup Components
 	var embedder core.Embedder
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
+	embeddingAPIKey := os.Getenv("OPENAI_EMBEDDING_API_KEY")
+	if embeddingAPIKey == "" {
 		if os.Getenv("GO_TEST") == "" {
-			fmt.Println("Warning: OPENAI_API_KEY not set, using Mock Embedder")
+			fmt.Println("Warning: OPENAI_EMBEDDING_API_KEY not set, using Mock Embedder")
 		}
 		embedder = &MockEmbedder{}
 	} else {
-		o, err := openai.NewEmbedder(apiKey, "", "text-embedding-3-small")
+		o, err := openai.NewEmbedder(embeddingAPIKey, "", "text-embedding-3-small")
 		if err != nil {
 			log.Fatalf("Failed to init OpenAI Embedder: %v", err)
 		}
