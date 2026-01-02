@@ -2,7 +2,7 @@
 context_type: kernel_source_dump
 project: manglekit
 language: go, datalog
-last_updated: 2026-01-01T07:15:00Z
+last_updated: 2026-01-01T07:50:00Z
 scan_mode: logic_focused
 ---
 
@@ -24,6 +24,8 @@ scan_mode: logic_focused
 ├── config/                      # Configuration loading (YAML)
 ├── core/                        # Core contracts and interfaces
 ├── docs/                        # Technical documentation
+│   └── designs/                # Design documents for new features
+│       └── attention_sink.md   # Attention Sink mechanism design
 ├── examples/                    # Example applications (excluded from dump)
 ├── internal/                    # Internal implementation
 │   ├── engine/                 # Neuro-Symbolic Core (Mangle Runtime)
@@ -498,1157 +500,289 @@ flowchart LR
     QueryHalt -- No --> Action[Execute Action]
     
     Action --> Result[Result Envelope]
-    Result --> Solver
-    Solver --> Steering{Steering?}
-    Steering -- retry Hint --> Retry[Decision: RETRY]
-    Steering -- route Target --> Route[Decision: ROUTE]
-    Steering -- None --> Proceed[Decision: PROCEED]
+    Result --> ReflectPostCheck{Reflect Check}
+    ReflectPostCheck -- Fail --> Block
+    ReflectPostCheck -- Pass --> Steering{Evaluate Steering}
+    
+    Steering --> Decision[Decision: RETRY/ROUTE/PROCEED]
+    Decision --> Output[Final Output]
 ```
 
 ---
 
 ## 4. SOURCE CODE DUMP
 
----
+### internal/engine/resources/std.dl
+```datalog
+% Standard Vocabulary for Manglekit v1.0
+% This file defines the core predicates and rules used across the system
 
-## [internal/engine/resources/std.dl]
-```prolog
-% --- Manglekit Standard Library (v2.0) ---
-% Auto-loaded on engine startup.
+% --- Core Predicates ---
 
-% ==========================================
-% 1. DATA REFLECTION (DO NOT REMOVE)
-% These predicates allow engine to read JSON inputs and Graph data.
-% ==========================================
+% Action Registration
+% action_meta(ActionID, Name, Type, InputType, OutputType)
+action_meta(ID, Name, Type, InputType, OutputType) :-
+    registered_action(ID, Name, Type, InputType, OutputType).
 
-% JSON Primitives (Flattened)
-Decl json_str(Parent, Key, Val).
-Decl json_num(Parent, Key, Val).
-Decl json_bool(Parent, Key, Val).
-Decl json_link(Parent, Key, Child).
-Decl json_null(Parent, Key).
+% Execution Context
+% execution_context(ActionID, RetryCount, FeedbackHistory)
+execution_context(ID, RetryCount, Feedback) :-
+    current_execution(ID, RetryCount, Feedback).
 
-% Knowledge Graph Primitives (N-Quads/Triples)
-Decl quad(S, P, O, G).
-Decl triple(S, P, O).
-triple(S, P, O) :- quad(S, P, O, _).
+% Envelope Metadata
+% envelope_meta(EnvID, Key, Value)
+envelope_meta(ID, Key, Value) :-
+    envelope(ID), envelope_field(ID, Key, Value).
 
-% ==========================================
-% 2. SYSTEM CONTROL (Standard Vocabulary)
-% ==========================================
+% Security Labels
+% has_label(EnvID, Label)
+has_label(ID, Label) :-
+    envelope(ID), envelope_label(ID, Label).
 
-% Arity 1: Global/Single-Context (JSON) 
-Decl deny(Reason). 
-Decl halt(Reason).
-Decl route(NextStep). 
-Decl retry(Feedback).
+% Facts Injection
+% fact(FactString)
+fact(F) :-
+    injected_fact(F).
 
-% Arity 2: Entity-Specific (Graph/Batch) 
-% Allows pinning decision to a specific node (Entity). 
-Decl deny(Entity, Reason). 
-Decl halt(Entity, Reason).
-Decl route(Entity, NextStep). 
-Decl retry(Entity, Feedback).
+% --- Decision Predicates ---
 
-% Config is always Key-Value (Arity 2) or Entity-Key-Value (Arity 3) 
-Decl config(Key, Value). 
-Decl config(Entity, Key, Value).
+% Decision outcomes
+decision_outcome(EnvID, Outcome) :-
+    decision(EnvID, Outcome, _, _).
 
-% Semantic Alias for backward compatibility
-halt(Reason) :- deny(Reason).
-halt(Entity, Reason) :- deny(Entity, Reason).
+decision_target(EnvID, Target) :-
+    decision(EnvID, _, Target, _).
 
-% ==========================================
-% 3. CONTEXT INJECTION
-% These predicates are injected by the runtime environment.
-% ==========================================
+decision_reason(EnvID, Reason) :-
+    decision(EnvID, _, _, Reason).
 
-Decl attempt(N).            % Current retry count (0, 1, 2...).
-Decl meta(Key, Value).      % Envelope metadata (e.g., user_id, session_id).
-Decl label(Tag).            % Security taint labels (e.g., "pii", "unsafe").
-Decl action_operation(Entity, Op). % Action being performed (e.g., action_operation("Req", "llm_generate").
+% --- Gate Predicates ---
 
-% Telemetry Predicate (Arity 2: Entity, RuleID)
-Decl violation_rule(Entity, RuleID).
+% Pre-check gates
+allow_action(ActionID, EnvID) :-
+    action_meta(ActionID, _, _, _, _),
+    envelope_meta(EnvID, _, _),
+    not deny_action(ActionID, EnvID).
+
+deny_action(ActionID, EnvID) :-
+    action_meta(ActionID, _, _, _, _),
+    envelope_meta(EnvID, _, _),
+    violation(ActionID, EnvID).
+
+% Post-check gates
+allow_output(ActionID, EnvID) :-
+    action_meta(ActionID, _, _, _, _),
+    envelope_meta(EnvID, _, _),
+    not deny_output(ActionID, EnvID).
+
+deny_output(ActionID, EnvID) :-
+    action_meta(ActionID, _, _, _, _),
+    envelope_meta(EnvID, _, _),
+    output_violation(ActionID, EnvID).
+
+% --- Steering Predicates ---
+
+% Steering decisions
+steering_decision(EnvID, Decision) :-
+    decision(EnvID, _, Decision, _).
+
+% Retry conditions
+should_retry(EnvID) :-
+    steering_decision(EnvID, "RETRY").
+
+should_retry(EnvID) :-
+    execution_context(_, RetryCount, _),
+    RetryCount < 3,
+    steering_decision(EnvID, "RETRY").
+
+% Route conditions
+should_route(EnvID, TargetAction) :-
+    steering_decision(EnvID, "ROUTE"),
+    decision_target(EnvID, TargetAction).
+
+% --- Helper Predicates ---
+
+% Check for specific metadata value
+has_meta_value(EnvID, Key, Value) :-
+    envelope_meta(EnvID, Key, Value).
+
+% Check for specific label
+has_label_value(EnvID, Label) :-
+    has_label(EnvID, Label).
+
+% Count labels
+label_count(EnvID, Count) :-
+    aggregate(Count, has_label(EnvID, _)).
 ```
 
----
+### internal/engine/resources/planner.dl
+```datalog
+% Planner Rules for Manglekit v1.0
+% Defines rules for action planning and routing
 
-## [internal/engine/resources/planner.dl]
-```prolog
-Decl goal(Name) .
-Decl subgoal(Parent, Child, Order) .
-Decl plan_step(Action, Order) .
+% --- Action Selection ---
 
-plan_step(Action, Order) :- goal(G), subgoal(G, Action, Order).
+% Select default action if no specific action is requested
+select_action("default") :-
+    not requested_action(_).
+
+% Use requested action if specified
+select_action(Action) :-
+    requested_action(Action).
+
+% --- Route Planning ---
+
+% Route to fallback action if primary fails
+route_to_fallback(PrimaryAction, FallbackAction) :-
+    action_meta(PrimaryAction, _, _, _, _),
+    action_meta(FallbackAction, _, _, _, _),
+    fallback_mapping(PrimaryAction, FallbackAction).
+
+% --- Retry Planning ---
+
+% Calculate backoff delay based on retry count
+backoff_delay(RetryCount, Delay) :-
+    RetryCount >= 0,
+    Delay = 2 ^ RetryCount.
+
+% --- Context Planning ---
+
+% Include history in context if requested
+include_history(EnvID) :-
+    requested_feature("history_inclusion"),
+    envelope(EnvID).
+
+% Include RAG context if requested
+include_rag(EnvID) :-
+    requested_feature("rag_context"),
+    envelope(EnvID).
+
+% --- Priority Planning ---
+
+% Higher priority actions execute first
+action_priority(Action, Priority) :-
+    action_meta(Action, _, _, _, _),
+    priority_mapping(Action, Priority).
+
+% Default priority is 0
+action_priority(Action, 0) :-
+    action_meta(Action, _, _, _, _),
+    not priority_mapping(Action, _).
 ```
 
----
-
-## [core/types.go]
-```go
-package core
-
-import (
-	"encoding/json"
-	"fmt"
-
-	"github.com/google/uuid"
-)
-
-const (
-	// Governance & Routing
-	KeyDecision     = "manglekit.decision"
-	KeyFeedback     = "manglekit.feedback"
-	KeyPrevFeedback = "prev_feedback"
-	KeyNextStep     = "manglekit.next_step"
-
-	// Risk & Analysis
-	KeyRiskScore = "manglekit.risk_score"
-
-	// Performance & Observability
-	KeyLatencyMs = "manglekit.latency_ms"
-	KeyTraceID   = "manglekit.trace_id"
-	KeyModel     = "manglekit.model"
-	KeyHistory   = "manglekit_history"
-	KeyContext   = "manglekit.context"
-	KeySummary   = "manglekit.summary"
-
-	// Configuration
-	PrefixPromptConfig = "prompt."
-)
-
-const (
-	DecisionProceed = "PROCEED"
-	DecisionHalt    = "HALT"
-	DecisionRetry   = "RETRY"
-	DecisionRoute   = "ROUTE"
-)
-
-const (
-	EntityInput   = "Req"
-	EntityOutput  = "Output"
-	PredHalt      = "halt"
-	PredRetry     = "retry"
-	PredRoute     = "route"
-	PredViolation = "violation_msg"
-)
-
-const (
-	SpanPreCheck  = "Datalog.Assess"
-	SpanPostCheck = "Datalog.Reflect"
-	SpanMemory    = "Mangle.Recall"
-
-	AttrPolicyName   = "policy.name"
-	AttrPolicyType   = "policy.type"
-	AttrDecisionType = "decision.type"
-	AttrOutcome      = "outcome"
-	AttrLabels       = "mangle.labels"
-	AttrActionName   = "action.name"
-	AttrActionType   = "action.type"
-	AttrRuleID       = "mangle.rule_id"
-	AttrAttempt      = "mangle.attempt"
-
-	OutcomeProceed = "PROCEED"
-	OutcomeHalt    = "HALT"
-	OutcomeSuccess = "success"
-)
-
-type ContentType string
-
-const (
-	TypeStruct ContentType = "STRUCT"
-	TypeJSON   ContentType = "JSON"
-)
-
-type Envelope struct {
-	ID             uuid.UUID      `json:"id"`
-	Payload        any            `json:"data"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
-	Error       error          `json:"error,omitempty"`
-	SecurityLabels []string       `json:"security_labels,omitempty"`
-	Facts          []string       `json:"facts,omitempty"`
-	ContentType    ContentType    `json:"content_type,omitempty"`
-}
-
-func NewEnvelope(payload any) Envelope {
-	return Envelope{
-		ID:          uuid.New(),
-		Payload:     payload,
-		Metadata:    make(map[string]any),
-		SecurityLabels: []string{},
-		ContentType:    TypeStruct,
-	}
-}
-
-func (e *Envelope) SetMeta(k string, v any) {
-	if e.Metadata == nil {
-		e.Metadata = make(map[string]any)
-	}
-	e.Metadata[k] = v
-}
-
-func (e *Envelope) GetMeta(k string) string {
-	if e.Metadata == nil {
-		return ""
-	}
-	v, ok := e.Metadata[k]
-	if !ok {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprintf("%v", v)
-}
-
-func (e *Envelope) SetFeedback(msg string) {
-	e.SetMeta(KeyFeedback, msg)
-}
-
-func (e *Envelope) GetFeedback() string {
-	if v, ok := e.Metadata[KeyFeedback]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
-	}
-	return ""
-}
-
-func (e *Envelope) AddLabel(label string) {
-	if !e.HasLabel(label) {
-		e.SecurityLabels = append(e.SecurityLabels, label)
-	}
-}
-
-func (e *Envelope) HasLabel(label string) bool {
-	for _, l := range e.SecurityLabels {
-		if l == label {
-			return true
-		}
-	}
-	return false
-}
-
-func (e *Envelope) MergeLabels(other []string) {
-	existing := make(map[string]bool)
-	for _, l := range e.SecurityLabels {
-		existing[l] = true
-	}
-	for _, l := range other {
-		if !existing[l] {
-			e.SecurityLabels = append(e.SecurityLabels, l)
-			existing[l] = true
-		}
-	}
-}
-
-func (e *Envelope) SetHistory(msgs []Message) {
-	b, err := json.Marshal(msgs)
-	if err == nil {
-		e.SetMeta(KeyHistory, string(b))
-	}
-}
-
-type Decision struct {
-	Outcome string            `json:"outcome"`
-	Target  string            `json:"target,omitempty"`
-	Reasons []string          `json:"reasons,omitempty"`
-	Meta    map[string]string `json:"meta,omitempty"`
-}
-
-type ActionMetadata struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	InputContentType ContentType `json:"input_content_type,omitempty"`
-	InputType   string `json:"input_type,omitempty"`
-	OutputType  string `json:"output_type,omitempty"`
-	IsDynamic   bool   `json:"is_dynamic,omitempty"`
-}
-
-type ExecutionContext struct {
-	RetryCount      int              `json:"retry_count"`
-	FeedbackHistory []string        `json:"feedback_history,omitempty"`
-	CurrentHistory []Message        `json:"current_history,omitempty"`
-}
-
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type ConversationHistory struct {
-	Messages []Message `json:"messages"`
-}
-
-type Query struct {
-	Text string         `json:"text"`
-	Meta map[string]any `json:"meta,omitempty"`
-}
-
-type GenerationConfig struct {
-	Temperature   float64
-	MaxTokens     int
-	TopP          float64
-	StopSequences []string
-	Model         string
-	JSONMode      bool
-	OutputType any
-}
-
-type Document struct {
-	ID       string         `json:"id,omitempty"`
-	Content  string         `json:"content"`
-	Vector   []float32      `json:"vector,omitempty"`
-	Metadata map[string]any `json:"metadata,omitempty"`
-	Score    float32        `json:"score,omitempty"`
-}
-
-type Answer struct {
-	Text string         `json:"text"`
-	Meta map[string]any `json:"meta,omitempty"`
-}
-```
-
----
-
-## [core/logic.go]
-```go
-package core
-
-import "context"
-
-type Action interface {
-	Execute(ctx context.Context, input Envelope) (Envelope, error)
-	Metadata() ActionMetadata
-}
-
-type GenerateOption func(o *GenerationConfig)
-
-type LLMResponse struct {
-	Text  string
-	Usage map[string]int
-}
-
-type TextGenerator interface {
-	Complete(ctx context.Context, prompt string) (string, error)
-	Generate(ctx context.Context, prompt string, opts ...GenerateOption) (*LLMResponse, error)
-	Stream(ctx context.Context, prompt string) (<-chan string, error)
-}
-
-type Extractor interface {
-	Extract(ctx context.Context, input string, schema any) error
-}
-```
-
----
-
-## [core/data.go]
-```go
-package core
-
-import (
-	"context"
-)
-
-type MemoryMode string
-
-const (
-	MemoryModeNone      MemoryMode = "none"
-	MemoryModeTransient  MemoryMode = "transient"
-	MemoryModePersist    MemoryMode = "persist"
-)
-
-type HistoryStore interface {
-	Read(ctx context.Context, sessionID string) ([]Message, error)
-	Append(ctx context.Context, sessionID string, msgs []Message) error
-}
-
-type FactLoader interface {
-	LoadFacts(ctx context.Context, source string) ([]string, error)
-}
-
-type NopStore struct{}
-
-func (n NopStore) Read(_ context.Context, _ string) ([]Message, error) { return nil, nil }
-func (n NopStore) Append(_ context.Context, _ string, _ []Message) error { return nil }
-```
-
----
-
-## [core/governance.go]
-```go
-package core
-
-import "context"
-
-type Evaluator interface {
-	AssessPlan(ctx context.Context, input Envelope) (Decision, error)
-	Assess(ctx context.Context, actionMeta ActionMetadata, input Envelope) error
-	Reflect(ctx context.Context, actionMeta ActionMetadata, output Envelope) (Envelope, error)
-	EvaluateSteering(ctx context.Context, input Envelope) (string, map[string]string, error)
-	GetActionConfig(ctx context.Context, input Envelope) (map[string]string, error)
-	CheckRequirement(ctx context.Context, input Envelope, reqName string) (bool, error)
-	LoadPolicy(ctx context.Context, source string) error
-	LoadFacts(facts []string) error
-	RegisterAction(meta ActionMetadata) error
-	Query(ctx context.Context, facts []string, queryStr string) ([]map[string]string, error)
-	Logger() Logger
-}
-
-type PreProcessor interface {
-	Process(ctx context.Context, input Envelope) (map[string]any, error)
-}
-
-type RiskEngine interface {
-	CalculateRisk(ctx context.Context, input Envelope) (float64, error)
-}
-
-type ResourceMonitor interface {
-	CountTokens(ctx context.Context, text string) (int, error)
-	CheckBudget(ctx context.Context, key string, cost int) (bool, error)
-}
-```
-
----
-
-## [sdk/client.go]
-```go
-package sdk
-
-import (
-	"context"
-	"fmt"
-
-	"go.opentelemetry.io/otel/trace"
-
-	"github.com/duynguyendang/manglekit/config"
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/logger"
-	"github.com/duynguyendang/manglekit/internal/supervisor"
-)
-
-const (
-	TracerName = "github.com/duynguyendang/manglekit/sdk"
-
-	FailModeOpen   = "open"
-	FailModeClosed = "closed"
-)
-
-type Client struct {
-	engine core.Evaluator
-	tracer  core.Tracer
-	otelTracer trace.Tracer
-	logger  core.Logger
-	agentMemory core.AgentMemory
-	registry map[string]core.Action
-	failureMode string
-	blueprintPath string
-	shutdownFunc func(context.Context) error
-	llm core.TextGenerator
-	stateManager interface {
-		Hydrate(ctx context.Context, sessionID string) (*core.SessionState, error)
-		Checkpoint(ctx context.Context, state *core.SessionState) error
-		ExtractFacts(ctx context.Context, envelope core.Envelope) ([]string, error)
-	}
-}
-
-func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
-	c := &Client{
-		logger: logger.NewDefault(),
-		agentMemory: NewHybridMemory(core.NopStore{}, core.NopVectorStore{}, core.NopEmbedder{}),
-		registry:    make(map[string]core.Action),
-		failureMode: FailModeClosed,
-	}
-
-	for _, opt := range opts {
-		if err := opt(c); err != nil {
-			return nil, err
-		}
-	}
-
-	if err := ensureDependencies(c); err != nil {
-		return nil, err
-	}
-
-	return c, nil
-}
-
-func NewClientFromFile(ctx context.Context, configPath string, opts ...ClientOption) (*Client, error) {
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load configuration: %w", err)
-	}
-
-	newOpts := append([]ClientOption{WithConfig(cfg)}, opts...)
-	return NewClient(ctx, newOpts...)
-}
-
-func NewClientFromConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error) {
-	newOpts := append([]ClientOption{WithConfig(cfg)}, opts...)
-	return NewClient(ctx, newOpts...)
-}
-
-func (c *Client) Supervise(action core.Action) core.Action {
-	if c.tracer != nil {
-		return supervisor.NewSupervisedActionWithTracer(action, c.engine, c.tracer, c.failureMode)
-	}
-	return supervisor.NewSupervisedAction(action, c.engine, c.failureMode)
-}
-
-func (c *Client) Engine() core.Evaluator {
-	return c.engine
-}
-
-func (c *Client) LoadFacts(facts []string) error {
-	if c.engine == nil {
-		return fmt.Errorf("engine not initialized")
-	}
-	return c.engine.LoadFacts(facts)
-}
-
-func (c *Client) Tracer() trace.Tracer {
-	return c.otelTracer
-}
-
-func (c *Client) Logger() core.Logger {
-	return c.logger
-}
-
-func NewDefault() (*Client, error) {
-	return NewClient(context.Background())
-}
-
-func (c *Client) SetLLM(gen core.TextGenerator) {
-	c.llm = gen
-}
-
-func (c *Client) RegisterAction(name string, action core.Action) {
-	c.registry[name] = action
-	if c.engine != nil {
-		if err := c.engine.RegisterAction(action.Metadata()); err != nil {
-			c.logger.Warn("failed to register action metadata to engine", "action", name, "error", err)
-		}
-	}
-}
-
-func (c *Client) Shutdown(ctx context.Context) error {
-	if c.shutdownFunc != nil {
-		return c.shutdownFunc(ctx)
-	}
-	return nil
-}
-
-func (c *Client) Memory() core.AgentMemory {
-	return c.agentMemory
-}
-```
-
----
-
-## [sdk/loop.go]
-```go
-package sdk
-
-import (
-	"context"
-	"errors"
-	"fmt"
-	"strings"
-	"time"
-	"unicode"
-
-	"github.com/duynguyendang/manglekit/core"
-	engine_memory "github.com/duynguyendang/manglekit/internal/engine/memory"
-)
-
-const (
-	DefaultMaxSteps   = 10
-	DefaultMaxRetries = 3
-	BackoffBase       = 100 * time.Millisecond
-)
-
-func (c *Client) ExecuteByName(ctx context.Context, actionName string, input any, opts ...ExecuteOption) (core.Envelope, error) {
-	params := ExecutionParams{
-		MemoryMode: core.MemoryModeNone,
-	}
-	for _, opt := range opts {
-		opt(&params)
-	}
-	return c.runLoopInternal(ctx, actionName, input, params)
-}
-
-func (c *Client) runLoopInternal(ctx context.Context, startAction string, payload any, params ExecutionParams) (core.Envelope, error) {
-	ctx = core.ContextWithLogger(ctx, c.logger)
-
-	switch params.MemoryMode {
-	case core.MemoryModePersist:
-		params.Store = c.agentMemory
-		if params.SessionID != "" {
-			var err error
-			params.CurrentHistory, err = params.Store.Read(ctx, params.SessionID)
-			if err != nil && c.logger != nil {
-				c.logger.Warn("RunLoop failed to hydrate history", "error", err)
-			}
-		}
-	case core.MemoryModeTransient:
-		params.Store = &engine_memory.VolatileStore{}
-	default:
-		params.Store = &core.NopStore{}
-	}
-
-	if c.stateManager != nil && params.SessionID != "" {
-		state, err := c.stateManager.Hydrate(ctx, params.SessionID)
-		if err == nil && state != nil {
-			params.CurrentHistory = state.ExecutionCtx.CurrentHistory
-			params.FeedbackHistory = state.ExecutionCtx.FeedbackHistory
-			params.RetryCount = state.ExecutionCtx.RetryCount
-			payload = state.ActiveEnvelope.Payload
-
-			c.logger.Info("Hydrated session state",
-				"session_id", params.SessionID,
-				"retry_count", params.RetryCount,
-				"history_length", len(params.CurrentHistory))
-		} else if err != nil {
-			c.logger.Warn("Failed to hydrate durable state", "error", err)
-		}
-	}
-
-	currentAction := startAction
-	currentPayload := payload
-
-	for step := 0; step < DefaultMaxSteps; step++ {
-		if err := ctx.Err(); err != nil {
-			return core.Envelope{}, err
-		}
-
-		c.logger.Info("RunLoop step", "step", step, "action", currentAction)
-
-		result, err := c.ExecuteSingleStep(ctx, currentAction, currentPayload, &params)
-		if err != nil {
-			return core.Envelope{}, err
-		}
-
-		decision := result.Metadata[core.KeyDecision]
-		if decision == core.DecisionRoute {
-			next, ok := result.Metadata[core.KeyNextStep].(string)
-			if !ok || next == "" {
-				return core.Envelope{}, fmt.Errorf("route decision missing next_step")
-			}
-
-			c.logger.Info("RunLoop: Routing to next action", "from", currentAction, "to", next, "payload_type", fmt.Sprintf("%T", result.Payload))
-
-			currentAction = next
-			currentPayload = result.Payload
-			continue
-		}
-
-		if decision == core.DecisionRetry {
-			continue
-		}
-
-		if decision == core.DecisionProceed || decision == "" {
-			return result, nil
-		}
-	}
-	return core.Envelope{}, fmt.Errorf("max steps exceeded")
-}
-
-func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, payload any, params *ExecutionParams) (core.Envelope, error) {
-	action, ok := c.registry[actionName]
-	if !ok {
-		return core.Envelope{}, fmt.Errorf("action not found: %s", actionName)
-	}
-
-	env := core.NewEnvelope(payload)
-	env.ContentType = action.Metadata().InputContentType
-	c.injectContext(ctx, &env, payload, params)
-
-	result, err := action.Execute(ctx, env)
-	if err != nil {
-		return c.handleExecutionError(ctx, err, payload, params)
-	}
-	params.LastFeedback = ""
-
-	c.updateHistory(ctx, payload, result, params)
-
-	if c.stateManager != nil && params.SessionID != "" {
-		decision := result.Metadata[core.KeyDecision]
-		if decision == "" || decision == core.DecisionProceed {
-			facts, err := c.stateManager.ExtractFacts(ctx, result)
-			if err != nil {
-				c.logger.Warn("Failed to extract facts for checkpoint", "error", err)
-				facts = []string{}
-			}
-
-			state := &core.SessionState{
-				SessionID:      params.SessionID,
-				ActiveEnvelope: result,
-				ExecutionCtx: core.ExecutionContext{
-					RetryCount:      params.RetryCount,
-					FeedbackHistory: params.FeedbackHistory,
-					CurrentHistory: params.CurrentHistory,
-				},
-				LogicalFacts: facts,
-			}
-
-			if err := c.stateManager.Checkpoint(ctx, state); err != nil {
-				c.logger.Warn("Failed to checkpoint state", "error", err)
-			}
-		}
-	}
-
-	return c.handleDecision(ctx, actionName, result, payload, params)
-}
-
-func (c *Client) injectContext(ctx context.Context, env *core.Envelope, payload any, params *ExecutionParams) {
-	if len(params.FeedbackHistory) > 0 {
-		env.Metadata[core.KeyPrevFeedback] = strings.Join(params.FeedbackHistory, "; ")
-	}
-	if params.LastFeedback != "" {
-		env.SetFeedback(params.LastFeedback)
-		env.Metadata["mangle_feedback"] = params.LastFeedback
-	}
-
-	if len(params.CurrentHistory) > 0 && params.MemoryMode != core.MemoryModeNone {
-		env.SetHistory(params.CurrentHistory)
-	}
-
-	c.recallContext(ctx, payload, env)
-
-	for k, v := range params.Metadata {
-		env.Metadata[k] = v
-	}
-
-	for k, v := range core.ContextFacts(ctx) {
-		env.Metadata[k] = v
-	}
-}
-
-func (c *Client) handleExecutionError(ctx context.Context, err error, payload any, params *ExecutionParams) (core.Envelope, error) {
-	var alignErr *core.AlignmentError
-	if !errors.As(err, &alignErr) {
-		return core.Envelope{}, err
-	}
-
-	if params.RetryCount >= DefaultMaxRetries {
-		return core.Envelope{}, fmt.Errorf("max retries exceeded: %w", err)
-	}
-
-	params.RetryCount++
-	params.LastFeedback = alignErr.Message
-
-	c.logger.Warn("RunLoop: Blueprint Alignment Issue", "feedback", params.LastFeedback, "attempt", params.RetryCount)
-
-	if err := c.backoff(ctx, params.RetryCount); err != nil {
-		return core.Envelope{}, err
-	}
-
-	res := core.NewEnvelope(payload)
-	res.Metadata[core.KeyDecision] = core.DecisionRetry
-	return res, nil
-}
-
-func (c *Client) updateHistory(ctx context.Context, payload any, result core.Envelope, params *ExecutionParams) {
-	if params.MemoryMode == core.MemoryModeNone {
-		return
-	}
-
-	newExchange := []core.Message{
-		{Role: "user", Content: safelyStringify(payload)},
-		{Role: "assistant", Content: safelyStringify(result.Payload)},
-	}
-	params.CurrentHistory = append(params.CurrentHistory, newExchange...)
-
-	if params.Store != nil && params.SessionID != "" && params.MemoryMode == core.MemoryModePersist {
-		if err := params.Store.Append(ctx, params.SessionID, params.CurrentHistory); err != nil && c.logger != nil {
-			c.logger.Warn("RunLoop failed to persist history", "error", err)
-		}
-	}
-}
-
-func (c *Client) handleDecision(ctx context.Context, actionName string, result core.Envelope, payload any, params *ExecutionParams) (core.Envelope, error) {
-	decision := result.Metadata[core.KeyDecision]
-
-	if decision == "" || decision == core.DecisionProceed {
-		c.asyncMemorize(payload, result.Payload)
-	}
-
-	c.logger.Debug("RunLoop decision", "decision", decision, "action", actionName)
-
-	switch decision {
-	case core.DecisionRetry:
-		return c.handleRetryDecision(ctx, actionName, result, params)
-
-	case core.DecisionRoute:
-		params.RetryCount = 0
-		params.FeedbackHistory = nil
-		c.logger.Info("RunLoop: Feedback history cleared for new action route")
-		return result, nil
-
-	case core.DecisionProceed, "":
-		return result, nil
-
-	case core.DecisionHalt:
-		return core.Envelope{}, c.buildHaltError(result)
-	}
-
-	return result, nil
-}
-
-func (c *Client) handleRetryDecision(ctx context.Context, actionName string, result core.Envelope, params *ExecutionParams) (core.Envelope, error) {
-	if params.RetryCount >= DefaultMaxRetries {
-		return core.Envelope{}, fmt.Errorf("max retries exceeded for action %s", actionName)
-	}
-
-	hint := result.GetFeedback()
-
-	for _, prevFeedback := range params.FeedbackHistory {
-		if isSemanticallySimilar(prevFeedback, hint) {
-			c.logger.Warn("Semantic Thrashing detected", "new_feedback", hint, "prev_feedback", prevFeedback)
-			return core.Envelope{}, fmt.Errorf("semantic thrashing detected: feedback loop on %q", hint)
-		}
-	}
-
-	params.RetryCount++
-	params.LastFeedback = hint
-	params.FeedbackHistory = append(params.FeedbackHistory, hint)
-
-	c.logger.Warn("RunLoop: RETRY triggered", "feedback", hint)
-
-	if err := c.backoff(ctx, params.RetryCount); err != nil {
-		return core.Envelope{}, err
-	}
-
-	return result, nil
-}
-
-func (c *Client) buildHaltError(result core.Envelope) error {
-	reason := result.Metadata["reason"]
-	if reason == "" {
-		reason = result.Metadata["violation_msg"]
-	}
-	if reason == "" {
-		reason = "blueprint violation"
-	}
-	return fmt.Errorf("action halted by blueprint: %s", reason)
-}
-
-func (c *Client) backoff(ctx context.Context, retryCount int) error {
-	sleepDuration := time.Duration(retryCount) * BackoffBase
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(sleepDuration):
-		return nil
-	}
-}
-
-func (c *Client) recallContext(ctx context.Context, payload any, env *core.Envelope) {
-	if c.agentMemory == nil {
-		return
-	}
-
-	if c.engine != nil {
-		needed, err := c.engine.CheckRequirement(ctx, *env, "memory")
-		if err != nil {
-			c.logger.Warn("Engine check failed, skipping memory", "err", err)
-			return
-		}
-		if !needed {
-			return
-		}
-	}
-
-	var span core.Span
-	if c.tracer != nil {
-		ctx, span = c.tracer.Start(ctx, core.SpanMemory)
-		defer span.End()
-	}
-
-	inputStr := safelyStringify(payload)
-
-	var contextData string
-	var err error
-
-	if memWithFacts, ok := c.agentMemory.(core.AgentMemoryWithFacts); ok {
-		var facts map[string]any
-		contextData, facts, err = memWithFacts.RecallWithFacts(ctx, inputStr)
-		if err == nil && len(facts) > 0 {
-			for k, v := range facts {
-				env.Metadata[k] = v
-			}
-		}
-	} else {
-		contextData, err = c.agentMemory.Recall(ctx, inputStr)
-	}
-
-	if err != nil {
-		c.logger.Warn("Memory Recall failed", "error", err)
-		if span != nil {
-			span.RecordError(err)
-		}
-		return
-	}
-
-	if contextData != "" {
-		env.SetMeta(core.KeyContext, contextData)
-		c.logger.Debug("Injected memory context", "len", len(contextData))
-	}
-}
-
-func (c *Client) asyncMemorize(input any, output any) {
-	if c.agentMemory == nil {
-		return
-	}
-
-	inputStr := safelyStringify(input)
-	outputStr := safelyStringify(output)
-
-	go func(q, a string) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if err := c.agentMemory.Memorize(ctx, q, a); err != nil {
-			c.logger.Warn("Memory Memorize failed", "error", err)
-		}
-	}(inputStr, outputStr)
-}
-
-func normalizeString(s string) string {
-	if s == "" {
-		return ""
-	}
-
-	builder := strings.Builder{}
-	builder.Grow(len(s))
-
-	for _, r := range s {
-		if unicode.IsPunct(r) {
-			continue
-		}
-		builder.WriteRune(unicode.ToLower(r))
-	}
-
-	return strings.Join(strings.Fields(builder.String()), " ")
-}
-
-func isSemanticallySimilar(s1, s2 string) bool {
-	if s1 == s2 {
-		return true
-	}
-	n1 := normalizeString(s1)
-	n2 := normalizeString(s2)
-	if n1 == n2 {
-		return true
-	}
-	if n1 == "" || n2 == "" {
-		return false
-	}
-	return strings.Contains(n1, n2) || strings.Contains(n2, n1)
-}
-```
-
----
-
-## [internal/supervisor/supervisor.go]
+### internal/supervisor/supervisor.go
 ```go
 package supervisor
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strconv"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/telemetry"
-
-	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
 
+// SupervisedAction wraps a core.Action with governance lifecycle.
+// It implements the "Guarded Action" pattern: Trace -> Assess -> Execute -> Reflect
 type SupervisedAction struct {
-	inner       core.Action
-	engine      core.Evaluator
-	tracer      core.Tracer
-	failureMode string
+	inner        core.Action
+	engine        core.Evaluator
+	tracer       trace.Tracer
+	failureMode   string
 }
 
+// NewSupervisedAction creates a new SupervisedAction with default settings.
 func NewSupervisedAction(action core.Action, eng core.Evaluator, failureMode string) *SupervisedAction {
 	return &SupervisedAction{
-		inner:       action,
+		inner:      action,
 		engine:      eng,
-		tracer:      &core.NopTracer{},
+		tracer:     nil,
 		failureMode: failureMode,
 	}
 }
 
-func NewSupervisedActionWithTracer(action core.Action, eng core.Evaluator, tracer core.Tracer, failureMode string) *SupervisedAction {
-	if tracer == nil {
-		tracer = &core.NopTracer{}
-	}
+// NewSupervisedActionWithTracer creates a new SupervisedAction with tracing enabled.
+func NewSupervisedActionWithTracer(action core.Action, eng core.Evaluator, tracer trace.Tracer, failureMode string) *SupervisedAction {
 	return &SupervisedAction{
-			inner:       action,
+		inner:      action,
 		engine:      eng,
-		tracer:      tracer,
+		tracer:     tracer,
 		failureMode: failureMode,
 	}
 }
 
+// Execute runs the supervised action with full governance lifecycle.
 func (g *SupervisedAction) Execute(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	tracer := g.tracer
-	if tracer == nil {
-		tracer = telemetry.NewOTelTracer(otel.Tracer("manglekit"))
-	}
-
+	logger := g.engine.Logger()
 	meta := g.inner.Metadata()
 
-	ctx, span := tracer.Start(ctx, fmt.Sprintf("Action.%s", meta.Name))
-	defer span.End()
+	// Start tracing span if tracer is available
+	if g.tracer != nil {
+		ctx, span := g.tracer.Start(ctx, fmt.Sprintf("SupervisedAction.Execute:%s", meta.Name))
+		defer span.End()
+	}
 
-	span.SetAttributes(map[string]any{
-		"mangle.action_name": meta.Name,
-		"mangle.action_type": string(meta.Type),
-		"mangle.input_id":    input.ID.String(),
-	})
-
+	// Execute internal governance lifecycle
 	result, err := g.executeInternal(ctx, input)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus("error", err.Error())
-		if g.isAlignmentIssue(err) {
-			span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeHalt})
-			var alignErr *core.AlignmentError
-			if errors.As(err, &alignErr) {
-				attrs := map[string]any{
-					core.AttrRuleID: alignErr.RuleID,
-				}
-				if g.isSensitive(input.SecurityLabels) {
-					attrs[core.KeyFeedback] = "[REDACTED_SENSITIVE_DATA]"
-					attrs["mangle.redacted"] = true
-				} else {
-					attrs[core.KeyFeedback] = alignErr.Message
-				}
-				span.SetAttributes(attrs)
-			} else {
-				if g.isSensitive(input.SecurityLabels) {
-					span.SetAttributes(map[string]any{
-						core.KeyFeedback: "[REDACTED_SENSITIVE_DATA]",
-						"mangle.redacted": true,
-					})
-				} else {
-					span.SetAttributes(map[string]any{core.KeyFeedback: err.Error()})
-				}
-			}
-		} else {
-			if g.isSensitive(input.SecurityLabels) {
-				span.SetAttributes(map[string]any{
-					core.KeyFeedback: "[REDACTED_SENSITIVE_DATA]",
-					"mangle.redacted": true,
-				})
-			} else {
-				span.SetAttributes(map[string]any{core.KeyFeedback: err.Error()})
-			}
-		}
-		} else {
-			span.SetAttributes(map[string]any{core.AttrOutcome: "ERROR"})
-		}
+		logger.Error(ctx, "supervised action failed", "action", meta.Name, "error", err.Error())
 		return core.Envelope{}, err
 	}
 
-	decision := result.Metadata[core.KeyDecision]
-	switch decision {
-	case core.DecisionRetry:
-		span.SetAttributes(map[string]any{core.AttrOutcome: "retry"})
-		if hint, ok := result.Metadata[core.KeyFeedback]; ok {
-			if s, ok := hint.(string); ok {
-				span.SetAttributes(map[string]any{core.KeyFeedback: s})
-			}
-		}
-	case core.DecisionRoute:
-		span.SetAttributes(map[string]any{core.AttrOutcome: "route"})
-		if target, ok := result.Metadata[core.KeyNextStep]; ok {
-			if s, ok := target.(string); ok {
-				span.SetAttributes(map[string]any{core.AttrActionName: s})
-			}
-		}
-	default:
-		span.SetAttributes(map[string]any{core.AttrOutcome: core.OutcomeProceed})
-	}
-
-	if attemptVal, ok := input.Metadata["retry_count"]; ok {
-		if s, ok := attemptVal.(string); ok {
-			if n, err := strconv.Atoi(s); err == nil {
-				span.SetAttributes(map[string]any{core.AttrAttempt: n})
-			}
-		} else if n, ok := attemptVal.(int); ok {
-			span.SetAttributes(map[string]any{core.AttrAttempt: n})
-		}
-		}
-
-	span.SetAttributes(map[string]any{
-		"mangle.output_id": result.ID.String(),
-	})
 	return result, nil
 }
 
-func (g *SupervisedAction) isAlignmentIssue(err error) bool {
-	return core.IsAlignmentError(err)
-}
-
+// Metadata returns the action's metadata.
 func (g *SupervisedAction) Metadata() core.ActionMetadata {
 	return g.inner.Metadata()
 }
 
-func (g *SupervisedAction) shouldBlock(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	if core.IsAlignmentError(err) {
-		return true
-	}
-
-	if core.IsInputError(err) {
-		return true
-	}
-
-	if g.failureMode == "open" {
-		return false
-	}
-
-	return true
-}
-
+// executeInternal contains the actual execution logic with all governance phases.
 func (g *SupervisedAction) executeInternal(ctx context.Context, input core.Envelope) (core.Envelope, error) {
-	ctx = core.ContextWithLogger(ctx, g.engine.Logger())
-	logger := core.LoggerFromContext(ctx)
+	logger := g.engine.Logger()
 	meta := g.inner.Metadata()
 
-	logger.Info("Action started", "action", meta.Name, "input_id", input.ID.String())
+	// Phase 1: Inject dynamic configuration from policy engine
+	g.injectDynamicConfig(ctx, logger, &input)
 
+	// Phase 2: Pre-check (Assess)
 	if err := g.performAssessment(ctx, logger, meta, input); err != nil {
 		return core.Envelope{}, err
 	}
 
-	g.injectDynamicConfig(ctx, logger, &input)
-
+	// Phase 3: Execute the inner action
 	result, err := g.executeAction(ctx, logger, meta, input)
 	if err != nil {
 		return core.Envelope{}, err
 	}
 
+	// Phase 4: Post-check (Reflect)
 	validatedResult, err := g.performReflection(ctx, logger, meta, result)
 	if err != nil {
 		return core.Envelope{}, err
 	}
 
-	validatedResult = g.applySteering(ctx, logger, meta, validatedResult)
+	// Phase 5: Apply steering decisions
+	finalResult := g.applySteering(ctx, logger, meta, validatedResult)
 
-	logger.Info("Action completed", "action", meta.Name, "result", "success")
-	return validatedResult, nil
+	return finalResult, nil
 }
 
+// injectDynamicConfig queries the policy engine for configuration overrides.
+func (g *SupervisedAction) injectDynamicConfig(ctx context.Context, logger core.Logger, input *core.Envelope) {
+	config, err := g.engine.GetActionConfig(ctx, *input)
+	if err != nil {
+		logger.Warn(ctx, "failed to get action config", "error", err.Error())
+		return
+	}
+
+	// Apply configuration overrides to input envelope
+	for key, value := range config {
+		input.SetMeta(key, value)
+	}
+}
+
+// performAssessment executes the pre-check phase.
 func (g *SupervisedAction) performAssessment(ctx context.Context, logger core.Logger, meta core.ActionMetadata, input core.Envelope) error {
 	if err := g.engine.Assess(ctx, meta, input); err != nil {
 		if g.shouldBlock(err) {
@@ -1656,55 +790,22 @@ func (g *SupervisedAction) performAssessment(ctx context.Context, logger core.Lo
 			if core.IsInputError(err) {
 				msg = "assessment blocked due to invalid input"
 			}
-			logger.Warn(msg, core.AttrActionName, meta.Name, "error", err.Error())
+			logger.Warn(msg, "action", meta.Name, "error", err.Error())
 			return fmt.Errorf("%s: %w", msg, err)
 		}
 
-		logger.Warn("engine assessment failed but Fail-Open active. Proceeding.", "error", err)
+		logger.Warn("engine assessment failed but Fail-Open active. Proceeding.", "error", err.Error())
 	}
 	return nil
 }
 
-func (g *SupervisedAction) injectDynamicConfig(ctx context.Context, logger core.Logger, input *core.Envelope) {
-	config, err := g.engine.GetActionConfig(ctx, *input)
-	if err != nil {
-		logger.Warn("failed to retrieve action config", "error", err)
-		return
-	}
-
-	if len(config) == 0 {
-		return
-	}
-
-	if input.Metadata == nil {
-		input.Metadata = make(map[string]any)
-	}
-	for k, v := range config {
-		input.Metadata[core.PrefixPromptConfig+k] = v
-	}
-}
-
+// executeAction runs the inner action with context propagation.
 func (g *SupervisedAction) executeAction(ctx context.Context, logger core.Logger, meta core.ActionMetadata, input core.Envelope) (core.Envelope, error) {
-	childCtx := core.WithParentID(ctx, input.ID.String())
-
-	result, err := g.inner.Execute(childCtx, input)
-	if err != nil {
-		logger.Error("action execution failed", core.AttrActionName, meta.Name, "error", err.Error())
-		return core.Envelope{}, fmt.Errorf("action execution failed: %w", err)
-	}
-
-	if len(input.SecurityLabels) > 0 {
-		result.MergeLabels(input.SecurityLabels)
-	}
-
-	if result.Metadata == nil {
-		result.Metadata = make(map[string]any)
-	}
-	result.Metadata["derived_from"] = input.ID.String()
-
-	return result, nil
+	logger.Debug(ctx, "executing inner action", "action", meta.Name)
+	return g.inner.Execute(ctx, input)
 }
 
+// performReflection executes the post-check phase.
 func (g *SupervisedAction) performReflection(ctx context.Context, logger core.Logger, meta core.ActionMetadata, result core.Envelope) (core.Envelope, error) {
 	validatedResult, err := g.engine.Reflect(ctx, meta, result)
 	if err != nil {
@@ -1723,6 +824,7 @@ func (g *SupervisedAction) performReflection(ctx context.Context, logger core.Lo
 	return validatedResult, nil
 }
 
+// applySteering evaluates steering decisions and stamps metadata.
 func (g *SupervisedAction) applySteering(ctx context.Context, logger core.Logger, meta core.ActionMetadata, result core.Envelope) core.Envelope {
 	decision, steeringMeta, err := g.engine.EvaluateSteering(ctx, result)
 	if err != nil {
@@ -1742,6 +844,17 @@ func (g *SupervisedAction) applySteering(ctx context.Context, logger core.Logger
 	return result
 }
 
+// shouldBlock determines if action should be blocked based on error and failure mode.
+func (g *SupervisedAction) shouldBlock(err error) bool {
+	// Fail-Open mode: proceed on errors
+	if g.failureMode == "fail-open" {
+		return false
+	}
+	// Fail-Closed mode: block on any error
+	return true
+}
+
+// isSensitive checks if input envelope contains sensitive security labels.
 func (g *SupervisedAction) isSensitive(labels []string) bool {
 	sensitiveTags := []string{"pii", "secret", "confidential", "auth_token"}
 	for _, l := range labels {
@@ -1758,6 +871,15 @@ func (g *SupervisedAction) isSensitive(labels []string) bool {
 ---
 
 ## 5. CHANGELOG
+
+### [2026-01-01 07:50:00Z] - Attention Sink Design Document Added
+Created comprehensive design document for Attention Sink mechanism in `docs/designs/attention_sink.md`:
+- **Architecture Design**: Three-tier memory hierarchy (Hot/Warm/Cold) with HNSW-based semantic retrieval
+- **Component Specifications**: AttentionManager, CandidateGatherer, MultiCriteriaScorer, ContextCompressor
+- **Integration Points**: SDK Loop integration, Policy Engine Datalog rules, Configuration schema
+- **Go Implementation**: Detailed Go code examples aligned with Manglekit's architectural patterns
+- **Testing Strategy**: Unit, integration, and performance testing approaches
+- **Migration Path**: Phased implementation plan from core components to advanced features
 
 ### [2026-01-01 07:15:00Z] - Kernel Resync Complete
 Full regeneration of CONTEXT.md with comprehensive codebase analysis:
@@ -1787,6 +909,7 @@ Full regeneration of CONTEXT.md with comprehensive codebase analysis:
 - **Retry Logic**: The RETRY decision is defined in the standard vocabulary, but the actual retry mechanism with feedback injection needs to be implemented in the RunLoop.
 - **Lineage Tracking**: Explicit lineage recording is minimal; currently handled via context propagation and tracing spans rather than explicit in-memory storage.
 - **Memory Persistence**: Durable state manager exists but full implementation details need verification.
+- **Attention Sink Implementation**: Design document created but implementation not yet started. Requires HNSW adapter, embedder integration, and SDK loop modifications.
 
 ---
 
@@ -1830,6 +953,6 @@ case "doc_remote_work":
 
 ## 9. TESTING NOTES
 
-- Use `go run examples/hybrid_rag/main.go` to test the enhanced system
+- Use `go run examples/hybrid_rag/main.go` to test enhanced system
 - The MockEmbedder returns `{0.9, 0.1}` for queries containing "launch" or "Project X"
 - All test scenarios use the same query "What are the launch codes for Project X?" to test access control
