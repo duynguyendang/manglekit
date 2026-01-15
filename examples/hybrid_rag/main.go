@@ -11,6 +11,7 @@ import (
 	function "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/adapters/vector"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/providers/google"
 	"github.com/duynguyendang/manglekit/providers/openai"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/joho/godotenv"
@@ -139,18 +140,18 @@ func main() {
 
 	// 1. Setup Components
 	var embedder core.Embedder
-	embeddingAPIKey := os.Getenv("OPENAI_EMBEDDING_API_KEY")
-	if embeddingAPIKey == "" {
+	apiKey := os.Getenv("GOOGLE_API_KEY")
+	if apiKey == "" {
 		if os.Getenv("GO_TEST") == "" {
-			fmt.Println("Warning: OPENAI_EMBEDDING_API_KEY not set, using Mock Embedder")
+			fmt.Println("Warning: GOOGLE_API_KEY not set, using Mock Embedder")
 		}
 		embedder = &MockEmbedder{}
 	} else {
-		o, err := openai.NewEmbedder(embeddingAPIKey, "", "text-embedding-3-small")
+		g, err := google.NewEmbedder(ctx, apiKey, "text-embedding-004")
 		if err != nil {
-			log.Fatalf("Failed to init OpenAI Embedder: %v", err)
+			log.Fatalf("Failed to init Google Embedder: %v", err)
 		}
-		embedder = o
+		embedder = g
 	}
 
 	// Vector Store
@@ -186,7 +187,26 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
 	}
-	client.SetLLM(&MockLLM{})
+
+	// Setup OpenAI LLM with base URL support
+	openaiAPIKey := os.Getenv("OPENAI_API_KEY")
+	openaiBaseURL := os.Getenv("OPENAI_BASE_URL")
+	openaiModel := os.Getenv("OPENAI_MODEL")
+	if openaiAPIKey != "" {
+		llm, err := openai.NewLLM(openaiAPIKey, openaiBaseURL, openaiModel)
+		if err != nil {
+			log.Fatalf("Failed to init OpenAI LLM: %v", err)
+		}
+		client.SetLLM(llm)
+		modelName := openaiModel
+		if modelName == "" {
+			modelName = "gpt-3.5-turbo" // default
+		}
+		fmt.Printf("Using OpenAI LLM (model: %s, baseURL: %s)\n", modelName, openaiBaseURL)
+	} else {
+		client.SetLLM(&MockLLM{})
+		fmt.Println("Using Mock LLM (set OPENAI_API_KEY to use OpenAI)")
+	}
 
 	// Load Policy
 	policyData, err := os.ReadFile("examples/hybrid_rag/policy.dl")

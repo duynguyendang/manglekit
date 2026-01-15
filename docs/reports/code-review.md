@@ -1,8 +1,8 @@
 # Manglekit Core Code Review
 
 > **Date:** 2025-12-31
-> **Review Date:** 2025-12-31 (Updated)
-> **Scope:** `core`, `sdk`, `adapters`, `providers`, `internal/supervisor`, `internal/engine`
+> **Review Date:** 2026-01-15 (Updated)
+> **Scope:** `core`, `sdk`, `adapters`, `providers`, `internal/supervisor`, `internal/engine`, `internal/statemanager`
 
 ---
 
@@ -14,13 +14,13 @@ This review identifies **code smells** and areas for improvement across Mangleki
 |----------|-------|-----------|-------------|
 | 🔴 High | 5 | ✅ **5/5 (100%)** | Architectural issues, potential bugs |
 | 🟠 Medium | 8 | ✅ **8/8 (100%)** | Maintainability concerns, duplication |
-| 🟡 Low | 6 | ✅ **6/6 (100%)** | Minor style issues, cleanup opportunities |
+| 🟡 Low | 7 | ✅ **6/7** | Minor style issues, cleanup opportunities |
 
-**Total Progress: ✅ 19/19 issues resolved (100%)**
+**Total Progress: ✅ 19/20 issues resolved (95%)**
 
-**Status:** All issues resolved. Codebase is in excellent condition with no outstanding code smells.
+**Status:** Codebase is in excellent condition. One minor issue identified in new code.
 
-**Latest Review (2025-12-31):** Comprehensive re-review confirms all issues remain resolved. No new issues found.
+**Latest Review (2026-01-15):** Comprehensive re-review confirms all previously identified issues remain resolved. One new issue identified in `providers/openai/llm.go` (missing compile-time interface check).
 
 ---
 
@@ -405,23 +405,27 @@ engine_memory "github.com/duynguyendang/manglekit/internal/engine/memory"
 
 ---
 
-## 🟢 New Findings (2025-12-31)
+## 🟢 New Findings (2026-01-15)
 
-### 20. ✅ Remaining Logger Nil Checks **[ACCEPTABLE]**
+### 20. Missing Compile-Time Interface Check in OpenAI LLM **[NEW - PENDING FIX]**
 
-**Location:** `sdk/loop.go:47-48, 200-201`
+**Location:** [providers/openai/llm.go:11-16](file:///mnt/e/manglekit-wip/providers/openai/llm.go#L11-16)
 
 ```go
-if err != nil && c.logger != nil {
-    c.logger.Warn("RunLoop failed to hydrate history", "error", err)
+type LLM struct {
+    client *openai.Client
+    model  string
 }
 ```
 
-**Issue:** Two remaining nil checks for logger in error handling paths.
+**Issue:** The `LLM` struct implements `core.TextGenerator` interface (Complete, Generate, Stream methods) but lacks a compile-time interface satisfaction check.
 
-**Status:** ✅ **ACCEPTABLE** - These nil checks are defensive programming in error handling paths where we want to avoid panics even though logger should always be initialized. This is acceptable best practice (2025-12-31)
+**Recommendation:** Add compile-time verification:
+```go
+var _ core.TextGenerator = (*LLM)(nil)
+```
 
-**Recommendation:** Keep as-is for robustness.
+**Status:** 🔴 **PENDING FIX** - Identified 2026-01-15 (2026-01-15)
 
 ---
 
@@ -433,13 +437,14 @@ if err != nil && c.logger != nil {
 | 🔴 | Refactor long methods (`ExecuteSingleStep`, `executeInternal`) | ✅ Complete |
 | 🔴 | Add `Query` to `core.Evaluator` interface | ✅ Complete |
 | 🔴 | Fix document ID generation | ✅ Complete |
+| 🔴 | Add compile-time interface check for OpenAI LLM | 🔴 Pending |
 | 🟠 | Define failure mode constants | ✅ Complete |
 | 🟠 | Remove duplicate comment | ✅ Complete |
 | 🟠 | Make RAG parameters configurable | ✅ Complete |
 | 🟠 | Extract shared provider factory logic | ✅ By Design |
 | 🟠 | Fix duplicate outcome attribute | ✅ Complete |
 | 🟡 | Consistent error wrapping | ✅ Verified Compliant |
-| 🟡 | Add interface compile-time checks | ✅ Complete |
+| 🟡 | Add interface compile-time checks | ✅ Complete (except #20) |
 | 🟡 | Use `strings.HasPrefix` | ✅ Complete |
 | 🟡 | Verify godoc coverage | ✅ Verified Compliant |
 | 🟡 | Review import coupling | ✅ Verified Necessary |
@@ -453,6 +458,7 @@ The overall architecture is sound with good separation of concerns:
 - `sdk/` provides orchestration
 - `adapters/` and `providers/` handle external integrations
 - `internal/supervisor/` implements the governance lifecycle
+- `internal/statemanager/` handles durable state persistence and recovery (NEW)
 
 Key positive patterns observed:
 - ✅ Functional options pattern
@@ -463,18 +469,24 @@ Key positive patterns observed:
 - ✅ Consistent error wrapping with `%w`
 - ✅ Proper use of constants for magic strings
 - ✅ Well-documented exported functions
+- ✅ Custom JSON marshaling for session state (NEW)
 
-## Code Quality Metrics (2025-12-31)
+## Code Quality Metrics (2026-01-15)
 
 | Metric | Status | Notes |
 |--------|--------|-------|
 | Error Wrapping Consistency | ✅ Excellent | All errors with underlying causes use `%w` wrapping |
 | Godoc Coverage | ✅ Complete | All exported functions have documentation |
-| Interface Compile-Time Checks | ✅ Complete | All adapters have compile-time checks |
+| Interface Compile-Time Checks | ⚠️ Partial | New OpenAI LLM missing check (issue #20) |
 | Magic String Usage | ✅ Resolved | Constants defined for all magic strings |
 | Code Organization | ✅ Excellent | Clear separation of concerns, well-structured methods |
 | Defensive Programming | ✅ Good | Appropriate nil checks in error paths |
 
 ## Conclusion
 
-The Manglekit codebase is in excellent condition. All 19 identified issues have been resolved, and the comprehensive re-review conducted on 2025-12-31 found no new issues. The code follows Go best practices consistently, with proper error handling, documentation, and architectural patterns.
+The Manglekit codebase is in excellent condition. 19 of 20 identified issues have been resolved. One minor issue remains pending in the newly added `providers/openai/llm.go` file (missing compile-time interface check). The code follows Go best practices consistently, with proper error handling, documentation, and architectural patterns.
+
+**Action Required:** Add compile-time interface check to `providers/openai/llm.go`:
+```go
+var _ core.TextGenerator = (*LLM)(nil)
+```
