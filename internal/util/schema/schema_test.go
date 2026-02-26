@@ -3,7 +3,7 @@ package schema_test
 import (
 	"testing"
 
-	"github.com/duynguyendang/manglekit/internal/util/schema"
+	"github.com/duynguyendang/manglekit-wip/internal/util/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

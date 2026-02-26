@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	aiAdapter "github.com/duynguyendang/manglekit/adapters/ai"
-	"github.com/duynguyendang/manglekit/config"
-	"github.com/duynguyendang/manglekit/core"
+	aiAdapter "github.com/duynguyendang/manglekit-wip/adapters/ai"
+	"github.com/duynguyendang/manglekit-wip/config"
+	"github.com/duynguyendang/manglekit-wip/core"
 )
 
 // HydrateActions iterates through the configuration and instantiates the defined actions.

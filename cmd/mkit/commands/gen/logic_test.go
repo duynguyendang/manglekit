@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit-wip/core"
 )
 
 // MockGenerator captures the prompt and returns a dummy response

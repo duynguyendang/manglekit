@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit-wip/core"
 )
 
 var ErrCircuitOpen = errors.New("circuit breaker is open")

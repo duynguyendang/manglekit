@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit-wip/core"
 )
 
 // VolatileStore implements a thread-safe in-memory store.

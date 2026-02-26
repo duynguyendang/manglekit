@@ -3,7 +3,7 @@ package sdk
 import (
 	"context"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit-wip/core"
 )
 
 // Action returns a handle to a registered action that implements the core.Action interface.

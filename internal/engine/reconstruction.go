@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/duynguyendang/manglekit/internal/engine/parse"
+	"github.com/duynguyendang/manglekit-wip/internal/engine/parse"
 )
 
 // FactIndex organizes facts for O(1) lookup during reconstruction.

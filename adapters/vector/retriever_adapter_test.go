@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit-wip/core"
 )
 
 // mockDocumentRetriever is a test implementation of DocumentRetriever.

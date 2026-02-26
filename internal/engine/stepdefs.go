@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/duynguyendang/manglekit/internal/engine/parse"
+	"github.com/duynguyendang/manglekit-wip/internal/engine/parse"
 )
 
 // StepDefinition defines a mapping from a Gherkin step pattern to a Datalog template.

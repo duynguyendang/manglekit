@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/engine/memory"
+	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit-wip/internal/engine/memory"
 )
 
 func TestVolatileStore(t *testing.T) {

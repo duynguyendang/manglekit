@@ -8,14 +8,14 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/duynguyendang/manglekit/adapters/knowledge"
-	mcpAdapter "github.com/duynguyendang/manglekit/adapters/mcp"
-	"github.com/duynguyendang/manglekit/config"
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/engine"
-	"github.com/duynguyendang/manglekit/internal/logger"
-	"github.com/duynguyendang/manglekit/internal/statemanager"
-	"github.com/duynguyendang/manglekit/internal/telemetry"
+	"github.com/duynguyendang/manglekit-wip/adapters/knowledge"
+	mcpAdapter "github.com/duynguyendang/manglekit-wip/adapters/mcp"
+	"github.com/duynguyendang/manglekit-wip/config"
+	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit-wip/internal/engine"
+	"github.com/duynguyendang/manglekit-wip/internal/logger"
+	"github.com/duynguyendang/manglekit-wip/internal/statemanager"
+	"github.com/duynguyendang/manglekit-wip/internal/telemetry"
 )
 
 // ClientOption configures the Manglekit Client during initialization.

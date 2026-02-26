@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit-wip/core"
 )
 
 type mockAction struct {

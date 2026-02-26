@@ -1,2 +1,0 @@
-Decl allow(Subject, Action, Object).
-allow("any", "any", "any").

@@ -2,32 +2,32 @@
 
 # Manglekit
 
-**Manglekit** is the **Neuro-Symbolic Engine for Go**.
+**Manglekit** is the **Sovereign Neuro-Symbolic Logic Kernel** for Go.
 
 It solves the **Stochastic Runtime Paradox** of modern AI: applications require **Deterministic Reliability** (strict protocols, type safety, logic), but LLMs are inherently **Probabilistic** (creative, non-deterministic).
 
-Manglekit bridges this gap with a **"Power Trio" Architecture**:
-1.  **The Left Brain (Symbolic)**: The Logic Engine (Google Mangle) that holds the **Blueprints** and performs reasoning.
-2.  **The Right Brain (Neural)**: The Execution Runtime (Genkit) that handles **Intuition** and generation.
-3.  **The Supervisor (Strategic)**: The Interceptor that binds them, enforcing safety and steering execution.
-
-It acts as a **Middleware Engine** following the *"Wrap, Don't Build"* philosophy. You bring your capabilities (Genkit flows, tools), and Manglekit wraps them in a **Supervisor** shell that handles safety, self-correction, and flow control.
+Manglekit bridges this gap by formalizing the agent lifecycle into an **OODA Loop** (Observe, Orient, Decide, Verify, Act) protected by a **Zero-Trust Supervisor** architecture:
+1.  **The Brain (Symbolic)**: The Datalog Engine and **Tiered GenePool** that handle verifiable reasoning and Shadow Audits.
+2.  **The Planner (Neural)**: The Execution Runtime (Genkit) that drafts generative plans.
+3.  **The Memory (Silo)**: A persistent BadgerDB storage layer for SPO facts and SQ8-compressed vectors.
 
 ## 🚀 Core Capabilities
 
-1.  **Neuro-Symbolic Steering**: Use logic predicates to dynamically control execution flow (e.g., `next_step("escalate") :- output.confidence < 0.9.`).
-2.  **Self-Correcting Loop**: Implements the **Teacher-Student Protocol**. If the AI violates a Blueprint, the engine feeds the error back as a "Correction" prompt, allowing the agent to fix itself in real-time.
-3.  **Zero-Config Reflection**: **Type-Safety** at the boundary. Your Go structs *are* the schema, automatically mapped to Datalog facts for logical reasoning.
-4.  **Logical Observability**: Trace the *reasoning* process. OpenTelemetry spans show exactly which **Logic Rule** triggered a decision.
+1.  **OODA Loop Execution**: Orchestrates AI workflows using a structural Observe, Orient, Decide, Verify, Act pipeline.
+2.  **Shadow Audit (Self-Correction)**: The *Verify* step mathematically proves AI-generated plans against Tier 0 Axioms in the GenePool using Datalog *before* execution. If a policy is violated, the loop self-corrects using real-time generative feedback.
+3.  **The Silo (Persistent Knowledge)**: Native BadgerDB integration providing high-performance SPOg (Subject-Predicate-Object-Graph) quad indexing and SQ8 vector storage for long-term memory.
+4.  **Source-to-Knowledge Pipeline**: Built-in extractors capable of ingesting Markdown/Code and dynamically inducing Tier 2 Datalog policies.
+5.  **Deep Observability**: Fully integrated trace rendering that links Genkit spans directly to logic rules, showing exactly *why* a decision was made.
 
 ## 🛠️ System Building Blocks
 
 | Component | Role | Responsibility |
 | :--- | :--- | :--- |
 | **SDK** | **Client** | The entry point. Developers use `client.Supervise()` to wrap capabilities. |
-| **Blueprint** | **Logic Store** | Datalog files (`.dl`) defining the "Standard Operating Procedures". |
-| **Supervisor** | **Interceptor** | The middleware that enforces the Blueprint on every action. |
-| **Integrations** | **Drivers** | Universal adapters for LLMs (Genkit), Tools (MCP), and Functions. |
+| **GenePool** | **Logic Store** | Datalog files (`.dl`) defining the Tier 0, 1, and 2 "Standard Operating Procedures". |
+| **The Silo** | **Persistent Memory**| BadgerDB backed SPOg quad fact and SQ8 vector storage. |
+| **Supervisor** | **Interceptor** | The zero-trust gateway that enforces the GenePool on every action. |
+| **Integrations** | **Drivers** | Universal adapters for LLMs (Genkit), Extractors, Tools (MCP), and Functions. |
 
 ## ⚡ Getting Started
 
@@ -114,32 +114,38 @@ violation_msg("Do not mention passwords in jokes.") :- deny(Req).
 
 ## 📦 Architecture
 
-Manglekit v1.0 is a **Neuro-Symbolic AI Kernel** built on three core layers:
+Manglekit v2.0 is a **Sovereign Logic Kernel** built on four core layers:
 
 ### Layer 1: The Client (SDK)
 
 *   **Role**: Orchestrates the entire governance flow
-*   **Responsibilities**: Holds configuration, manages the Blueprint Engine, and coordinates observability.
+*   **Responsibilities**: Holds configuration, manages the Cognitive Loop, and coordinates observability.
 *   **Entry Point**: `manglekit.NewClient()` initializes the kernel with policy rules.
 
-### Layer 2: The Supervisor (Interceptor)
+### Layer 2: The Cognitive Loop (OODA)
 
 *   **Role**: An intelligent orchestration layer that binds logic to execution.
-*   **Lifecycle**: `Trace → Align → Run → Steer`
-    *   **Trace**: Start an observable Logical Span (OpenTelemetry).
-    *   **Align**: Ensure input context matches the Blueprint prerequisites (Input Alignment).
-    *   **Run**: Execute the capability (LLM, Vector Search, API Call).
-    *   **Steer**: Evaluate output against the Blueprint to trigger **Self-Correction (Retry)** or **Routing (Next Step)**.
-*   **Pattern**: Middleware / Decorator for `core.Action`.
+*   **Lifecycle**: `Observe → Orient → Decide → Verify → Act`
+    *   **Observe**: Ingest raw signals and extract logical quad facts (SPOg) and embeddings into The Silo.
+    *   **Orient**: Align input context against The Silo and Tiered Policy Rules.
+    *   **Decide**: Generate an execution plan via the LLM Driver.
+    *   **Verify**: Mathematically prove the execution plan against Datalog GenePool policies (Shadow Audit).
+    *   **Act**: Safely execute capability (Tool, API Call) through the Zero-Trust Supervisor.
 
-### Layer 3: The Blueprint (Logic Store)
+### Layer 3: The Zero-Trust Supervisor (Interceptor)
 
-*   **Role**: The deterministic reasoning layer ("The Left Brain").
+*   **Role**: The mechanical port that physically blocks unverified Actions. 
+*   **Lifecycle**: `Trace → Check Proof → Emit Spans`
+*   **Pattern**: Middleware / Decorator for execution protocols.
+
+### Layer 4: The Brain (Memory & Logic Store)
+
+*   **Role**: The deterministic reasoning and storage layer.
 *   **Components**:
-    *   **Solver**: Evaluates Datalog blueprints against facts.
-    *   **Reflector**: Automatically converts Go structs to Datalog facts (zero-config).
-    *   **Knowledge Base**: Loads static RDF knowledge for reasoning.
-*   **Guarantees**: Fast (microsecond latency), deterministic, testable.
+    *   **The Silo**: Persistent BadgerDB storage for metadata, vectors, and facts (Quads). Supported in `--readonly` and `--lowmem` operating modes.
+    *   **Tiered GenePool**: Segregates policies by trust level limits (Axioms, Governance, AI-induced).
+    *   **Policy Solver**: Robust Datalog Evaluator natively supporting built-in comparison mapping and stratified execution.
+*   **Guarantees**: Fast (microsecond latency), deterministic, testable, verifiable.
 
 ### Universal Adapters
 

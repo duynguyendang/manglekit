@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit-wip/core"
 )
 
 func TestPolicyEngine_AuthorizeWithSimpleDenyRule(t *testing.T) {

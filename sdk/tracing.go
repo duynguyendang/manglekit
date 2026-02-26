@@ -3,7 +3,7 @@ package sdk
 import (
 	"context"
 
-	"github.com/duynguyendang/manglekit/internal/telemetry"
+	"github.com/duynguyendang/manglekit-wip/internal/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"

@@ -1,100 +1,73 @@
-# **Manglekit Blueprint Standard Vocabulary**
+# **Manglekit Blueprint Standard Vocabulary (v2)**
 
-This document defines the reserved predicates (keywords) and standard configuration keys used in Manglekit Blueprints (`.dl`). Sticking to this vocabulary ensures portability across different Agents and consistency in the Neuro-Symbolic Engine.
+This document defines the reserved predicates (keywords) used in Manglekit Blueprints (`.dl`) under the new v2 Hexagonal OODA Architecture. Since Manglekit v2 leverages the Google Mangle Leapfrog-Triejoin evaluator and maps logic directly to prompt context via the `PromptCompiler`, adhering to this vocabulary ensures strict zero-trust governance and accurate Generative steering.
 
 ---
 
-##1. System Predicates (Reserved)These predicates control the **Flow** and **Lifecycle** of the Agent. They are interpreted directly by the Engine's State Machine.
+## 1. System Predicates (Reserved)
+
+These predicates are evaluated by the **Auditor** (Shadow Audit Phase) and the **Prompt Compiler** (Decide Phase).
 
 | Predicate | Signature | Role | Behavior |
 | --- | --- | --- | --- |
-| **`deny`** | `deny(Entity)` | **Blocking** | Stops execution immediately. Marks the `Entity` (Req/Output) as denied. |
-| **`violation_msg`** | `violation_msg(Msg)` | **Error** | Provides the human-readable reason for the denial. |
-| **`violation_rule`** | `violation_rule(ID)` | **Observability** | Provides the specific Rule ID that caused the denial. |
-| **`route`** | `route(NextStep)` | **Steering** | Completes the current step and routes execution to `NextStep` (Action Name). *Replaces legacy `next_step`.* |
-| **`retry`** | `retry(Feedback)` | **Correction** | Triggers a self-correction loop. Sends `Feedback` to the AI and retries the current action. *Replaces legacy `correction`.* |
-| **`config`** | `config(Key, Value)` | **Config** | Injects dynamic configuration into the Action's context. *Mapped to `action_config` in code.* |
+| **`halt`** | `halt(Msg)` | **Blocking (Tier 0/1)** | If derived during the `Verify()` phase, the `SupervisedAction` strictly aborts the OODA loop. The `Msg` provides the violation reason. In Generative translation, compiler emits: `NEVER allow action where: halt(...)`. |
+| **`warn`** | `warn(Msg)` | **Soft Guidance (Tier 2/3)** | Marks the state as `VerifyStatusWarning`. Does not strictly block execution, but triggers the Teacher-Student loop if generated during `Decide`. Compiler emits: `Avoid action if possible: warn(...)`. |
+| **`weight`** | `weight(FactId, W)` | **Context Shaving** | Assigns a confidence float `W` (0.0 - 1.0) to a fact. The `ContextManager` uses this to perform **Intelligent Shaving**, aggressively dropping facts where `W < 0.5` if the token budget exceeds the 24,000 threshold. |
 
 ---
 
-##2. Standard Configuration Keys (`config`)When using `config(Key, Value)`, use these standard keys to ensure your Adapters (Genkit/OpenAI) understand the intent.
+## 2. Dynamic Input Facts (Context)
 
-###2.1. Prompting & Persona (`prompt.*`)Controls *how* the AI speaks or behaves.
-
-| Key | Values (Examples) | Description |
-| --- | --- | --- |
-| `prompt.tone` | `"formal"`, `"friendly"`, `"pirate"` | Sets the tone of voice. |
-| `prompt.lang` | `"en"`, `"vi"`, `"json"` | Forces output language or format. |
-| `prompt.strategy` | `"cot"` (Chain of Thought), `"react"` | Enforces a reasoning strategy. |
-| `prompt.template_id` | `"tpl_sales_v1"`, `"tpl_support_angry"` | IDs mapping to external text files/CMS. |
-| `prompt.safety` | `"strict"`, `"lenient"` | Adjusts safety guardrails in the prompt. |
-
-###2.2. Model Parameters (`llm.*`)Controls the *hyperparameters* of the underlying model.
-
-| Key | Values | Description |
-| --- | --- | --- |
-| `llm.temperature` | `"0.0"` - `"2.0"` | Creativity vs. Determinism. |
-| `llm.model` | `"gpt-4"`, `"gemini-pro"` | Hot-swaps the underlying model. |
-| `llm.max_tokens` | `"1024"`, `"4096"` | Limits output length. |
-| `llm.json_mode` | `"true"`, `"false"` | Forces JSON mode (if supported by provider). |
-
-###2.3. System & Network (`sys.*`)Controls runtime behavior.
-
-| Key | Values | Description |
-| --- | --- | --- |
-| `sys.timeout` | `"30s"`, `"5m"` | Execution timeout override. |
-| `sys.cache` | `"true"`, `"false"` | Enable/Disable semantic caching for this request. |
-| `sys.priority` | `"high"`, `"low"` | Priority for job queues (if async). |
-
----
-
-##3. Input Facts (Context)These predicates are automatically injected by the Engine *into* the Blueprint. You use them in the `BODY` of your rules to make decisions.
+During the **Observe** and **Orient** phases, the `PerceptionPort` and `Proposer` transform external intent into Datalog facts (Atoms) seamlessly injected into the active Frame.
 
 | Predicate | Signature | Description |
 | --- | --- | --- |
-| **`input`** | `input.field_name` | Access fields of the input payload (via Reflection). E.g., `input.amount > 500`. |
-| **`meta`** | `meta(Key, Val)` | Metadata from the Envelope (e.g., User ID, Session ID). |
-| **`attempt`** | `attempt(N)` | Current retry count (starts at 0). Useful for escalating logic on failures. |
-| **`label`** | `label(Tag)` | Security taint labels (e.g., `label("pii")`). |
-| **`action_operation`** | `action_operation(Entity, Name)` | The name of the action being governed. Allows rules to target specific actions (e.g., `action_operation("Req", "chat_agent")`). |
+| **`semantic_similarity`** | `semantic_similarity("Intent", Object)` | MRL vectors (INT8 quantized) matched from `flat_simd` vector store for the current Intent. |
+| **`structural_fact`** | `structural_fact("HardContext", Object)` | N-Quad facts pulled from BadgerDB matching the current graph sandbox. |
+| **`input`** | `input_param(Predicate, Object)` | Flattened struct parameters derived via Zero-Config Reflection using the `mangle` struct tags. |
 
 ---
 
-##4. Blueprint Examples###Example 1: Adaptive Retry Strategy*Scenario: If the AI fails twice, switch to a smarter model and force Chain-of-Thought.*
+## 3. Cognitive Pressure (EAST)
 
-```prolog
-% Attempt > 1 -> Use Chain of Thought
-config("prompt.strategy", "cot") :- attempt(N), N > 1.
+Manglekit v2 does not use linear routing commands like the legacy `route(Target)`.
+Instead, the **Orchestrator** dynamically controls the LLM's Persona and formatting based on Entropic Activation Steering (EAST).
 
-% Attempt > 2 -> Escalation: Switch to smarter model
-config("llm.model", "gpt-4-turbo") :- attempt(N), N > 2.
-
-```
-
-###Example 2: Dynamic Persona based on User Tier*Scenario: VIPs get polite, long answers. Free users get concise answers.*
-
-```prolog
-% VIP User
-config("prompt.tone", "formal") :- meta("user_tier", "vip").
-config("llm.max_tokens", "4000") :- meta("user_tier", "vip").
-
-% Free User
-config("prompt.tone", "concise") :- meta("user_tier", "free").
-config("llm.max_tokens", "100")  :- meta("user_tier", "free").
-
-```
-
-###Example 3: Security Routing*Scenario: If input contains PII, verify via a secure logic step instead of direct LLM.*
-
-```prolog
-% Block unsafe usage
-deny("Cannot send PII to public LLM") :- 
-    label("pii"), 
-    config("llm.model", "public-gpt").
-
-% Route to secure handler
-route("secure_pii_processor") :- label("pii").
-
-```
+If `halt` or `warn` constraints fail consecutively during the Teacher-Student loop:
+1. `LogicSuccess` mathematical metric drops.
+2. `SteeringMagnitude (P)` scales up logarithmically.
+3. If `P > 0.8`, the Kernel injects **Paradox Headers**, forcing highly conservative, deterministic Chain-of-Thought output constraints.
 
 ---
+
+## 4. Blueprint Examples
+
+### Example 1: Tier 0 Kernel Axiom (Strict Security)
+*Scenario: Under no circumstance can the system write to the root namespace.*
+
+```prolog
+% Any action attempting to modify the 'system' namespace is catastrophically blocked.
+halt("Unauthorized System Mutation") :- 
+    input_param("target_namespace", "system").
+```
+
+### Example 2: Tier 2 Learned Heuristic (Soft Guidance)
+*Scenario: AI induced a rule from a Markdown memo: We shouldn't use overly casual tones for enterprise clients.*
+
+```prolog
+% If client is enterprise, try to avoid colloquialisms. Generates a warning if 
+% the content verifier detects violations.
+warn("Casual tone detected for Enterprise Client") :- 
+    input_param("client_tier", "enterprise"),
+    input_param("tone_detected", "slang").
+```
+
+### Example 3: Contextual Weighting
+*Scenario: A memory fragment was recalled, but it's very old. Downgrade its context weight so the ContextManager shaves it first under pressure.*
+
+```prolog
+weight(FactID, 0.3) :-
+    structural_fact("source", FactID),
+    input_param("age_days", Age), 
+    Age > 365.
+```

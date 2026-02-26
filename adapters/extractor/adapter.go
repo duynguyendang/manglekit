@@ -8,8 +8,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/util/schema"
+	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit-wip/internal/util/schema"
 )
 
 // ExtractorAction extracts structured data from text using an LLM.

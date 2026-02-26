@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit-wip/core"
 	"github.com/sashabaranov/go-openai"
 )
 

@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/engine"
+	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit-wip/internal/engine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

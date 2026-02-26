@@ -25,6 +25,11 @@ This table illustrates the evolution from the legacy "Builder/DI" pattern to the
 | **12** | [Unified Governance Gates](https://www.google.com/search?q=%23adr-12-unified-governance-gates) | Integration (v1.2) | Accepted | *Legacy distinct Assess/Validate* |
 | **13** | [Semantic State Machine (The Loop)](https://www.google.com/search?q=%23adr-13-semantic-state-machine-the-loop) | Integration (v1.2) | Accepted | *Legacy linear execution* |
 | **14** | [Native Structured Envelopes](https://www.google.com/search?q=%23adr-14-native-structured-envelopes) | Integration (v1.2) | Accepted | *Legacy JSON text parsing* |
+| **15** | [Unified Persistent Silo (BadgerDB)](https://www.google.com/search?q=%23adr-15-unified-persistent-silo) | Convergence (v2.0) | Accepted | *In-memory volatile state* |
+| **16** | [OODA Loop Cognitive Architecture](https://www.google.com/search?q=%23adr-16-ooda-loop-cognitive-architecture) | Convergence (v2.0) | Accepted | *Basic Semantic Control Loop* |
+| **17** | [Tiered GenePool (Memoex)](https://www.google.com/search?q=%23adr-17-tiered-genepool-memoex) | Convergence (v2.0) | Accepted | *Flat Datalog blueprints* |
+| **18** | [Zero-Trust Supervisor & Logic Contracts](https://www.google.com/search?q=%23adr-18-zero-trust-supervisor) | Convergence (v2.0) | Accepted | *Basic Guard wrapper* |
+| **19** | [Source-to-Knowledge Pipeline](https://www.google.com/search?q=%23adr-19-source-to-knowledge-pipeline) | Convergence (v2.0) | Accepted | *External ingestion dependency* |
 
 -----
 
@@ -259,3 +264,76 @@ Enforce **Structured Generation** contracts:
   * **Component Handlers:** Removed. Replaced by `providers/` packages.
   * **DependencyResolver:** Removed. Replaced by FOP Adapters.
   * **Typed Resolved Structs:** Removed. The SDK now relies on dynamic `core.Envelope` passing rather than rigid compile-time structs for pipeline stages.
+
+-----
+
+## VII. The Convergence (v2.0 - Sovereign Kernel)
+
+*This era marks the integration of the `meblo-wip` persistent storage and the `kronos-v1` OODA loop, transforming Manglekit from an embedded engine into a Sovereign Logic Kernel.*
+
+### ADR 15: Unified Persistent Silo (BadgerDB)
+
+**(Persistent Knowledge and Vectors)**
+
+**Context:**
+Manglekit primarily reasoned over transient context or externally managed databases via basic adapters. For true autonomy, the kernel needs to "remember" across sessions.
+**Decision:**
+Integrate `meb` (BadgerDB-backed SPOg quad datastore) as **The Silo**.
+1. **Fact Storage:** Persist domain quad facts permanently.
+2. **Vector Space:** Integrated SQ8-compressed vector storage.
+3. **Dual Mode:** Support high-throughput ingestion and resource-constrained serving (`--readonly`, `--lowmem`).
+**Rationale:**
+Allows Manglekit to build and maintain its own contextual history (Long-term Memory) without relying entirely on the host application for state injection.
+
+### ADR 16: OODA Loop Cognitive Architecture
+
+**(Formalizing the Agent Lifecycle)**
+
+**Context:**
+The "Semantic State Machine" (ADR 13) handled local retries, but lacked a formal cognitive structure for complex agency.
+**Decision:**
+Adopt the **Observe -> Orient -> Decide -> Verify -> Act** loop from `kronos-v1`.
+1. **Shadow Audit:** Explicitly verify proposed AI plans against Datalog rules *before* execution.
+2. **Trace Rendering:** Output detailed markdown trace artifacts (`traces/plan_[id].md`) for every loop iteration.
+**Rationale:**
+Provides a strict, verifiable operational model that mathematically proves the safety of an agent's intended actions.
+
+### ADR 17: Tiered GenePool (Memoex)
+
+**(Trust-Based Policy Management)**
+
+**Context:**
+Blueprints were loaded as a flat set of Datalog rules, making it hard to manage kernel axioms vs. learned heuristics.
+**Decision:**
+Implement a tiered GenePool system:
+1. **Tier 0 (Kernel):** Immutable axioms (system physics).
+2. **Tier 1 (Admin):** Governance policies (user constraints).
+3. **Tier 2 (AI):** Knowledge Induction (learned strategies parsed from Markdown).
+**Rationale:**
+Categorizes logic by trust level, ensuring AI-induced rules (Tier 2) can never override Kernel safety axioms (Tier 0).
+
+### ADR 18: Zero-Trust Supervisor & Logic Contracts
+
+**(The Final Mechanical Gate)**
+
+**Context:**
+The Guard layer (ADR 4) intercepted actions, but needed stronger declarative enforcement decoupled from Go code.
+**Decision:**
+Implement a **Zero-Trust Supervisor** at the ports layer using declarative **Logic Contracts**.
+1. **Evaluator Enhancement:** Integrate stratified semi-naive evaluation and built-in math predicates.
+2. **Failsafe:** The Supervisor acts as the final gate, blocking catastrophic actions even if the OODA generated plan seems sound, based purely on Datalog proof failures.
+**Rationale:**
+Moves ultimate security responsibility from procedural Go checks into mathematically provable declarative contracts.
+
+### ADR 19: Source-to-Knowledge Pipeline
+
+**(Autonomous Data Ingestion)**
+
+**Context:**
+Getting data into the system required developers to manually write reflection/adapter code for various document types.
+**Decision:**
+Integrate an end-to-end ingestion pipeline directly into the toolkit.
+1. **Extractors:** Native support for parsing Markdown, code, and text into logical SPOg quad facts and embeddings simultaneously.
+2. **Induction Loop:** Convert unstructured policy documents directly into Tier 2 Datalog rules.
+**Rationale:**
+Closes the loop on autonomy by allowing the system to read its own environment and learn from it without bespoke adapter development.

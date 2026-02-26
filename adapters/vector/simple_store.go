@@ -7,7 +7,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit-wip/core"
 )
 
 // SimpleStore is a thread-safe, in-memory vector store using Cosine Similarity.

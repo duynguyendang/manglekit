@@ -3,7 +3,7 @@ package gen
 import (
 	"os"
 
-	"github.com/duynguyendang/manglekit/internal/resources/icl"
+	"github.com/duynguyendang/manglekit-wip/internal/resources/icl"
 )
 
 // GetICLContent returns the In-Context Learning content.

@@ -13,7 +13,7 @@ To solve the memory decay and token budget issues, we implement a four-tier arch
 | Layer | Type | Mechanism | Manglekit Implementation |
 | --- | --- | --- | --- |
 | **L1: Working** | **Hot** | **Rolling Stream** (Ring Buffer) | Transient history and logs stored in `internal/engine/memory`. |
-| **L2: Semantic** | **Warm** | **HNSW Vector Search** | Summarized recent context stored in localized vector indices. |
+| **L2: Semantic** | **Warm** | **Flat INT8 + IVF-PQ (Local) or External HNSW (Remote)** | Default: Zero-allocation mmap with Inverted File Index for low-RAM embedded scale (100k-1M). Scale-out: Delegated to external Vector DB via gRPC. |
 | **L3: Episodic** | **Cold** | **Long-Term Fact Store** | Consolidated facts from past sessions stored in Redis or Graph databases. |
 | **L4: Anchors** | **Sink** | **Global Store** (Immutable) | System prompts, core business rules, and "Sticky Facts" (Promoted by Datalog). |
 
@@ -36,7 +36,7 @@ To solve the memory decay and token budget issues, we implement a four-tier arch
 
 * **WHY**: Large JSON/Struct objects waste tokens and confuse the attention mechanism.
 * **HOW**: Use the `ToFacts` and `Flatten` mechanisms to convert data into its atomic logical form.
-* **WHAT**: Instead of sending a 2KB JSON user object, Manglekit sends 5-10 Datalog triples (e.g., `user_role("u1", "admin")`), reducing context size by up to 90% while maintaining 100% semantic fidelity.
+* **WHAT**: Instead of sending a 2KB JSON user object, Manglekit sends 5-10 Datalog quads (e.g., `user_role("u1", "admin")`), reducing context size by up to 90% while maintaining 100% semantic fidelity.
 
 ---
 
@@ -126,7 +126,7 @@ context_policy(Frag, "DENY") :-
 
 % Rule 3: Sticky Fact Promotion (Attention Sink)
 is_sticky(Frag) :- 
-    triple(Frag, "has_role", _).
+    quad(Frag, "has_role", _, _).
 is_sticky(Frag) :- 
     violation_rule(Frag, _).
 

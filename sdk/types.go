@@ -1,7 +1,7 @@
 package sdk
 
 import (
-	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit-wip/core"
 )
 
 // Re-export core types for convenience

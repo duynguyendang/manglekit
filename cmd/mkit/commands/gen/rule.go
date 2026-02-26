@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	adapterai "github.com/duynguyendang/manglekit/adapters/ai"
-	"github.com/duynguyendang/manglekit/cmd/mkit/commands/gen/inductor"
+	adapterai "github.com/duynguyendang/manglekit-wip/adapters/ai"
+	"github.com/duynguyendang/manglekit-wip/cmd/mkit/commands/gen/inductor"
 	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/compat_oai/openai"

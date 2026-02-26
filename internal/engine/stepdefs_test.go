@@ -3,7 +3,7 @@ package engine
 import (
 	"testing"
 
-	"github.com/duynguyendang/manglekit/internal/engine/parse"
+	"github.com/duynguyendang/manglekit-wip/internal/engine/parse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

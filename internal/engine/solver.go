@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/engine/resources"
+	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit-wip/internal/engine/resources"
 	"github.com/google/mangle/ast"
 	"github.com/google/mangle/parse"
 )

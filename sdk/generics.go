@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	function "github.com/duynguyendang/manglekit/adapters/func"
+	function "github.com/duynguyendang/manglekit-wip/adapters/func"
 )
 
 // Runnable is a handle for a type-safe action
