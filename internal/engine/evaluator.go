@@ -12,6 +12,11 @@ import (
 	mangleparse "github.com/google/mangle/parse"
 )
 
+// Note: SimpleInMemoryStore is a value type, not a pointer.
+// Pooling would require significant refactoring or wrapper types.
+// For high-throughput scenarios, prefer PolicyEngine which supports
+// shared fact stores and incremental evaluation.
+
 // Evaluator provides capabilities for evaluating a single Datalog rule against a Go struct.
 // It is primarily used for ad-hoc rule checking or dynamic policy evaluation where a full
 // rule set management overhead is not required.
@@ -83,7 +88,7 @@ func (e *Evaluator) Evaluate(entityID string, entity any) (EvaluateResult, error
 		return result, fmt.Errorf("failed to convert entity to facts: %w", err)
 	}
 
-	// Set up the fact store and add initial facts
+	// Create fact store for this evaluation
 	store := manglefactstore.NewSimpleInMemoryStore()
 	knownPredicates := make(map[mangleast.PredicateSym]mangleast.Decl)
 
@@ -125,6 +130,9 @@ func (e *Evaluator) Evaluate(entityID string, entity any) (EvaluateResult, error
 //   - `mangle` struct tag controls the predicate name.
 //   - If no tag is present, the field name (lowercased) is used.
 //   - Supports basic types: int, uint, float (as string), string, bool.
+//   - Supports nested structs (recursively flattened with prefix).
+//   - Supports maps (treated as key-value pairs).
+//   - Supports slices (each element flattened with index suffix).
 func structToFacts(entityID string, entity any) ([]mangleast.Atom, error) {
 	val := reflect.ValueOf(entity)
 	if val.Kind() == reflect.Ptr {
@@ -137,53 +145,101 @@ func structToFacts(entityID string, entity any) ([]mangleast.Atom, error) {
 		return nil, fmt.Errorf("entity must be a struct, got %v", val.Kind())
 	}
 
-	typ := val.Type()
-	var atoms []mangleast.Atom
+	atoms, err := structToFactsRecursive(entityID, entity, "")
+	if err != nil {
+		return nil, err
+	}
+	if len(atoms) == 0 {
+		return nil, fmt.Errorf("no valid facts could be extracted from entity")
+	}
+	return atoms, nil
+}
 
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
-		fieldVal := val.Field(i)
-
-		// Skip unexported fields
-		if !field.IsExported() {
-			continue
+func structToFactsRecursive(entityID string, entity any, prefix string) ([]mangleast.Atom, error) {
+	val := reflect.ValueOf(entity)
+	if val.Kind() == reflect.Ptr {
+		if val.IsNil() {
+			return nil, fmt.Errorf("entity cannot be nil")
 		}
-
-		// Get predicate name from tag or field name
-		tag := field.Tag.Get("mangle")
-		if tag == "-" {
-			continue // Skip fields marked with mangle:"-"
-		}
-		if tag == "" {
-			tag = strings.ToLower(field.Name)
-		}
-
-		// Create the atom based on field type
-		var atom mangleast.Atom
-		switch fieldVal.Kind() {
-		case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
-			atom = mangleast.NewAtom(tag, mangleast.String(entityID), mangleast.Number(fieldVal.Int()))
-		case reflect.Uint, reflect.Uint64, reflect.Uint32, reflect.Uint16, reflect.Uint8:
-			atom = mangleast.NewAtom(tag, mangleast.String(entityID), mangleast.Number(int64(fieldVal.Uint())))
-		case reflect.Float32, reflect.Float64:
-			// Mangle doesn't have float, convert to string
-			atom = mangleast.NewAtom(tag, mangleast.String(entityID), mangleast.String(fmt.Sprintf("%f", fieldVal.Float())))
-		case reflect.String:
-			atom = mangleast.NewAtom(tag, mangleast.String(entityID), mangleast.String(fieldVal.String()))
-		case reflect.Bool:
-			boolStr := "false"
-			if fieldVal.Bool() {
-				boolStr = "true"
-			}
-			atom = mangleast.NewAtom(tag, mangleast.String(entityID), mangleast.String(boolStr))
-		default:
-			// Skip unsupported types
-			continue
-		}
-		atoms = append(atoms, atom)
+		val = val.Elem()
 	}
 
-	if len(atoms) == 0 {
+	var atoms []mangleast.Atom
+
+	switch val.Kind() {
+	case reflect.Struct:
+		typ := val.Type()
+		for i := 0; i < typ.NumField(); i++ {
+			field := typ.Field(i)
+			fieldVal := val.Field(i)
+
+			if !field.IsExported() {
+				continue
+			}
+
+			tag := field.Tag.Get("mangle")
+			if tag == "-" {
+				continue
+			}
+			if tag == "" {
+				tag = strings.ToLower(field.Name)
+			}
+			if prefix != "" {
+				tag = prefix + "_" + tag
+			}
+
+			fieldAtoms, err := structToFactsRecursive(entityID, fieldVal.Interface(), tag)
+			if err != nil {
+				continue
+			}
+			atoms = append(atoms, fieldAtoms...)
+		}
+
+	case reflect.Map:
+		iter := val.MapRange()
+		for iter.Next() {
+			key := fmt.Sprintf("%v", iter.Key().Interface())
+			value := iter.Value().Interface()
+			predicate := prefix + "_" + key
+			valueAtoms, err := structToFactsRecursive(entityID, value, predicate)
+			if err != nil {
+				continue
+			}
+			atoms = append(atoms, valueAtoms...)
+		}
+
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < val.Len(); i++ {
+			elem := val.Index(i).Interface()
+			elemPrefix := fmt.Sprintf("%s_%d", prefix, i)
+			elemAtoms, err := structToFactsRecursive(entityID, elem, elemPrefix)
+			if err != nil {
+				continue
+			}
+			atoms = append(atoms, elemAtoms...)
+		}
+
+	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
+		atoms = append(atoms, mangleast.NewAtom(prefix, mangleast.String(entityID), mangleast.Number(val.Int())))
+
+	case reflect.Uint, reflect.Uint64, reflect.Uint32, reflect.Uint16, reflect.Uint8:
+		atoms = append(atoms, mangleast.NewAtom(prefix, mangleast.String(entityID), mangleast.Number(int64(val.Uint()))))
+
+	case reflect.Float32, reflect.Float64:
+		atoms = append(atoms, mangleast.NewAtom(prefix, mangleast.String(entityID), mangleast.String(fmt.Sprintf("%f", val.Float()))))
+
+	case reflect.String:
+		atoms = append(atoms, mangleast.NewAtom(prefix, mangleast.String(entityID), mangleast.String(val.String())))
+
+	case reflect.Bool:
+		boolStr := "false"
+		if val.Bool() {
+			boolStr = "true"
+		}
+		atoms = append(atoms, mangleast.NewAtom(prefix, mangleast.String(entityID), mangleast.String(boolStr)))
+	}
+
+	if len(atoms) == 0 && val.Kind() == reflect.Struct {
 		return nil, fmt.Errorf("no valid facts could be extracted from entity")
 	}
 

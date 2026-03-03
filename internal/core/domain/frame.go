@@ -3,6 +3,7 @@ package domain
 import (
 	"time"
 
+	"github.com/duynguyendang/manglekit-wip/core"
 	"github.com/google/uuid"
 )
 
@@ -63,25 +64,11 @@ type CognitiveFrame struct {
 	IsProposal bool
 }
 
-// ViolationRule represents a failed policy invariant extracted from an AuditResult.
-type ViolationRule struct {
-	RuleID      string
-	Description string
-	Severity    int // 0 = Halt, 1 = Retry, 2 = Warn
-}
-
-// Envelope carries context, argument payloads, and mathematically verified safety proofs
-// through the Zero-Trust Supervisor.
-type Envelope struct {
-	ID           string          // Trace ID / span identifier
-	Payload      any             // Structured Arguments sent to LLM/Action
-	Metadata     map[string]any  // Telemetry and routing tags
-	ContextFacts []Quad          // Flattened state of the system
-	Violations   []ViolationRule // GenePool axiom violations after Shadow Audit
-}
-
 // DecisionOutput is a placeholder for the final structured output from the agent.
 type DecisionOutput struct {
 	Action string
 	Params map[string]any
 }
+
+// Envelope is an alias to the core Envelope type for internal domain usage.
+type Envelope = core.Envelope

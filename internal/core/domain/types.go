@@ -1,7 +1,9 @@
 package domain
 
-// IntentStr represents the derived intent of a signal.
-type IntentStr string
+import "github.com/duynguyendang/manglekit-wip/core"
+
+// IntentStr is an alias to core.IntentStr.
+type IntentStr = core.IntentStr
 
 // VerifyStatus represents the outcome of the verification phase.
 type VerifyStatus string

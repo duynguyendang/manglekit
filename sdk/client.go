@@ -105,12 +105,9 @@ func NewClientFromConfig(ctx context.Context, cfg *config.Config, opts ...Client
 	return NewClient(ctx, newOpts...)
 }
 
-// Supervise wraps a raw core.Action in a SupervisedAction.
+// Supervise wraps a raw core.Action in a SupervisedAction using v2 patterns.
 func (c *Client) Supervise(action core.Action) core.Action {
-	if c.tracer != nil {
-		return supervisor.NewSupervisedActionWithTracer(action, c.engine, c.tracer, c.failureMode)
-	}
-	return supervisor.NewSupervisedAction(action, c.engine, c.failureMode)
+	return supervisor.NewSupervisedActionFromSDK(action, c.engine)
 }
 
 // Engine returns the underlying policy engine (Evaluator).

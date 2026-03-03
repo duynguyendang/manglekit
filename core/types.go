@@ -50,6 +50,9 @@ const (
 	PredViolation = "violation_msg" // To extract error messages
 )
 
+// IntentStr represents the derived intent of a signal.
+type IntentStr string
+
 // Observability & Trace Attributes
 const (
 	// Span Names
@@ -69,10 +72,10 @@ const (
 	AttrAttempt      = "mangle.attempt" // Replaces AttrPolicyAttempt
 )
 
-// Outcome Values (for Tracing)
+// Outcome Values (for Tracing) - aliases to Decision constants for compatibility
 const (
-	OutcomeProceed = "PROCEED" // Formerly "ALLOWED"
-	OutcomeHalt    = "HALT"    // Formerly "DENIED"
+	OutcomeProceed = DecisionProceed
+	OutcomeHalt    = DecisionHalt
 	OutcomeSuccess = "success"
 )
 
@@ -109,6 +112,11 @@ type Envelope struct {
 	Facts []string `json:"facts,omitempty"`
 	// ContentType indicates whether the payload is a Struct or JSON.
 	ContentType ContentType `json:"content_type,omitempty"`
+
+	// ContextFacts contains flattened quad facts for Datalog evaluation.
+	ContextFacts []Quad `json:"context_facts,omitempty"`
+	// Violations holds GenePool axiom violations after Shadow Audit.
+	Violations []ViolationRule `json:"violations,omitempty"`
 }
 
 // NewEnvelope creates a new envelope with the provided payload.
@@ -275,4 +283,28 @@ type Document struct {
 type Answer struct {
 	Text string         `json:"text"`
 	Meta map[string]any `json:"meta,omitempty"`
+}
+
+// Quad represents a discrete Subject-Predicate-Object-Graph truth used in persistent storage.
+type Quad struct {
+	Subject   string // Source entity (e.g., "User:Bob")
+	Predicate string // Relationship (e.g., "has_role")
+	Object    string // Target value (e.g., "Admin", "42")
+	Graph     string // Namespace/Context (e.g., "global")
+}
+
+// Atom is the smallest unit of knowledge (Subject-Predicate-Object).
+type Atom struct {
+	Predicate    string    `json:"predicate"`
+	Subject      string    `json:"subject"`
+	Object       string    `json:"object"`
+	Weight       float64   `json:"weight"` // 1.0 (Fact) to 0.1 (Guess)
+	OriginIntent IntentStr `json:"origin_intent,omitempty"`
+}
+
+// ViolationRule represents a failed policy invariant.
+type ViolationRule struct {
+	RuleID      string `json:"rule_id"`
+	Description string `json:"description"`
+	Severity    int    `json:"severity"` // 0 = Halt, 1 = Retry, 2 = Warn
 }

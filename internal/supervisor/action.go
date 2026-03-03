@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/duynguyendang/manglekit-wip/core"
 	"github.com/duynguyendang/manglekit-wip/internal/core/domain"
 	"github.com/duynguyendang/manglekit-wip/internal/core/ports"
 )
@@ -64,16 +65,21 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 
 	res, err := g.verifier.VerifyAtoms(ctx, atoms, activeGenes)
 	if err != nil {
-		return domain.Envelope{}, fmt.Errorf("supervisor shadow audit failed: %w", err)
+		return domain.Envelope{}, &core.SupervisorError{Reason: err}
 	}
 
 	if !res.Pass && (res.ViolationTier == domain.Tier0Kernel || res.ViolationTier == domain.Tier1Admin) {
-		envelope.Violations = append(envelope.Violations, domain.ViolationRule{
+		envelope.Violations = append(envelope.Violations, core.ViolationRule{
 			RuleID:      res.ConflictPath,
 			Description: "Supervisor Pre-Flight check failed.",
 			Severity:    0,
 		})
-		return envelope, fmt.Errorf("SupervisedAction BLOCK: input violates Tier %s contract at %s", res.ViolationTier, res.ConflictPath)
+		return envelope, core.NewPolicyViolationError(
+			string(res.ViolationTier),
+			res.ConflictPath,
+			"Supervisor Pre-Flight check failed.",
+			"",
+		)
 	}
 
 	// 4. Act (Execute Inner)
