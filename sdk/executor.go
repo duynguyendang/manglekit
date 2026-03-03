@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // ExecutePlan executes a generated plan sequentially.

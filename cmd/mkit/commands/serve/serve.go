@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/duynguyendang/manglekit-wip/core"
-	"github.com/duynguyendang/manglekit-wip/sdk"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )

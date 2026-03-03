@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/duynguyendang/manglekit-wip/internal/audit"
-	"github.com/duynguyendang/manglekit-wip/internal/core/domain"
-	"github.com/duynguyendang/manglekit-wip/internal/core/ports"
+	"github.com/duynguyendang/manglekit/internal/audit"
+	"github.com/duynguyendang/manglekit/internal/core/domain"
+	"github.com/duynguyendang/manglekit/internal/core/ports"
 	"github.com/google/uuid"
 )
 

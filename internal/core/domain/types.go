@@ -1,6 +1,6 @@
 package domain
 
-import "github.com/duynguyendang/manglekit-wip/core"
+import "github.com/duynguyendang/manglekit/core"
 
 // IntentStr is an alias to core.IntentStr.
 type IntentStr = core.IntentStr

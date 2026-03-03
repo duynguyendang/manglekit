@@ -10,7 +10,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit/core"
 	mangleparse "github.com/google/mangle/parse"
 )
 

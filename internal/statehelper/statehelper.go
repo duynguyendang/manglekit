@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // ConversationManager provides helper methods for managing conversational state.

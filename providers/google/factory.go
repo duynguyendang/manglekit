@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/duynguyendang/manglekit-wip/adapters/ai"
-	"github.com/duynguyendang/manglekit-wip/core"
-	"github.com/duynguyendang/manglekit-wip/sdk"
+	"github.com/duynguyendang/manglekit/adapters/ai"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/sdk"
 )
 
 // Enable returns a ClientOption that wires the Google provider.

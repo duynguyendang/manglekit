@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/duynguyendang/manglekit-wip/sdk"
-	"github.com/duynguyendang/manglekit-wip/core"
-	"github.com/duynguyendang/manglekit-wip/core/diapi"
+	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/core/diapi"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
 	"github.com/google/mangle/ast"

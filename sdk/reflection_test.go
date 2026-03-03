@@ -55,7 +55,7 @@ func TestActionReflection(t *testing.T) {
 	// But wait, the test imports `eng.ExecuteQuery`.
 	// `eng` is `core.Evaluator`.
 	// Let's check if we can cast `eng` to something useful.
-	// Since we are inside `sdk`, we can import `github.com/duynguyendang/manglekit-wip/internal/engine` (already imported in client.go).
+	// Since we are inside `sdk`, we can import `github.com/duynguyendang/manglekit/internal/engine` (already imported in client.go).
 
 	// But `Client.engine` is private. We accessed it via `client.engine`.
 	// So we can type assert it.

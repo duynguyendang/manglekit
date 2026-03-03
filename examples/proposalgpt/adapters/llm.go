@@ -3,8 +3,8 @@ package adapters
 import (
 	"context"
 
-	"github.com/duynguyendang/manglekit-wip/internal/core/domain"
-	"github.com/duynguyendang/manglekit-wip/internal/core/ports"
+	"github.com/duynguyendang/manglekit/internal/core/domain"
+	"github.com/duynguyendang/manglekit/internal/core/ports"
 )
 
 // MockGenerative simulates an AI model (like Gemini) generating a structured plan.

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/duynguyendang/manglekit-wip/core"
-	"github.com/duynguyendang/manglekit-wip/sdk"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

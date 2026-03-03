@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/duynguyendang/manglekit-wip/core"
-	"github.com/duynguyendang/manglekit-wip/sdk"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/sdk"
 )
 
 // DummyAction is a mock action for testing

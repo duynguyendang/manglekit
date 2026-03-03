@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit/core"
 	"go.uber.org/zap"
 )
 

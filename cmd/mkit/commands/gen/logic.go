@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/duynguyendang/manglekit-wip/adapters/ai"
-	"github.com/duynguyendang/manglekit-wip/cmd/mkit/commands/gen/inductor"
-	"github.com/duynguyendang/manglekit-wip/core"
-	"github.com/duynguyendang/manglekit-wip/internal/engine"
-	"github.com/duynguyendang/manglekit-wip/internal/engine/resources"
+	"github.com/duynguyendang/manglekit/adapters/ai"
+	"github.com/duynguyendang/manglekit/cmd/mkit/commands/gen/inductor"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/engine"
+	"github.com/duynguyendang/manglekit/internal/engine/resources"
 )
 
 // GeneratedPolicy represents the structured response from the LLM.

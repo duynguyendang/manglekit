@@ -3,8 +3,8 @@ package proposer
 import (
 	"context"
 
-	"github.com/duynguyendang/manglekit-wip/internal/core/domain"
-	"github.com/duynguyendang/manglekit-wip/internal/core/ports"
+	"github.com/duynguyendang/manglekit/internal/core/domain"
+	"github.com/duynguyendang/manglekit/internal/core/ports"
 )
 
 // Service manages the "Orient" phase of the biological OODA loop by recalling

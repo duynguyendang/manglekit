@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 type SlogAdapter struct {

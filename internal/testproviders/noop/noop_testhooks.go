@@ -5,7 +5,7 @@ package noop
 import (
 	"context"
 
-	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // NoopTool is a minimal tool implementation for testing the registry.

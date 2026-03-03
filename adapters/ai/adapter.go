@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // Compile-time interface satisfaction checks

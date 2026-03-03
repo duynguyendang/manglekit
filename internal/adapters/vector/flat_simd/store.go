@@ -8,7 +8,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/duynguyendang/manglekit-wip/internal/core/ports"
+	"github.com/duynguyendang/manglekit/internal/core/ports"
 )
 
 // The MRL pipeline truncates embeddings to the first 64 dimensions, providing

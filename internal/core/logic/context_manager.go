@@ -3,7 +3,7 @@ package logic
 import (
 	"sort"
 
-	"github.com/duynguyendang/manglekit-wip/internal/core/domain"
+	"github.com/duynguyendang/manglekit/internal/core/domain"
 )
 
 // ContextManager handles token allocation and rule-based pruning for LLM prompts.

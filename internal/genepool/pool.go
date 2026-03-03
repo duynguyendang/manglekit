@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/duynguyendang/manglekit-wip/internal/core/domain"
-	"github.com/duynguyendang/manglekit-wip/internal/core/ports"
+	"github.com/duynguyendang/manglekit/internal/core/domain"
+	"github.com/duynguyendang/manglekit/internal/core/ports"
 	"gopkg.in/yaml.v3"
 )
 

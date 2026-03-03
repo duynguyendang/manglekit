@@ -6,15 +6,15 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/duynguyendang/manglekit-wip/config"
-	"github.com/duynguyendang/manglekit-wip/core"
-	"github.com/duynguyendang/manglekit-wip/internal/logger"
-	"github.com/duynguyendang/manglekit-wip/internal/supervisor"
+	"github.com/duynguyendang/manglekit/config"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/logger"
+	"github.com/duynguyendang/manglekit/internal/supervisor"
 )
 
 const (
 	// TracerName is the instrumentation scope name for Manglekit tracing.
-	TracerName = "github.com/duynguyendang/manglekit-wip/sdk"
+	TracerName = "github.com/duynguyendang/manglekit/sdk"
 
 	// Failure modes determine the system's resilience strategy.
 	FailModeOpen   = "open"   // Allow execution on system error (Fail-Open)

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/duynguyendang/manglekit-wip/internal/core/domain"
-	"github.com/duynguyendang/manglekit-wip/internal/core/ports"
+	"github.com/duynguyendang/manglekit/internal/core/domain"
+	"github.com/duynguyendang/manglekit/internal/core/ports"
 )
 
 // Auditor governs the OODA Verification Phase (Shadow Audit).

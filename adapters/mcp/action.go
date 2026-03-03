@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/ai"
 )
 

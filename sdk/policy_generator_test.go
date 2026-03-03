@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // mockAction implements core.Action for testing

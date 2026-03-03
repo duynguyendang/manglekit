@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/duynguyendang/manglekit-wip/internal/engine/parse"
+	"github.com/duynguyendang/manglekit/internal/engine/parse"
 )
 
 // GherkinCompiler transforms Gherkin feature files into Datalog rules.

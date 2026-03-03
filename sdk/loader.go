@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/duynguyendang/manglekit-wip/adapters/knowledge"
+	"github.com/duynguyendang/manglekit/adapters/knowledge"
 )
 
 // LoadNTriplesFile opens a .nt file, parses it, and loads facts into the engine.

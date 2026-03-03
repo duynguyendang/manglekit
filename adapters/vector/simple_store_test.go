@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/duynguyendang/manglekit-wip/adapters/vector"
+	"github.com/duynguyendang/manglekit/adapters/vector"
 )
 
 type MockEmbedder struct {}

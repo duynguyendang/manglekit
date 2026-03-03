@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/duynguyendang/manglekit-wip/internal/core/domain"
+	"github.com/duynguyendang/manglekit/internal/core/domain"
 	"github.com/google/mangle/analysis"
 	"github.com/google/mangle/ast"
 	"github.com/google/mangle/engine"

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/duynguyendang/manglekit-wip/config"
-	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit/config"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // ProviderFactory defines the constructor signature for creating an action from config.

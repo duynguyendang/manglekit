@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/duynguyendang/manglekit-wip/internal/core/domain"
-	_ "github.com/duynguyendang/manglekit-wip/internal/core/ports" // for Interface declaration if needed
+	"github.com/duynguyendang/manglekit/internal/core/domain"
+	_ "github.com/duynguyendang/manglekit/internal/core/ports" // for Interface declaration if needed
 )
 
 // ConsolePerception implements ports.PerceptionPort for a CLI interface.

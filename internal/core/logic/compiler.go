@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/duynguyendang/manglekit-wip/internal/core/domain"
+	"github.com/duynguyendang/manglekit/internal/core/domain"
 )
 
 // RefinementContext encapsulates audit failures used to correct the LLM.

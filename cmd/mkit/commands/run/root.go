@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/duynguyendang/manglekit-wip/adapters/knowledge"
-	"github.com/duynguyendang/manglekit-wip/internal/engine"
+	"github.com/duynguyendang/manglekit/adapters/knowledge"
+	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/spf13/cobra"
 )
 

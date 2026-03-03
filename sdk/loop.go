@@ -8,8 +8,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/duynguyendang/manglekit-wip/core"
-	engine_memory "github.com/duynguyendang/manglekit-wip/internal/engine/memory"
+	"github.com/duynguyendang/manglekit/core"
+	engine_memory "github.com/duynguyendang/manglekit/internal/engine/memory"
 )
 
 // Define constants or config struct

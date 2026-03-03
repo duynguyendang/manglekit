@@ -3,8 +3,8 @@ package manglekit
 import (
 	"context"
 
-	"github.com/duynguyendang/manglekit-wip/core"
-	"github.com/duynguyendang/manglekit-wip/sdk"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/sdk"
 )
 
 // --- Aliases ---

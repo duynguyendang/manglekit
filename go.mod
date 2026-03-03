@@ -1,4 +1,4 @@
-module github.com/duynguyendang/manglekit-wip
+module github.com/duynguyendang/manglekit
 
 go 1.25.1
 

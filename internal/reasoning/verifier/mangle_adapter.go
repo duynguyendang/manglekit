@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/duynguyendang/manglekit-wip/internal/core/domain"
-	"github.com/duynguyendang/manglekit-wip/internal/core/ports"
+	"github.com/duynguyendang/manglekit/internal/core/domain"
+	"github.com/duynguyendang/manglekit/internal/core/ports"
 )
 
 // MangleVerifier enforces post-generation content logic rules (LLD 8.2).

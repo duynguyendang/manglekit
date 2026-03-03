@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/duynguyendang/manglekit-wip/internal/core/domain"
-	"github.com/duynguyendang/manglekit-wip/internal/core/ports"
+	"github.com/duynguyendang/manglekit/internal/core/domain"
+	"github.com/duynguyendang/manglekit/internal/core/ports"
 )
 
 // MockStorage implements GenomeStoragePort to skip actual mmap file reading for the initial demo.

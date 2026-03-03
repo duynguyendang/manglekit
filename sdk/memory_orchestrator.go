@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // HybridMemory implements core.AgentMemory by combining:

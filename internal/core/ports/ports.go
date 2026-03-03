@@ -5,7 +5,7 @@ import (
 	"iter"
 	"os"
 
-	"github.com/duynguyendang/manglekit-wip/internal/core/domain"
+	"github.com/duynguyendang/manglekit/internal/core/domain"
 	"github.com/google/uuid"
 )
 

@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/duynguyendang/manglekit-wip/examples/proposalgpt/adapters"
-	"github.com/duynguyendang/manglekit-wip/internal/adapters/mangle"
-	"github.com/duynguyendang/manglekit-wip/internal/audit"
-	"github.com/duynguyendang/manglekit-wip/internal/core/domain"
-	"github.com/duynguyendang/manglekit-wip/internal/core/logic"
-	"github.com/duynguyendang/manglekit-wip/internal/genepool"
-	"github.com/duynguyendang/manglekit-wip/internal/orchestrator"
+	"github.com/duynguyendang/manglekit/examples/proposalgpt/adapters"
+	"github.com/duynguyendang/manglekit/internal/adapters/mangle"
+	"github.com/duynguyendang/manglekit/internal/audit"
+	"github.com/duynguyendang/manglekit/internal/core/domain"
+	"github.com/duynguyendang/manglekit/internal/core/logic"
+	"github.com/duynguyendang/manglekit/internal/genepool"
+	"github.com/duynguyendang/manglekit/internal/orchestrator"
 )
 
 func main() {

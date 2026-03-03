@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // mockTextGenerator is a test implementation of TextGenerator.

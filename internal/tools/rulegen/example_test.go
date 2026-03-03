@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/duynguyendang/manglekit-wip/core"
-	"github.com/duynguyendang/manglekit-wip/sdk"
+	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/sdk"
 )
 
 // ExampleAction demonstrates how to use the Generator with a simple core.Action.

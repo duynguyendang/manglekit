@@ -4,7 +4,7 @@ import (
 	"iter"
 	"time"
 
-	"github.com/duynguyendang/manglekit-wip/core"
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // Atom is an alias to the core Atom type.
