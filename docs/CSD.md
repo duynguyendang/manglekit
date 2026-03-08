@@ -4,7 +4,7 @@
 
 Manglekit v2 is a high-performance, embedded **Neuro-Symbolic Sovereign Logic Kernel** designed for the Go ecosystem. It serves as the definitive run-time control plane for autonomous agents, merging the generative Intuition of LLMs (via Genkit) with the deductive rigor of Datalog logic and high-performance graph storage.
 
-Built on the proven foundations of **Kronos v1** and **MEB (Meblo)**, Manglekit v2 solves the **Stochastic Runtime Paradox** by formalizing the agent lifecycle into an **Observe, Orient, Decide, Verify, Act (OODA) Loop**. It guarantees that probabilistic AI systems operate within strictly auditable, mathematically provable guardrails.
+Manglekit v2 solves the **Stochastic Runtime Paradox** by formalizing the agent lifecycle into an **Observe, Orient, Decide, Verify, Act (OODA) Loop**. It guarantees that probabilistic AI systems operate within strictly auditable, mathematically provable guardrails.
 
 ### Key Characteristics
 
