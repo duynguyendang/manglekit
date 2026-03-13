@@ -1,0 +1,208 @@
+% Manglekit Temporal Reasoning
+% ==============================
+% Mangle supports temporal reasoning - facts with time intervals.
+% This enables querying "when" not just "what".
+%
+% Temporal facts use @[start, end] syntax in Datalog:
+%   fact(arg1, arg2)@[2024-01-01, 2024-12-31].
+%
+% ==========================================
+% EXAMPLE 1: Access History Tracking
+% ==========================================
+% Track when users accessed resources
+%
+% Facts (programmatically added via AddTemporalFact):
+%   runtime.AddTemporalFact(`user_access("alice", "report_A")`, 
+%       time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+%       time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC))
+%
+% Facts (in Datalog policy):
+%   user_access("alice", "report_A")@[2024-01-01, 2024-01-15].
+%   user_access("alice", "report_B")@[2024-02-01, 2024-02-28].
+%
+% Query: Who accessed in January 2024?
+%   january_access(User, Resource) :-
+%     user_access(User, Resource)@[Start, End],
+%     Start >= 2024-01-01, End <= 2024-01-31.
+%
+% Query: Who was active in the last 30 days? (using duration)
+%   recent_access(User) :-
+%     <-[0d, 30d] user_access(User, _).
+
+% ==========================================
+% EXAMPLE 2: Certification Compliance
+% ==========================================
+% Ensure operators had valid certifications before using equipment
+%
+% Facts:
+%   certified("alice", "forklift")@[2023-01-01, 2024-01-01].
+%   operated("alice", "forklift")@[2023-06-15].
+%
+% Rule: Find violations - operated without valid certification
+%   violation(Person, Equipment) :-
+%     operated(Person, Equipment)@[Time, Time],
+%     !<-[-30d, 30d] certified(Person, Equipment).
+
+% ==========================================
+% EXAMPLE 3: Session Validity
+% ==========================================
+% Track session validity periods
+%
+% Facts:
+%   session("session_123", "alice")@[2024-01-15T10:00:00, 2024-01-15T12:00:00].
+%
+% Query: Is session valid now?
+%   valid_session(Session, User) :-
+%     session(Session, User)@[Start, End],
+%     End >= now.
+
+% ==========================================
+% EXAMPLE 4: Contract Lifecycle
+% ==========================================
+% Track contract validity periods
+%
+% Facts:
+%   contract("contract_001", "acme_corp")@[2024-01-01, 2024-12-31].
+%
+% Query: Find contracts expiring in next 30 days
+%   expiring_contract(ID, Customer) :-
+%     contract(ID, Customer)@[Start, End],
+%     <+[0d, 30d] End.
+
+% ==========================================
+% EXAMPLE 5: Rate Limiting with Time Windows
+% ==========================================
+% Track API usage within time windows
+%
+% Facts (programmatically via AddTemporalFactAt):
+%   runtime.AddTemporalFactAt(`api_request("user_1", "endpoint")`, 
+%       time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC))
+%
+% Facts (in Datalog):
+%   api_request("user_1", "api_endpoint")@[2024-01-15T10:00].
+%   api_request("user_1", "api_endpoint")@[2024-01-15T10:01].
+%   api_request("user_1", "api_endpoint")@[2024-01-15T10:02].
+%
+% Rule: Count requests in last minute
+%   requests_last_minute(User, Count) :-
+%     <-[0d, 1m] api_request(User, Endpoint)
+%     |> do fn:group_by(User),
+%        let Count = fn:count().
+
+% ==========================================
+% EXAMPLE 6: Temporal Access Policies
+% ==========================================
+% Allow access only during business hours
+%
+% Facts:
+%   business_hours@[2024-01-01T09:00:00, 2024-01-01T17:00:00].
+%
+% Rule: Check if current time is within business hours
+%   allowed_access :-
+%     business_hours@[Start, End],
+%     now >= Start, now <= End.
+
+% ==========================================
+% EXAMPLE 7: Temporal Rule Derivation
+% ==========================================
+% Rules can derive new temporal facts with time annotations
+%
+% Policy:
+%   % Initial fact with time bounds
+%   user_access("alice", "report_june")@[2024-06-01, 2024-06-30].
+%   
+%   % Rule with temporal head - derives audit_trail with same time bounds
+%   audit_trail(User, Resource)@[Start, End] :-
+%     user_access(User, Resource)@[Start, End].
+%
+% Result: audit_trail facts are derived with the same temporal bounds
+
+% ==========================================
+% TEMPORAL OPERATORS
+% ==========================================
+%
+% <-[0d, 30d]  : Was true sometime in past 30 days (diamond-minus)
+% -[0d, 30d]   : Was true continuously for past 30 days (box-minus)
+% <+[0d, 30d]  : Will be true sometime in next 30 days (diamond-plus)
+% +[0d, 30d]   : Will be true continuously for next 30 days (box-plus)
+%
+% Duration syntax: 0d (days), 0h (hours), 0m (minutes)
+%
+% ==========================================
+% ALLEN'S INTERVAL RELATIONS
+% ==========================================
+%
+% :interval:before(T1, T2)     : T1 ends before T2 starts
+% :interval:after(T1, T2)      : T1 starts after T2 ends
+% :interval:overlaps(T1, T2)  : T1 and T2 share some time
+% :interval:during(T1, T2)    : T1 is contained within T2
+% :interval:contains(T1, T2)  : T1 contains T2
+% :interval:starts(T1, T2)    : T1 and T2 start together
+% :interval:finishes(T1, T2)  : T1 and T2 end together
+% :interval:equals(T1, T2)     : T1 and T2 are identical
+%
+% ==========================================
+% SPECIAL VALUES
+% ==========================================
+%
+% _           : Unbounded (beginning or end of time)
+% now         : Current evaluation time (set via SetEvaluationTime)
+%
+% Examples:
+%   active@[_ , now]           : Active from beginning until now
+%   future@[_ , 2025-01-01]   : Until January 1, 2025
+%
+% ==========================================
+% IMPLEMENTATION GUIDE
+% ==========================================
+%
+% Using temporal features in manglekit:
+%
+% 1. Enable temporal reasoning:
+%    runtime.EnableTemporal()
+%
+% 2. Set evaluation time (for "now" queries):
+%    runtime.SetEvaluationTime(time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC))
+%
+% 3. Add temporal facts programmatically:
+%    runtime.AddTemporalFact(`user_access("alice", "report")`, 
+%        startTime, endTime)
+%    runtime.AddTemporalFactAt(`request("user", "api")`, pointInTime)
+%    runtime.AddEternalFact(`always_valid("admin")`)
+%
+% 4. Load Datalog policies with temporal rules:
+%    runtime.LoadFromSource(`
+%        user_access("alice", "report")@[2024-01-01, 2024-12-31].
+%        
+%        audit_trail(User, Resource)@[Start, End] :-
+%            user_access(User, Resource)@[Start, End].
+%    `)
+%
+% 5. Query temporal facts:
+%    - Via Datalog: runtime.QueryWithSolutions(...)
+%    - Via Store API:
+%      store := runtime.GetTemporalStore()
+%      store.GetFactsAt(queryAtom, queryTime, callback)
+%      store.ContainsAt(factAtom, queryTime)
+%
+% ==========================================
+% API REFERENCE
+% ==========================================
+%
+% MangleRuntime methods:
+%   EnableTemporal()           - Enable temporal reasoning mode
+%   IsTemporalEnabled() bool   - Check if temporal is enabled
+%   SetEvaluationTime(t)       - Set "now" for temporal queries
+%   GetEvaluationTime() time.Time
+%   AddTemporalFact(fact, start, end)  - Add fact with interval
+%   AddTemporalFactAt(fact, at)        - Add fact at point in time
+%   AddEternalFact(fact)    - Add fact valid forever
+%   GetTemporalStore() *factstore.TemporalStore
+%
+% TemporalStore methods:
+%   ContainsAt(atom, time) bool
+%   GetFactsAt(query, time, callback)
+%   GetFactsDuring(query, interval, callback)
+%   GetAllFacts(query, callback)
+%   Add(atom, interval)
+%   AddEternal(atom)

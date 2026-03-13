@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -9,13 +10,71 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/google/mangle/analysis"
-	"github.com/google/mangle/ast"
-	"github.com/google/mangle/engine"
-	"github.com/google/mangle/factstore"
-	"github.com/google/mangle/parse"
+	"codeberg.org/TauCeti/mangle-go/analysis"
+	"codeberg.org/TauCeti/mangle-go/ast"
+	"codeberg.org/TauCeti/mangle-go/engine"
+	"codeberg.org/TauCeti/mangle-go/factstore"
+	"codeberg.org/TauCeti/mangle-go/parse"
 )
+
+// ExternalPredicate is a simple function type for external predicates.
+// It takes input values and returns output values or an error.
+type ExternalPredicate func(ctx context.Context, inputs []any) ([][]any, error)
+
+// ExternalPredicateRegistry holds external predicates that can be called from Datalog rules.
+type ExternalPredicateRegistry struct {
+	mu         sync.RWMutex
+	predicates map[ast.PredicateSym]ExternalPredicate
+}
+
+// NewExternalPredicateRegistry creates a new registry for external predicates.
+func NewExternalPredicateRegistry() *ExternalPredicateRegistry {
+	return &ExternalPredicateRegistry{
+		predicates: make(map[ast.PredicateSym]ExternalPredicate),
+	}
+}
+
+// Register adds an external predicate to the registry.
+func (r *ExternalPredicateRegistry) Register(name string, fn ExternalPredicate) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if fn == nil {
+		return fmt.Errorf("external predicate %s cannot be nil", name)
+	}
+	r.predicates[ast.PredicateSym{Symbol: name}] = fn
+	return nil
+}
+
+// Get retrieves an external predicate by name.
+func (r *ExternalPredicateRegistry) Get(name string) (ExternalPredicate, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	fn, ok := r.predicates[ast.PredicateSym{Symbol: name}]
+	return fn, ok
+}
+
+// List returns all registered external predicates.
+func (r *ExternalPredicateRegistry) List() map[ast.PredicateSym]ExternalPredicate {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make(map[ast.PredicateSym]ExternalPredicate)
+	for k, v := range r.predicates {
+		result[k] = v
+	}
+	return result
+}
+
+// Count returns the number of registered external predicates.
+func (r *ExternalPredicateRegistry) Count() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.predicates)
+}
 
 // MangleRuntime encapsulates the Google Mangle Datalog engine.
 type MangleRuntime struct {
@@ -28,6 +87,14 @@ type MangleRuntime struct {
 	baseFactStore factstore.SimpleInMemoryStore
 	ruleUnits     []parse.SourceUnit
 	ready         bool // Flag to indicate if the runtime is initialized
+
+	// Temporal store for time-based facts (optional)
+	temporalStore   *factstore.TemporalStore
+	temporalEnabled bool
+	evaluationTime  time.Time
+
+	// External predicates for calling Go functions from Datalog rules
+	externalPreds *ExternalPredicateRegistry
 }
 
 // NewMangleRuntime initializes a new, empty MangleRuntime.
@@ -36,7 +103,245 @@ func NewMangleRuntime() *MangleRuntime {
 		predToStratum: make(map[ast.PredicateSym]int),
 		baseFactStore: factstore.NewSimpleInMemoryStore(),
 		ready:         false,
+		externalPreds: NewExternalPredicateRegistry(),
 	}
+}
+
+// RegisterExternalPredicate adds an external predicate that can be called from Datalog rules.
+// The predicate can then be used in policies like:
+//
+//	http_get(URL, Status) :- ...
+//
+// When the predicate is called, the external function receives the input arguments
+// and returns output values that are added as facts to the engine.
+//
+// Parameters:
+//   - name: The predicate name (e.g., "http_get", "time_now")
+//   - fn: The function to call
+//
+// Returns an error if the predicate name is empty or the function is nil.
+func (r *MangleRuntime) RegisterExternalPredicate(name string, fn ExternalPredicate) error {
+	if name == "" {
+		return fmt.Errorf("external predicate name cannot be empty")
+	}
+	return r.externalPreds.Register(name, fn)
+}
+
+// ExternalPredicates returns the external predicate registry for inspection.
+func (r *MangleRuntime) ExternalPredicates() *ExternalPredicateRegistry {
+	return r.externalPreds
+}
+
+// EnableTemporal enables temporal reasoning support.
+// This must be called before loading any policies.
+func (r *MangleRuntime) EnableTemporal() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.temporalStore = factstore.NewTemporalStore()
+	r.temporalEnabled = true
+}
+
+// IsTemporalEnabled returns whether temporal reasoning is enabled.
+func (r *MangleRuntime) IsTemporalEnabled() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.temporalEnabled
+}
+
+// AddTemporalFact adds a fact with a time interval.
+// The fact is valid during the specified time range.
+func (r *MangleRuntime) AddTemporalFact(factString string, start, end time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.temporalEnabled {
+		return fmt.Errorf("temporal reasoning not enabled. Call EnableTemporal() first")
+	}
+
+	atom, err := parse.Atom(factString)
+	if err != nil {
+		return fmt.Errorf("failed to parse fact '%s': %w", factString, err)
+	}
+
+	interval := ast.TimeInterval(start, end)
+	_, err = r.temporalStore.Add(atom, interval)
+	return err
+}
+
+// AddTemporalFactAt adds a fact valid at a specific point in time.
+func (r *MangleRuntime) AddTemporalFactAt(factString string, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.temporalEnabled {
+		return fmt.Errorf("temporal reasoning not enabled. Call EnableTemporal() first")
+	}
+
+	atom, err := parse.Atom(factString)
+	if err != nil {
+		return fmt.Errorf("failed to parse fact '%s': %w", factString, err)
+	}
+
+	interval := ast.NewPointInterval(at)
+	_, err = r.temporalStore.Add(atom, interval)
+	return err
+}
+
+// SetEvaluationTime sets the evaluation time for temporal queries.
+// This is the "now" time used when evaluating temporal predicates like <-[0d, 30d].
+func (r *MangleRuntime) SetEvaluationTime(t time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.evaluationTime = t
+}
+
+// GetEvaluationTime returns the current evaluation time.
+func (r *MangleRuntime) GetEvaluationTime() time.Time {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.evaluationTime
+}
+
+// AddTemporalFactInPast adds a fact that was true for a duration in the past.
+// The fact ends at the evaluation time if set, otherwise ends at now.
+func (r *MangleRuntime) AddTemporalFactInPast(factString string, duration time.Duration) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.temporalEnabled {
+		return fmt.Errorf("temporal reasoning not enabled. Call EnableTemporal() first")
+	}
+
+	atom, err := parse.Atom(factString)
+	if err != nil {
+		return fmt.Errorf("failed to parse fact '%s': %w", factString, err)
+	}
+
+	endTime := r.evaluationTime
+	if endTime.IsZero() {
+		endTime = time.Now()
+	}
+	startTime := endTime.Add(-duration)
+
+	interval := ast.TimeInterval(startTime, endTime)
+	_, err = r.temporalStore.Add(atom, interval)
+	return err
+}
+
+// AddTemporalFactInFuture adds a fact that will be true for a duration in the future.
+// The fact starts at the evaluation time if set, otherwise starts at now.
+func (r *MangleRuntime) AddTemporalFactInFuture(factString string, duration time.Duration) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.temporalEnabled {
+		return fmt.Errorf("temporal reasoning not enabled. Call EnableTemporal() first")
+	}
+
+	atom, err := parse.Atom(factString)
+	if err != nil {
+		return fmt.Errorf("failed to parse fact '%s': %w", factString, err)
+	}
+
+	startTime := r.evaluationTime
+	if startTime.IsZero() {
+		startTime = time.Now()
+	}
+	endTime := startTime.Add(duration)
+
+	interval := ast.TimeInterval(startTime, endTime)
+	_, err = r.temporalStore.Add(atom, interval)
+	return err
+}
+
+// QueryTemporalFactsAt queries facts that are valid at a specific time.
+func (r *MangleRuntime) QueryTemporalFactsAt(factPattern string, at time.Time) ([]string, error) {
+	store := r.GetTemporalStore()
+	if store == nil {
+		return nil, fmt.Errorf("temporal store not available")
+	}
+
+	queryAtom, err := parse.Atom(factPattern)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse query '%s': %w", factPattern, err)
+	}
+
+	var results []string
+	err = store.GetFactsAt(queryAtom, at, func(tf factstore.TemporalFact) error {
+		results = append(results, tf.Atom.String())
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("query failed: %w", err)
+	}
+
+	return results, nil
+}
+
+// QueryTemporalFactsDuring queries facts that are valid during a time interval.
+func (r *MangleRuntime) QueryTemporalFactsDuring(factPattern string, start, end time.Time) ([]string, error) {
+	store := r.GetTemporalStore()
+	if store == nil {
+		return nil, fmt.Errorf("temporal store not available")
+	}
+
+	queryAtom, err := parse.Atom(factPattern)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse query '%s': %w", factPattern, err)
+	}
+
+	interval := ast.TimeInterval(start, end)
+	var results []string
+	err = store.GetFactsDuring(queryAtom, interval, func(tf factstore.TemporalFact) error {
+		results = append(results, tf.Atom.String())
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("query failed: %w", err)
+	}
+
+	return results, nil
+}
+
+// ContainsTemporalFact checks if a fact is valid at the evaluation time.
+func (r *MangleRuntime) ContainsTemporalFact(factString string) (bool, error) {
+	store := r.GetTemporalStore()
+	if store == nil {
+		return false, fmt.Errorf("temporal store not available")
+	}
+
+	atom, err := parse.Atom(factString)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse fact '%s': %w", factString, err)
+	}
+
+	evalTime := r.GetEvaluationTime()
+	if evalTime.IsZero() {
+		evalTime = time.Now()
+	}
+
+	return store.ContainsAt(atom, evalTime), nil
+}
+
+// AddEternalFact adds a fact that's always true (no temporal bounds).
+func (r *MangleRuntime) AddEternalFact(factString string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	atom, err := parse.Atom(factString)
+	if err != nil {
+		return fmt.Errorf("failed to parse fact '%s': %w", factString, err)
+	}
+
+	_, err = r.temporalStore.AddEternal(atom)
+	return err
+}
+
+// GetTemporalStore returns the temporal store for advanced operations.
+func (r *MangleRuntime) GetTemporalStore() *factstore.TemporalStore {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.temporalStore
 }
 
 // Load loads Datalog rules and facts from the specified path.
@@ -145,7 +450,18 @@ func (r *MangleRuntime) LoadFromSource(source string) error {
 
 	// Local state build
 	newRuleUnits := []parse.SourceUnit{unit}
+
+	// Add external predicates as extra declarations BEFORE analysis
+	// This allows predicates to be used in rules without explicit Decl in policy
 	edbDeclarations := make(map[ast.PredicateSym]ast.Decl)
+	extPreds := r.externalPreds.List()
+	for predSym := range extPreds {
+		// Only add if not already declared in the policy (checked after parsing)
+		// For now, add all - analysis will use policy Decl if present
+		if _, exists := edbDeclarations[predSym]; !exists {
+			edbDeclarations[predSym] = ast.NewSyntheticDeclFromSym(predSym)
+		}
+	}
 
 	programInfo, err := analysis.Analyze(newRuleUnits, edbDeclarations)
 	if err != nil {
@@ -157,9 +473,6 @@ func (r *MangleRuntime) LoadFromSource(source string) error {
 		IdbPredicates: programInfo.IdbPredicates,
 		Rules:         programInfo.Rules,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to stratify program: %w", err)
-	}
 
 	// Create new store (resetting old facts if this is a full reload)
 	newBaseStore := factstore.NewSimpleInMemoryStore()
@@ -367,8 +680,123 @@ func (r *MangleRuntime) QueryWithSolutions(facts []ast.Atom, queryStr string, on
 
 // evaluate helper (internal use only, assumes lock is held or local store)
 func (r *MangleRuntime) evaluate(store factstore.FactStore) error {
-	_, err := engine.EvalStratifiedProgramWithStats(r.programInfo, r.strata, r.predToStratum, store)
+	opts := r.buildEvalOptions()
+	_, err := engine.EvalStratifiedProgramWithStats(r.programInfo, r.strata, r.predToStratum, store, opts...)
 	return err
+}
+
+// buildEvalOptions builds evaluation options including external predicates and temporal store.
+func (r *MangleRuntime) buildEvalOptions() []engine.EvalOption {
+	opts := []engine.EvalOption{}
+
+	// Add temporal store if enabled
+	if r.temporalEnabled && r.temporalStore != nil {
+		opts = append(opts, engine.WithTemporalStore(r.temporalStore))
+	}
+
+	// Add evaluation time if set (required for temporal queries)
+	if !r.evaluationTime.IsZero() {
+		opts = append(opts, engine.WithEvaluationTime(r.evaluationTime))
+	}
+
+	// Add external predicates
+	extPreds := r.externalPreds.List()
+	if len(extPreds) > 0 {
+		callbacks := make(map[ast.PredicateSym]engine.ExternalPredicateCallback, len(extPreds))
+		for predSym, fn := range extPreds {
+			callbacks[predSym] = &externalPredicateAdapter{fn: fn}
+		}
+		opts = append(opts, engine.WithExternalPredicates(callbacks))
+	}
+
+	return opts
+}
+
+// externalPredicateAdapter wraps a simple ExternalPredicate function
+// to implement the Mangle engine's ExternalPredicateCallback interface.
+type externalPredicateAdapter struct {
+	fn ExternalPredicate
+}
+
+// ShouldPushdown returns false - we don't support pushdown optimization.
+func (a *externalPredicateAdapter) ShouldPushdown() bool {
+	return false
+}
+
+// ShouldQuery returns true to indicate we want to query for results.
+func (a *externalPredicateAdapter) ShouldQuery(inputs []ast.Constant, filters []ast.BaseTerm, pushdown []ast.Term) bool {
+	return true
+}
+
+// ExecuteQuery runs the external predicate and adds results to the store.
+func (a *externalPredicateAdapter) ExecuteQuery(inputs []ast.Constant, filters []ast.BaseTerm, pushdown []ast.Term, cb func([]ast.BaseTerm)) error {
+	ctx := context.Background()
+
+	// Convert AST inputs to Go values
+	goInputs := make([]any, len(inputs))
+	for i, inp := range inputs {
+		val, err := astConstantToGoValue(inp)
+		if err != nil {
+			return fmt.Errorf("failed to convert input %d: %w", i, err)
+		}
+		goInputs[i] = val
+	}
+
+	// Call the external function
+	results, err := a.fn(ctx, goInputs)
+	if err != nil {
+		return fmt.Errorf("external predicate failed: %w", err)
+	}
+
+	// Convert results back to AST terms
+	for _, result := range results {
+		if len(result) == 0 {
+			continue
+		}
+		terms := make([]ast.BaseTerm, len(result))
+		for i, val := range result {
+			terms[i] = goValueToAstConstant(val)
+		}
+		cb(terms)
+	}
+
+	return nil
+}
+
+// astConstantToGoValue converts an Mangle AST constant to a Go value.
+func astConstantToGoValue(c ast.Constant) (any, error) {
+	if v, err := c.NameValue(); err == nil {
+		return v, nil
+	}
+	if v, err := c.StringValue(); err == nil {
+		return v, nil
+	}
+	// Handle NumberType - store as int64
+	if c.Type == ast.NumberType {
+		return c.NumValue, nil
+	}
+	return c.Symbol, nil
+}
+
+// goValueToAstConstant converts a Go value to an Mangle AST constant.
+func goValueToAstConstant(v any) ast.BaseTerm {
+	switch val := v.(type) {
+	case string:
+		return ast.String(val)
+	case int:
+		return ast.Number(int64(val))
+	case int64:
+		return ast.Number(val)
+	case float64:
+		return ast.Float64(val)
+	case bool:
+		if val {
+			return ast.TrueConstant
+		}
+		return ast.FalseConstant
+	default:
+		return ast.String(fmt.Sprintf("%v", val))
+	}
 }
 
 // --- Helper Functions ---

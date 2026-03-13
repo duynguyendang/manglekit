@@ -27,11 +27,9 @@ func ValidatePolicySyntax(datalog, schemaDeclarations string) error {
 	eng := engine.NewMangleRuntime()
 
 	// Prepend standard declarations to the validator so usages of std lib don't fail.
-	// We use the single source of truth from internal/engine/resources.
-	// We also strictly declare 'deny' as it is the expected output interface.
+	// StdLib already includes deny declarations (both deny/1 and deny/2).
 	stdDecls := resources.StdLib()
-	denyDecl := "Decl deny(Source, Reason) ."
-	fullProgram := stdDecls + "\n" + denyDecl + "\n" + schemaDeclarations + "\n" + datalog
+	fullProgram := stdDecls + "\n" + schemaDeclarations + "\n" + datalog
 
 	// Attempt to parse and compile the policy
 	return eng.LoadFromSource(fullProgram)

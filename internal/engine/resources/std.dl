@@ -56,6 +56,56 @@ Decl action_operation(Entity, Op). % Action being performed (e.g., action_operat
 % Telemetry Predicate (Arity 2: Entity, RuleID)
 Decl violation_rule(Entity, RuleID).
 
+% ==========================================
+% 4. AGGREGATION (Mangle v0.4.0+)
+% Mangle supports aggregation using the |> syntax with fn: functions.
+% Example usage in policies:
+%
+%   % Count action operations per entity
+%   action_count(Entity, Count) :-
+%     action_operation(Entity, _)
+%     |> do fn:group_by(Entity),
+%        let Count = fn:count().
+%
+%   % Sum numeric metadata values
+%   total_cost(Entity, Total) :-
+%     meta(Entity, Cost),
+%     json_num(_, "cost", Cost)
+%     |> do fn:group_by(Entity),
+%        let Total = fn:sum(Cost).
+%
+% Available aggregation functions:
+%   - fn:count()        : Count rows in group
+%   - fn:sum(Column)   : Sum column values
+%   - fn:group_by(Col) : Group by column
+%   - fn:group_map()   : Create map during aggregation (v0.4.0+)
+%
+% Note: Aggregation requires Mangle v0.4.0+ and is evaluated at query time.
+% ==========================================
+
+% ==========================================
+% 5. TEMPORAL REASONING (NOT YET AVAILABLE)
+% Mangle v0.4.0 does not yet include temporal reasoning features.
+% The following is documented for when temporal support is added:
+%
+%   % Facts with time intervals (when available)
+%   active_user("alice")@[2024-01-01, 2024-06-15].
+%
+%   % Query: Was active in last 30 days
+%   recent_activity(User) :-
+%     <-[0d, 30d] active_user(User).
+%
+% Temporal operators:
+%   <-[0d, 30d] : Was true sometime in past (diamond-minus)
+%   -[0d, 30d]  : Was true continuously in past (box-minus)
+%   <+[0d, 30d] : Will be true in future (diamond-plus)
+%   +[0d, 30d]  : Will be true continuously in future (box-plus)
+%
+% Special values: _ (unbounded), now (current time)
+%
+% Note: Requires factstore.NewTemporalStore() which is not yet available.
+% ==========================================
+
 % --- Helper: String Matching ---
 
 % input_contains(Req, Keyword)
