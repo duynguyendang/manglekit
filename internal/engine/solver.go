@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"reflect"
 
+	"codeberg.org/TauCeti/mangle-go/ast"
+	"codeberg.org/TauCeti/mangle-go/parse"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine/resources"
-	"github.com/google/mangle/ast"
-	"github.com/google/mangle/parse"
 )
 
 var ErrSolutionFound = errors.New("solution found")
@@ -42,6 +42,42 @@ func New() (*PolicyEngine, error) {
 	}
 
 	return pe, nil
+}
+
+// RegisterExternalPredicate adds an external predicate to the policy engine.
+// External predicates allow Datalog rules to call Go functions for operations
+// like HTTP requests, database lookups, time checks, etc.
+//
+// Example usage:
+//
+//	engine.RegisterExternalPredicate("http_get", func(ctx context.Context, inputs []any) ([][]any, error) {
+//	    url := inputs[0].(string)
+//	    resp, err := http.Get(url)
+//	    if err != nil {
+//	        return nil, err
+//	    }
+//	    return [][]any{{resp.StatusCode}}, nil
+//	})
+//
+// Then use in policy:
+//
+//	http_allowed(URL) :- http_get(URL, Status), Status >= 200, Status < 300.
+//
+// Note: External predicates are evaluated at runtime and can introduce
+// non-determinism. Use with caution in security-critical policies.
+func (e *PolicyEngine) RegisterExternalPredicate(name string, fn func(ctx context.Context, inputs []any) ([][]any, error)) error {
+	return e.runtime.RegisterExternalPredicate(name, fn)
+}
+
+// ExternalPredicateRegistry returns the external predicate registry for inspection.
+func (e *PolicyEngine) ExternalPredicateRegistry() *ExternalPredicateRegistry {
+	return e.runtime.ExternalPredicates()
+}
+
+// Runtime returns the underlying MangleRuntime for advanced usage.
+// Use with caution - directly manipulating the runtime bypasses PolicyEngine safeguards.
+func (e *PolicyEngine) Runtime() *MangleRuntime {
+	return e.runtime
 }
 
 // NewWithTracer creates a new PolicyEngine with tracing enabled.

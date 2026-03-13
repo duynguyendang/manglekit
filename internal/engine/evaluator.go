@@ -5,11 +5,11 @@ import (
 	"reflect"
 	"strings"
 
-	mangleanalysis "github.com/google/mangle/analysis"
-	mangleast "github.com/google/mangle/ast"
-	mangleengine "github.com/google/mangle/engine"
-	manglefactstore "github.com/google/mangle/factstore"
-	mangleparse "github.com/google/mangle/parse"
+	mangleanalysis "codeberg.org/TauCeti/mangle-go/analysis"
+	mangleast "codeberg.org/TauCeti/mangle-go/ast"
+	mangleengine "codeberg.org/TauCeti/mangle-go/engine"
+	manglefactstore "codeberg.org/TauCeti/mangle-go/factstore"
+	mangleparse "codeberg.org/TauCeti/mangle-go/parse"
 )
 
 // Note: SimpleInMemoryStore is a value type, not a pointer.

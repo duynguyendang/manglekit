@@ -1,0 +1,180 @@
+% Manglekit External Predicates
+% ===============================
+% Mangle v0.4.0+ supports external predicates - Go functions callable from Datalog rules.
+% This enables policy logic to integrate with external systems (APIs, databases, services).
+%
+% Architecture Overview:
+% 1. Register Go functions as ExternalPredicateCallback
+% 2. Pass to engine via WithExternalPredicates option
+% 3. Call from Datalog rules like regular predicates
+%
+% ==========================================
+% EXAMPLE 1: HTTP Request Validation
+% ==========================================
+% Check if URL is in allowed domain list
+%
+% Datalog Usage:
+%   allowed_url(URL) :- http_get(URL, Status), Status >= 200, Status < 300.
+%
+% Go Implementation:
+%   externalFuncs := map[ast.PredicateSym]ExternalPredicateCallback{
+%     "http_get": func(ctx context.Context, inputs []any) ([][]any, error) {
+%         // inputs[0] = URL
+%         resp, err := http.Get(inputs[0].(string))
+%         if err != nil {
+%             return nil, err
+%         }
+%         return [][]any{{resp.StatusCode}}, nil
+%     },
+%   }
+%   engine.WithExternalPredicates(externalFuncs)
+
+% ==========================================
+% EXAMPLE 2: Time-based Access Control
+% ==========================================
+% Allow access only during business hours
+%
+% Datalog Usage:
+%   allowed_time :- time_now(Hour), Hour >= 9, Hour < 17.
+%
+% Go Implementation:
+%   "time_now": func(ctx context.Context, inputs []any) ([][]any, error) {
+%       now := time.Now()
+%       return [][]any{{now.Hour()}}, nil
+%   },
+
+% ==========================================
+% EXAMPLE 3: Rate Limiting
+% ==========================================
+% Check if user has exceeded rate limit
+%
+% Datalog Usage:
+%   rate_limited(User) :- rate_check(User, Count), Count > 100.
+%
+% Go Implementation:
+%   "rate_check": func(ctx context.Context, inputs []any) ([][]any, error) {
+%       user := inputs[0].(string)
+%       count := getUserRequestCount(user) // Redis lookup
+%       return [][]any{{count}}, nil
+%   },
+
+% ==========================================
+% EXAMPLE 4: IP Allowlist
+% ==========================================
+% Verify IP is in allowed list
+%
+% Datalog Usage:
+%   allowed_ip(IP) :- ip_lookup(IP, Result), Result == "allowed".
+%
+% Go Implementation:
+%   "ip_lookup": func(ctx context.Context, inputs []any) ([][]any, error) {
+%       ip := inputs[0].(string)
+%       result := checkIPAllowlist(ip) // Custom logic
+%       return [][]any{{result}}, nil
+%   },
+
+% ==========================================
+% EXAMPLE 5: Database Lookup
+% ==========================================
+% Query external database for user role
+%
+% Datalog Usage:
+%   user_role(User, Role) :- db_lookup(User, "role", Role).
+%
+% Go Implementation:
+%   "db_lookup": func(ctx context.Context, inputs []any) ([][]any, error) {
+%       user := inputs[0].(string)
+%       field := inputs[1].(string)
+%       value := lookupUserField(user, field) // DB query
+%       return [][]any{{value}}, nil
+%   },
+
+% ==========================================
+% EXAMPLE 6: Cryptographic Operations
+% ==========================================
+% Verify JWT token
+%
+% Datalog Usage:
+%   valid_token(Token, UserID) :- jwt_verify(Token, UserID, Valid), Valid == true.
+%
+% Go Implementation:
+%   "jwt_verify": func(ctx context.Context, inputs []any) ([][]any, error) {
+%       token := inputs[0].(string)
+%       claims, err := validateJWT(token)
+%       if err != nil {
+%           return [][]any{{"", false}}, nil
+%       }
+%       return [][]any{{claims.UserID, true}}, nil
+%   },
+
+% ==========================================
+% EXAMPLE 7: Third-party Service Call
+% ==========================================
+% Check if email domain is trusted
+%
+% Datalog Usage:
+%   trusted_email(Domain) :- email_domain_check(Domain, Trusted), Trusted == true.
+%
+% Go Implementation:
+%   "email_domain_check": func(ctx context.Context, inputs []any) ([][]any, error) {
+%       domain := inputs[0].(string)
+%       trusted := checkDomainReputation(domain) // Call external API
+%       return [][]any{{trusted}}, nil
+%   },
+
+% ==========================================
+% EXAMPLE 8: Configuration Lookup
+% ==========================================
+% Dynamic config retrieval
+%
+% Datalog Usage:
+%   config_value(Key, Value) :- config_get(Key, Value).
+%
+% Go Implementation:
+%   "config_get": func(ctx context.Context, inputs []any) ([][]any, error) {
+%       key := inputs[0].(string)
+%       value := getConfig(key) // consul, etcd, env
+%       return [][]any{{value}}, nil
+%   },
+
+% ==========================================
+% SECURITY CONSIDERATIONS
+% ==========================================
+%
+% 1. External predicates bypass local fact store - no audit trail by default
+% 2. Can introduce non-determinism (time, external state)
+% 3. Potential for information leakage if not carefully designed
+% 4. Consider adding telemetry:
+%    - Log all external predicate calls
+%    - Track response times
+%    - Monitor for anomalies
+%
+% Best Practices:
+% - Declare external predicates explicitly in policy
+% - Add timeout to all external calls
+% - Cache results where appropriate
+% - Use circuit breakers for resilience
+
+% ==========================================
+% IMPLEMENTATION NOTES
+% ==========================================
+%
+% To use external predicates in manglekit:
+%
+% 1. Create custom engine options:
+%    func WithExternalPredicates(preds map[ast.PredicateSym]ExternalPredicateCallback) EngineOption {
+%        return func(e *PolicyEngine) error {
+%            // Pass to runtime during eval
+%        }
+%    }
+%
+% 2. Or extend MangleRuntime:
+%    func (r *MangleRuntime) SetExternalPredicates(preds map[ast.PredicateSym]ExternalPredicateCallback) {
+%        r.externalPreds = preds
+%    }
+%
+% 3. Modify evaluation to pass external preds:
+%    engine.EvalStratifiedProgramWithStats(..., engine.WithExternalPredicates(preds))
+%
+% Current Status: NOT YET IMPLEMENTED in manglekit
+% This file serves as a specification for future implementation.

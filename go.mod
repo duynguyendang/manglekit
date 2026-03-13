@@ -3,12 +3,12 @@ module github.com/duynguyendang/manglekit
 go 1.25.1
 
 require (
+	codeberg.org/TauCeti/mangle-go v0.5.0
 	github.com/cayleygraph/quad v1.3.0
 	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/firebase/genkit/go v1.4.0
 	github.com/google/generative-ai-go v0.20.1
 	github.com/google/jsonschema-go v0.4.2
-	github.com/google/mangle v0.4.0
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/knakk/rdf v0.0.0-20190304171630-8521bf4c5042
@@ -91,3 +91,5 @@ require (
 	google.golang.org/grpc v1.78.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
+
+replace github.com/google/mangle => codeberg.org/TauCeti/mangle-go v0.5.0

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"text/template"
 
+	mangleparse "codeberg.org/TauCeti/mangle-go/parse"
 	"github.com/duynguyendang/manglekit/core"
-	mangleparse "github.com/google/mangle/parse"
 )
 
 // GeneratorOptions defines configuration for the rule generator.

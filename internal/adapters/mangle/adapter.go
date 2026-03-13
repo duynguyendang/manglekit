@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
+	"codeberg.org/TauCeti/mangle-go/analysis"
+	"codeberg.org/TauCeti/mangle-go/ast"
+	"codeberg.org/TauCeti/mangle-go/engine"
+	"codeberg.org/TauCeti/mangle-go/factstore"
+	"codeberg.org/TauCeti/mangle-go/parse"
 	"github.com/duynguyendang/manglekit/internal/core/domain"
-	"github.com/google/mangle/analysis"
-	"github.com/google/mangle/ast"
-	"github.com/google/mangle/engine"
-	"github.com/google/mangle/factstore"
-	"github.com/google/mangle/parse"
 )
 
 // ReasoningAdapter implements ports.ReasoningPort using the Google Mangle engine.

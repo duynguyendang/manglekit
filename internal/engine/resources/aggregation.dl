@@ -1,0 +1,152 @@
+% Manglekit Aggregation Examples
+% ==============================
+% These examples demonstrate how to use Mangle v0.4.0+ aggregation functions
+% in manglekit policies for analytics and monitoring.
+%
+% To use these in your policies, include them or copy the patterns you need.
+
+% ==========================================
+% EXAMPLE 1: Action Usage Analytics
+% ==========================================
+% Count how many times each action is executed
+% 
+% Usage:
+%   results, err := engine.Query(ctx, facts, `action_usage_count(Action, Count)`)
+%
+% Results:
+%   [{"Action": "generate_code", "Count": "150"},
+%    {"Action": "review_code", "Count": "75"}]
+
+Decl action_operation(Entity, Op).
+
+action_usage_count(Action, Count) :-
+  action_operation(Entity, Action)
+  |> do fn:group_by(Action),
+     let Count = fn:count().
+
+% ==========================================
+% EXAMPLE 2: Violation Analytics
+% ==========================================
+% Count violations per rule to identify problematic policies
+%
+% Usage:
+%   results, err := engine.Query(ctx, facts, `violation_stats(RuleID, Count)`)
+%
+% Results:
+%   [{"RuleID": "COST_LIMIT_001", "Count": "23"},
+%    {"RuleID": "REGION_BLOCK_002", "Count": "5"}]
+
+violation_stats(RuleID, Count) :-
+  violation_rule(Entity, RuleID)
+  |> do fn:group_by(RuleID),
+     let Count = fn:count().
+
+% ==========================================
+% EXAMPLE 3: Effort Aggregation (for planning)
+% ==========================================
+% Sum effort estimates by workstream
+%
+% Given facts like:
+%   task_effort("workstream_1", 25).
+%   task_effort("workstream_1", 30).
+%   task_effort("workstream_2", 15).
+%
+% Usage:
+%   results, err := engine.Query(ctx, facts, `total_effort(Workstream, Total)`)
+%
+% Results:
+%   [{"Workstream": "workstream_1", "Total": "55"},
+%    {"Workstream": "workstream_2", "Total": "15"}]
+
+Decl task_effort(Workstream, Effort).
+Decl json_num(Parent, Key, Val).
+
+total_effort(Workstream, Total) :-
+  task_effort(Workstream, Effort)
+  |> do fn:group_by(Workstream),
+     let Total = fn:sum(Effort).
+
+% Alternative: using json_num for metadata-embedded values
+total_effort_from_meta(Workstream, Total) :-
+  json_num(_, "workstream", WSNum),
+  json_num(_, "effort", Effort),
+  % Note: Need to convert numeric IDs back to strings in real usage
+  let Workstream = "ws_" ++ WSNum,
+  |> do fn:group_by(Workstream),
+     let Total = fn:sum(Effort).
+
+% ==========================================
+% EXAMPLE 4: Unique Entity Counting
+% ==========================================
+% Count unique entities in a relation
+%
+% Usage:
+%   results, err := engine.Query(ctx, facts, `unique_entity_count(EntityType, UniqueCount)`)
+
+Decl entity_type(Entity, Type).
+
+unique_entity_count(EntityType, UniqueCount) :-
+  entity_type(Entity, EntityType)
+  |> do fn:group_by(EntityType),
+     let UniqueCount = fn:count().
+
+% ==========================================
+% EXAMPLE 5: Rate Limiting Buckets
+% ==========================================
+% Group requests by time window for rate limiting analysis
+%
+% Given facts like:
+%   request_window("user_1", "2024-01-15T10:00").
+%   request_window("user_1", "2024-01-15T10:05").
+%
+% Usage:
+%   results, err := engine.Query(ctx, facts, `requests_per_window(Window, Count)`)
+
+Decl request_window(User, Window).
+
+requests_per_window(Window, Count) :-
+  request_window(User, Window)
+  |> do fn:group_by(Window),
+     let Count = fn:count().
+
+% ==========================================
+% EXAMPLE 6: JSON-embedded Numeric Aggregation
+% ==========================================
+% Aggregate values embedded in JSON metadata
+%
+% Given input envelope with:
+%   {"data": {"cost": 100, "region": "us-east"}}
+%   {"data": {"cost": 200, "region": "us-west"}}
+%
+% Policy:
+cost_by_region(Region, TotalCost, AvgCost, Count) :-
+  json_str(_, "region", Region),
+  json_num(_, "cost", Cost)
+  |> do fn:group_by(Region),
+     let TotalCost = fn:sum(Cost),
+     let AvgCost = fn:sum(Cost) / fn:count(),
+     let Count = fn:count().
+
+% ==========================================
+% USAGE NOTES
+% ==========================================
+% 1. Aggregation requires Mangle v0.4.0+
+% 2. The |> operator chains the base query results to aggregation
+% 3. fn:group_by groups results by the specified variable(s)
+% 4. Multiple aggregations can be computed in a single group_by
+% 5. Aggregation is evaluated at query time, not rule definition time
+%
+% Testing aggregation:
+%   // Load the aggregation rules
+%   err := engine.LoadPolicy(ctx, aggregationExamples)
+%
+%   // Add facts
+%   facts := []string{
+%     `action_operation("req_1", "generate_code")`,
+%     `action_operation("req_2", "generate_code")`,
+%     `action_operation("req_3", "review_code")`,
+%   }
+%   engine.LoadFacts(facts)
+%
+%   // Query
+%   results, err := engine.Query(ctx, []string{}, `action_usage_count(Action, Count)`)
