@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
+	"time"
 
 	"codeberg.org/TauCeti/mangle-go/ast"
 	"codeberg.org/TauCeti/mangle-go/parse"
@@ -934,4 +936,161 @@ func toMangleFacts(entityID string, input any, contentType core.ContentType) ([]
 	}
 
 	return atoms, nil
+}
+
+// QueryWithAuditResult contains the query results along with the audit trail.
+type QueryWithAuditResult struct {
+	Results    []map[string]string
+	AuditTrail *core.AuditTrail
+}
+
+// QueryWithAudit executes a Datalog query and returns results along with an audit trail.
+// The audit trail explains which rules were matched and from which tier they originated.
+func (e *PolicyEngine) QueryWithAudit(ctx context.Context, facts []string, queryStr string) (*QueryWithAuditResult, error) {
+	startTime := time.Now()
+
+	engineID := "manglekit-engine"
+	auditTrail := core.NewAuditTrail(engineID, queryStr)
+
+	var results []map[string]string
+
+	// Parse temporary facts
+	var atomFacts []ast.Atom
+	for _, f := range facts {
+		atom, err := parse.Atom(f)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse fact '%s': %w", f, err)
+		}
+		atomFacts = append(atomFacts, atom)
+	}
+
+	auditTrail.FactCount = len(atomFacts)
+
+	err := e.runtime.QueryWithSolutions(atomFacts, queryStr, func(solution map[string]any) error {
+		// Convert map[string]any to map[string]string
+		strMap := make(map[string]string)
+		for k, v := range solution {
+			if s, ok := v.(string); ok {
+				strMap[k] = s
+			} else {
+				strMap[k] = fmt.Sprintf("%v", v)
+			}
+		}
+		results = append(results, strMap)
+
+		// Extract rule information from the solution
+		// This is a simplified version - in production, you'd inspect the proof
+		extractRuleInference(auditTrail, solution, queryStr)
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	auditTrail.MatchedCount = len(results)
+	auditTrail.LatencyMs = time.Since(startTime).Milliseconds()
+
+	return &QueryWithAuditResult{
+		Results:    results,
+		AuditTrail: auditTrail,
+	}, nil
+}
+
+// extractRuleInference extracts rule inference information from the query solution.
+// This is a simplified implementation that tries to identify which predicates matched.
+func extractRuleInference(auditTrail *core.AuditTrail, solution map[string]any, queryStr string) {
+	// Extract predicate names from the query
+	// The query might look like: "can_execute(Agent, Action)" or "allow(Subject, Object)"
+	// We need to identify which predicates in the knowledge base matched
+
+	// For now, we'll create a basic inference entry
+	// In a full implementation, you'd use mangle-go's proof/explanation API
+
+	predicate := extractPredicateFromQuery(queryStr)
+	if predicate == "" {
+		return
+	}
+
+	// Try to determine the rule name and tier from the predicate
+	ruleName := predicate
+	tier := determineTierFromPredicate(predicate)
+	sourceFile := getSourceFileForPredicate(predicate)
+
+	// Convert solution values to string bindings
+	bindings := make(map[string]string)
+	for k, v := range solution {
+		bindings[k] = fmt.Sprintf("%v", v)
+	}
+
+	definition := fmt.Sprintf("%s with bindings %v", predicate, bindings)
+
+	auditTrail.AddRule(ruleName, definition, sourceFile, predicate, tier, bindings)
+}
+
+// extractPredicateFromQuery extracts the main predicate from a Datalog query string.
+func extractPredicateFromQuery(queryStr string) string {
+	// Simple extraction - take the first term before parenthesis
+	queryStr = strings.TrimSpace(queryStr)
+
+	// Handle queries like "can_execute(Agent, Action)" or "allow(X)"
+	if idx := strings.Index(queryStr, "("); idx > 0 {
+		return strings.TrimSpace(queryStr[:idx])
+	}
+
+	// Handle simple atom queries like "valid" or "allowed"
+	return queryStr
+}
+
+// TierMapping maps predicate prefixes to governance tiers.
+var TierMapping = map[string]core.Tier{
+	"allow":           core.TierT1_Governance,
+	"deny":            core.TierT1_Governance,
+	"may_read":        core.TierT1_Governance,
+	"may_write":       core.TierT1_Governance,
+	"may_exec":        core.TierT1_Governance,
+	"can_execute":     core.TierT2_Playbook,
+	"can_access":      core.TierT2_Playbook,
+	"requires":        core.TierT2_Playbook,
+	"retry_for":       core.TierT2_Playbook,
+	"validation_rule": core.TierT2_Playbook,
+	"prompt_template": core.TierT2_Playbook,
+	"workflow_node":   core.TierT2_Playbook,
+	"workflow_edge":   core.TierT2_Playbook,
+	"agent_role":      core.TierT2_Playbook,
+	"role_capability": core.TierT2_Playbook,
+	"task_requires":   core.TierT2_Playbook,
+}
+
+// TierSourceFiles maps tiers to their source files.
+var TierSourceFiles = map[core.Tier]string{
+	core.TierT0_Axiom:      "axioms.dl",
+	core.TierT1_Governance: "governance.dl",
+	core.TierT2_Playbook:   "registry.dl",
+	core.TierT3_User:       "user-input.dl",
+	core.TierUnknown:       "unknown",
+}
+
+// determineTierFromPredicate determines the governance tier from a predicate name.
+func determineTierFromPredicate(predicate string) core.Tier {
+	// Check exact match first
+	if tier, ok := TierMapping[predicate]; ok {
+		return tier
+	}
+
+	// Check prefix match
+	for prefix, tier := range TierMapping {
+		if strings.HasPrefix(predicate, prefix) {
+			return tier
+		}
+	}
+
+	return core.TierUnknown
+}
+
+// getSourceFileForPredicate returns the likely source file for a predicate.
+func getSourceFileForPredicate(predicate string) string {
+	tier := determineTierFromPredicate(predicate)
+	return TierSourceFiles[tier]
 }

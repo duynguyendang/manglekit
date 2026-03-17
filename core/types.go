@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -198,10 +199,98 @@ func (e *Envelope) SetHistory(msgs []Message) {
 
 // Decision: Structured result from the Policy Engine.
 type Decision struct {
-	Outcome string            // Matches DecisionProceed, DecisionHalt, etc.
-	Target  string            // Used if Outcome == DecisionRoute
-	Reasons []string          // Explanations
-	Meta    map[string]string // Side-channel data (risk scores, latency budget)
+	Outcome    string            // Matches DecisionProceed, DecisionHalt, etc.
+	Target     string            // Used if Outcome == DecisionRoute
+	Reasons    []string          // Explanations
+	Meta       map[string]string // Side-channel data (risk scores, latency budget)
+	AuditTrail *AuditTrail       // Detailed execution trace
+	Action     *ActionEnvelope   // Action to be executed (decoupled from Go implementation)
+}
+
+// ActionEnvelope contains the action to be executed and its parameters.
+// This decouples Manglekit's logical decisions from their Go implementations.
+type ActionEnvelope struct {
+	Name      string                 // Action name matching Registry (e.g., "generate_csd")
+	Arguments map[string]interface{} // Parameters derived from Datalog bindings
+}
+
+// NewActionEnvelope creates a new ActionEnvelope.
+func NewActionEnvelope(name string, args map[string]interface{}) *ActionEnvelope {
+	if args == nil {
+		args = make(map[string]interface{})
+	}
+	return &ActionEnvelope{
+		Name:      name,
+		Arguments: args,
+	}
+}
+
+// AuditTrail provides detailed explanation of why a decision was made.
+// It captures which Datalog rules were triggered and their source tier.
+type AuditTrail struct {
+	MatchedRules []RuleInference // The rules that matched and contributed to the decision
+	Timestamp    time.Time       // When the decision was made
+	EngineID     string          // Identifier for the policy engine instance
+	Query        string          // The original query that was evaluated
+	FactCount    int             // Number of facts evaluated
+	MatchedCount int             // Number of matching results
+	LatencyMs    int64           // Time taken to evaluate (for performance monitoring)
+}
+
+// RuleInference represents a single rule that contributed to a decision.
+type RuleInference struct {
+	RuleName   string            // The name/ID of the rule (e.g., "can_execute")
+	Tier       Tier              // The governance tier (T0_Axiom, T1_Governance, T2_Playbook, T3_User)
+	Definition string            // The original Datalog rule definition
+	SourceFile string            // Source file where the rule was defined
+	Bindings   map[string]string // Variable bindings from unification (e.g., X="agent-001")
+	Predicate  string            // The predicate name that matched
+}
+
+// Tier represents the governance tier level.
+type Tier string
+
+const (
+	TierT0_Axiom      Tier = "T0" // Kernel axioms (hard laws)
+	TierT1_Governance Tier = "T1" // Governance policies
+	TierT2_Playbook   Tier = "T2" // Playbook rules
+	TierT3_User       Tier = "T3" // User input / dynamic
+	TierUnknown       Tier = "Unknown"
+)
+
+// NewAuditTrail creates a new AuditTrail with default values.
+func NewAuditTrail(engineID, query string) *AuditTrail {
+	return &AuditTrail{
+		MatchedRules: make([]RuleInference, 0),
+		Timestamp:    time.Now(),
+		EngineID:     engineID,
+		Query:        query,
+	}
+}
+
+// AddRule adds a matched rule to the audit trail.
+func (a *AuditTrail) AddRule(ruleName, definition, sourceFile, predicate string, tier Tier, bindings map[string]string) {
+	a.MatchedRules = append(a.MatchedRules, RuleInference{
+		RuleName:   ruleName,
+		Tier:       tier,
+		Definition: definition,
+		SourceFile: sourceFile,
+		Bindings:   bindings,
+		Predicate:  predicate,
+	})
+}
+
+// Summary returns a human-readable summary of the audit trail.
+func (a *AuditTrail) Summary() string {
+	if len(a.MatchedRules) == 0 {
+		return "No rules matched"
+	}
+
+	summary := fmt.Sprintf("%d rule(s) matched:\n", len(a.MatchedRules))
+	for i, rule := range a.MatchedRules {
+		summary += fmt.Sprintf("  %d. %s (%s) - %s\n", i+1, rule.RuleName, rule.Tier, rule.SourceFile)
+	}
+	return summary
 }
 
 // ConfigEvent: For Hot-Swap mechanisms.

@@ -1,0 +1,172 @@
+% ==========================================
+% AGENT REGISTRY (Tier 1 Governance)
+% ==========================================
+
+% Core agent roles
+agent_role("planner").
+agent_role("executor").
+agent_role("reviewer").
+agent_role("researcher").
+agent_role("coordinator").
+agent_role("supervisor").
+agent_role("orchestrator").
+
+% ==========================================
+% ROLE CAPABILITIES
+% ==========================================
+
+% Planner capabilities
+role_capability("planner", "task_decomposition").
+role_capability("planner", "goal_analysis").
+role_capability("planner", "milestone_planning").
+role_capability("planner", "plan_generation").
+role_capability("planner", "llm_reasoning").
+
+% Executor capabilities
+role_capability("executor", "action_execution").
+role_capability("executor", "tool_invocation").
+role_capability("executor", "api_calls").
+role_capability("executor", "llm_generation").
+role_capability("executor", "file_operations").
+
+% Reviewer capabilities
+role_capability("reviewer", "validation").
+role_capability("reviewer", "quality_check").
+role_capability("reviewer", "compliance_check").
+role_capability("reviewer", "approval").
+role_capability("reviewer", "llm_reasoning").
+
+% Researcher capabilities
+role_capability("researcher", "information_gathering").
+role_capability("researcher", "knowledge_retrieval").
+role_capability("researcher", "web_search").
+role_capability("researcher", "document_analysis").
+role_capability("researcher", "vector_search").
+
+% Coordinator capabilities
+role_capability("coordinator", "task_delegation").
+role_capability("coordinator", "workflow_orchestration").
+role_capability("coordinator", "agent_synchronization").
+role_capability("coordinator", "state_management").
+
+% Supervisor inherits all
+role_inherits("supervisor", "planner").
+role_inherits("supervisor", "executor").
+role_inherits("supervisor", "coordinator").
+role_inherits("supervisor", "reviewer").
+
+% Orchestrator capabilities
+role_capability("orchestrator", "workflow_execution").
+role_capability("orchestrator", "agent_coordination").
+role_capability("orchestrator", "state_management").
+role_capability("orchestrator", "error_recovery").
+
+% ==========================================
+% TASK REQUIREMENTS
+% ==========================================
+
+% What capabilities tasks require
+task_requires_capability("generate_document", "llm_generation").
+task_requires_capability("validate_output", "validation").
+task_requires_capability("deploy_infrastructure", "tool_execution").
+task_requires_capability("gather_requirements", "knowledge_retrieval").
+task_requires_capability("create_plan", "plan_generation").
+task_requires_capability("review_plan", "quality_check").
+task_requires_capability("search_knowledge", "knowledge_retrieval").
+task_requires_capability("analyze_document", "document_analysis").
+task_requires_capability("invoke_tool", "tool_invocation").
+task_requires_capability("execute_action", "action_execution").
+
+% ==========================================
+% AGENT REGISTRY (Instances)
+% ==========================================
+
+% Agent instantiation
+agent("planner-001", "planner").
+agent("executor-001", "executor").
+agent("executor-002", "executor").
+agent("reviewer-001", "reviewer").
+agent("researcher-001", "researcher").
+agent("orchestrator-001", "orchestrator").
+
+% Agent capabilities (instance-level overrides)
+agent_capability("planner-001", "llm_reasoning").
+agent_capability("planner-001", "task_decomposition").
+agent_capability("planner-001", "plan_generation").
+
+agent_capability("executor-001", "llm_generation").
+agent_capability("executor-001", "tool_invocation").
+agent_capability("executor-001", "api_calls").
+agent_capability("executor-001", "action_execution").
+
+agent_capability("executor-002", "llm_generation").
+agent_capability("executor-002", "tool_invocation").
+agent_capability("executor-002", "file_operations").
+
+agent_capability("reviewer-001", "llm_reasoning").
+agent_capability("reviewer-001", "validation").
+agent_capability("reviewer-001", "quality_check").
+agent_capability("reviewer-001", "approval").
+
+agent_capability("researcher-001", "knowledge_retrieval").
+agent_capability("researcher-001", "vector_search").
+agent_capability("researcher-001", "document_analysis").
+
+agent_capability("orchestrator-001", "workflow_execution").
+agent_capability("orchestrator-001", "agent_coordination").
+agent_capability("orchestrator-001", "error_recovery").
+
+% ==========================================
+% AGENT CONFIGURATION
+% ==========================================
+
+agent_config("planner-001", "model", "gpt-4o").
+agent_config("planner-001", "temperature", "0.3").
+agent_config("planner-001", "max_tokens", "4000").
+
+agent_config("executor-001", "model", "gpt-4o").
+agent_config("executor-001", "temperature", "0.7").
+agent_config("executor-001", "timeout_ms", "60000").
+agent_config("executor-001", "max_retries", "3").
+
+agent_config("executor-002", "model", "gpt-4o").
+agent_config("executor-002", "temperature", "0.7").
+agent_config("executor-002", "timeout_ms", "30000").
+
+agent_config("reviewer-001", "model", "gpt-4o").
+agent_config("reviewer-001", "temperature", "0.2").
+agent_config("reviewer-001", "strict_mode", "true").
+
+agent_config("researcher-001", "model", "gpt-4o").
+agent_config("researcher-001", "temperature", "0.5").
+agent_config("researcher-001", "top_k", "10").
+
+agent_config("orchestrator-001", "max_parallel", "5").
+agent_config("orchestrator-001", "checkpoint_interval", "30").
+
+% ==========================================
+% AGENT STATUS
+% ==========================================
+
+agent_status("planner-001", "available").
+agent_status("executor-001", "available").
+agent_status("executor-002", "available").
+agent_status("reviewer-001", "available").
+agent_status("researcher-001", "available").
+agent_status("orchestrator-001", "available").
+
+% ==========================================
+% COMMUNICATION PROTOCOLS
+% ==========================================
+
+communication_protocol("request_response").
+communication_protocol("publish_subscribe").
+communication_protocol("broadcast").
+communication_protocol("streaming").
+
+% Default protocols per role
+role_protocol("planner", "request_response").
+role_protocol("executor", "request_response").
+role_protocol("reviewer", "request_response").
+role_protocol("researcher", "publish_subscribe").
+role_protocol("orchestrator", "broadcast").

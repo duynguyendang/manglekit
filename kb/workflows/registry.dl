@@ -1,0 +1,128 @@
+% ==========================================
+% WORKFLOW DEFINITIONS
+% ==========================================
+
+% Workflow metadata: id, name, version
+workflow("content-pipeline", "Content Generation Pipeline", "v1.0").
+workflow("research-pipeline", "Research and Analysis Pipeline", "v1.0").
+workflow("approval-pipeline", "Approval Workflow", "v1.0").
+workflow("simple-gen", "Simple Generation", "v1.0").
+
+% ==========================================
+% WORKFLOW NODES
+% ==========================================
+
+% Node: workflow, node_id, type, agent_role_or_action
+% Type: "agent" | "action" | "condition" | "parallel" | "merge"
+
+% Content Pipeline
+workflow_node("content-pipeline", "research", "agent", "researcher").
+workflow_node("content-pipeline", "plan", "agent", "planner").
+workflow_node("content-pipeline", "execute", "agent", "executor").
+workflow_node("content-pipeline", "review", "agent", "reviewer").
+workflow_node("content-pipeline", "finalize", "agent", "executor").
+
+% Research Pipeline
+workflow_node("research-pipeline", "gather", "agent", "researcher").
+workflow_node("research-pipeline", "analyze", "agent", "planner").
+workflow_node("research-pipeline", "validate", "agent", "reviewer").
+
+% Approval Pipeline
+workflow_node("approval-pipeline", "submit", "action", "submit_approval").
+workflow_node("approval-pipeline", "review", "agent", "reviewer").
+workflow_node("approval-pipeline", "approve", "action", "process_approval").
+workflow_node("approval-pipeline", "notify", "action", "send_notification").
+
+% Simple Generation
+workflow_node("simple-gen", "generate", "agent", "executor").
+workflow_node("simple-gen", "review", "agent", "reviewer").
+
+% ==========================================
+% NODE CONFIGURATION
+% ==========================================
+
+% Node-specific configuration
+node_config("content-pipeline", "plan", "max_iterations", "3").
+node_config("content-pipeline", "execute", "allow_parallel", "true").
+node_config("content-pipeline", "review", "strict", "true").
+node_config("content-pipeline", "review", "min_approval_count", "1").
+
+node_config("research-pipeline", "gather", "max_sources", "10").
+node_config("research-pipeline", "analyze", "depth", "comprehensive").
+
+node_config("approval-pipeline", "review", "timeout_hours", "24").
+node_config("approval-pipeline", "review", "escalate_after_hours", "48").
+
+% ==========================================
+% WORKFLOW EDGES (Sequential)
+% ==========================================
+
+% Sequential flow
+workflow_edge("content-pipeline", "research", "plan").
+workflow_edge("content-pipeline", "plan", "execute").
+workflow_edge("content-pipeline", "execute", "review").
+workflow_edge("content-pipeline", "review", "finalize").
+
+workflow_edge("research-pipeline", "gather", "analyze").
+workflow_edge("research-pipeline", "analyze", "validate").
+
+workflow_edge("approval-pipeline", "submit", "review").
+workflow_edge("approval-pipeline", "review", "approve").
+workflow_edge("approval-pipeline", "approve", "notify").
+
+workflow_edge("simple-gen", "generate", "review").
+
+% ==========================================
+% CONDITIONAL EDGES
+% ==========================================
+
+% Conditional edge: workflow, from_node, to_node, condition_query
+% The condition is a Datalog query that must evaluate to true
+
+conditional_edge("content-pipeline", "review", "finalize", 
+    "review_approved(context)").
+
+conditional_edge("content-pipeline", "review", "execute", 
+    "not review_approved(context), retry_count(context, Count), Count < 3").
+
+conditional_edge("content-pipeline", "review", "plan", 
+    "needs_revision(context), retry_count(context, Count), Count < 2").
+
+conditional_edge("approval-pipeline", "review", "approve", 
+    "approval_granted(context)").
+
+conditional_edge("approval-pipeline", "review", "submit", 
+    "approval_denied(context), retry_count(context, Count), Count < 2").
+
+% ==========================================
+% ERROR HANDLING EDGES
+% ==========================================
+
+% Error edge: workflow, from_node, to_node, error_condition
+error_edge("content-pipeline", "plan", "finalize", "planning_failed(context)").
+error_edge("content-pipeline", "execute", "review", "execution_failed(context)").
+error_edge("content-pipeline", "review", "finalize", "review_skipped(context)").
+
+error_edge("research-pipeline", "gather", "analyze", "gather_failed(context)").
+
+% ==========================================
+% PARALLEL EXECUTION
+% ==========================================
+
+% Parallel groups (nodes that can run concurrently)
+parallel_group("content-pipeline", "drafts", ["draft_v1", "draft_v2"]).
+parallel_group("research-pipeline", "sources", ["source_1", "source_2", "source_3"]).
+
+% Barrier/merge points
+barrier("content-pipeline", "merge_drafts", ["draft_v1", "draft_v2"]).
+barrier("research-pipeline", "merge_sources", ["source_1", "source_2", "source_3"]).
+
+% ==========================================
+% WORKFLOW VARIABLES
+% ==========================================
+
+% Default variables per workflow
+workflow_var("content-pipeline", "output_format", "markdown").
+workflow_var("content-pipeline", "max_length", "5000").
+workflow_var("research-pipeline", "min_sources", "3").
+workflow_var("approval-pipeline", "auto_approve_threshold", "1000").
