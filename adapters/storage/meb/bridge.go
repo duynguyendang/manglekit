@@ -181,6 +181,17 @@ func (b *KnowledgeBridge) WithGraphID(graphID string) *KnowledgeBridge {
 	return &bridge
 }
 
+// ToMangleFact converts a MEB fact (Quad: S, P, O, G) to core.Fact format.
+// This is the main entry point for mapping MEB data to Manglekit facts.
+func (b *KnowledgeBridge) ToMangleFact(fact MEBFact) core.Atom {
+	return b.toAtom(fact)
+}
+
+// ToMangleQuad converts a MEB fact to core.Quad format with Graph.
+func (b *KnowledgeBridge) ToMangleQuad(fact MEBFact) core.Quad {
+	return b.toQuad(fact)
+}
+
 // toAtom converts an MEB fact to a core.Atom (Subject-Predicate-Object only).
 func (b *KnowledgeBridge) toAtom(fact MEBFact) core.Atom {
 	return core.Atom{

@@ -383,6 +383,118 @@ func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope)
 	return config, nil
 }
 
+// ExtractActionArguments queries the engine for action arguments from Datalog bindings.
+// This enables the PolicyEngine to dynamically extract arguments from Datalog rules
+// and populate the ActionEnvelope.Arguments.
+//
+// Datalog pattern: suggested_action(ActionName, [key1: value1, key2: value2])
+// Or: action_args(ActionName, Key, Value)
+//
+// Parameters:
+//   - ctx: The execution context.
+//   - input: The input envelope.
+//   - actionName: The action name to extract arguments for.
+//
+// Returns:
+//   - map[string]interface{} of extracted arguments.
+//   - error if extraction fails.
+func (e *PolicyEngine) ExtractActionArguments(ctx context.Context, input core.Envelope, actionName string) (map[string]interface{}, error) {
+	args := make(map[string]interface{})
+
+	if e.runtime == nil {
+		return args, nil
+	}
+
+	// Convert input to facts
+	facts, err := toMangleFacts(core.EntityInput, input.Payload, input.ContentType)
+	if err != nil {
+		return args, nil // Return empty on error
+	}
+
+	// Inject Envelope Facts
+	for _, factStr := range input.Facts {
+		atom, err := parse.Atom(factStr)
+		if err != nil {
+			continue
+		}
+		facts = append(facts, atom)
+	}
+
+	// Try to extract from action_args(ActionName, Key, Value) pattern
+	queryStr := fmt.Sprintf("action_args(\"%s\", Key, Value)", actionName)
+	err = e.runtime.QueryWithSolutions(nil, queryStr, func(solution map[string]any) error {
+		if key, ok := solution["Key"]; ok {
+			if keyStr, ok := key.(string); ok {
+				if value, ok := solution["Value"]; ok {
+					args[keyStr] = convertDatalogValue(value)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		// Query failed, try alternative pattern
+		e.logger.Debug("action_args query failed, trying alternative pattern", "error", err)
+	}
+
+	// Try alternative: suggested_action(ActionName, KeyValueList) pattern
+	// Where KeyValueList is expected to be in format: [key1:val1, key2:val2]
+	if len(args) == 0 {
+		altQueryStr := fmt.Sprintf("suggested_action(\"%s\", Args)", actionName)
+		err = e.runtime.QueryWithSolutions(nil, altQueryStr, func(solution map[string]any) error {
+			if argsVal, ok := solution["Args"]; ok {
+				if argsMap, ok := argsVal.(map[any]any); ok {
+					for k, v := range argsMap {
+						if keyStr, ok := k.(string); ok {
+							args[keyStr] = convertDatalogValue(v)
+						}
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			e.logger.Debug("suggested_action query failed", "error", err)
+		}
+	}
+
+	return args, nil
+}
+
+// convertDatalogValue converts Datalog values to native Go types.
+func convertDatalogValue(val any) interface{} {
+	switch v := val.(type) {
+	case string:
+		return v
+	case int, int8, int16, int32, int64:
+		return v
+	case uint, uint8, uint16, uint32, uint64:
+		return v
+	case float32, float64:
+		return v
+	case bool:
+		return v
+	case []any:
+		// Convert list to slice
+		result := make([]interface{}, len(v))
+		for i, item := range v {
+			result[i] = convertDatalogValue(item)
+		}
+		return result
+	case map[any]any:
+		// Convert map to map[string]interface{}
+		result := make(map[string]interface{})
+		for k, v := range v {
+			if keyStr, ok := k.(string); ok {
+				result[keyStr] = convertDatalogValue(v)
+			}
+		}
+		return result
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
 // Assess performs the Pre-Check phase of governance.
 // It checks if the input is allowed to proceed based on the loaded policies.
 // If the `infeasible(Req, Reason)` or `deny(Req)` predicate is derived, it returns `core.ErrAlignment`.

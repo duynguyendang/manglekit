@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/sdk/ports"
 	"github.com/google/uuid"
 )
 
@@ -150,6 +151,12 @@ type CognitiveFrame struct {
 	SessionID        string                 // Session identifier for workflow continuity
 	WorkflowID       string                 // Current workflow being executed
 	WorkflowInstance *core.WorkflowInstance // Current workflow instance state
+
+	// === Dual Memory Architecture ===
+	// Long-term Memory: MEB-backed knowledge store (persistent across sessions)
+	KnowledgeStore ports.KnowledgeStore `json:"-"`
+	// Transient Memory: Session store (transient, RAM-only) for coordination facts
+	TransientStore ports.TransientStore `json:"-"`
 
 	// Configuration
 	MaxRetries int           `json:"max_retries"`

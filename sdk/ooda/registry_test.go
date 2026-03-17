@@ -164,16 +164,23 @@ func TestDispatcher_DispatchUnknown(t *testing.T) {
 }
 
 func TestDispatcher_WithFallback(t *testing.T) {
-	registry := NewRegistry()
-	dispatcher := NewDispatcher(registry).WithFallback(func(ctx context.Context, args map[string]interface{}) (string, error) {
-		return "fallback: " + args["action"].(string), nil
-	})
+	// Save original SafeStop and restore after test
+	originalSafeStop := SafeStop
+	defer func() { SafeStop = originalSafeStop }()
 
-	// Call unknown action - should use fallback
+	// Override SafeStop for this test
+	SafeStop = func(ctx context.Context, args map[string]interface{}) (string, error) {
+		return "fallback: " + args["action"].(string), nil
+	}
+
+	registry := NewRegistry()
+	dispatcher := NewDispatcher(registry) // With SafeStop override, fallback is effectively disabled
+
+	// Call unknown action - should use SafeStop (which we overrode)
 	result, err := dispatcher.Dispatch(context.Background(), "unknown", nil)
 
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
+	if err == nil {
+		t.Error("expected error for unknown action with SafeStop")
 	}
 
 	expected := "fallback: unknown"

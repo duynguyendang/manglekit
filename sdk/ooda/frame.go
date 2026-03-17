@@ -3,9 +3,11 @@ package ooda
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/sdk/ports"
 )
 
 // Memory defines the interface for storing and retrieving context.
@@ -121,22 +123,59 @@ func observe(ctx context.Context, frame *CognitiveFrame) error {
 	return nil
 }
 
-// orient retrieves relevant context from Memory (MEB)
+// orient retrieves relevant context from Memory (MEB) and Session Store
 func orient(ctx context.Context, frame *CognitiveFrame) error {
 	start := time.Now()
 	frame.Phase = PhaseOrient
 
-	if frame.Memory == nil {
-		return nil // No memory, skip orientation
+	// === Dual Memory Architecture ===
+	// 1. Query KnowledgeStore (MEB) for long-term knowledge (playbooks, rules)
+	if frame.KnowledgeStore != nil {
+		graphID := "default"
+		if frame.WorkflowID != "" {
+			graphID = frame.WorkflowID // Use workflow as graph scope
+		}
+
+		// Recall top-K facts from MEB based on input
+		coreAtoms, err := frame.KnowledgeStore.Recall(ctx, frame.Input, 10, graphID)
+		if err != nil {
+			return fmt.Errorf("failed to recall from knowledge store: %w", err)
+		}
+		// Convert core.Atom to ooda.Atom
+		for _, ca := range coreAtoms {
+			frame.Context = append(frame.Context, Atom{
+				Subject:   ca.Subject,
+				Predicate: ca.Predicate,
+				Object:    ca.Object,
+				Weight:    ca.Weight,
+			})
+		}
 	}
 
-	// Recall relevant context from memory
-	atoms, err := frame.Memory.Recall(ctx, frame.Input)
-	if err != nil {
-		return fmt.Errorf("failed to recall from memory: %w", err)
+	// 2. Query TransientStore (Session) for short-term coordination facts (current_node, agent_status)
+	if frame.TransientStore != nil && frame.SessionID != "" {
+		coreAtoms, err := frame.TransientStore.ToAtoms(ctx, frame.SessionID)
+		if err != nil {
+			return fmt.Errorf("failed to recall from transient store: %w", err)
+		}
+		// Convert core.Atom to ooda.Atom
+		for _, ca := range coreAtoms {
+			frame.Context = append(frame.Context, Atom{
+				Subject:   ca.Subject,
+				Predicate: ca.Predicate,
+				Object:    ca.Object,
+			})
+		}
 	}
 
-	frame.Context = append(frame.Context, atoms...)
+	// Legacy: Fallback to Memory interface if available
+	if frame.Memory != nil {
+		atoms, err := frame.Memory.Recall(ctx, frame.Input)
+		if err != nil {
+			return fmt.Errorf("failed to recall from memory: %w", err)
+		}
+		frame.Context = append(frame.Context, atoms...)
+	}
 
 	frame.PhaseDurations[PhaseOrient] = time.Since(start)
 	return nil
@@ -184,6 +223,29 @@ func act(ctx context.Context, frame *CognitiveFrame) error {
 	}
 
 	frame.ActionResult = result
+
+	// Commit result to TransientStore (Session Memory) if available
+	if frame.TransientStore != nil && frame.SessionID != "" && result != nil {
+		sessionID := frame.SessionID
+		if frame.Decision.Action != nil && frame.Decision.Action.SessionID != "" {
+			sessionID = frame.Decision.Action.SessionID
+		}
+
+		// Store the action result in transient store
+		resultKey := "action_result_" + frame.Decision.Action.Name
+		resultStr := fmt.Sprintf("%v", result)
+		err := frame.TransientStore.Put(ctx, sessionID, resultKey, &ports.TransientFact{
+			Subject:   "action",
+			Predicate: frame.Decision.Action.Name,
+			Object:    resultStr,
+			Graph:     "session",
+		})
+		if err != nil {
+			// Log but don't fail the action
+			fmt.Printf("Warning: failed to commit action result to transient store: %v\n", err)
+		}
+	}
+
 	frame.PhaseDurations[PhaseAct] = time.Since(start)
 	return nil
 }
@@ -273,23 +335,58 @@ func actWithRetry(ctx context.Context, frame *CognitiveFrame) error {
 	return lastErr
 }
 
-// verify performs post-act validation
+// verify performs post-act validation by running a mini Decide phase
 func verify(ctx context.Context, frame *CognitiveFrame) error {
 	start := time.Now()
 	frame.Phase = PhaseVerify
 
-	if frame.Brain == nil {
-		return nil
+	// If we have an action result, verify it against the TransientStore
+	if frame.TransientStore != nil && frame.SessionID != "" && frame.ActionResult != nil && frame.Decision != nil && frame.Decision.Action != nil {
+		actionName := frame.Decision.Action.Name
+		resultStr := fmt.Sprintf("%v", frame.ActionResult)
+
+		// Check if the action result is considered successful via Datalog
+		// Query pattern: is_action_successful(ActionName, Result)
+		// For now, we check if result contains "error" or "failed" (simple heuristic)
+		verifyStatus := "success"
+		if strings.Contains(strings.ToLower(resultStr), "error") || strings.Contains(strings.ToLower(resultStr), "failed") {
+			verifyStatus = "failed"
+		}
+
+		// Store verification status in TransientStore
+		err := frame.TransientStore.Put(ctx, frame.SessionID, "verify_status_"+actionName, &ports.TransientFact{
+			Subject:   "verify",
+			Predicate: actionName,
+			Object:    verifyStatus,
+			Graph:     "session",
+		})
+		if err != nil {
+			fmt.Printf("Warning: failed to store verify status: %v\n", err)
+		}
+
+		// If verification failed, flag for retry
+		if verifyStatus == "failed" {
+			// Store retry flag
+			frame.TransientStore.Put(ctx, frame.SessionID, "needs_retry", &ports.TransientFact{
+				Subject:   "workflow",
+				Predicate: "retry",
+				Object:    "true",
+				Graph:     "session",
+			})
+		}
 	}
 
-	// Verify the action result against policy
-	auditTrail, err := frame.Brain.Verify(ctx, frame)
-	if err != nil {
-		return fmt.Errorf("verification failed: %w", err)
-	}
+	// Run Brain.Verify if available for policy-based verification
+	if frame.Brain != nil {
+		// Verify the action result against policy
+		auditTrail, err := frame.Brain.Verify(ctx, frame)
+		if err != nil {
+			return fmt.Errorf("verification failed: %w", err)
+		}
 
-	// Store verification result
-	frame.AuditTrail = auditTrail
+		// Store verification result
+		frame.AuditTrail = auditTrail
+	}
 
 	frame.PhaseDurations[PhaseVerify] = time.Since(start)
 	return nil

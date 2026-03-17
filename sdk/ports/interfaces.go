@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk/ooda"
 )
 
 // KnowledgeStore defines the interface for retrieving knowledge facts from a persistent store.
@@ -32,19 +31,22 @@ type ReasoningPort interface {
 // GenerativePort encapsulates interactions with Large Language Models.
 type GenerativePort interface {
 	// Generate produces structured output based on the assembled CognitiveFrame.
-	Generate(ctx context.Context, frame *ooda.CognitiveFrame) (any, error)
+	// The frame parameter is an interface to avoid circular imports.
+	Generate(ctx context.Context, frame any) (any, error)
 }
 
 // GenePoolPort handles fetching and mapping crystallized logic rules.
 type GenePoolPort interface {
 	// LoadActiveGenes fetches the relevant domain logic bounds for the current phase.
-	LoadActiveGenes(ctx context.Context, frame *ooda.CognitiveFrame) ([]ooda.DomainGene, error)
+	// The frame parameter is an interface to avoid circular imports.
+	LoadActiveGenes(ctx context.Context, frame any) ([]any, error)
 }
 
 // StoragePort guarantees persistence across the Hexagonal system.
 type StoragePort interface {
 	// SaveTrace records the final result of a CognitiveFrame epoch.
-	SaveTrace(ctx context.Context, frame *ooda.CognitiveFrame) error
+	// The frame parameter is an interface to avoid circular imports.
+	SaveTrace(ctx context.Context, frame any) error
 }
 
 // WorkflowLoader defines the interface for loading workflow definitions.
@@ -89,4 +91,40 @@ type SessionStateStore interface {
 
 	// ClearSession removes all instances for a session (cleanup).
 	ClearSession(ctx context.Context, sessionID string) error
+}
+
+// TransientStore defines the interface for storing transient coordination facts
+// during OODA loop execution. Facts in this store are isolated by SessionID
+// and are NOT persisted to MEB (BadgerDB).
+// This is used for short-term memory: current_node, agent_status, workflow progress, etc.
+type TransientStore interface {
+	// Put stores a fact in the session's transient memory.
+	Put(ctx context.Context, sessionID, key string, fact *TransientFact) error
+
+	// Get retrieves a fact from the session's transient memory.
+	Get(ctx context.Context, sessionID, key string) (*TransientFact, error)
+
+	// GetAll retrieves all facts for a session.
+	GetAll(ctx context.Context, sessionID string) ([]*TransientFact, error)
+
+	// Delete removes a fact from the session's transient memory.
+	Delete(ctx context.Context, sessionID, key string) error
+
+	// ClearSession removes all facts for a session.
+	ClearSession(ctx context.Context, sessionID string) error
+
+	// ToAtoms converts all session facts to core.Atom format for Brain evaluation.
+	ToAtoms(ctx context.Context, sessionID string) ([]core.Atom, error)
+
+	// ToQuads converts all session facts to core.Quad format for storage.
+	ToQuads(ctx context.Context, sessionID string) ([]core.Quad, error)
+}
+
+// TransientFact represents a fact stored in transient session memory.
+type TransientFact struct {
+	Subject   string
+	Predicate string
+	Object    string
+	Graph     string
+	CreatedAt string // ISO8601 timestamp
 }

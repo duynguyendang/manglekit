@@ -110,8 +110,14 @@ func (d *Dispatcher) WithFallback(fn ToolFunc) *Dispatcher {
 	return d
 }
 
+// SafeStop is a mandatory safety fallback tool that is called when the system
+// enters an undefined or high-risk state.
+var SafeStop ToolFunc = func(ctx context.Context, args map[string]interface{}) (string, error) {
+	return "STOPPED: SafeStop invoked due to undefined action or high-risk state", nil
+}
+
 // Dispatch executes an action based on the action name and arguments.
-// If the action is not found, it calls the fallback (if set) or returns an error.
+// If the action is not found, it logs a "Sovereign/Capability Mismatch" and calls SafeStop.
 func (d *Dispatcher) Dispatch(ctx context.Context, actionName string, args map[string]interface{}) (string, error) {
 	// Try to find the tool
 	fn := d.registry.Get(actionName)
@@ -119,17 +125,28 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actionName string, args map[s
 		return fn(ctx, args)
 	}
 
-	// Fallback if set
-	if d.fallback != nil {
-		return d.fallback(ctx, map[string]interface{}{
-			"action": actionName,
-			"args":   args,
-			"error":  "unknown action",
+	// Sovereign Violation: Action not found in registry
+	errMsg := fmt.Sprintf("SOVEREIGN VIOLATION: action '%s' not found in registry - capability mismatch", actionName)
+	fmt.Printf("⚠️ %s\n", errMsg)
+	fmt.Printf("   Available actions: %v\n", d.registry.List())
+	fmt.Printf("   Requested args: %v\n", args)
+
+	// Call SafeStop as mandatory safety fallback
+	if SafeStop != nil {
+		safeStopResult, safeStopErr := SafeStop(ctx, map[string]interface{}{
+			"reason":         "sovereign_violation",
+			"action":         actionName,
+			"args":           args,
+			"original_error": errMsg,
 		})
+		if safeStopErr != nil {
+			return "", fmt.Errorf("%s; SafeStop failed: %w", errMsg, safeStopErr)
+		}
+		return safeStopResult, fmt.Errorf("%s", errMsg)
 	}
 
-	// No fallback - return error
-	return "", fmt.Errorf("sovereign violation: unknown action '%s' not found in registry", actionName)
+	// No SafeStop - return error
+	return "", fmt.Errorf("%s", errMsg)
 }
 
 // ActionEnvelope contains the action to be executed and its parameters.

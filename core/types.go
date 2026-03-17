@@ -212,6 +212,7 @@ type Decision struct {
 type ActionEnvelope struct {
 	Name      string                 // Action name matching Registry (e.g., "generate_csd")
 	Arguments map[string]interface{} // Parameters derived from Datalog bindings
+	SessionID string                 // Session ID for accessing TransientStore
 }
 
 // NewActionEnvelope creates a new ActionEnvelope.
@@ -223,6 +224,12 @@ func NewActionEnvelope(name string, args map[string]interface{}) *ActionEnvelope
 		Name:      name,
 		Arguments: args,
 	}
+}
+
+// WithSessionID sets the session ID for the action envelope.
+func (a *ActionEnvelope) WithSessionID(sessionID string) *ActionEnvelope {
+	a.SessionID = sessionID
+	return a
 }
 
 // AuditTrail provides detailed explanation of why a decision was made.
