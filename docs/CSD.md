@@ -17,7 +17,7 @@ Manglekit v2 solves the **Stochastic Runtime Paradox** by formalizing the agent 
 - **Self-Correcting Loops**: Teacher-Student protocol automatically routes Datalog failures back to the LLM for self-correction.
 - **Mixed-Precision Logic**: FP32 for critical axioms (violation = HALT), INT8 for soft heuristic guides (violation = WARNING).
 
-### Target Constraints & Guardrails (Lessons from MEB/Kronos)
+### Target Constraints & Guardrails (Lessons from MEB/Manglekit)
 
 | Guardrail | Value | Purpose |
 |-----------|-------|---------|
@@ -42,7 +42,7 @@ Manglekit v2 solves the **Stochastic Runtime Paradox** by formalizing the agent 
 
 ## 2. Architecture Overview: The Hexagonal OODA Loop
 
-Manglekit formalizes the agent execution space into a strict **OODA Loop** architecture, implemented using a **Hexagonal (Ports-and-Adapters)** pattern derived from Kronos v1.
+Manglekit formalizes the agent execution space into a strict **OODA Loop** architecture, implemented using a **Hexagonal (Ports-and-Adapters)** pattern derived from Manglekit v1.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -102,9 +102,9 @@ type Quad struct {
 }
 ```
 
-### 3.2 Atom (Kronos Streaming Unit)
+### 3.2 Atom (Manglekit Streaming Unit)
 
-The smallest unit of knowledge in Kronos's streaming architecture. Atoms flow through the OODA loop as zero-allocation `iter.Seq[Atom]` payloads.
+The smallest unit of knowledge in Manglekit's streaming architecture. Atoms flow through the OODA loop as zero-allocation `iter.Seq[Atom]` payloads.
 
 ```go
 type Atom struct {
@@ -514,7 +514,7 @@ type Document struct {
 
 Manglekit's core domain has zero dependencies on external infrastructure. All external capabilities are accessed through clean port interfaces.
 
-| Port | Responsibility | Kronos Adapter |
+| Port | Responsibility | Manglekit Adapter |
 |------|---------------|----------------|
 | `ReasoningPort` | Datalog verification (`Verify`, `VerifyAtoms`, `Query`) | Mangle adapter |
 | `GenerativePort` | LLM synthesis (`Generate`, `Induce`, `Embed`) | Gemini adapter |
@@ -577,4 +577,4 @@ Manglekit's core domain has zero dependencies on external infrastructure. All ex
 
 ## 14. Conclusion
 
-By synthesizing the MEB embedded storage engine, the Kronos v1 cognitive OODA architecture, and a comprehensive Hexagonal Port system, Manglekit v2 acts as the definitive operating system for Neuro-Symbolic Agents. It guarantees that probabilistic models serve only as creative planners, while action execution remains flawlessly deterministic, auditable, and self-correcting.
+By synthesizing the MEB embedded storage engine, the Manglekit v1 cognitive OODA architecture, and a comprehensive Hexagonal Port system, Manglekit v2 acts as the definitive operating system for Neuro-Symbolic Agents. It guarantees that probabilistic models serve only as creative planners, while action execution remains flawlessly deterministic, auditable, and self-correcting.

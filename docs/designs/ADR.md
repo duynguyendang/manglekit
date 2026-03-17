@@ -269,7 +269,7 @@ Enforce **Structured Generation** contracts:
 
 ## VII. The Convergence (v2.0 - Sovereign Kernel)
 
-*This era marks the integration of the `meblo-wip` persistent storage and the `kronos-v1` OODA loop, transforming Manglekit from an embedded engine into a Sovereign Logic Kernel.*
+*This era marks the integration of the `meblo-wip` persistent storage and the `Manglekit-v1` OODA loop, transforming Manglekit from an embedded engine into a Sovereign Logic Kernel.*
 
 ### ADR 15: Unified Persistent Silo (BadgerDB)
 
@@ -292,7 +292,7 @@ Allows Manglekit to build and maintain its own contextual history (Long-term Mem
 **Context:**
 The "Semantic State Machine" (ADR 13) handled local retries, but lacked a formal cognitive structure for complex agency.
 **Decision:**
-Adopt the **Observe -> Orient -> Decide -> Verify -> Act** loop from `kronos-v1`.
+Adopt the **Observe -> Orient -> Decide -> Verify -> Act** loop from `Manglekit-v1`.
 1. **Shadow Audit:** Explicitly verify proposed AI plans against Datalog rules *before* execution.
 2. **Trace Rendering:** Output detailed markdown trace artifacts (`traces/plan_[id].md`) for every loop iteration.
 **Rationale:**

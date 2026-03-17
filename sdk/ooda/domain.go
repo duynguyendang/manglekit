@@ -60,7 +60,7 @@ const (
 	OutputTypeRule OutputType = "RULE" // Datalog logic rules for crystallization
 )
 
-// Atom is the smallest unit of knowledge in Kronos's streaming architecture
+// Atom is the smallest unit of knowledge in Manglekit's streaming architecture
 type Atom struct {
 	Predicate    string    `json:"predicate"`
 	Subject      string    `json:"subject"`

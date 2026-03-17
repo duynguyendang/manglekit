@@ -4,7 +4,7 @@
 
 Manglekit v2 is an embedded **Neuro-Symbolic Sovereign Logic Kernel** for Go applications. It provides the absolute control plane for probabilistic AI systems (LLMs), executing a strict **OODA (Observe, Orient, Decide, Verify, Act)** loop.
 
-This document outlines the high-level architecture synthesizing the best-tested implementations of Kronos v1 (cognitive loops, ports, steering) and MEB (storage engine, vector search, concurrency).
+This document outlines the high-level architecture synthesizing the best-tested implementations of Manglekit v1 (cognitive loops, ports, steering) and MEB (storage engine, vector search, concurrency).
 
 ## 2. Core Tenets
 
@@ -63,7 +63,7 @@ graph TD
 
 ## 4. Hexagonal Port Architecture
 
-Manglekit's core domain has zero dependencies on external infrastructure. All capabilities are accessed through clean port interfaces (Kronos Hexagonal pattern).
+Manglekit's core domain has zero dependencies on external infrastructure. All capabilities are accessed through clean port interfaces (Manglekit Hexagonal pattern).
 
 ### 4.1 Port Registry
 

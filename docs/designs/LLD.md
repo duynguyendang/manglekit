@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 
-This Low-Level Design provides developers with exact struct definitions, memory layouts, concurrency patterns, and implementation specifications powering Manglekit v2. Synthesizing the high-performance memory-mapped layers of MEB and the Zero-Trust cognitive loops of Kronos v1, this document defines everything needed for implementation.
+This Low-Level Design provides developers with exact struct definitions, memory layouts, concurrency patterns, and implementation specifications powering Manglekit v2. Synthesizing the high-performance memory-mapped layers of MEB and the Zero-Trust cognitive loops of Manglekit v1, this document defines everything needed for implementation.
 
 ---
 

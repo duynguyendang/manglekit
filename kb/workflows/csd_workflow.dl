@@ -1,0 +1,156 @@
+% ==========================================
+% CSD (Conceptual Solution Design) WORKFLOW
+% Declarative workflow for generating architectural documentation
+% ==========================================
+
+% ==========================================
+% WORKFLOW METADATA
+% ==========================================
+
+workflow("csd_wf", "Conceptual Solution Design", "v1.0").
+workflow_description("csd_wf", "Generates CSD documents from codebase analysis").
+
+% ==========================================
+% WORKFLOW NODES
+% ==========================================
+
+% Node: workflow, node_id, type, agent_role_or_action
+
+% Start node - receives project input
+workflow_node("csd_wf", "start", "action", "receive_input").
+
+% Research phase - analyze codebase structure
+workflow_node("csd_wf", "research", "agent", "architect").
+workflow_node("csd_wf", "research", "action", "read_codebase").
+
+% Analysis phase - identify patterns and dependencies
+workflow_node("csd_wf", "analyze", "agent", "architect").
+workflow_node("csd_wf", "analyze", "action", "analyze_architecture").
+
+% Design phase - create architectural recommendations
+workflow_node("csd_wf", "design", "agent", "architect").
+workflow_node("csd_wf", "design", "action", "generate_csd").
+
+% Review phase - verify against axioms (T0)
+workflow_node("csd_wf", "review", "agent", "architect").
+workflow_node("csd_wf", "review", "action", "verify_against_axioms").
+
+% Finalize - output the CSD document
+workflow_node("csd_wf", "finalize", "action", "finalize_csd").
+
+% ==========================================
+% NODE CONFIGURATION
+% ==========================================
+
+% Research node configuration
+node_config("csd_wf", "research", "depth", "comprehensive").
+node_config("csd_wf", "research", "file_extensions", ".go,.ts,.js,.py").
+node_config("csd_wf", "research", "exclude_dirs", "vendor,node_modules,dist").
+
+% Analyze node configuration
+node_config("csd_wf", "analyze", "detect_patterns", "true").
+node_config("csd_wf", "analyze", "detect_dependencies", "true").
+node_config("csd_wf", "analyze", "include_uml", "true").
+
+% Design node configuration
+node_config("csd_wf", "design", "template", "standard").
+node_config("csd_wf", "design", "include_recommendations", "true").
+node_config("csd_wf", "design", "risk_assessment", "true").
+
+% Review node configuration
+node_config("csd_wf", "review", "strict_mode", "true").
+node_config("csd_wf", "review", "fail_on_violation", "false").
+
+% ==========================================
+% WORKFLOW EDGES (Sequential Flow)
+% ==========================================
+
+% Sequential flow: start -> research -> analyze -> design -> review -> finalize
+workflow_edge("csd_wf", "start", "research").
+workflow_edge("csd_wf", "research", "analyze").
+workflow_edge("csd_wf", "analyze", "design").
+workflow_edge("csd_wf", "design", "review").
+workflow_edge("csd_wf", "review", "finalize").
+
+% ==========================================
+% CONDITIONAL EDGES
+% ==========================================
+
+% If review fails validation, go back to design for revision
+conditional_edge("csd_wf", "review", "design", 
+    "needs_revision(context)").
+
+% If analysis reveals issues, go back to research for more info
+conditional_edge("csd_wf", "analyze", "research", 
+    "insufficient_data(context)").
+
+% ==========================================
+% ERROR HANDLING EDGES
+% ==========================================
+
+% If research fails, go to error handler
+error_edge("csd_wf", "research", "finalize", "research_failed(context)").
+
+% If design fails, attempt retry
+error_edge("csd_wf", "design", "design", "design_failed(context)").
+
+% ==========================================
+% WORKFLOW VARIABLES
+% ==========================================
+
+% Default workflow variables
+workflow_var("csd_wf", "output_format", "markdown").
+workflow_var("csd_wf", "include_diagrams", "true").
+workflow_var("csd_wf", "max_length", "10000").
+workflow_var("csd_wf", "include_risks", "true").
+workflow_var("csd_wf", "include_alternatives", "true").
+
+% ==========================================
+% ACTION MAPPINGS
+% ==========================================
+
+% Action arguments extraction
+% These define how Datalog binds variables to action arguments
+action_args("read_codebase", "path", "/").
+action_args("read_codebase", "extensions", ".go,.ts,.js,.py").
+action_args("read_codebase", "exclude", "vendor,node_modules").
+
+action_args("analyze_architecture", "include_patterns", "true").
+action_args("analyze_architecture", "include_dependencies", "true").
+action_args("analyze_architecture", "depth", "full").
+
+action_args("generate_csd", "template", "standard").
+action_args("generate_csd", "include_diagrams", "true").
+action_args("generate_csd", "include_risks", "true").
+
+action_args("verify_against_axioms", "strict", "true").
+action_args("verify_against_axioms", "fail_on_violation", "false").
+
+action_args("finalize_csd", "format", "markdown").
+action_args("finalize_csd", "include_toc", "true").
+
+% ==========================================
+% POST-ACT VERIFICATION QUERIES
+% ==========================================
+
+% Verification: Check if the generated CSD meets axioms
+is_action_successful("generate_csd", Result) :-
+    csd_generated(Result),
+    not has_axiom_violation(Result).
+
+is_action_successful("verify_against_axioms", Result) :-
+    axiom_check_passed(Result).
+
+is_action_successful("read_codebase", Result) :-
+    code_files_found(Result, Count),
+    Count > 0.
+
+% ==========================================
+% SESSION STATE TRACKING
+% ==========================================
+
+% Track current node in session
+session_var("current_node").
+session_var("completed_nodes").
+session_var("action_results").
+session_var("verification_status").
