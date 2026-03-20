@@ -1,0 +1,217 @@
+% ==========================================
+% TOOL REGISTRY - Generic Tools
+% ==========================================
+
+% ==========================================
+% TOOL CATEGORIES
+% ==========================================
+
+tool_category("search").
+tool_category("generation").
+tool_category("analysis").
+tool_category("validation").
+tool_category("transformation").
+tool_category("integration").
+
+% ==========================================
+% TOOL DEFINITIONS
+% ==========================================
+
+% Search tools
+tool("semantic_search", "search").
+tool("keyword_search", "search").
+tool("vector_search", "search").
+tool("graph_search", "search").
+
+% Generation tools
+tool("llm_generate", "generation").
+tool("code_generator", "generation").
+tool("template_renderer", "generation").
+tool("diagram_generator", "generation").
+
+% Analysis tools
+tool("entity_extractor", "analysis").
+tool("sentiment_analyzer", "analysis").
+tool("code_analyzer", "analysis").
+tool("dependency_analyzer", "analysis").
+tool("pattern_matcher", "analysis").
+
+% Validation tools
+tool("schema_validator", "validation").
+tool("linter", "validation").
+tool("type_checker", "validation").
+tool("security_scanner", "validation").
+
+% Transformation tools
+tool("formatter", "transformation").
+tool("converter", "transformation").
+tool("aggregator", "transformation").
+tool("filter", "transformation").
+
+% Integration tools
+tool("http_client", "integration").
+tool("file_system", "integration").
+tool("database_client", "integration").
+tool("api_gateway", "integration").
+tool("webhook_dispatcher", "integration").
+
+% ==========================================
+% TOOL CAPABILITIES
+% ==========================================
+
+tool_capability("semantic_search", "natural_language_query").
+tool_capability("semantic_search", "vector_similarity").
+tool_capability("semantic_search", "relevance_ranking").
+
+tool_capability("keyword_search", "exact_match").
+tool_capability("keyword_search", "regex_search").
+tool_capability("keyword_search", "fuzzy_search").
+
+tool_capability("llm_generate", "text_generation").
+tool_capability("llm_generate", "structured_output").
+tool_capability("llm_generate", "code_generation").
+tool_capability("llm_generate", "summarization").
+
+tool_capability("code_generator", "scaffold_generation").
+tool_capability("code_generator", "test_generation").
+tool_capability("code_generator", "migration_code").
+
+tool_capability("entity_extractor", "ner").
+tool_capability("entity_extractor", "relationship_extraction").
+tool_capability("entity_extractor", "event_extraction").
+
+tool_capability("schema_validator", "json_validation").
+tool_capability("schema_validator", "yaml_validation").
+tool_capability("schema_validator", "custom_schema").
+
+tool_capability("linter", "code_quality").
+tool_capability("linter", "style_check").
+tool_capability("linter", "best_practices").
+
+tool_capability("formatter", "code_format").
+tool_capability("formatter", "markdown_format").
+tool_capability("formatter", "table_format").
+
+tool_capability("http_client", "rest_api").
+tool_capability("http_client", "graphql").
+tool_capability("http_client", "webhook").
+
+tool_capability("file_system", "read").
+tool_capability("file_system", "write").
+tool_capability("file_system", "glob").
+tool_capability("file_system", "watch").
+
+tool_capability("database_client", "query").
+tool_capability("database_client", "transaction").
+tool_capability("database_client", "batch_operations").
+
+% ==========================================
+% TOOL CONFIGURATION
+% ==========================================
+
+tool_config("semantic_search", "model", "text-embedding-3-small").
+tool_config("semantic_search", "top_k", "10").
+tool_config("semantic_search", "min_score", "0.7").
+
+tool_config("llm_generate", "model", "gpt-4o").
+tool_config("llm_generate", "temperature", "0.7").
+tool_config("llm_generate", "max_tokens", "4000").
+tool_config("llm_generate", "timeout_ms", "60000").
+
+tool_config("code_generator", "model", "gpt-4o").
+tool_config("code_generator", "temperature", "0.3").
+tool_config("code_generator", "max_tokens", "8000").
+
+tool_config("schema_validator", "strict_mode", "false").
+tool_config("schema_validator", "allow_additional", "true").
+
+tool_config("linter", "ruleset", "default").
+tool_config("linter", "fail_on_warning", "false").
+tool_config("linter", "max_violations", "100").
+
+tool_config("http_client", "timeout_ms", "30000").
+tool_config("http_client", "max_retries", "3").
+tool_config("http_client", "retry_delay_ms", "1000").
+
+tool_config("file_system", "encoding", "utf-8").
+tool_config("file_system", "create_dirs", "true").
+tool_config("file_system", "overwrite", "false").
+
+tool_config("database_client", "connection_timeout_ms", "10000").
+tool_config("database_client", "query_timeout_ms", "30000").
+tool_config("database_client", "pool_size", "10").
+
+% ==========================================
+% TOOL AVAILABILITY
+% ==========================================
+
+tool_available("semantic_search", "available").
+tool_available("llm_generate", "available").
+tool_available("code_generator", "available").
+tool_available("entity_extractor", "available").
+tool_available("schema_validator", "available").
+tool_available("linter", "available").
+tool_available("formatter", "available").
+tool_available("http_client", "available").
+tool_available("file_system", "available").
+tool_available("database_client", "available").
+
+% ==========================================
+% TOOL COST ESTIMATION
+% ==========================================
+
+tool_cost("semantic_search", "per_call", "0.0001").
+tool_cost("llm_generate", "per_token", "0.00001").
+tool_cost("code_generator", "per_token", "0.00001").
+tool_cost("http_client", "per_request", "0.00001").
+tool_cost("database_client", "per_query", "0.000001").
+
+% ==========================================
+% TOOL → OODA PHASE MAPPING
+% ==========================================
+
+tool_ooda_phase("semantic_search", "observe").
+tool_ooda_phase("keyword_search", "observe").
+tool_ooda_phase("entity_extractor", "observe").
+
+tool_ooda_phase("pattern_matcher", "orient").
+tool_ooda_phase("sentiment_analyzer", "orient").
+
+tool_ooda_phase("llm_generate", "act").
+tool_ooda_phase("code_generator", "act").
+tool_ooda_phase("template_renderer", "act").
+tool_ooda_phase("diagram_generator", "act").
+
+tool_ooda_phase("schema_validator", "verify").
+tool_ooda_phase("linter", "verify").
+tool_ooda_phase("type_checker", "verify").
+tool_ooda_phase("security_scanner", "verify").
+
+tool_ooda_phase("formatter", "refine").
+tool_ooda_phase("converter", "refine").
+
+% ==========================================
+% TOOL HELPERS
+% ==========================================
+
+% Get tools by category
+tools_by_category(Category, Tools) :-
+    findall(Tool, 
+        (tool(Tool, Category), tool_available(Tool, "available")),
+        Tools).
+
+% Get tools by OODA phase
+tools_for_phase(Phase, Tools) :-
+    findall(Tool, 
+        (tool_ooda_phase(Tool, Phase), tool_available(Tool, "available")),
+        Tools).
+
+% Get tools by capability
+tools_with_capability(Capability, Tools) :-
+    findall(Tool, 
+        (tool(Tool, _), tool_capability(Tool, Capability)),
+        Tools).
+
+% Check if tool is available
+is_tool_available(Tool) :-
+    tool_available(Tool, "available").

@@ -1,0 +1,218 @@
+% ==========================================
+% OODA WORKFLOW - Generic Agentic Pipeline
+% ==========================================
+% Aligned with OODA phases: Observe → Orient → Decide → Act → Verify → Refine
+
+% ==========================================
+% WORKFLOW DEFINITION
+% ==========================================
+
+workflow("ooda_pipeline", "OODA Loop Pipeline", "v1.0").
+workflow_description("ooda_pipeline", "Generic OODA loop for agentic task execution").
+
+% ==========================================
+% WORKFLOW NODES (By Phase)
+% ==========================================
+
+% OBSERVE Phase
+workflow_node("ooda_pipeline", "observe_start", "action", "initialize").
+workflow_node("ooda_pipeline", "observe_input", "agent", "observer").
+workflow_node("ooda_pipeline", "observe_extract", "action", "extract_entities").
+workflow_node("ooda_pipeline", "observe_validate", "action", "validate_input").
+
+% ORIENT Phase
+workflow_node("ooda_pipeline", "orient_classify", "agent", "orienter").
+workflow_node("ooda_pipeline", "orient_retrieve", "action", "retrieve_knowledge").
+workflow_node("ooda_pipeline", "orient_synthesize", "action", "synthesize_context").
+
+% DECIDE Phase
+workflow_node("ooda_pipeline", "decide_select", "agent", "planner").
+workflow_node("ooda_pipeline", "decide_plan", "action", "create_plan").
+workflow_node("ooda_pipeline", "decide_assess", "action", "assess_risks").
+
+% ACT Phase
+workflow_node("ooda_pipeline", "act_execute", "agent", "executor").
+workflow_node("ooda_pipeline", "act_generate", "action", "generate_output").
+workflow_node("ooda_pipeline", "act_update", "action", "update_state").
+
+% VERIFY Phase
+workflow_node("ooda_pipeline", "verify_check", "agent", "reviewer").
+workflow_node("ooda_pipeline", "verify_validate", "action", "validate_output").
+workflow_node("ooda_pipeline", "verify_measure", "action", "measure_quality").
+
+% REFINE Phase
+workflow_node("ooda_pipeline", "refine_decide", "agent", "refiner").
+workflow_node("ooda_pipeline", "refine_fix", "action", "apply_fixes").
+workflow_node("ooda_pipeline", "refine_optimize", "action", "optimize_output").
+workflow_node("ooda_pipeline", "refine_complete", "action", "finalize").
+
+% ==========================================
+% PHASE BOUNDARIES
+% ==========================================
+
+phase_boundary("ooda_pipeline", "observe").
+phase_boundary("ooda_pipeline", "orient").
+phase_boundary("ooda_pipeline", "decide").
+phase_boundary("ooda_pipeline", "act").
+phase_boundary("ooda_pipeline", "verify").
+phase_boundary("ooda_pipeline", "refine").
+
+% ==========================================
+% NODE CONFIGURATION
+% ==========================================
+
+% Observe config
+node_config("ooda_pipeline", "observe_input", "max_size", "100000").
+node_config("ooda_pipeline", "observe_extract", "extract_types", "entities,keywords,relationships").
+node_config("ooda_pipeline", "observe_validate", "strict", "true").
+
+% Orient config
+node_config("ooda_pipeline", "orient_classify", "confidence_threshold", "0.7").
+node_config("ooda_pipeline", "orient_retrieve", "max_results", "20").
+node_config("ooda_pipeline", "orient_synthesize", "include_context", "true").
+
+% Decide config
+node_config("ooda_pipeline", "decide_plan", "max_depth", "10").
+node_config("ooda_pipeline", "decide_assess", "risk_categories", "technical,business,compliance").
+
+% Act config
+node_config("ooda_pipeline", "act_execute", "allow_parallel", "true").
+node_config("ooda_pipeline", "act_generate", "format", "markdown").
+node_config("ooda_pipeline", "act_generate", "max_length", "10000").
+
+% Verify config
+node_config("ooda_pipeline", "verify_check", "strict_mode", "false").
+node_config("ooda_pipeline", "verify_validate", "fail_threshold", "0.8").
+node_config("ooda_pipeline", "verify_measure", "metrics", "quality,completeness,accuracy").
+
+% Refine config
+node_config("ooda_pipeline", "refine_decide", "max_iterations", "3").
+node_config("ooda_pipeline", "refine_fix", "apply_all", "false").
+node_config("ooda_pipeline", "refine_optimize", "improvement_threshold", "0.1").
+
+% ==========================================
+% WORKFLOW EDGES - Phases
+% ==========================================
+
+% Observe → Orient
+workflow_edge("ooda_pipeline", "observe_start", "observe_input").
+workflow_edge("ooda_pipeline", "observe_input", "observe_extract").
+workflow_edge("ooda_pipeline", "observe_extract", "observe_validate").
+workflow_edge("ooda_pipeline", "observe_validate", "orient_classify").
+
+% Orient → Decide
+workflow_edge("ooda_pipeline", "orient_classify", "orient_retrieve").
+workflow_edge("ooda_pipeline", "orient_retrieve", "orient_synthesize").
+workflow_edge("ooda_pipeline", "orient_synthesize", "decide_select").
+
+% Decide → Act
+workflow_edge("ooda_pipeline", "decide_select", "decide_plan").
+workflow_edge("ooda_pipeline", "decide_plan", "decide_assess").
+workflow_edge("ooda_pipeline", "decide_assess", "act_execute").
+
+% Act → Verify
+workflow_edge("ooda_pipeline", "act_execute", "act_generate").
+workflow_edge("ooda_pipeline", "act_generate", "act_update").
+workflow_edge("ooda_pipeline", "act_update", "verify_check").
+
+% Verify → Refine
+workflow_edge("ooda_pipeline", "verify_check", "verify_validate").
+workflow_edge("ooda_pipeline", "verify_validate", "verify_measure").
+workflow_edge("ooda_pipeline", "verify_measure", "refine_decide").
+
+% Refine → Complete/Loop
+workflow_edge("ooda_pipeline", "refine_decide", "refine_fix").
+workflow_edge("ooda_pipeline", "refine_fix", "refine_optimize").
+workflow_edge("ooda_pipeline", "refine_optimize", "refine_complete").
+
+% ==========================================
+% CONDITIONAL EDGES
+% ==========================================
+
+% Verify → Retry/Complete
+conditional_edge("ooda_pipeline", "refine_decide", "refine_complete", 
+    "verification_passed(context)").
+
+conditional_edge("ooda_pipeline", "refine_decide", "refine_fix", 
+    "verification_failed(context), iteration_count(Count), Count < 3").
+
+conditional_edge("ooda_pipeline", "refine_decide", "decide_select", 
+    "needs_new_strategy(context)").
+
+
+% Observe → Reject
+conditional_edge("ooda_pipeline", "observe_validate", "refine_complete", 
+    "input_invalid(context)").
+
+% Orient → More context
+conditional_edge("ooda_pipeline", "orient_synthesize", "observe_input", 
+    "insufficient_context(context)").
+
+% Decide → Fallback
+conditional_edge("ooda_pipeline", "decide_assess", "decide_select", 
+    "plan_failed(context)").
+
+% ==========================================
+% ERROR HANDLING
+% ==========================================
+
+error_edge("ooda_pipeline", "observe_input", "refine_complete", "input_error(context)").
+error_edge("ooda_pipeline", "orient_retrieve", "orient_classify", "retrieval_failed(context)").
+error_edge("ooda_pipeline", "decide_plan", "decide_select", "planning_failed(context)").
+error_edge("ooda_pipeline", "act_execute", "decide_select", "execution_failed(context)").
+error_edge("ooda_pipeline", "verify_check", "refine_complete", "verification_skipped(context)").
+error_edge("ooda_pipeline", "refine_fix", "refine_complete", "refinement_failed(context)").
+
+% ==========================================
+% PARALLEL EXECUTION
+% ==========================================
+
+parallel_group("ooda_pipeline", "observe_parallel", ["observe_extract", "observe_validate"]).
+parallel_group("ooda_pipeline", "orient_parallel", ["orient_retrieve", "orient_classify"]).
+parallel_group("ooda_pipeline", "verify_parallel", ["verify_validate", "verify_measure"]).
+
+barrier("ooda_pipeline", "observe_barrier", ["observe_extract", "observe_validate"]).
+barrier("ooda_pipeline", "orient_barrier", ["orient_retrieve", "orient_classify"]).
+barrier("ooda_pipeline", "verify_barrier", ["verify_validate", "verify_measure"]).
+
+% ==========================================
+% WORKFLOW VARIABLES
+% ==========================================
+
+workflow_var("ooda_pipeline", "output_format", "markdown").
+workflow_var("ooda_pipeline", "max_iterations", "3").
+workflow_var("ooda_pipeline", "strict_mode", "false").
+workflow_var("ooda_pipeline", "fail_fast", "false").
+
+% ==========================================
+% SESSION STATE TRACKING
+% ==========================================
+
+session_var("current_phase").
+session_var("current_node").
+session_var("completed_phases").
+session_var("completed_nodes").
+session_var("iteration_count").
+session_var("verification_status").
+session_var("context").
+session_var("output").
+
+% ==========================================
+% PHASE HELPERS
+% ==========================================
+
+current_phase(Phase) :- session_var("current_phase", Phase).
+in_phase(Node, Phase) :- workflow_node("ooda_pipeline", Node, _, _), role_ooda_phase(Role, Phase), Node_Type = Phase.
+
+phase_completed(Phase) :- session_var("completed_phases", Phases), member(Phase, Phases).
+phase_started(Phase) :- session_var("current_phase", Phase).
+
+can_transition_to(Phase) :-
+    current_phase(Current),
+    phase_transition(Current, Phase).
+
+can_transition_to("decide") :- current_phase("orient").
+can_transition_to("act") :- current_phase("decide").
+can_transition_to("verify") :- current_phase("act").
+can_transition_to("refine") :- current_phase("verify").
+can_transition_to("observe") :- current_phase("refine").
