@@ -905,6 +905,9 @@ func constantToString(term ast.BaseTerm) (string, error) {
 		if v, err := c.NumberValue(); err == nil {
 			return fmt.Sprintf("%d", v), nil
 		}
+		if v, err := c.Float64Value(); err == nil {
+			return fmt.Sprintf("%g", v), nil
+		}
 		return "", fmt.Errorf("unsupported constant type: %v", c.Type)
 	}
 	return fmt.Sprintf("%v", term), nil
