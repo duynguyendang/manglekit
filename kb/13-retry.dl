@@ -1,0 +1,8 @@
+% === OODA Mode: Retry Configuration ===
+% Simple retry for deterministic tool execution
+
+retry_max(3).
+retry_backoff("linear").              % 1s, 2s, 3s between retries
+retry_on("timeout").
+retry_on("connection_error").
+retry_on("transient_failure").

@@ -1,0 +1,63 @@
+% === OODA+EAST Mode: Cognitive Steering ===
+% EAST = Entropy, Activity, Saliency, Trust
+
+% === Entropy ===
+entropy_high(Frame) :- conflict_count(Frame, C), C > 3.
+entropy_low(Frame)  :- conflict_count(Frame, C), C =< 1.
+entropy_threshold(0.7).
+chaos_threshold(0.9).
+
+% === Activity ===
+hot_atom(Atom)  :- access_count(Atom, C), C > 5.
+cold_atom(Atom) :- access_count(Atom, C), C =< 1.
+prune_candidate(Atom) :- cold_atom(Atom), atom_weight(Atom, W), W < 0.5.
+
+% === Saliency ===
+saliency_high(Input) :- contains_keyword(Input, "production").
+saliency_high(Input) :- contains_keyword(Input, "critical").
+saliency_high(Input) :- contains_keyword(Input, "security").
+saliency_known(Input) :- project_keyword(_, Type), contains_keyword(Input, Type).
+
+% === Trust ===
+trust_t0(Frame) :- decision_source(Frame, "kernel_axiom").
+trust_t1(Frame) :- decision_source(Frame, "admin_config").
+trust_t2(Frame) :- decision_source(Frame, "ai_induced").
+trust_t3(Frame) :- decision_source(Frame, "user_input").
+trust_below_t2(Frame) :- trust_t2(Frame).
+trust_below_t2(Frame) :- trust_t3(Frame).
+
+% === Routing ===
+fast_path(Frame) :-
+    entropy_low(Frame),
+    trust_t0(Frame),
+    saliency_known(frame_input(Frame)).
+slow_path(Frame) :- entropy_high(Frame).
+slow_path(Frame) :- trust_below_t2(Frame).
+
+% === LLM Steering ===
+steering_magnitude(Frame, P) :-
+    logic_success(Frame, L),
+    frame_entropy(Frame, N),
+    N > 0.
+inject_paradox(Frame) :-
+    steering_magnitude(Frame, P),
+    paradox_threshold(0.8),
+    P > 0.8.
+
+% === Refinement Loop Control ===
+refinement_max_iterations(3).
+refinement_terminate("t0_violation").
+refinement_terminate("max_iterations").
+refinement_terminate("chaos_threshold").
+
+should_terminate(Frame, "t0_violation") :-
+    audit_result(Frame, Audit),
+    violation_tier(Audit, "TIER_0").
+should_terminate(Frame, "max_iterations") :-
+    retry_count(Frame, Count),
+    refinement_max_iterations(Max),
+    Count >= Max.
+should_terminate(Frame, "chaos_threshold") :-
+    frame_entropy(Frame, E),
+    chaos_threshold(CT),
+    E > CT.

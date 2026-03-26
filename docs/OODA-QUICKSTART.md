@@ -1,228 +1,303 @@
 # OODA Quick Start Guide
 
-**Get up and running with OODA-based multi-agent systems in 5 minutes.**
+**Get up and running with the OODA SDK in 5 minutes.**
 
 ---
 
 ## TL;DR
 
-1. Load the KB with OODA definitions
-2. Create agent instances
-3. Execute the OODA pipeline
-4. Validate output
-5. Iterate if needed
+1. Create a `Registry` and register actions
+2. Build a `CognitiveFrame` with `Builder`
+3. Call `ooda.Run(ctx, frame)`
+4. Check the result and `AuditTrail`
 
 ---
 
 ## 1. Minimal Setup
 
-### Load OODA Knowledge Base
+### Install
 
-```go
-kb := knowledgebase.New()
-
-// Load core OODA definitions
-kb.Load("kb/ooda-phases.dl")
-kb.Load("kb/agents/registry.dl")
-kb.Load("kb/workflows/ooda_workflow.dl")
-kb.Load("kb/tools/registry.dl")
-kb.Load("kb/validation/rules.dl")
+```bash
+go get github.com/duynguyendang/manglekit/sdk/ooda
 ```
 
-### Create Agent
+### Hello World
 
 ```go
-// Use predefined agents from registry
-agent := agent.New("executor-001", kb)
+package main
 
-// Or create custom
-agent := &agent.Agent{
-    ID:          "my-agent",
-    Role:        "executor",
-    Model:       "gpt-4o",
-    Temperature: 0.7,
-    Tools:       []string{"llm_generate", "semantic_search"},
+import (
+    "context"
+    "fmt"
+    "github.com/duynguyendang/manglekit/sdk/ooda"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // 1. Create action registry
+    registry := ooda.NewRegistry()
+    registry.MustRegister("greet", func(ctx context.Context, args map[string]interface{}) (string, error) {
+        return "Hello, " + args["name"].(string) + "!", nil
+    })
+
+    // 2. Build frame
+    frame := ooda.NewBuilder().
+        WithInput("Greet the user").
+        WithRegistry(registry).
+        WithMaxRetries(2).
+        Build()
+
+    // 3. Run OODA loop
+    // Note: Without a Brain, Decide is skipped and no action is dispatched.
+    // For this demo, we'd need a Brain that returns a Decision with Action{Name: "greet"}.
+    result, err := ooda.Run(ctx, frame)
+    if err != nil {
+        fmt.Printf("Error: %v\n", err)
+        return
+    }
+
+    fmt.Printf("Result: %v\n", result.ActionResult)
 }
 ```
 
 ---
 
-## 2. Execute OODA Loop
+## 2. Core Concepts (30 Seconds Each)
+
+### CognitiveFrame — The State
 
 ```go
-coordinator := NewCoordinator(kb)
-result, err := coordinator.ExecuteOodaLoop(userInput)
+frame := ooda.NewBuilder().
+    WithInput("Generate BRD document").    // What to do
+    WithBrain(policyEngine).               // How to decide (Datalog)
+    WithRegistry(registry).                // How to execute (Go functions)
+    WithMemory(mebAdapter).                // Long-term knowledge
+    WithSessionID("sess-001").             // Multi-turn continuity
+    WithMaxRetries(3).                     // Retry on failure
+    WithTimeout(5 * time.Minute).          // Hard timeout
+    Build()
+```
+
+### Registry — Map Actions to Go
+
+```go
+registry := ooda.NewRegistry()
+
+registry.MustRegister("generate_document", func(ctx context.Context, args map[string]interface{}) (string, error) {
+    docType := args["doc_type"].(string)
+    // ... generate document logic ...
+    return "Generated " + docType, nil
+})
+
+registry.MustRegister("validate", func(ctx context.Context, args map[string]interface{}) (string, error) {
+    return "Validation passed", nil
+})
+```
+
+### Brain — Decision Making
+
+Implement the `Brain` interface to connect Datalog:
+
+```go
+type MyBrain struct {
+    engine *manglekit.PolicyEngine
+}
+
+func (b *MyBrain) Evaluate(ctx context.Context, frame *ooda.CognitiveFrame) (*core.Decision, error) {
+    // Query Datalog for decision
+    results, _ := b.engine.Query("action_for_input(Action, \"" + frame.Input + "\")")
+    
+    return &core.Decision{
+        Outcome: "proceed",
+        Action: &core.ActionEnvelope{
+            Name:      results[0]["Action"],
+            Arguments: map[string]interface{}{"input": frame.Input},
+        },
+        AuditTrail: &core.AuditTrail{...},
+    }, nil
+}
+
+func (b *MyBrain) Verify(ctx context.Context, frame *ooda.CognitiveFrame) (*core.AuditTrail, error) {
+    // Validate action result against Datalog rules
+    return &core.AuditTrail{...}, nil
+}
+
+func (b *MyBrain) LoadPolicy(ctx context.Context, rules string) error {
+    return b.engine.LoadPolicy(ctx, rules)
+}
 ```
 
 ---
 
 ## 3. Common Patterns
 
-### Pattern 1: Single Agent Task
+### Pattern 1: Simple Execute (No Brain)
 
 ```go
-// Observe → Act → Verify
-agent := agent.New("executor-001", kb)
-output := agent.Execute("generate_content", input)
-valid, _ := validator.Validate(output, kb)
+// Direct registry execution without OODA loop
+registry := ooda.NewRegistry()
+registry.MustRegister("process", func(ctx context.Context, args map[string]interface{}) (string, error) {
+    return "processed: " + args["data"].(string), nil
+})
+
+result, err := registry.Execute(ctx, "process", map[string]interface{}{
+    "data": "hello",
+})
 ```
 
-### Pattern 2: Multi-Agent Pipeline
+### Pattern 2: Full OODA with Brain + Memory
 
 ```go
-// Each phase uses different agent
-observers := agent.SelectByPhase("observe")
-orienters := agent.SelectByPhase("orient")
-executors := agent.SelectByPhase("act")
-reviewers := agent.SelectByPhase("verify")
+frame := ooda.NewBuilder().
+    WithInput(userInput).
+    WithBrain(policyEngine).          // Datalog decisions
+    WithMemory(mebAdapter).           // MEB long-term memory
+    WithRegistry(registry).           // Go actions
+    WithSessionID(sessionID).         // Session continuity
+    Build()
 
-context := observers[0].Execute(input)
-context = orienters[0].Execute(context)
-context = executors[0].Execute(context)
-reviewers[0].Verify(context)
+result, err := ooda.Run(ctx, frame)
+if err != nil {
+    log.Printf("Failed: %v", err)
+    log.Printf("Audit: %s", result.GetAuditSummary())
+}
 ```
 
 ### Pattern 3: With Error Recovery
 
 ```go
-coordinator := NewCoordinator(kb)
-coordinator.MaxIterations = 3
-coordinator.FailFast = false
+frame := ooda.NewBuilder().
+    WithInput(input).
+    WithBrain(brain).
+    WithRegistry(registry).
+    WithMaxRetries(3).                // Up to 3 retries
+    WithTimeout(2 * time.Minute).     // Hard timeout
+    Build()
 
-result, err := coordinator.ExecuteOodaLoop(input)
+result, err := ooda.Run(ctx, frame)
 if err != nil {
-    // Handle final failure
-    log.Printf("Failed after %d iterations: %v", coordinator.Iterations, err)
+    log.Printf("Failed after %d retries: %v", result.RetryCount, err)
+    log.Printf("Phase durations: %v", result.GetPhaseDurations())
 }
 ```
 
----
+### Pattern 4: Dispatcher with SafeStop
 
-## 4. Query Examples
+```go
+registry := ooda.NewRegistry()
+registry.MustRegister("known_action", myFunc)
 
-### Get Agents by Phase
+// SafeStop is called for unknown actions
+ooda.SafeStop = func(ctx context.Context, args map[string]interface{}) (string, error) {
+    log.Printf("SafeStop triggered: action=%s", args["action"])
+    return "STOPPED", nil
+}
 
-```bash
-# In Datalog shell
-> role_ooda_phase(Role, "act"), agent(Agent, Role).
-> Agent = "executor-001"
-> Agent = "executor-002"
-```
-
-### Get Tools by Phase
-
-```bash
-> tool_ooda_phase(Tool, "observe"), tool_available(Tool, "available").
-> Tool = "semantic_search"
-> Tool = "entity_extractor"
-```
-
-### Get Phase Config
-
-```bash
-> phase_config("act", "timeout_ms", Value).
-> Value = "60000"
+dispatcher := ooda.NewDispatcher(registry)
+result, err := dispatcher.Dispatch(ctx, "unknown_action", nil)
+// Logs: "SOVEREIGN VIOLATION: action 'unknown_action' not found"
+// Calls SafeStop, returns "STOPPED"
 ```
 
 ---
 
-## 5. Configuration Templates
+## 4. Configuration Templates
 
 ### Fast Response (Low Latency)
 
-```datalog
-phase_config("observe", "timeout_ms", "2000").
-phase_config("orient", "timeout_ms", "3000").
-phase_config("decide", "timeout_ms", "5000").
-phase_config("act", "timeout_ms", "30000").
-phase_config("verify", "timeout_ms", "5000").
-phase_config("refine", "max_iterations", "1").
+```go
+frame := ooda.NewBuilder().
+    WithInput(input).
+    WithBrain(brain).
+    WithRegistry(registry).
+    WithTimeout(30 * time.Second).
+    WithMaxRetries(1).
+    Build()
 ```
 
 ### High Quality (Multiple Iterations)
 
-```datalog
-phase_config("observe", "timeout_ms", "10000").
-phase_config("orient", "timeout_ms", "15000").
-phase_config("decide", "timeout_ms", "30000").
-phase_config("act", "timeout_ms", "120000").
-phase_config("verify", "timeout_ms", "60000").
-phase_config("refine", "max_iterations", "5").
-phase_config("refine", "improvement_threshold", "0.05").
+```go
+frame := ooda.NewBuilder().
+    WithInput(input).
+    WithBrain(brain).
+    WithRegistry(registry).
+    WithTimeout(5 * time.Minute).
+    WithMaxRetries(5).
+    Build()
 ```
 
 ### Production (Balanced)
 
-```datalog
-phase_config("observe", "timeout_ms", "5000").
-phase_config("orient", "timeout_ms", "10000").
-phase_config("decide", "timeout_ms", "15000").
-phase_config("act", "timeout_ms", "60000").
-phase_config("verify", "timeout_ms", "30000").
-phase_config("refine", "max_iterations", "3").
+```go
+frame := ooda.NewBuilder().
+    WithInput(input).
+    WithBrain(brain).
+    WithRegistry(registry).
+    WithTimeout(2 * time.Minute).
+    WithMaxRetries(3).
+    Build()
 ```
 
 ---
 
-## 6. Debugging Tips
+## 5. Debugging Tips
 
-### Enable Verbose Logging
-
-```go
-coordinator := NewCoordinator(kb)
-coordinator.LogLevel = "debug"
-
-log, _ := os.Create("ooda-debug.log")
-coordinator.Logger = log
-```
-
-### Check Agent Availability
-
-```bash
-> agent(Agent, Role), agent_status(Agent, "available").
-```
-
-### Verify Workflow Loaded
-
-```bash
-> workflow("ooda_pipeline", Name, Version).
-> workflow_node("ooda_pipeline", Node, Type, Role).
-> workflow_edge("ooda_pipeline", From, To).
-```
-
-### Test Validation Rules
+### Check Phase Durations
 
 ```go
-validator := NewValidator(kb)
-result, _ := validator.Validate(testOutput)
+result, _ := ooda.Run(ctx, frame)
+for phase, dur := range result.GetPhaseDurations() {
+    fmt.Printf("  %s: %v\n", phase, dur)
+}
+fmt.Printf("  total: %v\n", result.TotalDuration())
+```
 
-fmt.Printf("Passed: %v\n", result.Passed)
-for _, issue := range result.Issues {
-    fmt.Printf("  [%s] %s: %s\n", issue.Severity, issue.Rule, issue.Description)
+### Inspect Audit Trail
+
+```go
+// Human-readable summary
+fmt.Println(result.GetAuditSummary())
+
+// Detailed rules
+for _, rule := range result.AuditTrail.MatchedRules {
+    fmt.Printf("  [%s] %s: %s (from %s)\n", rule.Tier, rule.RuleName, rule.Predicate, rule.SourceFile)
+}
+```
+
+### Check TransientStore State
+
+```go
+// Query session state
+facts, _ := frame.TransientStore.ToAtoms(ctx, frame.SessionID)
+for _, f := range facts {
+    fmt.Printf("  %s.%s = %s\n", f.Subject, f.Predicate, f.Object)
 }
 ```
 
 ---
 
-## 7. Common Errors
+## 6. Common Errors
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `no available agent` | No agent with matching role/phase | Add agent instance to registry |
-| `phase timeout` | Phase taking too long | Increase `timeout_ms` config |
-| `max iterations` | Too many refinement cycles | Increase `max_iterations` or fix root cause |
-| `validation failed` | Output doesn't meet rules | Add validation rules or fix generator |
-| `workflow not found` | KB not loaded | Load workflow file before executing |
+| `observe phase failed` | Input validation failed | Check `frame.Input` is set |
+| `orient phase failed` | Memory/KnowledgeStore query failed | Verify MEB is initialized |
+| `brain evaluation failed` | Datalog query error | Check rules loaded, query syntax |
+| `action 'X' not found` | Action not in Registry | Register the action before `Run()` |
+| `SafeStop invoked` | Unknown action dispatched | Add action to Registry or set fallback |
+| `context deadline exceeded` | Timeout | Increase `WithTimeout()` |
 
 ---
 
-## 8. Next Steps
+## 7. Next Steps
 
 - Read the full [OODA Multi-Agent Guide](./OODA-MULTI-AGENT-GUIDE.md)
-- Explore [domain-specific extensions](./DOMAIN-EXTENSION-GUIDE.md)
-- Check [API reference](../api/README.md)
-- Review [example implementations](../examples/)
+- Explore [domain extensions](./DOMAIN-EXTENSION-GUIDE.md)
+- Review [Architect Agent](https://github.com/duynguyendang/architect-agent) — reference implementation
+- Check [Manglekit CONTEXT.md](./CONTEXT.md) for full architecture
 
 ---
 
-**Questions?** Check the [troubleshooting FAQ](./FAQ.md) or open an issue.
+**Questions?** Check the [Multi-Agent Guide](./OODA-MULTI-AGENT-GUIDE.md) or open an issue.

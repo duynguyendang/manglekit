@@ -1,0 +1,48 @@
+% === OODA + EAST Framework: Workflow Definition ===
+% Users define workflows here. Go code provides tools.
+
+% === Task Modes ===
+% "ooda" = deterministic tool execution
+% "ooda_east" = stochastic generation with EAST steering
+task_mode("default", "ooda_east").
+
+% === Phase Sequence ===
+phase_order(1, "observe").
+phase_order(2, "orient").
+phase_order(3, "decide").
+phase_order(4, "act").
+phase_order(5, "post_act").   % EAST post-act behaviors
+
+% === Phase Transitions ===
+phase_transition("observe", "orient").
+phase_transition("orient", "decide").
+phase_transition("decide", "act").
+conditional_transition("orient", "act", "fast_path").       % EAST fast-path bypass
+conditional_transition("post_act", "decide", "needs_retry"). % Teacher-Student loop
+
+% === Phase Actions ===
+% Actions to execute in each phase
+phase_action("observe", "validate_input").
+phase_action("orient", "recall_memory").
+phase_action("orient", "calculate_east").
+phase_action("decide", "evaluate_policy").
+phase_action("act", "dispatch_tool").
+phase_action("post_act", "validate_result").
+
+% === Phase Configuration ===
+phase_config("observe", "timeout_ms", "5000").
+phase_config("orient", "timeout_ms", "10000").
+phase_config("decide", "timeout_ms", "15000").
+phase_config("act", "timeout_ms", "60000").
+phase_config("post_act", "timeout_ms", "30000").
+phase_config("post_act", "max_iterations", "3").
+
+% === Agent Roles ===
+agent_role("executor").       % Act phase
+agent_role("verifier").       % Post-act validation
+agent_role("coordinator").    % Orchestration
+
+% === Routing ===
+% route(ActionName, ProjectType) — maps actions to project types
+route("generate_document", "modernization").
+route("validate_output", "any").

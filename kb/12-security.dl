@@ -1,0 +1,72 @@
+% === OODA + EAST Framework: Security Rules ===
+% Loaded by both OODA and OODA+EAST modes
+
+% === Input Validation (Observe phase) ===
+input_rule("max_length", "50000").
+input_rule("allowed_format", "markdown").
+
+% Prompt injection detection
+injection_pattern("ignore previous instructions").
+injection_pattern("system: you are now").
+injection_pattern("<|im_start|>").
+injection_pattern("ignore all rules").
+
+% Adversarial pattern detection
+adversarial_pattern("role confusion", "you are no longer").
+adversarial_pattern("delimiter escape", "```system").
+
+% === Context Provenance (Orient phase) ===
+context_provenance("kernel_axiom", "trusted").
+context_provenance("admin_config", "trusted").
+context_provenance("ai_induced", "verify").
+context_provenance("user_input", "untrusted").
+
+% Semantic anomaly detection
+context_anomaly_threshold(0.3).
+backdoor_trigger("escalate privilege").
+backdoor_trigger("bypass validation").
+backdoor_trigger("ignore rules").
+
+% === Tool Authorization (Act phase) ===
+tool_authorization("llm_generate", "executor", "allowed").
+tool_authorization("db_read", "executor", "allowed").
+tool_authorization("db_write", "executor", "escalate").
+tool_authorization("http_request", "executor", "allowed").
+tool_authorization("write_file", "executor", "allowed").
+tool_authorization("delete_file", "executor", "denied").
+tool_authorization("shell_execute", "executor", "denied").
+tool_authorization("mcp_tool_call", "executor", "verify").
+tool_authorization("send_email", "executor", "denied").
+tool_authorization("deploy_service", "executor", "escalate").
+
+% Tool authorization by pattern
+tool_pattern("delete_*", "denied").
+tool_pattern("exec_*", "denied").
+tool_pattern("read_*", "allowed").
+tool_pattern("get_*", "allowed").
+
+% Output schema validation
+output_schema("db_query", "json").
+output_schema("http_request", "json").
+output_schema("write_file", "bytes").
+output_schema("llm_generate", "markdown").
+output_schema("vector_search", "search_results").
+
+% Escalation rules
+escalation_rule("delete", "human_approval").
+escalation_rule("external_api_call", "rate_limit").
+escalation_rule("high_cost_operation", "budget_check").
+escalation_rule("mcp_tool_call", "sandbox").
+
+% === Tiered Trust (Verify phase) ===
+tier_policy("TIER_0", "halt").
+tier_policy("TIER_1", "retry").
+tier_policy("TIER_2", "warning").
+tier_policy("TIER_3", "ignore").
+
+% Security-specific gates
+security_gate("no_secrets", "halt").
+security_gate("no_pii", "halt").
+prohibited_term("password exposed").
+prohibited_term("secret key").
+prohibited_term("internal endpoint").

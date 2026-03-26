@@ -1,6 +1,7 @@
 package ooda
 
 import (
+	"math"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -20,6 +21,16 @@ const (
 	PhaseDecide  Phase = "decide"
 	PhaseVerify  Phase = "verify"
 	PhaseAct     Phase = "act"
+	PhasePostAct Phase = "post_act" // EAST post-act behaviors (validate + route)
+)
+
+// ExecutionPath represents the routing decision from EAST steering
+type ExecutionPath int
+
+const (
+	PathFast     ExecutionPath = iota // Orient → Act (skip Decide)
+	PathStandard                      // Orient → Decide → Act
+	PathSlow                          // Orient → Decide → Act → Validate → Retry
 )
 
 // TrustTier represents the 4-level system of logical axiom trust
@@ -94,11 +105,75 @@ type AuditResult struct {
 	EntropyDelta  float64   `json:"entropy_delta"` // Feedback for EAST
 }
 
-// EASTState tracks the Cognitive Pressure metrics for steering LLM temperature
+// EASTState tracks the cognitive pressure metrics for steering.
+// E = Entropy (conflict), A = Activity (hot atoms), S = Saliency (input importance), T = Trust (source tier)
 type EASTState struct {
-	LogicSuccess       float64 `json:"logic_success"`       // L (0.0 - 1.0)
-	EntropyCoefficient float64 `json:"entropy_coefficient"` // N (Novelty)
-	SteeringMagnitude  float64 `json:"steering_magnitude"`  // P = exp(1-L) / N
+	LogicSuccess       float64        `json:"logic_success"`       // L (0.0 - 1.0)
+	EntropyCoefficient float64        `json:"entropy_coefficient"` // N (Novelty)
+	SteeringMagnitude  float64        `json:"steering_magnitude"`  // P = exp(1-L) / N
+	Entropy            float64        `json:"entropy"`             // E: 0.0 (stable) to 1.0 (chaotic)
+	Activity           map[string]int `json:"activity"`            // A: fact/rule usage counts
+	Saliency           []string       `json:"saliency"`            // S: prioritized input signals
+	TrustTier          TrustTier      `json:"trust_tier"`          // T: T0 to T3
+}
+
+// Steer determines the execution path based on EAST metrics.
+func (e *EASTState) Steer(frame *CognitiveFrame) ExecutionPath {
+	// Fast-path: low entropy + trusted source + known pattern
+	if e.Entropy < 0.2 && e.TrustTier == Tier0Kernel && isKnownPattern(frame) {
+		return PathFast
+	}
+	// Slow-path: high entropy or low trust
+	if e.Entropy > 0.7 || e.TrustTier == Tier3User || e.TrustTier == Tier2AI {
+		return PathSlow
+	}
+	return PathStandard
+}
+
+// CalculateMagnitude computes the steering formula: P = exp(1-L) / N
+func (e *EASTState) CalculateMagnitude() float64 {
+	if e.EntropyCoefficient == 0 {
+		return 0
+	}
+	e.SteeringMagnitude = math.Exp(1.0-e.LogicSuccess) / e.EntropyCoefficient
+	return e.SteeringMagnitude
+}
+
+// ShouldInjectParadox returns true if steering magnitude exceeds paradox threshold (0.8).
+func (e *EASTState) ShouldInjectParadox() bool {
+	return e.SteeringMagnitude > 0.8
+}
+
+// Temperature returns the recommended LLM temperature based on steering magnitude.
+func (e *EASTState) Temperature() float64 {
+	switch {
+	case e.SteeringMagnitude < 0.3:
+		return 0.9 // Creative exploration
+	case e.SteeringMagnitude < 0.6:
+		return 0.7 // Balanced
+	case e.SteeringMagnitude < 0.8:
+		return 0.4 // Conservative
+	default:
+		return 0.1 // Paradox injection, highly deterministic
+	}
+}
+
+// isKnownPattern checks if the frame's input matches a known project pattern.
+func isKnownPattern(frame *CognitiveFrame) bool {
+	if frame == nil {
+		return false
+	}
+	// Check if Saliency contains a known pattern
+	for _, s := range frame.EAST.Saliency {
+		if s == "known_pattern" {
+			return true
+		}
+	}
+	// Check if Orient found a matching project type
+	if v, ok := frame.RawContext["project_type"].(string); ok && v != "" {
+		return true
+	}
+	return false
 }
 
 // CognitiveFrame is the complete state of a single reasoning epoch.
