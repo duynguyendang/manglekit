@@ -273,6 +273,7 @@ func NewBuilder() *Builder {
 			Timestamp:      time.Now(),
 			Phase:          PhaseObserve,
 			Context:        []Atom{},
+			RawContext:     make(map[string]any),
 			MaxRetries:     3,
 			Timeout:        5 * time.Minute,
 			PhaseDurations: make(map[Phase]time.Duration),
