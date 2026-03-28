@@ -1,6 +1,8 @@
 package ooda
 
 import (
+	"context"
+	"fmt"
 	"math"
 	"time"
 
@@ -130,6 +132,26 @@ func (e *EASTState) Steer(frame *CognitiveFrame) ExecutionPath {
 	return PathStandard
 }
 
+// SteerKB determines the execution path by querying Datalog rules directly (14-east.dl).
+// Falls back to in-memory Steer() if ReasoningPort is nil or query fails.
+func (e *EASTState) SteerKB(ctx context.Context, frame *CognitiveFrame, reasoner ports.ReasoningPort) ExecutionPath {
+	if reasoner == nil {
+		return e.Steer(frame)
+	}
+
+	// Query fast_path(Frame) from 14-east.dl
+	if results, err := reasoner.VerifyWithDatalog(ctx, fmt.Sprintf("fast_path(%s)", frame.ID)); err == nil && len(results) > 0 {
+		return PathFast
+	}
+
+	// Query slow_path(Frame) from 14-east.dl
+	if results, err := reasoner.VerifyWithDatalog(ctx, fmt.Sprintf("slow_path(%s)", frame.ID)); err == nil && len(results) > 0 {
+		return PathSlow
+	}
+
+	return PathStandard
+}
+
 // CalculateMagnitude computes the steering formula: P = exp(1-L) / N
 func (e *EASTState) CalculateMagnitude() float64 {
 	if e.EntropyCoefficient == 0 {
@@ -176,6 +198,29 @@ func isKnownPattern(frame *CognitiveFrame) bool {
 	return false
 }
 
+// ExecutionObject is the unified output of the ORIENT phase.
+// It synthesizes all knowledge the OODA epoch needs into a single inspectable struct.
+type ExecutionObject struct {
+	AttentionSink []Atom       // FP32 — immutable Tier 0 axioms, never pruned
+	Context       []Atom       // INT8 — observed facts from MEB, prunable
+	ActiveRules   []DomainGene // Datalog rules active for this epoch
+	EAST          EASTState    // Steering state computed during Orient
+	GraphID       string       // MEB graph scope for this epoch
+	KBVersion     string       // Cache invalidation token
+}
+
+// NewExecutionObject builds an ExecutionObject from a CognitiveFrame after Orient completes.
+func NewExecutionObject(frame *CognitiveFrame) *ExecutionObject {
+	return &ExecutionObject{
+		AttentionSink: frame.AttentionSink,
+		Context:       frame.Context,
+		ActiveRules:   frame.ActiveGenes,
+		EAST:          frame.EAST,
+		GraphID:       frame.GraphID,
+		KBVersion:     frame.KBVersion,
+	}
+}
+
 // CognitiveFrame is the complete state of a single reasoning epoch.
 // It replaces the generic loosely typed `State` from earlier versions.
 type CognitiveFrame struct {
@@ -196,6 +241,10 @@ type CognitiveFrame struct {
 	AttentionSink []Atom         // Hard Logic (FP32) - Immutable Axioms (Tier 0), never pruned
 	ActiveGenes   []DomainGene   // Logic Pinning - crystallized rules for this epoch
 	RawContext    map[string]any // Legacy escape hatch for transitional state
+
+	// Knowledge Scope
+	GraphID   string // MEB graph scope for this epoch
+	KBVersion string // Cache invalidation token
 
 	// Reasoning
 	Draft  any          // Neural proposal: *Plan for PLAN output, []byte for RULE output
@@ -232,6 +281,8 @@ type CognitiveFrame struct {
 	KnowledgeStore ports.KnowledgeStore `json:"-"`
 	// Transient Memory: Session store (transient, RAM-only) for coordination facts
 	TransientStore ports.TransientStore `json:"-"`
+	// Reasoning Port: For KB-backed EAST steering (14-east.dl)
+	ReasoningPort ports.ReasoningPort `json:"-"`
 
 	// Configuration
 	MaxRetries int           `json:"max_retries"`
@@ -366,6 +417,18 @@ func (b *Builder) WithWorkflowInstance(instance *core.WorkflowInstance) *Builder
 		b.frame.SessionID = instance.SessionID
 		b.frame.WorkflowID = instance.WorkflowID
 	}
+	return b
+}
+
+// WithGraphID sets the MEB graph scope for this epoch.
+func (b *Builder) WithGraphID(graphID string) *Builder {
+	b.frame.GraphID = graphID
+	return b
+}
+
+// WithKBVersion sets the cache invalidation token for knowledge base versioning.
+func (b *Builder) WithKBVersion(version string) *Builder {
+	b.frame.KBVersion = version
 	return b
 }
 

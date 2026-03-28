@@ -43,7 +43,14 @@ func RunOODAEAST(ctx context.Context, frame *CognitiveFrame) (*CognitiveFrame, e
 	}
 
 	// 3. EAST routing decision
-	path := frame.EAST.Steer(frame)
+	// Use SteerKB() if ReasoningPort is available for Datalog-backed routing (14-east.dl)
+	// Otherwise fall back to in-memory Steer()
+	var path ExecutionPath
+	if frame.ReasoningPort != nil {
+		path = frame.EAST.SteerKB(ctx, frame, frame.ReasoningPort)
+	} else {
+		path = frame.EAST.Steer(frame)
+	}
 
 	// 4. Decide (skipped on fast-path)
 	if path != PathFast {
@@ -90,6 +97,7 @@ func observeWithSaliency(ctx context.Context, frame *CognitiveFrame) error {
 }
 
 // orientWithEAST loads context and calculates the full EAST state.
+// Produces an ExecutionObject as the unified output of ORIENT.
 func orientWithEAST(ctx context.Context, frame *CognitiveFrame) error {
 	start := time.Now()
 	frame.Phase = PhaseOrient
@@ -130,6 +138,13 @@ func orientWithEAST(ctx context.Context, frame *CognitiveFrame) error {
 	if len(frame.EAST.Activity) > 0 {
 		PruneColdAtoms(frame, frame.EAST.Activity)
 	}
+
+	// Build ExecutionObject — the unified output of ORIENT
+	execObj := NewExecutionObject(frame)
+	if frame.RawContext == nil {
+		frame.RawContext = make(map[string]any)
+	}
+	frame.RawContext["execution_object"] = execObj
 
 	frame.PhaseDurations[PhaseOrient] = time.Since(start)
 	return nil
