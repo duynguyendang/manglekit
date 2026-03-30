@@ -26,17 +26,18 @@ type ExternalPredicate func(ctx context.Context, inputs []any) ([][]any, error)
 // ExternalPredicateRegistry holds external predicates that can be called from Datalog rules.
 type ExternalPredicateRegistry struct {
 	mu         sync.RWMutex
-	predicates map[ast.PredicateSym]ExternalPredicate
+	predicates map[string]ExternalPredicate
 }
 
 // NewExternalPredicateRegistry creates a new registry for external predicates.
 func NewExternalPredicateRegistry() *ExternalPredicateRegistry {
 	return &ExternalPredicateRegistry{
-		predicates: make(map[ast.PredicateSym]ExternalPredicate),
+		predicates: make(map[string]ExternalPredicate),
 	}
 }
 
 // Register adds an external predicate to the registry.
+// Arity is determined from the Datalog policy at load time.
 func (r *ExternalPredicateRegistry) Register(name string, fn ExternalPredicate) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -44,7 +45,7 @@ func (r *ExternalPredicateRegistry) Register(name string, fn ExternalPredicate) 
 	if fn == nil {
 		return fmt.Errorf("external predicate %s cannot be nil", name)
 	}
-	r.predicates[ast.PredicateSym{Symbol: name}] = fn
+	r.predicates[name] = fn
 	return nil
 }
 
@@ -53,16 +54,16 @@ func (r *ExternalPredicateRegistry) Get(name string) (ExternalPredicate, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	fn, ok := r.predicates[ast.PredicateSym{Symbol: name}]
+	fn, ok := r.predicates[name]
 	return fn, ok
 }
 
-// List returns all registered external predicates.
-func (r *ExternalPredicateRegistry) List() map[ast.PredicateSym]ExternalPredicate {
+// List returns all registered external predicates keyed by name.
+func (r *ExternalPredicateRegistry) List() map[string]ExternalPredicate {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	result := make(map[ast.PredicateSym]ExternalPredicate)
+	result := make(map[string]ExternalPredicate, len(r.predicates))
 	for k, v := range r.predicates {
 		result[k] = v
 	}
@@ -452,14 +453,17 @@ func (r *MangleRuntime) LoadFromSource(source string) error {
 	newRuleUnits := []parse.SourceUnit{unit}
 
 	// Add external predicates as extra declarations BEFORE analysis
-	// This allows predicates to be used in rules without explicit Decl in policy
+	// Infer arity and mode from the parsed policy
 	edbDeclarations := make(map[ast.PredicateSym]ast.Decl)
-	extPreds := r.externalPreds.List()
-	for predSym := range extPreds {
-		// Only add if not already declared in the policy (checked after parsing)
-		// For now, add all - analysis will use policy Decl if present
-		if _, exists := edbDeclarations[predSym]; !exists {
-			edbDeclarations[predSym] = ast.NewSyntheticDeclFromSym(predSym)
+	extPredNames := r.externalPreds.List()
+	for name := range extPredNames {
+		arity, mode := findPredicateUsage(unit, name)
+		if arity < 0 {
+			continue // predicate not found in policy, skip
+		}
+		sym := ast.PredicateSym{Symbol: name, Arity: arity}
+		if _, exists := edbDeclarations[sym]; !exists {
+			edbDeclarations[sym] = newExternalDeclFromSym(sym, mode)
 		}
 	}
 
@@ -545,6 +549,8 @@ func (r *MangleRuntime) AddPolicy(source string) error {
 
 	// Re-Analyze
 	edbDeclarations := make(map[ast.PredicateSym]ast.Decl)
+	// Note: external predicates get synthetic decls from Analyze (same as before).
+	// The engine's callback map (via buildEvalOptions) handles external predicate dispatch.
 	programInfo, err := analysis.Analyze(newRuleUnits, edbDeclarations)
 	if err != nil {
 		return fmt.Errorf("failed to analyze combined program: %w", err)
@@ -699,14 +705,22 @@ func (r *MangleRuntime) buildEvalOptions() []engine.EvalOption {
 		opts = append(opts, engine.WithEvaluationTime(r.evaluationTime))
 	}
 
-	// Add external predicates
+	// Add external predicates — match by name against program predicates
 	extPreds := r.externalPreds.List()
 	if len(extPreds) > 0 {
 		callbacks := make(map[ast.PredicateSym]engine.ExternalPredicateCallback, len(extPreds))
-		for predSym, fn := range extPreds {
-			callbacks[predSym] = &externalPredicateAdapter{fn: fn}
+		for name, fn := range extPreds {
+			// Find the PredicateSym (with correct arity) from program info
+			for edbPred := range r.programInfo.EdbPredicates {
+				if edbPred.Symbol == name {
+					callbacks[edbPred] = &externalPredicateAdapter{fn: fn}
+					break
+				}
+			}
 		}
-		opts = append(opts, engine.WithExternalPredicates(callbacks))
+		if len(callbacks) > 0 {
+			opts = append(opts, engine.WithExternalPredicates(callbacks))
+		}
 	}
 
 	return opts
@@ -969,4 +983,68 @@ func collectFiles(root string) ([]string, error) {
 
 func hasMeta(path string) bool {
 	return strings.ContainsAny(path, "*?[")
+}
+
+// newExternalDeclFromSym creates a Decl marked as external() for the given predicate symbol.
+// mode indicates input (+) vs output (-) for each argument.
+func newExternalDeclFromSym(sym ast.PredicateSym, mode []string) ast.Decl {
+	query := ast.NewQuery(sym)
+	unknownBounds := make([]ast.BaseTerm, sym.Arity)
+	for i := range unknownBounds {
+		unknownBounds[i] = ast.AnyBound
+	}
+	// Build mode descriptor
+	modeArgs := make([]ast.BaseTerm, len(mode))
+	for i, m := range mode {
+		modeArgs[i] = ast.String(m)
+	}
+	descrAtoms := []ast.Atom{
+		ast.NewAtom(ast.DescrDoc, ast.String("")),
+		ast.NewAtom(ast.DescrExternal),
+		ast.NewAtom(ast.DescrMode, modeArgs...),
+	}
+	args := make([]ast.BaseTerm, sym.Arity)
+	for i := range args {
+		args[i] = query.Args[i]
+	}
+	decl, _ := ast.NewDecl(ast.Atom{Predicate: sym, Args: args}, descrAtoms,
+		[]ast.BoundDecl{{unknownBounds}}, nil)
+	return decl
+}
+
+// findPredicateUsage scans a parsed source unit for how a predicate is used.
+// Returns the arity and inferred mode (constants → "+", variables → "-").
+// Returns (-1, nil) if not found.
+func findPredicateUsage(unit parse.SourceUnit, name string) (int, []string) {
+	for _, c := range unit.Clauses {
+		// Check body premises first (most common for external predicates)
+		for _, p := range c.Premises {
+			if atom, ok := p.(ast.Atom); ok && atom.Predicate.Symbol == name {
+				arity := atom.Predicate.Arity
+				mode := make([]string, arity)
+				for i, arg := range atom.Args {
+					if _, isConst := arg.(ast.Constant); isConst {
+						mode[i] = "+"
+					} else {
+						mode[i] = "-"
+					}
+				}
+				return arity, mode
+			}
+		}
+		// Check head
+		if c.Head.Predicate.Symbol == name {
+			arity := c.Head.Predicate.Arity
+			mode := make([]string, arity)
+			for i, arg := range c.Head.Args {
+				if _, isConst := arg.(ast.Constant); isConst {
+					mode[i] = "+"
+				} else {
+					mode[i] = "-"
+				}
+			}
+			return arity, mode
+		}
+	}
+	return -1, nil
 }

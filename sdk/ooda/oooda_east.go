@@ -52,15 +52,13 @@ func RunOODAEAST(ctx context.Context, frame *CognitiveFrame) (*CognitiveFrame, e
 		path = frame.EAST.Steer(frame)
 	}
 
-	// 4. Decide (skipped on fast-path)
-	if path != PathFast {
-		if err := decideWithEAST(ctx, frame); err != nil {
-			return frame, fmt.Errorf("decide failed: %w", err)
-		}
-	} else {
-		// Fast-path: log the bypass
-		fmt.Printf("EAST fast-path: skipping Decide (entropy=%.2f, trust=%s)\n",
+	// 4. Decide (always run — fast-path only skips EAST steering enrichment)
+	if path == PathFast {
+		fmt.Printf("EAST fast-path: simplified Decide (entropy=%.2f, trust=%s)\n",
 			frame.EAST.Entropy, frame.EAST.TrustTier)
+	}
+	if err := decideWithEAST(ctx, frame); err != nil {
+		return frame, fmt.Errorf("decide failed: %w", err)
 	}
 
 	// 5. Act (execute with authorization)
