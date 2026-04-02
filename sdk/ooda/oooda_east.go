@@ -18,7 +18,7 @@ var (
 // RunOODAEAST executes the OODA loop with EAST steering for generation tasks.
 // Includes entropy measurement, fast-path routing, Datalog validation, and Teacher-Student retry.
 //
-// Flow: Observe → Orient → [EAST routes] → Decide(opt) → Act → Validate + EAST post-act
+// Flow: Observe → Orient → Plan → [EAST routes] → Decide(opt) → Act → Validate + EAST post-act
 //
 // EAST post-act behaviors:
 //   - Validate: Datalog rule check (quality_gate, validation_rule, generic_pattern)
@@ -42,7 +42,12 @@ func RunOODAEAST(ctx context.Context, frame *CognitiveFrame) (*CognitiveFrame, e
 		return frame, fmt.Errorf("orient failed: %w", err)
 	}
 
-	// 3. EAST routing decision
+	// 3. Plan (create explicit plan from planning phase)
+	if err := planWithEAST(ctx, frame); err != nil {
+		return frame, fmt.Errorf("plan failed: %w", err)
+	}
+
+	// 4. EAST routing decision
 	// Use SteerKB() if ReasoningPort is available for Datalog-backed routing (14-east.dl)
 	// Otherwise fall back to in-memory Steer()
 	var path ExecutionPath
@@ -52,7 +57,7 @@ func RunOODAEAST(ctx context.Context, frame *CognitiveFrame) (*CognitiveFrame, e
 		path = frame.EAST.Steer(frame)
 	}
 
-	// 4. Decide (always run — fast-path only skips EAST steering enrichment)
+	// 5. Decide (always run — fast-path only skips EAST steering enrichment)
 	if path == PathFast {
 		fmt.Printf("EAST fast-path: simplified Decide (entropy=%.2f, trust=%s)\n",
 			frame.EAST.Entropy, frame.EAST.TrustTier)
@@ -61,13 +66,29 @@ func RunOODAEAST(ctx context.Context, frame *CognitiveFrame) (*CognitiveFrame, e
 		return frame, fmt.Errorf("decide failed: %w", err)
 	}
 
-	// 5. Act (execute with authorization)
+	// 6. Act (execute with authorization)
 	if err := act(ctx, frame); err != nil {
 		return frame, fmt.Errorf("act failed: %w", err)
 	}
 
-	// 6. EAST post-act behaviors (validate + route + retry)
+	// 7. EAST post-act behaviors (validate + route + retry)
 	return eastPostAct(ctx, frame)
+}
+
+// planWithEAST executes the planning phase with EAST steering.
+func planWithEAST(ctx context.Context, frame *CognitiveFrame) error {
+	start := time.Now()
+	frame.Phase = PhasePlan
+
+	// Use Planner interface if Brain implements it
+	if planner, ok := frame.Brain.(Planner); ok {
+		if err := planner.Plan(ctx, frame); err != nil {
+			return fmt.Errorf("planning failed: %w", err)
+		}
+	}
+
+	frame.PhaseDurations[PhasePlan] = time.Since(start)
+	return nil
 }
 
 // observeWithSaliency captures input and measures saliency.

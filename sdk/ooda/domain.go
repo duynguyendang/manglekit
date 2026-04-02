@@ -20,6 +20,7 @@ type Phase string
 const (
 	PhaseObserve Phase = "observe"
 	PhaseOrient  Phase = "orient"
+	PhasePlan    Phase = "plan" // Planning phase (between Orient and Decide)
 	PhaseDecide  Phase = "decide"
 	PhaseVerify  Phase = "verify"
 	PhaseAct     Phase = "act"

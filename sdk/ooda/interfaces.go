@@ -26,3 +26,9 @@ type Verifier interface {
 type Actor interface {
 	Act(ctx context.Context, frame *CognitiveFrame) error
 }
+
+// Planner defines the capability to create an explicit plan before deciding.
+// It executes structured planning steps and produces a PlanningResult.
+type Planner interface {
+	Plan(ctx context.Context, frame *CognitiveFrame) error
+}
