@@ -333,10 +333,13 @@ func (c *Client) buildHaltError(result core.Envelope) error {
 // backoff handles the sleep and context cancellation check
 func (c *Client) backoff(ctx context.Context, retryCount int) error {
 	sleepDuration := time.Duration(retryCount) * BackoffBase
+	timer := time.NewTimer(sleepDuration)
 	select {
 	case <-ctx.Done():
+		timer.Stop()
 		return ctx.Err()
-	case <-time.After(sleepDuration):
+	case <-timer.C:
+		timer.Stop()
 		return nil
 	}
 }

@@ -1,0 +1,85 @@
+% ==========================================
+% VALIDATION RULES - Generic Quality Gates
+% ==========================================
+% Domain-agnostic validation rules
+% This file is embedded in manglekit binary
+
+% ==========================================
+% OUTPUT VALIDATION
+% ==========================================
+
+validation_rule("output_not_empty", "Output must not be empty").
+validation_rule("output_within_size_limit", "Output must be within configured size limit").
+validation_rule("output_format_valid", "Output must match expected format").
+validation_rule("output_schema_valid", "Output must conform to schema").
+
+% ==========================================
+% COMPLETENESS VALIDATION
+% ==========================================
+
+validation_rule("has_required_sections", "All required sections must be present").
+validation_rule("has_required_fields", "All required fields must be populated").
+validation_rule("has_metadata", "Output must include metadata").
+validation_rule("no_hardcoded_values", "No hardcoded secrets or configuration").
+
+% ==========================================
+% CONSISTENCY VALIDATION
+% ==========================================
+
+validation_rule("internal_consistency", "Internal references must be consistent").
+validation_rule("cross_reference_valid", "Cross-references must point to valid targets").
+validation_rule("id_uniqueness", "IDs must be unique within document").
+validation_rule("terminology_consistent", "Terminology must be consistent throughout").
+
+% ==========================================
+% QUALITY VALIDATION
+% ==========================================
+
+validation_rule("readability_score", "Readability score must meet threshold").
+validation_rule("no_placeholder_text", "No placeholder or TODO text in output").
+validation_rule("proper_formatting", "Output must follow formatting standards").
+validation_rule("grammar_check", "Grammar and spelling must be correct").
+
+% ==========================================
+% VALIDATION SEVERITY
+% ==========================================
+
+validation_severity("output_not_empty", "critical").
+validation_severity("output_within_size_limit", "error").
+validation_severity("output_format_valid", "error").
+validation_severity("output_schema_valid", "error").
+validation_severity("has_required_sections", "error").
+validation_severity("has_required_fields", "error").
+validation_severity("has_metadata", "warning").
+validation_severity("no_hardcoded_values", "error").
+validation_severity("internal_consistency", "error").
+validation_severity("cross_reference_valid", "error").
+validation_severity("id_uniqueness", "warning").
+validation_severity("terminology_consistent", "warning").
+validation_severity("readability_score", "warning").
+validation_severity("no_placeholder_text", "error").
+validation_severity("proper_formatting", "warning").
+validation_severity("grammar_check", "warning").
+
+% ==========================================
+% VALIDATION ACTIONS
+% ==========================================
+
+validation_action("critical", "fail").
+validation_action("error", "fail").
+validation_action("warning", "warn").
+validation_action("info", "log").
+
+% ==========================================
+% VALIDATION HELPERS
+% ==========================================
+
+blocks_execution(Severity) :-
+    validation_severity(_, Severity),
+    member(Severity, ["critical", "error"]).
+
+critical_validations(Rules) :-
+    findall(Rule, validation_severity(Rule, "critical"), Rules).
+
+validations_by_severity(Severity, Rules) :-
+    findall(Rule, validation_severity(Rule, Severity), Rules).

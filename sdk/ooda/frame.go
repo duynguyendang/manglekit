@@ -307,26 +307,26 @@ func actWithRetry(ctx context.Context, frame *CognitiveFrame) error {
 		frame.RetryCount = attempt
 
 		if attempt > 0 {
-			// Wait before retry
+			timer := time.NewTimer(time.Duration(attempt) * time.Second)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return ctx.Err()
-			case <-time.After(time.Duration(attempt) * time.Second):
+			case <-timer.C:
+				timer.Stop()
 			}
 		}
 
 		err := act(ctx, frame)
 		if err == nil {
-			return nil // Success
+			return nil
 		}
 
 		lastErr = err
 
-		// Try to rollback if executor supports it
 		if frame.Executor != nil && frame.ActionResult != nil {
 			rollbackErr := frame.Executor.Rollback(ctx, frame, frame.ActionResult)
 			if rollbackErr != nil {
-				// Log but continue with retry
 				fmt.Printf("Warning: rollback failed: %v\n", rollbackErr)
 			}
 		}

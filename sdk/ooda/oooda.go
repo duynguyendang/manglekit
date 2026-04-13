@@ -133,10 +133,13 @@ func actWithSimpleRetry(ctx context.Context, frame *CognitiveFrame) error {
 		frame.RetryCount = attempt
 
 		if attempt > 0 {
+			timer := time.NewTimer(time.Duration(attempt) * time.Second)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return ctx.Err()
-			case <-time.After(time.Duration(attempt) * time.Second):
+			case <-timer.C:
+				timer.Stop()
 			}
 		}
 
@@ -146,7 +149,6 @@ func actWithSimpleRetry(ctx context.Context, frame *CognitiveFrame) error {
 		}
 		lastErr = err
 
-		// Rollback if supported
 		if frame.Executor != nil && frame.ActionResult != nil {
 			frame.Executor.Rollback(ctx, frame, frame.ActionResult)
 		}

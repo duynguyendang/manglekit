@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"go.opentelemetry.io/otel/trace"
 
@@ -176,6 +177,7 @@ func WithStateProvider(provider core.StateProvider) ClientOption {
 // lazyStateManager defers actual statemanager creation until first use
 // This avoids import cycles and ensures all dependencies are ready
 type lazyStateManager struct {
+	once     sync.Once
 	provider core.StateProvider
 	client   *Client
 	actual   interface {
@@ -186,10 +188,9 @@ type lazyStateManager struct {
 }
 
 func (l *lazyStateManager) init() {
-	if l.actual == nil {
-		// Create the actual state manager using the statemanager package
+	l.once.Do(func() {
 		l.actual = statemanager.New(l.provider, l.client.engine, l.client.logger)
-	}
+	})
 }
 
 func (l *lazyStateManager) Hydrate(ctx context.Context, sessionID string) (*core.SessionState, error) {

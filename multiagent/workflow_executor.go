@@ -227,11 +227,14 @@ func (e *WorkflowExecutor) executeNode(ctx context.Context, node *WorkflowNode, 
 
 		execErr = err
 		if attempt < e.maxRetries {
+			timer := time.NewTimer(time.Duration(attempt+1) * time.Second)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				result.Error = ctx.Err()
 				return result
-			case <-time.After(time.Duration(attempt+1) * time.Second):
+			case <-timer.C:
+				timer.Stop()
 			}
 		}
 	}
