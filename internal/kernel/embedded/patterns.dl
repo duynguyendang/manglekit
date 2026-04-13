@@ -62,10 +62,21 @@ coordination_pattern("cqrs").
 % PATTERN COMBINATIONS
 % ==========================================
 
-pattern_combo("robust_pipeline", ["pipeline", "retry", "fallback"]).
-pattern_combo("high_throughput", ["parallel", "fan_out_fan_in", "non_blocking"]).
-pattern_combo("reliable_execution", ["pipeline", "circuit_breaker", "bulkhead"]).
-pattern_combo("distributed_processing", ["multi_agent", "event_driven", "saga"]).
+pattern_combo_robust_pipeline("pipeline").
+pattern_combo_robust_pipeline("retry").
+pattern_combo_robust_pipeline("fallback").
+
+pattern_combo_high_throughput("parallel").
+pattern_combo_high_throughput("fan_out_fan_in").
+pattern_combo_high_throughput("non_blocking").
+
+pattern_combo_reliable_execution("pipeline").
+pattern_combo_reliable_execution("circuit_breaker").
+pattern_combo_reliable_execution("bulkhead").
+
+pattern_combo_distributed_processing("multi_agent").
+pattern_combo_distributed_processing("event_driven").
+pattern_combo_distributed_processing("saga").
 
 % ==========================================
 % PATTERN SELECTION

@@ -179,11 +179,5 @@ phase_config("refine", "timeout_ms", "45000").
 next_phase(Current, Next) :- phase_transition(Current, Next).
 next_phase("refine", "observe").
 
-phase_actions(Phase, Actions) :- 
-    findall(Action, action(Phase, Action, _), Actions).
-
-phase_tools(Phase, Tools) :-
-    findall(Tool, phase_tool(Phase, Tool), Tools).
-
 valid_transition(From, To) :- phase_transition(From, To).
 valid_transition(From, To) :- conditional_transition(From, To, _).

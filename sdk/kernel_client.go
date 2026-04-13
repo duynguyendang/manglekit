@@ -36,6 +36,10 @@ func NewKernelClient(ctx context.Context, opts ...KernelOption) (*KernelClient, 
 		return nil, fmt.Errorf("failed to initialize kernel loader: %w", err)
 	}
 
+	if err := ensureDependencies(kc.Client); err != nil {
+		return nil, fmt.Errorf("failed to initialize client dependencies: %w", err)
+	}
+
 	if err := kc.Client.engine.LoadPolicy(ctx, kc.kernelLoader.GetKernel()); err != nil {
 		return nil, fmt.Errorf("failed to load embedded kernel: %w", err)
 	}

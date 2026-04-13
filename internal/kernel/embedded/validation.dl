@@ -74,12 +74,18 @@ validation_action("info", "log").
 % VALIDATION HELPERS
 % ==========================================
 
+% Blocking severity levels (facts)
+is_blocking_severity("critical").
+is_blocking_severity("error").
+
+% Rule: severity blocks execution if it's a blocking severity
 blocks_execution(Severity) :-
     validation_severity(_, Severity),
-    member(Severity, ["critical", "error"]).
+    is_blocking_severity(Severity).
 
-critical_validations(Rules) :-
-    findall(Rule, validation_severity(Rule, "critical"), Rules).
+critical_validations("output_not_empty").
+critical_validations("readability_score").
+critical_validations("no_placeholder_text").
 
-validations_by_severity(Severity, Rules) :-
-    findall(Rule, validation_severity(Rule, Severity), Rules).
+validations_by_severity(Severity, Rule) :-
+    validation_severity(Rule, Severity).

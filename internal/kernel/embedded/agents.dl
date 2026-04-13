@@ -216,5 +216,6 @@ can_perform_task(Agent, Task) :-
     agent_capability(Agent, Capability),
     task_requires_capability(Task, Capability).
 
-agents_with_capability(Capability, Agents) :-
-    findall(A, (agent(A, _), agent_capability(A, Capability)), Agents).
+agents_with_capability(Capability, Agent) :-
+    agent(Agent, _),
+    agent_capability(Agent, Capability).
