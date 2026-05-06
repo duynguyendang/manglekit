@@ -289,6 +289,10 @@ type CognitiveFrame struct {
 	MaxRetries int           `json:"max_retries"`
 	Timeout    time.Duration `json:"timeout"`
 
+	// Middleware configuration for LLM-based actions.
+	// When set, these options are passed to the TextGenerator during Act phase.
+	GenerateOptions []core.GenerateOption `json:"-"`
+
 	// Metrics
 	RetryCount     int                     `json:"retry_count"`
 	PhaseDurations map[Phase]time.Duration `json:"phase_durations"`

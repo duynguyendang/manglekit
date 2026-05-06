@@ -4,6 +4,8 @@
 
 **Manglekit** is the **Sovereign Neuro-Symbolic Logic Kernel** for Go.
 
+> **Genkit 1.7 Integration**: Manglekit now supports all Genkit 1.7 middleware features including Retry, Fallback, Tool Approval, Filesystem, and custom middleware. See [Genkit 1.7 Middleware Features](#genkit-17-middleware-features) for details.
+
 It solves the **Stochastic Runtime Paradox** of modern AI: applications require **Deterministic Reliability** (strict protocols, type safety, logic), but LLMs are inherently **Probabilistic** (creative, non-deterministic).
 
 Manglekit bridges this gap by formalizing the agent lifecycle into an **OODA Loop** (Observe, Orient, Decide, Verify, Act) protected by a **Zero-Trust Supervisor** architecture:
@@ -565,7 +567,7 @@ Manglekit provides structured error types for proper error categorization:
 ```go
 import (
     "errors"
-    "github.com/duynguyendang/manglekit-wip/core"
+    "github.com/duynguyendang/manglekit/core"
 )
 
 // Check for policy violations
@@ -575,6 +577,178 @@ if core.IsPolicyViolationError(err) {
         log.Printf("Blocked by policy: %s at %s", pve.Tier, pve.RuleID)
     }
 }
+```
+
+---
+
+## OODA + Genkit Flows
+
+Manglekit integrates the OODA loop with Genkit Flows, enabling **traced OODA phases** in the Genkit Dev UI, **streaming responses**, **middleware application**, and **flow registration** with Genkit's runtime.
+
+### Running OODA as a Genkit Flow
+
+```go
+import (
+    mkai "github.com/duynguyendang/manglekit/adapters/ai"
+    "github.com/duynguyendang/manglekit/sdk/ooda"
+    "github.com/firebase/genkit/go/genkit"
+    "github.com/firebase/genkit/go/plugins/googlegenai"
+)
+
+func main() {
+    ctx := context.Background()
+    g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
+
+    flow := mkai.NewOODAFlow(&mkai.OODAFlowConfig{
+        MaxRetries:     3,
+        Timeout:        5 * time.Minute,
+        KnowledgeStore: myKnowledgeStore,
+        TransientStore: myTransientStore,
+    })
+
+    flow.DefineFlow(g, "myOodaFlow")
+    flow.DefineStreamingFlow(g, "myOodaStreamingFlow")
+
+    result, err := flow.Run(ctx, &mkai.OODAFlowInput{
+        Input:    "Generate an architecture document",
+        Intent:   "document_generation",
+        TaskType: ooda.TaskTypeGeneration,
+    })
+}
+```
+
+### Genkit Bridge & Flow Registry
+
+```go
+bridge := mkai.NewOODAGenkitBridge(g, &mkai.OODAFlowConfig{
+    MaxRetries: 3,
+})
+
+bridge.DefineOODAFlow("documentGeneration")
+
+registry := mkai.NewFlowRegistry(g)
+registry.RegisterAndDefine("docGen", mkai.NewOODAFlow(cfg1))
+registry.RegisterAndDefine("codeReview", mkai.NewOODAFlow(cfg2))
+```
+
+### Flow Input/Output Types
+
+```go
+type OODAFlowInput struct {
+    Input    string          `json:"input"`
+    Intent   string          `json:"intent,omitempty"`
+    TaskType ooda.TaskType  `json:"task_type,omitempty"`
+}
+
+type OODAFlowOutput struct {
+    Output         string                       `json:"output"`
+    Status         ooda.VerifyStatus            `json:"status"`
+    PhaseDurations map[ooda.Phase]time.Duration `json:"phase_durations"`
+    RetryCount     int                          `json:"retry_count"`
+    AuditTrail     string                      `json:"audit_trail,omitempty"`
+    Error          string                      `json:"error,omitempty"`
+}
+```
+
+### HTTP Endpoint for OODA Flow
+
+Genkit automatically creates an HTTP endpoint for each defined flow:
+
+```bash
+curl -X POST http://localhost:8080/myOodaFlow \
+  -H "Content-Type: application/json" \
+  -d '{"data": {"input": "Generate architecture", "intent": "doc_gen"}}'
+```
+
+### Middleware in OODA Flows
+
+All Genkit 1.7 middleware features are available for OODA-based generation. Middleware is applied per-generation when the OODA loop executes LLM-based actions.
+
+### Available Middleware
+
+| Middleware | Description | Use Case |
+|-----------|-------------|----------|
+| **Retry** | Automatic retry with exponential backoff | Transient failures, rate limits |
+| **Fallback** | Automatic model fallback on failure | High availability, cost optimization |
+| **Tool Approval** | Human-in-the-loop tool approval | Security-sensitive operations |
+| **Filesystem** | Scoped file system access for models | Document processing, code generation |
+| **Datalog Validator** | Pre/post-generation validation | Policy enforcement |
+| **Telemetry** | Generation metrics collection | Observability, monitoring |
+| **Logging** | Request/response logging | Debugging, audit trails |
+
+### Using Middleware
+
+```go
+// Retry failed API calls up to 3 times
+resp, err := generator.Generate(ctx, prompt, mkai.WithRetry(3))
+
+// Fallback to alternative models on failure
+resp, err := generator.Generate(ctx, prompt,
+    mkai.WithFallback([]ai.ModelRef{
+        googlegenai.ModelRef("googleai/gemini-2.5-flash", nil),
+    }),
+)
+
+// Require approval for sensitive tools
+resp, err := generator.Generate(ctx, prompt,
+    mkai.WithToolApproval([]string{"read_file", "query_database"}),
+)
+
+// Enable scoped filesystem access
+resp, err := generator.Generate(ctx, prompt,
+    mkai.WithFilesystem("/app/data", true),
+)
+```
+
+### Composing Multiple Middleware
+
+```go
+resp, err := generator.Generate(ctx, prompt,
+    mkai.WithRetry(3),
+    mkai.WithFallback(fallbackModels),
+    mkai.WithToolApproval(allowedTools),
+    mkai.WithFilesystem("/app/data", false),
+    mkai.WithTelemetry(func(ctx context.Context, duration time.Duration, model string, inTokens, outTokens int) {
+        metrics.Record(duration, model, inTokens, outTokens)
+    }),
+    mkai.WithLogging(logger),
+)
+```
+
+### Custom Datalog Validator
+
+```go
+resp, err := generator.Generate(ctx, prompt,
+    mkai.WithDatalogValidator(func(ctx context.Context, phase string, req *ai.ModelRequest, resp *ai.ModelResponse) error {
+        if phase == "pre" {
+            return validateInput(ctx, req)
+        }
+        return validateOutput(ctx, resp)
+    }),
+)
+```
+
+### OODA Frame with GenerateOptions
+
+Configure the CognitiveFrame with middleware options that are passed to the TextGenerator during the Act phase:
+
+```go
+frame := ooda.NewCognitiveFrame(input, intent, taskType).
+    WithGenerateOptions(
+        mkai.WithRetry(3),
+        mkai.WithFallback(fallbackModels),
+    )
+
+result, err := ooda.RunOODA(ctx, frame)
+```
+
+### MCP Tool Approval
+
+Require approval for MCP tool execution:
+
+```go
+loader := mcp.NewLoader(cfg).
+    WithMiddleware(mkai.WithToolApproval([]string{"read_file", "list_files"}))
 ```
 
 ---
@@ -618,8 +792,8 @@ import (
     "fmt"
     "log"
 
-    "github.com/duynguyendang/manglekit-wip/core"
-    "github.com/duynguyendang/manglekit-wip/sdk"
+    "github.com/duynguyendang/manglekit/core"
+    "github.com/duynguyendang/manglekit/sdk"
     "github.com/joho/godotenv"
 )
 
@@ -898,8 +1072,8 @@ The `resilience` adapter provides a zero-dependency Circuit Breaker that prevent
 import (
     "time"
 
-    "github.com/duynguyendang/manglekit-wip/adapters/resilience"
-    "github.com/duynguyendang/manglekit-wip/core"
+    "github.com/duynguyendang/manglekit/adapters/resilience"
+    "github.com/duynguyendang/manglekit/core"
 )
 
 func main() {

@@ -81,6 +81,7 @@ func (g *genkitAdapter) Complete(ctx context.Context, prompt string) (string, er
 }
 
 // Generate implements the core.TextGenerator interface using Genkit.
+// Supports genkit 1.7 middleware via WithMiddleware, WithRetry, WithFallback, etc.
 func (g *genkitAdapter) Generate(ctx context.Context, prompt string, opts ...core.GenerateOption) (*core.LLMResponse, error) {
 	// Initialize Config
 	cfg := &core.GenerationConfig{
@@ -105,52 +106,53 @@ func (g *genkitAdapter) Generate(ctx context.Context, prompt string, opts ...cor
 	}
 
 	if systemPrompt != "" {
-		messages = append(messages, &ai.Message{
-			Role:    ai.RoleSystem,
-			Content: []*ai.Part{ai.NewTextPart(systemPrompt)},
-		})
+		messages = append(messages, ai.NewSystemMessage(ai.NewTextPart(systemPrompt)))
 	}
 
-	messages = append(messages, &ai.Message{
-		Role:    ai.RoleUser,
-		Content: []*ai.Part{ai.NewTextPart(prompt)},
-	})
+	messages = append(messages, ai.NewUserMessage(ai.NewTextPart(prompt)))
 
-	// Prepare Genkit Config
-	genkitConfig := ai.GenerationCommonConfig{}
+	// Build generation options
+	genOpts := []ai.GenerateOption{
+		ai.WithModel(g.model),
+		ai.WithMessages(messages...),
+	}
 
+	// Apply config options
 	if cfg.Temperature != 0 {
-		genkitConfig.Temperature = cfg.Temperature
+		genOpts = append(genOpts, ai.WithConfig(ai.GenerationCommonConfig{
+			Temperature: cfg.Temperature,
+		}))
 	}
 	if cfg.MaxTokens != 0 {
-		genkitConfig.MaxOutputTokens = cfg.MaxTokens
+		genOpts = append(genOpts, ai.WithConfig(ai.GenerationCommonConfig{
+			MaxOutputTokens: cfg.MaxTokens,
+		}))
 	}
 	if cfg.TopP != 0 {
-		genkitConfig.TopP = cfg.TopP
+		genOpts = append(genOpts, ai.WithConfig(ai.GenerationCommonConfig{
+			TopP: cfg.TopP,
+		}))
 	}
 	if len(cfg.StopSequences) > 0 {
-		genkitConfig.StopSequences = cfg.StopSequences
+		genOpts = append(genOpts, ai.WithConfig(ai.GenerationCommonConfig{
+			StopSequences: cfg.StopSequences,
+		}))
 	}
 
-	// Map to Genkit Request
-	req := &ai.ModelRequest{
-		Messages: messages,
-		Config:   genkitConfig,
+	// Handle Output / JSON Mode
+	if cfg.OutputType != nil || cfg.JSONMode {
+		genOpts = append(genOpts, ai.WithOutputFormat("json"))
 	}
 
-	// Handle Output
-	if cfg.OutputType != nil {
-		req.Output = &ai.ModelOutputConfig{}
-		if cfg.JSONMode {
-			req.Output.Format = ai.OutputFormatJSON
-		}
-	} else if cfg.JSONMode {
-		req.Output = &ai.ModelOutputConfig{
-			Format: ai.OutputFormatJSON,
-		}
+	// Apply middleware options
+	mwCfg := extractMiddlewareConfig(cfg)
+	if mwCfg != nil {
+		mwOpts := buildMiddlewareOptions(mwCfg)
+		genOpts = append(genOpts, mwOpts...)
 	}
 
-	resp, err := g.model.Generate(ctx, req, nil)
+	// Use high-level genkit.Generate to enable middleware
+	resp, err := genkit.Generate(ctx, g.gk, genOpts...)
 	if err != nil {
 		return nil, err
 	}

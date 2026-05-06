@@ -364,6 +364,8 @@ type GenerationConfig struct {
 	JSONMode      bool
 	// OutputType is used by Genkit to enforce structured output (schema).
 	OutputType any
+	// Metadata stores arbitrary per-request metadata (e.g., middleware config).
+	Metadata map[string]any
 }
 
 // Document represents a snippet of knowledge/memory.
