@@ -172,8 +172,9 @@ func (g *genkitAdapter) Generate(ctx context.Context, prompt string, opts ...cor
 }
 
 // Stream implements the core.TextGenerator interface.
-// Currently returns error as streaming is not fully adapted here.
-func (g *genkitAdapter) Stream(ctx context.Context, prompt string) (<-chan string, error) {
-	// Simple non-streaming fallback or error
-	return nil, fmt.Errorf("streaming not implemented in genkit adapter yet")
+func (g *genkitAdapter) Stream(ctx context.Context, prompt string) (<-chan core.StreamChunk, error) {
+	ch := make(chan core.StreamChunk, 1)
+	ch <- core.StreamChunk{Err: fmt.Errorf("streaming not implemented in genkit adapter yet")}
+	close(ch)
+	return ch, nil
 }

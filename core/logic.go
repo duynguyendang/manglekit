@@ -29,7 +29,12 @@ type TextGenerator interface {
 	Generate(ctx context.Context, prompt string, opts ...GenerateOption) (*LLMResponse, error)
 
 	// Stream generates a stream of text.
-	Stream(ctx context.Context, prompt string) (<-chan string, error)
+	Stream(ctx context.Context, prompt string) (<-chan StreamChunk, error)
+}
+
+type StreamChunk struct {
+	Text string
+	Err  error
 }
 
 // Extractor converts raw text into structured data.

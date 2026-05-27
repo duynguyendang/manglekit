@@ -23,7 +23,7 @@ func (m *MockGenerator) Generate(ctx context.Context, prompt string, opts ...cor
 	return &core.LLMResponse{Text: `{"datalog_content": "deny(S, \"test\") :- json_bool(S, \"foo\", \"bar\").", "explanation": "test"}`}, nil
 }
 
-func (m *MockGenerator) Stream(ctx context.Context, prompt string) (<-chan string, error) {
+func (m *MockGenerator) Stream(ctx context.Context, prompt string) (<-chan core.StreamChunk, error) {
 	return nil, nil
 }
 

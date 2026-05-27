@@ -3,6 +3,7 @@ package multiagent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -379,7 +380,7 @@ func (e *HydratedWorkflowExecutor) findNextNode(ctx context.Context, currentNode
 
 func (e *HydratedWorkflowExecutor) findErrorEdge(nodeID string) *core.EdgeDef {
 	for _, edge := range e.workflowDef.Edges {
-		if edge.From == nodeID {
+		if edge.From == nodeID && strings.HasPrefix(edge.Condition, "error") {
 			return &edge
 		}
 	}

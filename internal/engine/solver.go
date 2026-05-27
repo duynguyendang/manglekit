@@ -602,7 +602,7 @@ func (e *PolicyEngine) reflectInternal(ctx context.Context, actionMeta core.Acti
 // Updated to check `infeasible(Entity, Reason)` first, then `deny(Entity)`.
 func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, entityID string, env core.Envelope, extraFacts ...ast.Atom) error {
 	if e.runtime == nil || e.runtime.programInfo == nil {
-		return nil // No runtime or program loaded, allow by default
+		return &core.AlignmentError{Message: "policy engine not initialized: fail-closed"}
 	}
 
 	// 1. ToFacts: Convert Payload

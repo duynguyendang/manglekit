@@ -28,7 +28,7 @@ func (m *mockTextGenerator) Generate(ctx context.Context, prompt string, opts ..
 	return &core.LLMResponse{Text: m.response}, nil
 }
 
-func (m *mockTextGenerator) Stream(ctx context.Context, prompt string) (<-chan string, error) {
+func (m *mockTextGenerator) Stream(ctx context.Context, prompt string) (<-chan core.StreamChunk, error) {
 	return nil, nil
 }
 

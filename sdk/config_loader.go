@@ -84,11 +84,11 @@ func (m *mockGenerator) Generate(ctx context.Context, prompt string, opts ...cor
 	}, nil
 }
 
-func (m *mockGenerator) Stream(ctx context.Context, prompt string) (<-chan string, error) {
-	ch := make(chan string)
+func (m *mockGenerator) Stream(ctx context.Context, prompt string) (<-chan core.StreamChunk, error) {
+	ch := make(chan core.StreamChunk)
 	go func() {
 		defer close(ch)
-		ch <- fmt.Sprintf("%s %s", m.systemPrompt, prompt)
+		ch <- core.StreamChunk{Text: fmt.Sprintf("%s %s", m.systemPrompt, prompt)}
 	}()
 	return ch, nil
 }

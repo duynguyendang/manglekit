@@ -54,7 +54,7 @@ func (a *LLMAction) Execute(ctx context.Context, input core.Envelope) (core.Enve
 	}
 
 	// Teacher-Student Protocol: Inject feedback if present
-	if feedback, ok := input.Metadata["mangle_feedback"]; ok && feedback != "" {
+	if feedback, ok := input.Metadata[core.KeyFeedback]; ok && feedback != "" {
 		prompt += fmt.Sprintf("\n\n[SYSTEM WARNING]: Your previous attempt failed. Reason: '%s'. Please correct your output to satisfy this rule.", feedback)
 	}
 
@@ -98,6 +98,6 @@ func (a *LLMAction) Generate(ctx context.Context, prompt string, opts ...core.Ge
 }
 
 // Stream implements core.TextGenerator.
-func (a *LLMAction) Stream(ctx context.Context, prompt string) (<-chan string, error) {
+func (a *LLMAction) Stream(ctx context.Context, prompt string) (<-chan core.StreamChunk, error) {
 	return a.generator.Stream(ctx, prompt)
 }

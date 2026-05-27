@@ -102,11 +102,7 @@ func (o *Orchestrator) Execute(ctx context.Context, signal domain.Signal) (*doma
 		if err != nil {
 			return nil, fmt.Errorf("decide phase (compile) failed: %w", err)
 		}
-		_ = prompt
 
-		// Neural Synthesis (GenerativePort)
-		// Assuming GenerativePort takes the compiled prompt context internally now
-		// In reality, we'd pass the compiled prompt to the LLM adapter.
 		plan, err := o.proposer.Generate(ctx, frame.Intent, prompt, frame.Context, frame.ActiveGenes)
 		if err != nil {
 			return nil, fmt.Errorf("decide phase (generate) failed: %w", err)

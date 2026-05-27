@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine"
@@ -58,6 +59,7 @@ type WorkflowEdge struct {
 type AgentSystem struct {
 	engine   *engine.PolicyEngine
 	registry map[string]*Agent
+	mu       sync.RWMutex
 }
 
 // Engine returns the underlying policy engine for external access
@@ -218,8 +220,11 @@ func (s *AgentSystem) GetAgentsByRole(ctx context.Context, role string) ([]*Agen
 
 // GetAgent retrieves an agent by ID
 func (s *AgentSystem) GetAgent(ctx context.Context, agentID string) (*Agent, error) {
-	// Check cache
-	if agent, ok := s.registry[agentID]; ok {
+	s.mu.RLock()
+	agent, ok := s.registry[agentID]
+	s.mu.RUnlock()
+
+	if ok {
 		return agent, nil
 	}
 
@@ -256,7 +261,7 @@ func (s *AgentSystem) GetAgent(ctx context.Context, agentID string) (*Agent, err
 		status = AgentStatus(statusResults[0]["Status"])
 	}
 
-	agent := &Agent{
+	agent = &Agent{
 		ID:           agentID,
 		Role:         AgentRole(role),
 		Capabilities: capabilities,
@@ -264,7 +269,10 @@ func (s *AgentSystem) GetAgent(ctx context.Context, agentID string) (*Agent, err
 		Status:       status,
 	}
 
+	s.mu.Lock()
 	s.registry[agentID] = agent
+	s.mu.Unlock()
+
 	return agent, nil
 }
 
@@ -447,13 +455,13 @@ func (s *AgentSystem) GetAgentRoles(ctx context.Context) ([]string, error) {
 
 // SetAgentStatus updates the status of an agent
 func (s *AgentSystem) SetAgentStatus(ctx context.Context, agentID string, status AgentStatus) error {
-	// Update in-memory registry
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if agent, ok := s.registry[agentID]; ok {
 		agent.Status = status
 	}
 
-	// Note: In a real implementation, this would update the Datalog facts
-	// For now, we only update in-memory
 	return nil
 }
 

@@ -108,7 +108,7 @@ func (l *LLM) Generate(ctx context.Context, prompt string, opts ...core.Generate
 }
 
 // Stream generates a stream of text.
-func (l *LLM) Stream(ctx context.Context, prompt string) (<-chan string, error) {
+func (l *LLM) Stream(ctx context.Context, prompt string) (<-chan core.StreamChunk, error) {
 	stream, err := l.client.CreateChatCompletionStream(
 		ctx,
 		openai.ChatCompletionRequest{
@@ -125,7 +125,7 @@ func (l *LLM) Stream(ctx context.Context, prompt string) (<-chan string, error) 
 		return nil, err
 	}
 
-	ch := make(chan string)
+	ch := make(chan core.StreamChunk)
 	go func() {
 		defer close(ch)
 		defer stream.Close()
@@ -134,13 +134,12 @@ func (l *LLM) Stream(ctx context.Context, prompt string) (<-chan string, error) 
 			resp, err := stream.Recv()
 			if err != nil {
 				if err != io.EOF {
-					// Error occurred, but we can't send it on the channel
-					// The channel only sends strings
+					ch <- core.StreamChunk{Err: err}
 				}
 				return
 			}
 			if len(resp.Choices) > 0 {
-				ch <- resp.Choices[0].Delta.Content
+				ch <- core.StreamChunk{Text: resp.Choices[0].Delta.Content}
 			}
 		}
 	}()
