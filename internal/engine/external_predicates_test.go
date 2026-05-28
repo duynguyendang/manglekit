@@ -24,7 +24,7 @@ func TestExternalPredicate_Basic(t *testing.T) {
 
 	// External predicate adds facts to base store during evaluation.
 	// Verify the derived fact exists in the store.
-	ok, err := runtime.ExecuteQuery(nil, "result(10)")
+	ok, err := runtime.ExecuteQuery(context.Background(), nil, "result(10)")
 	require.NoError(t, err)
 	assert.True(t, ok, "result(10) should exist after double(5) returns 10")
 }
@@ -42,7 +42,7 @@ func TestExternalPredicate_Chained(t *testing.T) {
 	err = runtime.LoadFromString(policy)
 	require.NoError(t, err)
 
-	ok, err := runtime.ExecuteQuery(nil, "result(11)")
+	ok, err := runtime.ExecuteQuery(context.Background(), nil, "result(11)")
 	require.NoError(t, err)
 	assert.True(t, ok)
 }
@@ -63,7 +63,7 @@ func TestExternalPredicate_InBodyChain(t *testing.T) {
 	err = runtime.LoadFromString(policy)
 	require.NoError(t, err)
 
-	ok, err := runtime.ExecuteQuery(nil, "intermediate(10)")
+	ok, err := runtime.ExecuteQuery(context.Background(), nil, "intermediate(10)")
 	require.NoError(t, err)
 	assert.True(t, ok, "intermediate(10) should be derived")
 }

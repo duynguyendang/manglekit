@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"math"
+	"strings"
 )
 
 type TierLevel int
@@ -114,11 +115,11 @@ func CalculateSaliency(input string, keywords []string) float64 {
 		return 0.0
 	}
 
-	lowerInput := toLower(input)
+	lowerInput := strings.ToLower(input)
 	matchCount := 0
 
 	for _, kw := range keywords {
-		if contains(lowerInput, toLower(kw)) {
+		if strings.Contains(lowerInput, strings.ToLower(kw)) {
 			matchCount++
 		}
 	}
@@ -261,7 +262,7 @@ func CalculateSaliencyPredicate(ctx interface{}, inputs []interface{}) ([][]inte
 		return nil, nil
 	}
 
-	input, ok := toString(inputs[0])
+	input, ok := inputs[0].(string)
 	if !ok {
 		return nil, nil
 	}
@@ -275,32 +276,7 @@ func CalculateSaliencyPredicate(ctx interface{}, inputs []interface{}) ([][]inte
 	return [][]interface{}{{saliency}}, nil
 }
 
-// Helper functions
-
-func toLower(s string) string {
-	result := make([]byte, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 'a' - 'A'
-		}
-		result[i] = c
-	}
-	return string(result)
-}
-
-func contains(s, substr string) bool {
-	if len(substr) > len(s) {
-		return false
-	}
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
-
+// type converters for external predicate interface{}
 func toInt(v interface{}) (int, bool) {
 	switch val := v.(type) {
 	case int:

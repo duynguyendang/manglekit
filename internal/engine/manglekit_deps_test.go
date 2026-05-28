@@ -153,7 +153,7 @@ func TestPolicyEngine_Query_AllFeatures(t *testing.T) {
 func querySolutions(t *testing.T, runtime *MangleRuntime, query string) []map[string]any {
 	t.Helper()
 	var results []map[string]any
-	if err := runtime.QueryWithSolutions(nil, query, func(sol map[string]any) error {
+	if err := runtime.QueryWithSolutions(context.Background(), nil, query, func(sol map[string]any) error {
 		results = append(results, sol)
 		return nil
 	}); err != nil {
@@ -164,7 +164,7 @@ func querySolutions(t *testing.T, runtime *MangleRuntime, query string) []map[st
 
 func assertQueryTrue(t *testing.T, runtime *MangleRuntime, query string) {
 	t.Helper()
-	result, err := runtime.ExecuteQuery(nil, query)
+	result, err := runtime.ExecuteQuery(context.Background(), nil, query)
 	if err != nil {
 		t.Fatalf("query %q: %v", query, err)
 	}
@@ -175,7 +175,7 @@ func assertQueryTrue(t *testing.T, runtime *MangleRuntime, query string) {
 
 func assertQueryFalse(t *testing.T, runtime *MangleRuntime, query string) {
 	t.Helper()
-	result, err := runtime.ExecuteQuery(nil, query)
+	result, err := runtime.ExecuteQuery(context.Background(), nil, query)
 	if err != nil {
 		t.Fatalf("query %q: %v", query, err)
 	}

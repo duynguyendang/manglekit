@@ -581,7 +581,11 @@ func (r *MangleRuntime) AddPolicy(source string) error {
 }
 
 // ExecuteQuery runs a boolean Datalog query.
-func (r *MangleRuntime) ExecuteQuery(facts []ast.Atom, queryStr string) (bool, error) {
+func (r *MangleRuntime) ExecuteQuery(ctx context.Context, facts []ast.Atom, queryStr string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
 	r.mu.RLock()
 	// Check readiness under lock
 	if !r.ready {
@@ -608,6 +612,9 @@ func (r *MangleRuntime) ExecuteQuery(facts []ast.Atom, queryStr string) (bool, e
 	}
 
 	// 3. Evaluate (Expensive part, runs without blocking main lock)
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	if _, err := engine.EvalStratifiedProgramWithStats(pInfo, strata, pStratum, workingStore); err != nil {
 		return false, fmt.Errorf("evaluation failed: %w", err)
 	}
@@ -622,7 +629,11 @@ func (r *MangleRuntime) ExecuteQuery(facts []ast.Atom, queryStr string) (bool, e
 }
 
 // QueryWithSolutions executes a query and invokes callback for solutions.
-func (r *MangleRuntime) QueryWithSolutions(facts []ast.Atom, queryStr string, onSolution func(map[string]any) error) error {
+func (r *MangleRuntime) QueryWithSolutions(ctx context.Context, facts []ast.Atom, queryStr string, onSolution func(map[string]any) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	r.mu.RLock()
 	if !r.ready {
 		r.mu.RUnlock()
@@ -640,6 +651,9 @@ func (r *MangleRuntime) QueryWithSolutions(facts []ast.Atom, queryStr string, on
 		workingStore.Add(fact)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if _, err := engine.EvalStratifiedProgramWithStats(pInfo, strata, pStratum, workingStore); err != nil {
 		return fmt.Errorf("evaluation failed: %w", err)
 	}

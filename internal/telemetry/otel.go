@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"fmt"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -97,8 +98,9 @@ func (o *OTelSpan) SetAttr(key string, value interface{}) {
 }
 
 // valueToString converts any value to a string representation.
-// This is a fallback for types that don't have native attribute support.
 func valueToString(v interface{}) string {
-	// Simple string conversion; can be enhanced as needed
-	return ""
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", v)
 }

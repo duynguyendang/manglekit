@@ -21,9 +21,10 @@ var ErrSolutionFound = errors.New("solution found")
 // and executing authorization (Pre-Check) and validation (Post-Check) logic.
 // It also integrates with observability (Tracing/Logging) to provide transparent governance.
 type PolicyEngine struct {
-	tracer  core.Tracer
-	logger  core.Logger
-	runtime *MangleRuntime
+	tracer       core.Tracer
+	logger       core.Logger
+	runtime      *MangleRuntime
+	queryTimeout time.Duration
 }
 
 // New creates a new PolicyEngine with default no-op observability.
@@ -144,19 +145,28 @@ func NewWithObservability(tracer core.Tracer, logger core.Logger) (*PolicyEngine
 	return pe, nil
 }
 
+// WithQueryTimeout sets the maximum duration for a single query execution.
+// If a query exceeds this timeout, it returns context.DeadlineExceeded.
+// A zero or negative duration means no timeout (unlimited).
+func (e *PolicyEngine) WithQueryTimeout(timeout time.Duration) *PolicyEngine {
+	e.queryTimeout = timeout
+	return e
+}
+
 // RecordLineage records a data lineage relationship between a child and a parent.
-// Note: In the current architecture, lineage is primarily handled via context propagation
-// and tracing spans rather than explicit in-memory storage.
-//
-// Parameters:
-//   - ctx: The context.
-//   - childID: The ID of the derived data.
-//   - parentID: The ID of the source data.
+// It emits a span event if tracing is enabled.
 func (e *PolicyEngine) RecordLineage(ctx context.Context, childID, parentID string) {
-	if e.tracer != nil {
-		// Lineage linking is handled via context propagation in SupervisedAction.
-		// If explicit linking span events are needed, they can be added here.
+	if e.tracer == nil {
+		return
 	}
+
+	_, span := e.tracer.Start(ctx, "Lineage.Record")
+	defer span.End()
+
+	span.SetAttributes(map[string]any{
+		"lineage.child":  childID,
+		"lineage.parent": parentID,
+	})
 }
 
 // Logger returns the engine's configured Logger instance.
@@ -367,7 +377,7 @@ func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope)
 	}
 
 	// Execute query: config(Key, Value)
-	err = e.runtime.QueryWithSolutions(facts, "config(Key, Value)", func(solution map[string]any) error {
+	err = e.runtime.QueryWithSolutions(ctx, facts, "config(Key, Value)", func(solution map[string]any) error {
 		key, kOk := solution["Key"].(string)
 		val, vOk := solution["Value"].(string)
 		if kOk && vOk {
@@ -422,7 +432,7 @@ func (e *PolicyEngine) ExtractActionArguments(ctx context.Context, input core.En
 
 	// Try to extract from action_args(ActionName, Key, Value) pattern
 	queryStr := fmt.Sprintf("action_args(\"%s\", Key, Value)", actionName)
-	err = e.runtime.QueryWithSolutions(nil, queryStr, func(solution map[string]any) error {
+	err = e.runtime.QueryWithSolutions(ctx, nil, queryStr, func(solution map[string]any) error {
 		if key, ok := solution["Key"]; ok {
 			if keyStr, ok := key.(string); ok {
 				if value, ok := solution["Value"]; ok {
@@ -441,7 +451,7 @@ func (e *PolicyEngine) ExtractActionArguments(ctx context.Context, input core.En
 	// Where KeyValueList is expected to be in format: [key1:val1, key2:val2]
 	if len(args) == 0 {
 		altQueryStr := fmt.Sprintf("suggested_action(\"%s\", Args)", actionName)
-		err = e.runtime.QueryWithSolutions(nil, altQueryStr, func(solution map[string]any) error {
+		err = e.runtime.QueryWithSolutions(ctx, nil, altQueryStr, func(solution map[string]any) error {
 			if argsVal, ok := solution["Args"]; ok {
 				if argsMap, ok := argsVal.(map[any]any); ok {
 					for k, v := range argsMap {
@@ -698,7 +708,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 
 	// Query: halt(Entity, Reason)
 	queryHalt := fmt.Sprintf("%s(\"%s\", Reason)", core.PredHalt, entityID)
-	err = e.runtime.QueryWithSolutions(facts, queryHalt, func(solution map[string]any) error {
+	err = e.runtime.QueryWithSolutions(ctx, facts, queryHalt, func(solution map[string]any) error {
 		if reason, ok := solution["Reason"].(string); ok {
 			violationMsg = reason
 			blocked = true
@@ -721,7 +731,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 	if blocked {
 		// Try to find rule ID if available (optional)
 		// Query: violation_rule(ID)
-		qErr := e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
+		qErr := e.runtime.QueryWithSolutions(ctx, facts, "violation_rule(ID)", func(solution map[string]any) error {
 			if id, ok := solution["ID"].(string); ok {
 				ruleID = id
 				return ErrSolutionFound
@@ -745,7 +755,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 	// Priority 2: deny(Entity) (Backward Compatibility)
 	// Map legacy "deny" to core.PredHalt ("halt")
 	queryDeny := fmt.Sprintf("%s(\"%s\")", core.PredHalt, entityID)
-	denied, err := e.runtime.ExecuteQuery(facts, queryDeny)
+	denied, err := e.runtime.ExecuteQuery(ctx, facts, queryDeny)
 	if err != nil {
 		if e.logger != nil {
 			e.logger.Debug("policy evaluation failed (deny check)", "error", err)
@@ -755,7 +765,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 
 	if denied {
 		// Query: violation_msg(Msg)
-		qErr := e.runtime.QueryWithSolutions(facts, fmt.Sprintf("%s(Msg)", core.PredViolation), func(solution map[string]any) error {
+		qErr := e.runtime.QueryWithSolutions(ctx, facts, fmt.Sprintf("%s(Msg)", core.PredViolation), func(solution map[string]any) error {
 			if msg, ok := solution["Msg"].(string); ok {
 				violationMsg = msg
 				return ErrSolutionFound
@@ -770,7 +780,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		}
 
 		// Query: violation_rule(ID)
-		qErr = e.runtime.QueryWithSolutions(facts, "violation_rule(ID)", func(solution map[string]any) error {
+		qErr = e.runtime.QueryWithSolutions(ctx, facts, "violation_rule(ID)", func(solution map[string]any) error {
 			if id, ok := solution["ID"].(string); ok {
 				ruleID = id
 				return ErrSolutionFound
@@ -883,7 +893,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 
 	// 1. Check Correction (Retry)
 	// Query: retry(Hint)
-	err = e.runtime.QueryWithSolutions(facts, fmt.Sprintf("%s(Hint)", core.PredRetry), func(solution map[string]any) error {
+	err = e.runtime.QueryWithSolutions(ctx, facts, fmt.Sprintf("%s(Hint)", core.PredRetry), func(solution map[string]any) error {
 		if hint, ok := solution["Hint"].(string); ok {
 			decision = core.DecisionRetry
 			metadata[core.KeyFeedback] = hint
@@ -908,7 +918,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 
 	// 2. Check Routing
 	// Query: route(Target)
-	err = e.runtime.QueryWithSolutions(facts, fmt.Sprintf("%s(Target)", core.PredRoute), func(solution map[string]any) error {
+	err = e.runtime.QueryWithSolutions(ctx, facts, fmt.Sprintf("%s(Target)", core.PredRoute), func(solution map[string]any) error {
 		if target, ok := solution["Target"].(string); ok {
 			decision = core.DecisionRoute
 			metadata[core.KeyNextStep] = target
@@ -941,8 +951,14 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 //   - true if derived, false otherwise.
 //   - error if execution fails.
 func (e *PolicyEngine) ExecuteQuery(ctx context.Context, facts []ast.Atom, queryStr string) (bool, error) {
+	if e.queryTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, e.queryTimeout)
+		defer cancel()
+	}
+
 	if e.tracer == nil {
-		return e.runtime.ExecuteQuery(facts, queryStr)
+		return e.runtime.ExecuteQuery(ctx, facts, queryStr)
 	}
 
 	ctx, span := e.tracer.Start(ctx, "Datalog.ExecuteQuery")
@@ -950,7 +966,7 @@ func (e *PolicyEngine) ExecuteQuery(ctx context.Context, facts []ast.Atom, query
 
 	span.SetAttributes(map[string]any{"datalog.query": queryStr})
 
-	res, err := e.runtime.ExecuteQuery(facts, queryStr)
+	res, err := e.runtime.ExecuteQuery(ctx, facts, queryStr)
 	if err != nil {
 		span.RecordError(err)
 		return false, err
@@ -988,14 +1004,22 @@ func (e *PolicyEngine) Query(ctx context.Context, facts []string, queryStr strin
 		atomFacts = append(atomFacts, atom)
 	}
 
+	// Apply query timeout if configured
+	queryCtx := ctx
+	if e.queryTimeout > 0 {
+		var cancel context.CancelFunc
+		queryCtx, cancel = context.WithTimeout(ctx, e.queryTimeout)
+		defer cancel()
+	}
+
 	if e.tracer != nil {
 		var span core.Span
-		ctx, span = e.tracer.Start(ctx, "Datalog.Query")
+		queryCtx, span = e.tracer.Start(queryCtx, "Datalog.Query")
 		defer span.End()
 		span.SetAttributes(map[string]any{"datalog.query": queryStr})
 	}
 
-	err := e.runtime.QueryWithSolutions(atomFacts, queryStr, func(solution map[string]any) error {
+	err := e.runtime.QueryWithSolutions(queryCtx, atomFacts, queryStr, func(solution map[string]any) error {
 		// Convert map[string]any to map[string]string
 		strMap := make(map[string]string)
 		for k, v := range solution {
@@ -1078,7 +1102,22 @@ func (e *PolicyEngine) QueryWithAudit(ctx context.Context, facts []string, query
 
 	auditTrail.FactCount = len(atomFacts)
 
-	err := e.runtime.QueryWithSolutions(atomFacts, queryStr, func(solution map[string]any) error {
+	// Apply query timeout if configured
+	queryCtx := ctx
+	if e.queryTimeout > 0 {
+		var cancel context.CancelFunc
+		queryCtx, cancel = context.WithTimeout(ctx, e.queryTimeout)
+		defer cancel()
+	}
+
+	if e.tracer != nil {
+		var span core.Span
+		queryCtx, span = e.tracer.Start(queryCtx, "Datalog.QueryWithAudit")
+		defer span.End()
+		span.SetAttributes(map[string]any{"datalog.query": queryStr})
+	}
+
+	err := e.runtime.QueryWithSolutions(queryCtx, atomFacts, queryStr, func(solution map[string]any) error {
 		// Convert map[string]any to map[string]string
 		strMap := make(map[string]string)
 		for k, v := range solution {

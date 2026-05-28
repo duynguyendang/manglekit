@@ -59,7 +59,7 @@ func TestMangleRuntime_ExecuteQuerySimple(t *testing.T) {
 	}
 
 	// Query for the fact
-	allowed, err := runtime.ExecuteQuery(nil, `allow("user")`)
+	allowed, err := runtime.ExecuteQuery(context.Background(), nil, `allow("user")`)
 	if err != nil {
 		t.Fatalf("query execution failed: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestMangleRuntime_ExecuteQueryWithFacts(t *testing.T) {
 	}
 
 	// Query for a fact that exists
-	exists, err := runtime.ExecuteQuery(nil, `user_is_admin("alice")`)
+	exists, err := runtime.ExecuteQuery(context.Background(), nil, `user_is_admin("alice")`)
 	if err != nil {
 		t.Fatalf("query execution failed: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestMangleRuntime_ExecuteQueryWithFacts(t *testing.T) {
 	}
 
 	// Query for a fact that doesn't exist
-	notExists, err := runtime.ExecuteQuery(nil, `user_is_admin("bob")`)
+	notExists, err := runtime.ExecuteQuery(context.Background(), nil, `user_is_admin("bob")`)
 	if err != nil {
 		t.Fatalf("query execution failed: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestMangleRuntime_QueryWithSolutions_Number(t *testing.T) {
 
 	// Query for solutions
 	found := false
-	err := runtime.QueryWithSolutions(nil, `score("req", X)`, func(sol map[string]any) error {
+	err := runtime.QueryWithSolutions(context.Background(), nil, `score("req", X)`, func(sol map[string]any) error {
 		val, ok := sol["X"]
 		if !ok {
 			t.Errorf("expected variable X in solution")
