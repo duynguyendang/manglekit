@@ -33,8 +33,8 @@ func New(inner Action, verifier ports.ReasoningPort, genePool ports.GenePoolPort
 
 // executeInternal wraps the payload in an Envelope and performs the shadow audit.
 func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.IntentStr, input any) (domain.Envelope, error) {
-	// 1. Flatten payload to facts (Zero-Config Reflection - LLD 6.2)
-	facts := g.flattenToQuads("ActionRequest", input)
+	// 1. Flatten payload to facts using the engine's entity ID
+	facts := g.flattenToQuads("Req", input)
 
 	envelope := domain.Envelope{
 		Payload:      input,
@@ -89,8 +89,8 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 	}
 
 	// 5. Reflect (Post-Execution Validation)
-	// Flatten the result output to facts, re-audit against 'reflect' phase rules
-	outFacts := g.flattenToQuads("ActionResponse", result.Payload)
+	// Flatten the result output to facts using the engine's output entity ID
+	outFacts := g.flattenToQuads(core.EntityOutput, result.Payload)
 	// Optional: g.verifier.VerifyAtoms(ctx, outFacts...)
 
 	result.ContextFacts = append(result.ContextFacts, outFacts...)

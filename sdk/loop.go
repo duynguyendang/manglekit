@@ -145,6 +145,19 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	}
 	params.LastFeedback = ""
 
+	// 3b. Evaluate post-execution steering for route/retry decisions
+	if result.Metadata == nil {
+		result.Metadata = make(map[string]any)
+	}
+	if _, exists := result.Metadata[core.KeyDecision]; !exists || result.Metadata[core.KeyDecision] == "" {
+		if steeringDec, steeringMeta, err := c.engine.EvaluateSteering(ctx, result); err == nil && steeringDec != "" {
+			result.Metadata[core.KeyDecision] = steeringDec
+			for k, v := range steeringMeta {
+				result.Metadata[k] = v
+			}
+		}
+	}
+
 	// 4. Update and persist history
 	c.updateHistory(ctx, payload, result, params)
 

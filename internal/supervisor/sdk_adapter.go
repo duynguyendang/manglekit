@@ -27,10 +27,16 @@ func (a *sdkEvaluatorAdapter) VerifyAtoms(ctx context.Context, atoms []domain.At
 		return &domain.AuditResult{Pass: true}, nil
 	}
 
+	// Convert atoms to Datalog fact strings so the engine can evaluate them.
+	facts := make([]string, 0, len(atoms))
+	for _, atm := range atoms {
+		if atm.Subject != "" && atm.Predicate != "" {
+			facts = append(facts, fmt.Sprintf(`%s("%s", "%s").`, atm.Predicate, atm.Subject, atm.Object))
+		}
+	}
+
 	env := core.Envelope{
-		Payload: map[string]any{
-			"atoms": atoms,
-		},
+		Facts:    facts,
 		Metadata: make(map[string]any),
 	}
 
@@ -125,7 +131,7 @@ func (a *sdkActionAdapter) Execute(ctx context.Context, input domain.Envelope) (
 	}
 
 	for i, q := range input.ContextFacts {
-		coreEnv.Facts[i] = fmt.Sprintf("%s(%s, %s).", q.Predicate, q.Subject, q.Object)
+		coreEnv.Facts[i] = fmt.Sprintf(`%s("%s", "%s").`, q.Predicate, q.Subject, q.Object)
 	}
 
 	result, err := a.inner.Execute(ctx, coreEnv)
