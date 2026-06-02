@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"go.opentelemetry.io/otel/trace"
 
@@ -37,6 +38,8 @@ type Client struct {
 	agentMemory core.AgentMemory
 	// registry holds registered actions for dynamic routing.
 	registry map[string]core.Action
+	// registryLock guards concurrent access to the registry.
+	registryLock sync.RWMutex
 	// failureMode determines the system's resilience strategy ("open" or "closed").
 	failureMode string
 	// blueprintPath stores the path loaded at startup (for debugging/reloading).
@@ -51,6 +54,13 @@ type Client struct {
 		Checkpoint(ctx context.Context, state *core.SessionState) error
 		ExtractFacts(ctx context.Context, envelope core.Envelope) ([]string, error)
 	}
+	// memWg tracks in-flight background memory operations.
+	memWg sync.WaitGroup
+	// memMu serializes checks of shuttingDown against memWg.Add,
+	// establishing the happens-before edge required by sync.WaitGroup.
+	memMu sync.Mutex
+	// shuttingDown is set to true by Shutdown and never unset.
+	shuttingDown bool
 }
 
 // NewClient initializes a new Manglekit Client with the provided options.
@@ -146,6 +156,9 @@ func (c *Client) SetLLM(gen core.TextGenerator) {
 
 // RegisterAction adds an action to the client's internal registry.
 func (c *Client) RegisterAction(name string, action core.Action) {
+	c.registryLock.Lock()
+	defer c.registryLock.Unlock()
+
 	c.registry[name] = action
 	if c.engine != nil {
 		if err := c.engine.RegisterAction(action.Metadata()); err != nil {
@@ -155,7 +168,29 @@ func (c *Client) RegisterAction(name string, action core.Action) {
 }
 
 // Shutdown cleans up resources used by the client.
+// Safe to call multiple times; subsequent calls return nil.
 func (c *Client) Shutdown(ctx context.Context) error {
+	c.memMu.Lock()
+	if c.shuttingDown {
+		c.memMu.Unlock()
+		return nil
+	}
+	c.shuttingDown = true
+	c.memMu.Unlock()
+
+	// Drain in-flight asyncMemorize goroutines, bounded by ctx.
+	done := make(chan struct{})
+	go func() {
+		c.memWg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
 	if c.shutdownFunc != nil {
 		return c.shutdownFunc(ctx)
 	}

@@ -308,7 +308,9 @@ func WithConfig(cfg *config.Config) ClientOption {
 
 				for _, action := range actions {
 					safeAction := c.Supervise(action)
+					c.registryLock.Lock()
 					c.registry[safeAction.Metadata().Name] = safeAction
+					c.registryLock.Unlock()
 					c.logger.Info("Discovered MCP Tool", "name", safeAction.Metadata().Name)
 				}
 			}

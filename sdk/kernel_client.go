@@ -55,7 +55,7 @@ func NewKernelClient(ctx context.Context, opts ...KernelOption) (*KernelClient, 
 
 	kc.oodaLoop = &DefaultOODALoop{
 		brain:    &brainAdapter{kc.Client.engine},
-		executor: &defaultExecutor{registry: kc.Client.registry},
+		executor: &defaultExecutor{client: kc.Client},
 		memory:   kc.Client.agentMemory,
 		logger:   kc.Client.logger,
 	}
@@ -91,7 +91,9 @@ func (kc *KernelClient) LoadProfile(profile kernel.Profile) error {
 
 // Run executes action with zero-config OODA
 func (kc *KernelClient) Run(ctx context.Context, actionName string, input interface{}) (interface{}, error) {
+	kc.Client.registryLock.RLock()
 	action, ok := kc.Client.registry[actionName]
+	kc.Client.registryLock.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("action not found: %s", actionName)
 	}
@@ -252,7 +254,7 @@ func (b *brainAdapter) LoadPolicy(ctx context.Context, rules string) error {
 
 // defaultExecutor routes to registered actions
 type defaultExecutor struct {
-	registry map[string]core.Action
+	client *Client
 }
 
 func (e *defaultExecutor) Execute(ctx context.Context, frame *CognitiveFrame, decision core.Decision) (interface{}, error) {
@@ -260,7 +262,9 @@ func (e *defaultExecutor) Execute(ctx context.Context, frame *CognitiveFrame, de
 		return nil, fmt.Errorf("no decision action")
 	}
 
-	action, ok := e.registry[decision.Action.Name]
+	e.client.registryLock.RLock()
+	action, ok := e.client.registry[decision.Action.Name]
+	e.client.registryLock.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("action not registered: %s", decision.Action.Name)
 	}

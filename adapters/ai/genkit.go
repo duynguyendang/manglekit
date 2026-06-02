@@ -117,26 +117,30 @@ func (g *genkitAdapter) Generate(ctx context.Context, prompt string, opts ...cor
 		ai.WithMessages(messages...),
 	}
 
-	// Apply config options
+	// Build a single generation config with all values
+	genConfig := ai.GenerationCommonConfig{}
+	hasConfig := false
+
 	if cfg.Temperature != 0 {
-		genOpts = append(genOpts, ai.WithConfig(ai.GenerationCommonConfig{
-			Temperature: cfg.Temperature,
-		}))
+		genConfig.Temperature = cfg.Temperature
+		hasConfig = true
 	}
 	if cfg.MaxTokens != 0 {
-		genOpts = append(genOpts, ai.WithConfig(ai.GenerationCommonConfig{
-			MaxOutputTokens: cfg.MaxTokens,
-		}))
+		genConfig.MaxOutputTokens = cfg.MaxTokens
+		hasConfig = true
 	}
 	if cfg.TopP != 0 {
-		genOpts = append(genOpts, ai.WithConfig(ai.GenerationCommonConfig{
-			TopP: cfg.TopP,
-		}))
+		genConfig.TopP = cfg.TopP
+		hasConfig = true
 	}
 	if len(cfg.StopSequences) > 0 {
-		genOpts = append(genOpts, ai.WithConfig(ai.GenerationCommonConfig{
-			StopSequences: cfg.StopSequences,
-		}))
+		genConfig.StopSequences = cfg.StopSequences
+		hasConfig = true
+	}
+
+	// Apply config once if any values were set
+	if hasConfig {
+		genOpts = append(genOpts, ai.WithConfig(genConfig))
 	}
 
 	// Handle Output / JSON Mode

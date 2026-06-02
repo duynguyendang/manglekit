@@ -126,7 +126,9 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 // It orchestrates: Context Injection → Execution → History → Decision Handling.
 func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, payload any, params *ExecutionParams) (core.Envelope, error) {
 	// 1. Resolve Action
+	c.registryLock.RLock()
 	action, ok := c.registry[actionName]
+	c.registryLock.RUnlock()
 	if !ok {
 		return core.Envelope{}, fmt.Errorf("action not found: %s", actionName)
 	}
@@ -423,6 +425,8 @@ func (c *Client) recallContext(ctx context.Context, payload any, env *core.Envel
 }
 
 // asyncMemorize handles the Fire-and-Forget storage logic.
+// After Shutdown is called, this is a no-op; in-flight operations
+// from before Shutdown are awaited by Shutdown.
 func (c *Client) asyncMemorize(input any, output any) {
 	if c.agentMemory == nil {
 		return
@@ -431,9 +435,19 @@ func (c *Client) asyncMemorize(input any, output any) {
 	inputStr := safelyStringify(input)
 	outputStr := safelyStringify(output)
 
-	// Launch Goroutine to not block response latency
+	// Acquire the mutex to either Add(1) and proceed, or observe
+	// shuttingDown and bail out. This guarantees that any Add happens
+	// before Shutdown's Wait, satisfying sync.WaitGroup's contract.
+	c.memMu.Lock()
+	if c.shuttingDown {
+		c.memMu.Unlock()
+		return
+	}
+	c.memWg.Add(1)
+	c.memMu.Unlock()
+
 	go func(q, a string) {
-		// Create a detached context with timeout to prevent leaks
+		defer c.memWg.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
