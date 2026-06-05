@@ -25,12 +25,13 @@ type CircuitBreakerConfig struct {
 }
 
 type CircuitBreaker struct {
-	inner    core.Action
-	config   CircuitBreakerConfig
-	mu       sync.RWMutex
-	state    State
-	failures uint64
-	lastOpen time.Time
+	inner      core.Action
+	config     CircuitBreakerConfig
+	mu         sync.RWMutex
+	state      State
+	failures   uint64
+	lastOpen   time.Time
+	generation uint64 // bumped on every state change; protects stale reads
 }
 
 // NewCircuitBreaker creates a new CircuitBreaker adapter.
@@ -47,6 +48,7 @@ func (c *CircuitBreaker) Execute(ctx context.Context, env core.Envelope) (core.E
 	c.mu.RLock()
 	state := c.state
 	lastOpen := c.lastOpen
+	gen := c.generation
 	c.mu.RUnlock()
 
 	if state == StateOpen {
@@ -54,14 +56,23 @@ func (c *CircuitBreaker) Execute(ctx context.Context, env core.Envelope) (core.E
 			return core.Envelope{}, ErrCircuitOpen
 		}
 
-		// Timeout passed, try to acquire the probe lock
+		// Timeout passed, attempt to transition to HalfOpen.
+		// Re-validate under write lock: if the generation moved (e.g. a probe
+		// already ran and closed the circuit, or a fresh failure re-opened it),
+		// bail out and re-evaluate against the new state.
 		c.mu.Lock()
+		if c.generation != gen {
+			// State was mutated concurrently; restart with fresh snapshot.
+			c.mu.Unlock()
+			return c.Execute(ctx, env)
+		}
 		if c.state == StateOpen {
 			c.state = StateHalfOpen
+			c.generation++
 			c.mu.Unlock()
 			return c.runProbe(ctx, env)
 		}
-		// State changed before we got the lock
+		// State changed (e.g. to Closed) under us.
 		c.mu.Unlock()
 		return core.Envelope{}, ErrCircuitOpen
 	}
@@ -84,10 +95,12 @@ func (c *CircuitBreaker) runProbe(ctx context.Context, env core.Envelope) (core.
 		// Probe failed, return to Open
 		c.state = StateOpen
 		c.lastOpen = time.Now()
+		c.generation++
 	} else {
 		// Probe succeeded, close the circuit
 		c.state = StateClosed
 		c.failures = 0
+		c.generation++
 	}
 	return resp, err
 }
@@ -109,6 +122,7 @@ func (c *CircuitBreaker) runStandard(ctx context.Context, env core.Envelope) (co
 		if c.failures >= c.config.FailureThreshold {
 			c.state = StateOpen
 			c.lastOpen = time.Now()
+			c.generation++
 		}
 	} else {
 		c.failures = 0

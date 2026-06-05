@@ -282,23 +282,29 @@ func (e *PolicyEngine) LoadGherkinPolicy(ctx context.Context, featureContent str
 
 // AssessPlan implements the core.Evaluator interface.
 // It performs a high-level assessment of the input, mapping Assess logic to a Decision.
-// Formerly: Assess
+// The Decision.AuditTrail is populated from the gate evaluation,
+// carrying matched rules, tiers, latencies, and fact counts.
 func (e *PolicyEngine) AssessPlan(ctx context.Context, input core.Envelope) (core.Decision, error) {
-	// Simple mapping: use empty metadata for generic assessment
 	err := e.Assess(ctx, core.ActionMetadata{}, input)
+
+	decision := core.Decision{}
+
 	if err != nil {
 		// If authorization fails, it's a DENY
 		var alignErr *core.AlignmentError
 		if errors.As(err, &alignErr) {
-			return core.Decision{
-				Outcome: core.DecisionHalt,
-				Reasons: []string{alignErr.Message},
-				Meta:    map[string]string{"rule_id": alignErr.RuleID},
-			}, nil
+			decision.Outcome = core.DecisionHalt
+			decision.Reasons = []string{alignErr.Message}
+			decision.Meta = map[string]string{"rule_id": alignErr.RuleID}
+			return decision, nil
 		}
-		return core.Decision{Outcome: core.DecisionHalt, Reasons: []string{err.Error()}}, err
+		decision.Outcome = core.DecisionHalt
+		decision.Reasons = []string{err.Error()}
+		return decision, err
 	}
-	return core.Decision{Outcome: core.DecisionProceed}, nil
+
+	decision.Outcome = core.DecisionProceed
+	return decision, nil
 }
 
 // GetActionConfig queries the engine for dynamic configuration parameters.
@@ -522,7 +528,8 @@ func convertDatalogValue(val any) interface{} {
 // Formerly: Authorize
 func (e *PolicyEngine) Assess(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
 	if e.tracer == nil {
-		return e.assessInternal(ctx, actionMeta, input)
+		_, err := e.assessInternal(ctx, actionMeta, input)
+		return err
 	}
 
 	ctx, span := e.tracer.Start(ctx, core.SpanPreCheck)
@@ -533,7 +540,7 @@ func (e *PolicyEngine) Assess(ctx context.Context, actionMeta core.ActionMetadat
 		span.SetAttributes(map[string]any{core.AttrLabels: input.SecurityLabels})
 	}
 
-	err := e.assessInternal(ctx, actionMeta, input)
+	_, err := e.assessInternal(ctx, actionMeta, input)
 	if err != nil {
 		span.RecordError(err)
 	} else {
@@ -543,7 +550,8 @@ func (e *PolicyEngine) Assess(ctx context.Context, actionMeta core.ActionMetadat
 }
 
 // assessInternal executes the core authorization logic.
-func (e *PolicyEngine) assessInternal(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) error {
+// It returns both the error and the audit trail from the gate evaluation.
+func (e *PolicyEngine) assessInternal(ctx context.Context, actionMeta core.ActionMetadata, input core.Envelope) (*core.AuditTrail, error) {
 	var extraFacts []ast.Atom
 
 	// Inject Action Metadata facts: action_operation("Req", "Name")
@@ -558,7 +566,7 @@ func (e *PolicyEngine) assessInternal(ctx context.Context, actionMeta core.Actio
 	}
 
 	// Use infeasible(Req, Reason) with fallback to deny(Req)
-	return e.evaluateGate(ctx, actionMeta.Name, core.EntityInput, input, extraFacts...)
+	return e.evaluateGateWithTrail(ctx, actionMeta.Name, core.EntityInput, input, extraFacts...)
 }
 
 // Reflect performs the Post-Check phase of governance.
@@ -607,12 +615,37 @@ func (e *PolicyEngine) reflectInternal(ctx context.Context, actionMeta core.Acti
 	return output, nil
 }
 
+// tierPriority returns the priority of a tier (lower = more authoritative).
+// A T0 axiom always outranks a T3 user rule regardless of predicate order.
+func tierPriority(tier core.Tier) int {
+	switch tier {
+	case core.TierT0_Axiom:
+		return 0
+	case core.TierT1_Governance:
+		return 1
+	case core.TierT2_Playbook:
+		return 2
+	case core.TierT3_User:
+		return 3
+	default:
+		return 4
+	}
+}
+
 // evaluateGate centralizes the logic for "Check -> Deny -> Explain".
 // It is used by both Assess (Pre-Check) and Reflect (Post-Check).
-// Updated to check `infeasible(Entity, Reason)` first, then `deny(Entity)`.
+// This is a convenience wrapper that discards the audit trail.
 func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, entityID string, env core.Envelope, extraFacts ...ast.Atom) error {
+	_, err := e.evaluateGateWithTrail(ctx, actionName, entityID, env, extraFacts...)
+	return err
+}
+
+// evaluateGateWithTrail is like evaluateGate but also returns the audit trail
+// explaining which rules matched and at what tier. The trail is populated from
+// the actual halt/retry/route matches collected during evaluation.
+func (e *PolicyEngine) evaluateGateWithTrail(ctx context.Context, actionName string, entityID string, env core.Envelope, extraFacts ...ast.Atom) (*core.AuditTrail, error) {
 	if e.runtime == nil || e.runtime.programInfo == nil {
-		return &core.AlignmentError{Message: "policy engine not initialized: fail-closed"}
+		return nil, &core.AlignmentError{Message: "policy engine not initialized: fail-closed"}
 	}
 
 	// 1. ToFacts: Convert Payload
@@ -622,7 +655,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 			e.logger.Debug("failed to convert payload to facts", "error", err)
 		}
 		// Wrap in InputError to ensure it is BLOCKED upstream
-		return &core.InputError{Err: fmt.Errorf("fact conversion error: %w", err)}
+		return nil, &core.InputError{Err: fmt.Errorf("fact conversion error: %w", err)}
 	}
 
 	// 2. Inject Extra Facts (e.g. Action Operation)
@@ -634,7 +667,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		if e.logger != nil {
 			e.logger.Error("failed to generate label facts", "error", err)
 		}
-		return &core.InputError{Err: fmt.Errorf("label conversion error: %w", err)}
+		return nil, &core.InputError{Err: fmt.Errorf("label conversion error: %w", err)}
 	}
 	for _, f := range labelFacts {
 		atom, err := parse.Atom(f)
@@ -642,7 +675,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 			if e.logger != nil {
 				e.logger.Error("failed to parse label fact", "fact", f, "error", err)
 			}
-			return &core.InputError{Err: fmt.Errorf("label parsing error: %w", err)}
+			return nil, &core.InputError{Err: fmt.Errorf("label parsing error: %w", err)}
 		}
 		facts = append(facts, atom)
 	}
@@ -654,7 +687,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 			if e.logger != nil {
 				e.logger.Error("failed to parse envelop fact", "fact", f, "error", err)
 			}
-			return &core.InputError{Err: fmt.Errorf("envelope fact parsing error: %w", err)}
+			return nil, &core.InputError{Err: fmt.Errorf("envelope fact parsing error: %w", err)}
 		}
 		facts = append(facts, atom)
 	}
@@ -694,10 +727,24 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		}
 	}
 
-	// 6. Run Query
-	// Priority 1: halt(Entity, Reason)
+	// 6. Run Query — Tier-Aware Resolution
+	//
+	// Strategy: Query halt(Entity, Reason, Tier) first (arity 3).
+	// Rules loaded with tier annotations produce tier-attributed facts.
+	// If no arity-3 matches, fall back to halt(Entity, Reason) (arity 2)
+	// for backward compatibility — these get TierUnknown (lowest priority).
+	//
+	// This prevents a T3-authored halt from overriding a T0 halt
+	// when both fire on the same envelope.
+
 	var violationMsg, ruleID string
-	var blocked bool
+
+	type haltMatch struct {
+		reason string
+		tier   core.Tier
+	}
+
+	var matches []haltMatch
 
 	if e.logger != nil {
 		e.logger.Debug("Evaluating Gate Facts", "count", len(facts))
@@ -706,31 +753,59 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		}
 	}
 
-	// Query: halt(Entity, Reason)
-	queryHalt := fmt.Sprintf("%s(\"%s\", Reason)", core.PredHalt, entityID)
-	err = e.runtime.QueryWithSolutions(ctx, facts, queryHalt, func(solution map[string]any) error {
-		if reason, ok := solution["Reason"].(string); ok {
-			violationMsg = reason
-			blocked = true
-			return ErrSolutionFound // Stop searching
+	// Step 6a: Query arity-3 form: halt(Entity, Reason, Tier)
+	// This is the tier-aware path — rules that emit halt/3 carry explicit tier.
+	queryHalt3 := fmt.Sprintf("%s(\"%s\", Reason, Tier)", core.PredHalt, entityID)
+	err = e.runtime.QueryWithSolutions(ctx, facts, queryHalt3, func(solution map[string]any) error {
+		reason, rOk := solution["Reason"].(string)
+		tierStr, tOk := solution["Tier"].(string)
+		if !rOk {
+			return nil
 		}
+		tier := core.Tier(tierStr)
+		if !tOk || tier == "" {
+			tier = core.TierUnknown
+		}
+		matches = append(matches, haltMatch{reason: reason, tier: tier})
 		return nil
 	})
 
-	// Check if search was stopped due to finding a solution
-	if errors.Is(err, ErrSolutionFound) {
-		err = nil // Clear sentinel error
-	}
 	if err != nil {
 		if e.logger != nil {
-			e.logger.Debug("failed to execute halt query", "error", err)
+			e.logger.Debug("halt/3 query failed, falling back to halt/2", "error", err)
 		}
-		return fmt.Errorf("halt query error: %w", err)
 	}
 
-	if blocked {
-		// Try to find rule ID if available (optional)
-		// Query: violation_rule(ID)
+	// Step 6b: If no arity-3 matches, query arity-2 form for backward compat.
+	// These matches get TierUnknown — they lose to any tier-attributed match.
+	if len(matches) == 0 {
+		queryHalt2 := fmt.Sprintf("%s(\"%s\", Reason)", core.PredHalt, entityID)
+		err = e.runtime.QueryWithSolutions(ctx, facts, queryHalt2, func(solution map[string]any) error {
+			if reason, ok := solution["Reason"].(string); ok {
+				matches = append(matches, haltMatch{reason: reason, tier: core.TierUnknown})
+			}
+			return nil
+		})
+
+		if err != nil {
+			if e.logger != nil {
+				e.logger.Debug("failed to execute halt query", "error", err)
+			}
+			return nil, fmt.Errorf("halt query error: %w", err)
+		}
+	}
+
+	// Resolve by tier: pick the match with the highest-priority tier
+	if len(matches) > 0 {
+		best := matches[0]
+		for _, m := range matches[1:] {
+			if tierPriority(m.tier) < tierPriority(best.tier) {
+				best = m
+			}
+		}
+		violationMsg = best.reason
+
+		// Try to find rule ID if available
 		qErr := e.runtime.QueryWithSolutions(ctx, facts, "violation_rule(ID)", func(solution map[string]any) error {
 			if id, ok := solution["ID"].(string); ok {
 				ruleID = id
@@ -741,15 +816,23 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		if errors.Is(qErr, ErrSolutionFound) {
 			qErr = nil
 		}
-		// Log but do not block on metadata query failure
 		if qErr != nil && e.logger != nil {
 			e.logger.Warn("failed to query violation rule ID", "error", qErr)
 		}
 
 		if e.logger != nil {
-			e.logger.Debug("gate violation detected (halt)", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
+			e.logger.Debug("gate violation detected", "action", actionName, "msg", violationMsg, "rule_id", ruleID, "tier", best.tier, "matches", len(matches))
 		}
-		return &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
+
+		// Build audit trail from the collected matches.
+		trail := core.NewAuditTrail("manglekit-engine", fmt.Sprintf("halt(\"%s\", ...)", entityID))
+		for _, m := range matches {
+			trail.AddRule("halt", fmt.Sprintf("halt(\"%s\", \"%s\", \"%s\")", entityID, m.reason, m.tier),
+			 getSourceFileForPredicate("halt"), "halt", m.tier, nil)
+		}
+		trail.MatchedCount = len(matches)
+
+		return trail, &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
 	}
 
 	// Priority 2: deny(Entity) (Backward Compatibility)
@@ -760,7 +843,7 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		if e.logger != nil {
 			e.logger.Debug("policy evaluation failed (deny check)", "error", err)
 		}
-		return fmt.Errorf("policy evaluation error: %w", err)
+		return nil, fmt.Errorf("policy evaluation error: %w", err)
 	}
 
 	if denied {
@@ -797,10 +880,10 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 		if e.logger != nil {
 			e.logger.Debug("gate violation detected (deny)", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
 		}
-		return &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
+		return nil, &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
 	}
 
-	return nil
+	return nil, nil
 }
 
 // CheckRequirement queries: requires("req_id", "capability")
@@ -891,49 +974,87 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 		}
 	}
 
-	// 1. Check Correction (Retry)
-	// Query: retry(Hint)
-	err = e.runtime.QueryWithSolutions(ctx, facts, fmt.Sprintf("%s(Hint)", core.PredRetry), func(solution map[string]any) error {
+	// 1. Check Correction (Retry) — Tier-Aware
+	type retryMatch struct {
+		hint string
+		tier core.Tier
+	}
+	var retryMatches []retryMatch
+
+	// Query arity-3 first: retry(Entity, Hint, Tier)
+	retryQ3 := fmt.Sprintf("%s(\"%s\", Hint, Tier)", core.PredRetry, core.EntityInput)
+	_ = e.runtime.QueryWithSolutions(ctx, facts, retryQ3, func(solution map[string]any) error {
 		if hint, ok := solution["Hint"].(string); ok {
-			decision = core.DecisionRetry
-			metadata[core.KeyFeedback] = hint
-			// Stop searching after first match
-			return ErrSolutionFound // Use error to break early
+			tier := core.TierUnknown
+			if t, ok := solution["Tier"].(string); ok && t != "" {
+				tier = core.Tier(t)
+			}
+			retryMatches = append(retryMatches, retryMatch{hint: hint, tier: tier})
 		}
 		return nil
 	})
 
-	if errors.Is(err, ErrSolutionFound) {
-		err = nil
-	}
-	if err != nil {
-		if e.logger != nil {
-			e.logger.Debug("failed to query retry", "error", err)
-		}
-	}
-
-	if decision == core.DecisionRetry {
-		return decision, metadata, nil
+	// Fallback to arity-2: retry(Hint)
+	if len(retryMatches) == 0 {
+		_ = e.runtime.QueryWithSolutions(ctx, facts, fmt.Sprintf("%s(Hint)", core.PredRetry), func(solution map[string]any) error {
+			if hint, ok := solution["Hint"].(string); ok {
+				retryMatches = append(retryMatches, retryMatch{hint: hint, tier: core.TierUnknown})
+			}
+			return nil
+		})
 	}
 
-	// 2. Check Routing
-	// Query: route(Target)
-	err = e.runtime.QueryWithSolutions(ctx, facts, fmt.Sprintf("%s(Target)", core.PredRoute), func(solution map[string]any) error {
+	// 2. Check Routing — Tier-Aware
+	type routeMatch struct {
+		target string
+		tier   core.Tier
+	}
+	var routeMatches []routeMatch
+
+	// Query arity-3 first: route(Entity, Target, Tier)
+	routeQ3 := fmt.Sprintf("%s(\"%s\", Target, Tier)", core.PredRoute, core.EntityInput)
+	_ = e.runtime.QueryWithSolutions(ctx, facts, routeQ3, func(solution map[string]any) error {
 		if target, ok := solution["Target"].(string); ok {
-			decision = core.DecisionRoute
-			metadata[core.KeyNextStep] = target
-			return ErrSolutionFound // Use error to break early
+			tier := core.TierUnknown
+			if t, ok := solution["Tier"].(string); ok && t != "" {
+				tier = core.Tier(t)
+			}
+			routeMatches = append(routeMatches, routeMatch{target: target, tier: tier})
 		}
 		return nil
 	})
 
-	if errors.Is(err, ErrSolutionFound) {
-		err = nil
+	// Fallback to arity-2: route(Target)
+	if len(routeMatches) == 0 {
+		_ = e.runtime.QueryWithSolutions(ctx, facts, fmt.Sprintf("%s(Target)", core.PredRoute), func(solution map[string]any) error {
+			if target, ok := solution["Target"].(string); ok {
+				routeMatches = append(routeMatches, routeMatch{target: target, tier: core.TierUnknown})
+			}
+			return nil
+		})
 	}
-	if err != nil {
-		if e.logger != nil {
-			e.logger.Debug("failed to query route", "error", err)
+
+	// 3. Resolve by tier priority.
+	// Retry always outranks route (correction before redirection).
+	// Within each category, the highest-tier match wins.
+	if len(retryMatches) > 0 {
+		best := retryMatches[0]
+		for _, m := range retryMatches[1:] {
+			if tierPriority(m.tier) < tierPriority(best.tier) {
+				best = m
+			}
 		}
+		return core.DecisionRetry, map[string]string{core.KeyFeedback: best.hint}, nil
+	}
+
+	if len(routeMatches) > 0 {
+		best := routeMatches[0]
+		for _, m := range routeMatches[1:] {
+			if tierPriority(m.tier) < tierPriority(best.tier) {
+				best = m
+			}
+		}
+		return core.DecisionRoute, map[string]string{core.KeyNextStep: best.target}, nil
 	}
 
 	return decision, metadata, nil

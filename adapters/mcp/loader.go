@@ -125,7 +125,9 @@ func (l *Loader) Load(ctx context.Context) ([]core.Action, error) {
 }
 
 // Load is a convenience function for backward compatibility or bulk loading.
-// Deprecated: Use NewLoader(cfg).WithLogger(logger).Load(ctx) instead for better error handling.
+//
+// Deprecated: Use NewLoader(cfg).WithLogger(logger).Load(ctx) instead for better
+// error handling, per-server FailOnStartup control, and custom ClientFactory support.
 func Load(ctx context.Context, configs []config.MCPServerConfig, logger core.Logger) ([]core.Action, error) {
 	var allActions []core.Action
 
@@ -157,7 +159,9 @@ func Load(ctx context.Context, configs []config.MCPServerConfig, logger core.Log
 }
 
 // LoadWithFactory allows injection of a custom ClientFactory for testing.
-// Deprecated: Use NewLoader(cfg).WithFactory(f).Load(ctx) instead.
+//
+// Deprecated: Use NewLoader(cfg).WithFactory(f).Load(ctx) instead for better
+// error handling, per-server FailOnStartup control, and consistent API.
 func LoadWithFactory(ctx context.Context, configs []config.MCPServerConfig, factory ClientFactory, logger core.Logger) ([]core.Action, error) {
 	var allActions []core.Action
 

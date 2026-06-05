@@ -19,6 +19,16 @@ const (
 	BackoffBase       = 100 * time.Millisecond
 )
 
+// WithMaxSteps sets the maximum number of loop iterations allowed.
+// Zero uses the default (DefaultMaxSteps = 10).
+func WithMaxSteps(n int) ExecuteOption {
+	return func(p *ExecutionParams) {
+		if n > 0 {
+			p.MaxSteps = n
+		}
+	}
+}
+
 // ExecuteByName executes a registered action by its name, handling the Semantic State Machine loop.
 func (c *Client) ExecuteByName(ctx context.Context, actionName string, input any, opts ...ExecuteOption) (core.Envelope, error) {
 	params := ExecutionParams{
@@ -80,7 +90,15 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 	currentAction := startAction
 	currentPayload := payload
 
-	for step := 0; step < DefaultMaxSteps; step++ {
+	maxSteps := params.MaxSteps
+	if maxSteps <= 0 {
+		maxSteps = c.maxSteps
+	}
+	if maxSteps <= 0 {
+		maxSteps = DefaultMaxSteps
+	}
+
+	for step := 0; step < maxSteps; step++ {
 		// Check context before starting new step
 		if err := ctx.Err(); err != nil {
 			return core.Envelope{}, err
@@ -92,6 +110,22 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 		if err != nil {
 			return core.Envelope{}, err
 		}
+
+		// Capture audit record for this step — enriched with rule/tier/latency data.
+		outcome := ""
+		if d, ok := result.Metadata[core.KeyDecision].(string); ok {
+			outcome = d
+		}
+		if outcome == "" {
+			outcome = core.DecisionProceed
+		}
+		var record core.AuditRecord
+		if trail, ok := result.Metadata["manglekit.audit_trail"].(*core.AuditTrail); ok && trail != nil {
+			record = core.NewAuditRecordFromTrail(trail, step, outcome)
+		} else {
+			record = core.AuditRecord{Step: step, Outcome: outcome}
+		}
+		params.AuditRecords = append(params.AuditRecords, record)
 
 		decision := result.Metadata[core.KeyDecision]
 		if decision == core.DecisionRoute {
@@ -139,21 +173,27 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	c.injectContext(ctx, &env, payload, params)
 
 	// 3. Execute action (includes Blueprint pre-check)
+	// The supervisor chain calls AssessPlan → Assess → evaluateGateWithTrail,
+	// which builds the audit trail. The trail travels with the result envelope
+	// via metadata — no shared engine state needed.
 	result, err := action.Execute(ctx, env)
 	if err != nil {
 		return c.handleExecutionError(ctx, err, payload, params)
 	}
 	params.LastFeedback = ""
 
-	// 3b. Evaluate post-execution steering for route/retry decisions
-	if result.Metadata == nil {
-		result.Metadata = make(map[string]any)
-	}
-	if _, exists := result.Metadata[core.KeyDecision]; !exists || result.Metadata[core.KeyDecision] == "" {
-		if steeringDec, steeringMeta, err := c.engine.EvaluateSteering(ctx, result); err == nil && steeringDec != "" {
-			result.Metadata[core.KeyDecision] = steeringDec
-			for k, v := range steeringMeta {
-				result.Metadata[k] = v
+	// 3b. Evaluate post-execution steering for route/retry decisions.
+	// Gated by steeringEnabled — when false, prompts pass through unmodified.
+	if c.steeringEnabled {
+		if result.Metadata == nil {
+			result.Metadata = make(map[string]any)
+		}
+		if _, exists := result.Metadata[core.KeyDecision]; !exists || result.Metadata[core.KeyDecision] == "" {
+			if steeringDec, steeringMeta, err := c.engine.EvaluateSteering(ctx, result); err == nil && steeringDec != "" {
+				result.Metadata[core.KeyDecision] = steeringDec
+				for k, v := range steeringMeta {
+					result.Metadata[k] = v
+				}
 			}
 		}
 	}
@@ -183,6 +223,7 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 					CurrentHistory:  params.CurrentHistory,
 				},
 				LogicalFacts: facts,
+				AuditRecords: params.AuditRecords,
 			}
 
 			// Persist the checkpoint

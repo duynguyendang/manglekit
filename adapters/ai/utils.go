@@ -28,8 +28,8 @@ func GenerateStruct[T any](ctx context.Context, gen core.TextGenerator, sysPromp
 	effectiveUserPrompt := userReq + feedbackSuffix
 
 	// 2. OPTIMIZED PATH: Native Genkit
-	// Check if the generator is our specific Genkit adapter
-	if adapter, ok := gen.(*genkitAdapter); ok {
+	// Check if the generator implements GenkitTextGenerator (our exported interface).
+	if adapter, ok := gen.(GenkitTextGenerator); ok {
 		// Use Genkit's native feature with explicit System/User separation.
 
 		// ai.NewSystemMessage treats the input as high-priority directives (The Blueprint).
@@ -39,8 +39,8 @@ func GenerateStruct[T any](ctx context.Context, gen core.TextGenerator, sysPromp
 		}
 
 		// Use native genkit.Generate directly on the model
-		resp, err := genkit.Generate(ctx, adapter.gk,
-			ai.WithModel(adapter.model),
+		resp, err := genkit.Generate(ctx, adapter.GenkitInstance(),
+			ai.WithModel(adapter.GenkitModel()),
 			ai.WithMessages(messages...),
 			ai.WithOutputType(new(T)), // <--- Native Structured Output
 		)

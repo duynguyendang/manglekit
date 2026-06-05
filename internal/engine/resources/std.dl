@@ -35,6 +35,15 @@ Decl halt(Entity, Reason).
 Decl route(Entity, NextStep). 
 Decl retry(Entity, Feedback).
 
+% Arity 3: Tier-Attributed (Governance)
+% The third argument is the governance tier (T0, T1, T2, T3).
+% The solver queries this form first to resolve tier-aware conflicts.
+% Rules using halt/3 are resolved by tier priority: T0 > T1 > T2 > T3.
+Decl deny(Entity, Reason, Tier).
+Decl halt(Entity, Reason, Tier).
+Decl route(Entity, NextStep, Tier).
+Decl retry(Entity, Feedback, Tier).
+
 % Config is always Key-Value (Arity 2) or Entity-Key-Value (Arity 3) 
 Decl config(Key, Value). 
 Decl config(Entity, Key, Value).
@@ -42,6 +51,7 @@ Decl config(Entity, Key, Value).
 % Semantic Alias for backward compatibility
 halt(Reason) :- deny(Reason).
 halt(Entity, Reason) :- deny(Entity, Reason).
+halt(Entity, Reason, Tier) :- deny(Entity, Reason, Tier).
 
 % ==========================================
 % 3. CONTEXT INJECTION

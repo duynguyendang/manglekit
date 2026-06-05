@@ -128,3 +128,12 @@ type TransientFact struct {
 	Graph     string
 	CreatedAt string // ISO8601 timestamp
 }
+
+// Extractor converts free-text payloads to structured data.
+// This bridges the neuro-symbolic gap: when an LLM returns unstructured text,
+// the extractor maps it to a Go struct so Datalog rules can fire on the result.
+type Extractor interface {
+	// Extract converts free-text input to a structured payload.
+	// The returned value should be a Go struct that can be flattened to Datalog facts.
+	Extract(ctx context.Context, text string) (any, error)
+}

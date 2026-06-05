@@ -60,6 +60,20 @@ type PolicyConfig struct {
 
 	// EvaluationTimeout is the max duration (in seconds) for rule evaluation.
 	EvaluationTimeout int `yaml:"evaluation_timeout,omitempty" mapstructure:"evaluation_timeout"`
+
+	// MaxSteps limits the total number of loop iterations in the Semantic State Machine.
+	// Zero means use the SDK default (10). YAML key: max_steps.
+	MaxSteps int `yaml:"max_steps,omitempty" mapstructure:"max_steps"`
+
+	// SteeringEnabled controls whether EAST (Entropic Activation Steering) prompt
+	// injection is active. When false, prompts pass through unmodified.
+	// Default: false (disabled until validated). YAML key: steering_enabled.
+	SteeringEnabled bool `yaml:"steering_enabled,omitempty" mapstructure:"steering_enabled"`
+
+	// ParadoxThreshold is the EAST magnitude above which cognitive paradox injection
+	// is triggered. Only effective when SteeringEnabled is true.
+	// Default: 0.8. YAML key: paradox_threshold.
+	ParadoxThreshold float64 `yaml:"paradox_threshold,omitempty" mapstructure:"paradox_threshold"`
 }
 
 // ObservabilityConfig settings for telemetry.

@@ -23,6 +23,62 @@ type SessionState struct {
 	// PayloadType stores the Go type name of the payload for reconstruction.
 	// This is used during hydration to unmarshal the payload back to its original type.
 	PayloadType string `json:"payload_type,omitempty"`
+
+	// AuditRecords captures the governance audit trail across steps.
+	// Each entry records which rules matched, their tier, and the decision made.
+	// Appended per step — never overwritten.
+	AuditRecords []AuditRecord `json:"audit_records,omitempty"`
+}
+
+// AuditRecord is a trimmed, serializable snapshot of AuditTrail for persistence.
+// It captures the essential rule attribution data without internal pointers.
+type AuditRecord struct {
+	Step         int              `json:"step"`
+	Rules        []RuleSnapshot   `json:"rules"`
+	Outcome      string           `json:"outcome"` // "PROCEED", "HALT", "RETRY", "ROUTE"
+	Timestamp    string           `json:"timestamp"`
+	LatencyMs    int64            `json:"latency_ms"`
+	FactCount    int              `json:"fact_count"`
+	MatchedCount int              `json:"matched_count"`
+}
+
+// RuleSnapshot is a serializable snapshot of a single matched rule.
+type RuleSnapshot struct {
+	RuleName   string            `json:"rule_name"`
+	Tier       string            `json:"tier"`
+	Definition string            `json:"definition,omitempty"`
+	SourceFile string            `json:"source_file,omitempty"`
+	Predicate  string            `json:"predicate,omitempty"`
+	Bindings   map[string]string `json:"bindings,omitempty"`
+}
+
+// NewAuditRecordFromTrail creates an AuditRecord from an AuditTrail for the given step.
+func NewAuditRecordFromTrail(trail *AuditTrail, step int, outcome string) AuditRecord {
+	if trail == nil {
+		return AuditRecord{Step: step, Outcome: outcome}
+	}
+
+	rules := make([]RuleSnapshot, 0, len(trail.MatchedRules))
+	for _, r := range trail.MatchedRules {
+		rules = append(rules, RuleSnapshot{
+			RuleName:   r.RuleName,
+			Tier:       string(r.Tier),
+			Definition: r.Definition,
+			SourceFile: r.SourceFile,
+			Predicate:  r.Predicate,
+			Bindings:   r.Bindings,
+		})
+	}
+
+	return AuditRecord{
+		Step:         step,
+		Rules:        rules,
+		Outcome:      outcome,
+		Timestamp:    trail.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
+		LatencyMs:    trail.LatencyMs,
+		FactCount:    trail.FactCount,
+		MatchedCount: trail.MatchedCount,
+	}
 }
 
 // MarshalJSON implements custom JSON marshaling for SessionState.
@@ -113,6 +169,40 @@ func (s *SessionState) Clone() *SessionState {
 	if len(s.LogicalFacts) > 0 {
 		clone.LogicalFacts = make([]string, len(s.LogicalFacts))
 		copy(clone.LogicalFacts, s.LogicalFacts)
+	}
+
+	// Deep copy audit records
+	if len(s.AuditRecords) > 0 {
+		clone.AuditRecords = make([]AuditRecord, len(s.AuditRecords))
+		for i, rec := range s.AuditRecords {
+			cloneRec := AuditRecord{
+				Step:         rec.Step,
+				Outcome:      rec.Outcome,
+				Timestamp:    rec.Timestamp,
+				LatencyMs:    rec.LatencyMs,
+				FactCount:    rec.FactCount,
+				MatchedCount: rec.MatchedCount,
+			}
+			if len(rec.Rules) > 0 {
+				cloneRec.Rules = make([]RuleSnapshot, len(rec.Rules))
+				for j, rule := range rec.Rules {
+					cloneRec.Rules[j] = RuleSnapshot{
+						RuleName:   rule.RuleName,
+						Tier:       rule.Tier,
+						Definition: rule.Definition,
+						SourceFile: rule.SourceFile,
+						Predicate:  rule.Predicate,
+					}
+					if len(rule.Bindings) > 0 {
+						cloneRec.Rules[j].Bindings = make(map[string]string, len(rule.Bindings))
+						for k, v := range rule.Bindings {
+							cloneRec.Rules[j].Bindings[k] = v
+						}
+					}
+				}
+			}
+			clone.AuditRecords[i] = cloneRec
+		}
 	}
 
 	return clone

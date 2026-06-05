@@ -13,10 +13,13 @@ import (
 	mcpAdapter "github.com/duynguyendang/manglekit/adapters/mcp"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/core/logic"
 	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/statemanager"
+	"github.com/duynguyendang/manglekit/internal/supervisor"
 	"github.com/duynguyendang/manglekit/internal/telemetry"
+	"github.com/duynguyendang/manglekit/sdk/ports"
 )
 
 // ClientOption configures the Manglekit Client during initialization.
@@ -33,24 +36,16 @@ func WithEngine(e core.Evaluator) ClientOption {
 // WithBlueprintPath specifies the file path to load Datalog rules from.
 // "Blueprint" is the new terminology for "Policy".
 //
+// The actual file I/O is deferred until the Client is fully constructed,
+// using the context passed to NewClient. This avoids context.Background()
+// and enables proper cancellation propagation.
+//
 // Parameters:
 //   - path: A file path to the .dl blueprint file.
 func WithBlueprintPath(path string) ClientOption {
 	return func(c *Client) error {
 		c.blueprintPath = path
-
-		// 1. JIT Init (Critical fix)
-		if err := ensureDependencies(c); err != nil {
-			return err
-		}
-
-		// 2. Load Policy immediately
-		// Ensure "os" and "context" are imported!
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("failed to read blueprint %q: %w", path, err)
-		}
-		return c.engine.LoadPolicy(context.Background(), string(content))
+		return nil
 	}
 }
 
@@ -174,17 +169,14 @@ func WithStateProvider(provider core.StateProvider) ClientOption {
 	}
 }
 
-// lazyStateManager defers actual statemanager creation until first use
-// This avoids import cycles and ensures all dependencies are ready
+// lazyStateManager defers actual statemanager creation until first use.
+// This avoids import cycles and ensures all dependencies are ready.
+// It satisfies core.StateManager via delegation.
 type lazyStateManager struct {
 	once     sync.Once
 	provider core.StateProvider
 	client   *Client
-	actual   interface {
-		Hydrate(ctx context.Context, sessionID string) (*core.SessionState, error)
-		Checkpoint(ctx context.Context, state *core.SessionState) error
-		ExtractFacts(ctx context.Context, envelope core.Envelope) ([]string, error)
-	}
+	actual   core.StateManager
 }
 
 func (l *lazyStateManager) init() {
@@ -227,13 +219,14 @@ func WithConfig(cfg *config.Config) ClientOption {
 		}
 
 		// 2. Load Policy (Blueprint)
+		// NOTE: context.TODO() is used because ClientOption doesn't receive the
+		// caller's context. A future API revision should propagate ctx through.
 		if cfg.Policy.Path != "" {
 			content, err := os.ReadFile(cfg.Policy.Path)
 			if err != nil {
 				return fmt.Errorf("failed to read policy file %q: %w", cfg.Policy.Path, err)
 			}
-			// Use background context as option doesn't provide one
-			if err := c.engine.LoadPolicy(context.Background(), string(content)); err != nil {
+			if err := c.engine.LoadPolicy(context.TODO(), string(content)); err != nil {
 				return fmt.Errorf("failed to load policy from %q: %w", cfg.Policy.Path, err)
 			}
 		}
@@ -274,7 +267,7 @@ func WithConfig(cfg *config.Config) ClientOption {
 			if err != nil {
 				return fmt.Errorf("memory provider %q not found: %w", cfg.Memory.Provider, err)
 			}
-			mem, err := factory(context.Background(), cfg.Memory)
+			mem, err := factory(context.TODO(), cfg.Memory)
 			if err != nil {
 				return fmt.Errorf("failed to create memory: %w", err)
 			}
@@ -321,6 +314,20 @@ func WithConfig(cfg *config.Config) ClientOption {
 			c.failureMode = cfg.FailureMode
 		}
 
+		// 8. MaxSteps from YAML config
+		if cfg.Policy.MaxSteps > 0 {
+			c.maxSteps = cfg.Policy.MaxSteps
+		}
+
+		// 9. EAST Steering from YAML config (disabled by default)
+		c.steeringEnabled = cfg.Policy.SteeringEnabled
+		c.paradoxThreshold = cfg.Policy.ParadoxThreshold
+		if c.paradoxThreshold <= 0 {
+			c.paradoxThreshold = 0.8 // Default threshold
+		}
+		// Wire the threshold into the logic package for prompt-level steering.
+		logic.ParadoxThreshold = c.paradoxThreshold
+
 		return nil
 	}
 }
@@ -333,6 +340,13 @@ type ExecutionParams struct {
 	MemoryMode core.MemoryMode
 	// Metadata contains additional context to be injected into the execution envelope.
 	Metadata map[string]string
+	// MaxSteps limits the total number of loop iterations.
+	// Zero uses the default (DefaultMaxSteps).
+	MaxSteps int
+
+	// AuditRecords accumulates governance audit trail across steps.
+	// Appended per step — persisted on checkpoint.
+	AuditRecords []core.AuditRecord
 
 	// State fields (Managed by ExecuteSingleStep/Loop)
 	Store           core.HistoryStore `json:"-"` // Internal store reference
@@ -340,6 +354,32 @@ type ExecutionParams struct {
 	FeedbackHistory []string          `json:"feedback_history,omitempty"`
 	LastFeedback    string            `json:"last_feedback,omitempty"`
 	RetryCount      int               `json:"retry_count,omitempty"`
+}
+
+// WithExtractor sets the text-to-struct extractor on a supervised action.
+// This enables the neuro-symbolic bridge: free-text LLM responses are extracted
+// to structured data before flattenToQuads, so Datalog rules can fire on the result.
+//
+// The extractor is only invoked when the action payload is a string (free text).
+// Struct/JSON payloads bypass the extractor (fast path preserved).
+//
+// Parameters:
+//   - action: A supervised action (from Client.Supervise()).
+//   - ext: The extractor to use (implements ports.Extractor).
+//
+// Returns:
+//   - The action with extractor set.
+func WithExtractor(action core.Action, ext ports.Extractor) core.Action {
+	return supervisor.WithExtractor(action, &extractorAdapter{ext: ext})
+}
+
+// extractorAdapter wraps an SDK-level Extractor to the supervisor's internal interface.
+type extractorAdapter struct {
+	ext ports.Extractor
+}
+
+func (a *extractorAdapter) Extract(ctx context.Context, text string) (any, error) {
+	return a.ext.Extract(ctx, text)
 }
 
 // ExecuteOption configures a single execution call (e.g., ExecuteByName).
@@ -430,6 +470,7 @@ func WithStructuredOutput(schema any) core.GenerateOption {
 }
 
 // WithMetadataMap injects a map of custom key-value pairs into the execution envelope's metadata.
+// Non-string values are converted using fmt.Sprintf("%v", v).
 func WithMetadataMap(meta map[string]any) ExecuteOption {
 	return func(p *ExecutionParams) {
 		if p.Metadata == nil {

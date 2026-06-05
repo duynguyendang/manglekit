@@ -60,7 +60,11 @@ func Init(ctx context.Context, globalG *genkit.Genkit, apiKey string, modelName 
 	// This function forwards calls from Global -> Local
 	genkit.DefineModel(globalG, globalName, meta,
 		func(ctx context.Context, req *ai.ModelRequest, cb func(context.Context, *ai.ModelResponseChunk) error) (*ai.ModelResponse, error) {
-			// FIX: Workaround for plugin bug rejecting standard config
+			// WORKAROUND: The google plugin rejects standard GenerationConfig
+			// (e.g. Temperature, MaxOutputTokens) on proxied models. Clearing
+			// the config lets the request through to the real model which
+			// applies its own defaults. This should be removed once the
+			// upstream Genkit google plugin handles proxied configs correctly.
 			req.Config = nil
 
 			// Forward to the real model in the sandbox

@@ -50,6 +50,15 @@ func NewGenkitAction(ctx context.Context, modelName string) (core.Action, error)
 	return NewLLMAction(modelName, adapter)
 }
 
+// GenkitTextGenerator is the exported interface for adapters backed by a
+// Genkit model. It extends core.TextGenerator with access to the underlying
+// Genkit model and runtime for native features (structured output, middleware).
+type GenkitTextGenerator interface {
+	core.TextGenerator
+	GenkitModel() ai.Model
+	GenkitInstance() *genkit.Genkit
+}
+
 // genkitAdapter adapts the Firebase Genkit ai.Model interface to the Manglekit core.TextGenerator interface.
 type genkitAdapter struct {
 	model ai.Model
@@ -63,13 +72,19 @@ type genkitAdapter struct {
 //   - gk: The Genkit runtime instance.
 //
 // Returns:
-//   - A core.TextGenerator implementation.
+//   - A core.TextGenerator implementation (also satisfies GenkitTextGenerator).
 func NewGenkitAdapter(model ai.Model, gk *genkit.Genkit) core.TextGenerator {
 	return &genkitAdapter{
 		model: model,
 		gk:    gk,
 	}
 }
+
+// GenkitModel returns the underlying Genkit model.
+func (g *genkitAdapter) GenkitModel() ai.Model { return g.model }
+
+// GenkitInstance returns the underlying Genkit runtime.
+func (g *genkitAdapter) GenkitInstance() *genkit.Genkit { return g.gk }
 
 // Complete generates text using the underlying Genkit model.
 func (g *genkitAdapter) Complete(ctx context.Context, prompt string) (string, error) {
@@ -176,9 +191,37 @@ func (g *genkitAdapter) Generate(ctx context.Context, prompt string, opts ...cor
 }
 
 // Stream implements the core.TextGenerator interface.
+// It uses Genkit's streaming callback to deliver incremental chunks.
 func (g *genkitAdapter) Stream(ctx context.Context, prompt string) (<-chan core.StreamChunk, error) {
-	ch := make(chan core.StreamChunk, 1)
-	ch <- core.StreamChunk{Err: fmt.Errorf("streaming not implemented in genkit adapter yet")}
-	close(ch)
+	ch := make(chan core.StreamChunk, 8)
+
+	streamCb := func(ctx context.Context, chunk *ai.ModelResponseChunk) error {
+		if t := chunk.Text(); t != "" {
+			select {
+			case ch <- core.StreamChunk{Text: t}:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		return nil
+	}
+
+	genOpts := []ai.GenerateOption{
+		ai.WithModel(g.model),
+		ai.WithMessages(ai.NewUserMessage(ai.NewTextPart(prompt))),
+		ai.WithStreaming(streamCb),
+	}
+
+	go func() {
+		defer close(ch)
+		_, err := genkit.Generate(ctx, g.gk, genOpts...)
+		if err != nil {
+			select {
+			case ch <- core.StreamChunk{Err: err}:
+			case <-ctx.Done():
+			}
+		}
+	}()
+
 	return ch, nil
 }

@@ -68,6 +68,11 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 		return domain.Envelope{}, &core.SupervisorError{Reason: err}
 	}
 
+	// Capture the audit trail from the per-call result into a local.
+	// This must happen before inner.Execute (which may take seconds for LLMs),
+	// ensuring the trail stays on the call stack, not on a shared object.
+	preFlightTrail := res.Trail
+
 	if !res.Pass && (res.ViolationTier == domain.Tier0Kernel || res.ViolationTier == domain.Tier1Admin) {
 		envelope.Violations = append(envelope.Violations, core.ViolationRule{
 			RuleID:      res.ConflictPath,
@@ -86,6 +91,16 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 	result, err := g.inner.Execute(ctx, envelope)
 	if err != nil {
 		return domain.Envelope{}, err
+	}
+
+	// Propagate the audit trail from the pre-flight check to the result.
+	// preFlightTrail is a local variable captured before inner.Execute —
+	// no shared state, no race, no cross-request leakage.
+	if preFlightTrail != nil {
+		if result.Metadata == nil {
+			result.Metadata = make(map[string]any)
+		}
+		result.Metadata["manglekit.audit_trail"] = preFlightTrail
 	}
 
 	// 5. Reflect (Post-Execution Validation)

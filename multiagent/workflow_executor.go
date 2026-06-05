@@ -2,6 +2,7 @@ package multiagent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -491,16 +492,22 @@ func (e *ParallelWorkflowExecutor) executeParallelGroup(ctx context.Context, wor
 	}()
 
 	outputs := make(map[string]interface{})
-	var firstErr error
+	var errs []error
+	errMu := sync.Mutex{}
 
 	for r := range resultChan {
-		if r.err != nil && firstErr == nil {
-			firstErr = r.err
+		if r.err != nil {
+			errMu.Lock()
+			errs = append(errs, fmt.Errorf("node %s: %w", r.nodeID, r.err))
+			errMu.Unlock()
 		}
 		outputs[r.nodeID] = r.output
 	}
 
-	return outputs, firstErr
+	if len(errs) > 0 {
+		return outputs, errors.Join(errs...)
+	}
+	return outputs, nil
 }
 
 func (e *ParallelWorkflowExecutor) mergeOutputs(outputs map[string]interface{}) interface{} {

@@ -61,6 +61,13 @@ func (e *GoogleEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]fl
 }
 
 func (e *GoogleEmbedder) Dimension() int {
-	// Usually 768 for text-embedding-004
-	return 768
+	// Google embedding model dimensions as of 2025-05.
+	// See https://ai.google.dev/gemini-api/docs/embeddings for the current list.
+	switch e.model {
+	case "text-embedding-004", "embedding-001", "embedding-002":
+		return 768
+	default:
+		// Conservative fallback for unknown models; callers should verify.
+		return 768
+	}
 }

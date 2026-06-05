@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 
 	"go.opentelemetry.io/otel/trace"
@@ -11,6 +12,7 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/supervisor"
+	"github.com/duynguyendang/manglekit/providers/predicates"
 )
 
 const (
@@ -48,12 +50,16 @@ type Client struct {
 	shutdownFunc func(context.Context) error
 	// llm is the plugged-in text generation backend (e.g., Google, OpenAI).
 	llm core.TextGenerator
+	// maxSteps limits the total number of loop iterations.
+	// Zero means use the SDK default (DefaultMaxSteps).
+	maxSteps int
+	// steeringEnabled controls whether EAST prompt injection is active.
+	steeringEnabled bool
+	// paradoxThreshold is the EAST magnitude above which cognitive paradox injection
+	// is triggered. Default: 0.8.
+	paradoxThreshold float64
 	// stateManager handles durable state persistence and recovery.
-	stateManager interface {
-		Hydrate(ctx context.Context, sessionID string) (*core.SessionState, error)
-		Checkpoint(ctx context.Context, state *core.SessionState) error
-		ExtractFacts(ctx context.Context, envelope core.Envelope) ([]string, error)
-	}
+	stateManager core.StateManager
 	// memWg tracks in-flight background memory operations.
 	memWg sync.WaitGroup
 	// memMu serializes checks of shuttingDown against memWg.Add,
@@ -93,6 +99,26 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		return nil, err
 	}
 
+	// Register reference external predicates (time, rate, identity).
+	// These are available to all Datalog policies by default.
+	if reg, ok := c.engine.(interface {
+		RegisterExternalPredicate(string, func(context.Context, []any) ([][]any, error)) error
+	}); ok {
+		predicates.RegisterAll(reg)
+	}
+
+	// Load deferred blueprint now that engine is ready.
+	// Uses the caller's context for proper cancellation/timeout propagation.
+	if c.blueprintPath != "" {
+		content, err := os.ReadFile(c.blueprintPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read blueprint %q: %w", c.blueprintPath, err)
+		}
+		if err := c.engine.LoadPolicy(ctx, string(content)); err != nil {
+			return nil, fmt.Errorf("failed to load blueprint %q: %w", c.blueprintPath, err)
+		}
+	}
+
 	return c, nil
 }
 
@@ -117,7 +143,7 @@ func NewClientFromConfig(ctx context.Context, cfg *config.Config, opts ...Client
 
 // Supervise wraps a raw core.Action in a SupervisedAction using v2 patterns.
 func (c *Client) Supervise(action core.Action) core.Action {
-	return supervisor.NewSupervisedActionFromSDK(action, c.engine)
+	return supervisor.NewSupervisedActionFromSDK(action, c.engine, c.failureMode, c.logger)
 }
 
 // Engine returns the underlying policy engine (Evaluator).
@@ -131,6 +157,14 @@ func (c *Client) LoadFacts(facts []string) error {
 		return fmt.Errorf("engine not initialized")
 	}
 	return c.engine.LoadFacts(facts)
+}
+
+// LoadGherkinPolicy loads a Gherkin feature file and compiles it to Datalog.
+func (c *Client) LoadGherkinPolicy(ctx context.Context, featureContent string) error {
+	if c.engine == nil {
+		return fmt.Errorf("engine not initialized")
+	}
+	return c.engine.LoadGherkinPolicy(ctx, featureContent)
 }
 
 // Tracer returns the OpenTelemetry Tracer used by the client.

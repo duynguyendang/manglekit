@@ -65,15 +65,21 @@ func (e *OpenAIEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]fl
 }
 
 // Dimension returns the vector size for the configured model.
-// text-embedding-3-small: 1536
-// text-embedding-3-large: 3072
-// text-embedding-ada-002: 1536
+// Known models as of 2025-05:
+//
+//	text-embedding-3-small  → 1536
+//	text-embedding-3-large  → 3072
+//	text-embedding-ada-002  → 1536
+//
+// Returns 0 for unknown models so callers can fail explicitly rather than
+// silently mismatching dimensions.
 func (e *OpenAIEmbedder) Dimension() int {
-	modelStr := string(e.model)
-	switch modelStr {
+	switch modelStr := string(e.model); modelStr {
 	case "text-embedding-3-large":
 		return 3072
-	default:
+	case "text-embedding-3-small", "text-embedding-ada-002":
 		return 1536
+	default:
+		return 0
 	}
 }

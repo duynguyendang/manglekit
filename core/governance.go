@@ -30,6 +30,9 @@ type Evaluator interface {
 	// LoadPolicy loads policy rules from a source string or file content.
 	LoadPolicy(ctx context.Context, source string) error
 
+	// LoadGherkinPolicy loads a Gherkin feature file and compiles it to Datalog.
+	LoadGherkinPolicy(ctx context.Context, featureContent string) error
+
 	// LoadFacts injects dynamic facts into the engine.
 	LoadFacts(facts []string) error
 

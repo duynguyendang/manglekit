@@ -9,7 +9,13 @@ import (
 
 // Execute processes an envelope by determining the initial action via the policy engine.
 // It relies on the 'next_step' predicate to route the request.
+// When steering is disabled (steeringEnabled=false), this returns an error
+// because no Datalog-driven routing is available.
 func (c *Client) Execute(ctx context.Context, input core.Envelope, opts ...ExecuteOption) (core.Envelope, error) {
+	if !c.steeringEnabled {
+		return core.Envelope{}, fmt.Errorf("steering disabled: use ExecuteByName for explicit action routing")
+	}
+
 	// 1. Evaluate Steering to find the entry point
 	decision, meta, err := c.engine.EvaluateSteering(ctx, input)
 	if err != nil {

@@ -2,6 +2,7 @@ package multiagent
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strings"
 	"sync"
@@ -9,6 +10,9 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine"
 )
+
+//go:embed assets/agent_registry.dlog
+var defaultAgentRegistry string
 
 // AgentRole represents the role of an agent
 type AgentRole string
@@ -95,98 +99,12 @@ func (s *AgentSystem) QueryWithAudit(ctx context.Context, facts []string, query 
 	return result.Results, result.AuditTrail, nil
 }
 
-// LoadAgentDefinitions loads agent definitions from Datalog
+// LoadAgentDefinitions loads agent definitions from Datalog.
+// The default registry is embedded in the binary from assets/agent_registry.dlog.
+// Callers may also load custom rules by calling Engine().Runtime().AddPolicy()
+// directly after this call.
 func (s *AgentSystem) LoadAgentDefinitions(ctx context.Context) error {
-	// Load agent registry Datalog via PolicyEngine
-	// This would typically load from files or a database
-	// For now, we add the Datalog rules directly
-	agentRules := `
-% Agent Roles
-agent_role("planner").
-agent_role("executor").
-agent_role("reviewer").
-agent_role("researcher").
-agent_role("coordinator").
-agent_role("supervisor").
-agent_role("orchestrator").
-
-% Role Capabilities
-role_capability("planner", "task_decomposition").
-role_capability("planner", "goal_analysis").
-role_capability("planner", "plan_generation").
-role_capability("planner", "llm_reasoning").
-
-role_capability("executor", "action_execution").
-role_capability("executor", "llm_generation").
-role_capability("executor", "tool_invocation").
-
-role_capability("reviewer", "validation").
-role_capability("reviewer", "quality_check").
-role_capability("reviewer", "llm_reasoning").
-
-role_capability("researcher", "knowledge_retrieval").
-role_capability("researcher", "vector_search").
-
-% Role Inheritance
-role_inherits("supervisor", "planner").
-role_inherits("supervisor", "executor").
-role_inherits("supervisor", "reviewer").
-
-% Task Requirements
-task_requires_capability("generate_document", "llm_generation").
-task_requires_capability("validate_output", "validation").
-task_requires_capability("create_plan", "plan_generation").
-
-% Agent Registry
-agent("planner-001", "planner").
-agent("executor-001", "executor").
-agent("executor-002", "executor").
-agent("reviewer-001", "reviewer").
-agent("researcher-001", "researcher").
-
-% Agent Capabilities
-agent_capability("planner-001", "llm_reasoning").
-agent_capability("planner-001", "task_decomposition").
-agent_capability("executor-001", "llm_generation").
-agent_capability("executor-001", "tool_invocation").
-agent_capability("executor-002", "llm_generation").
-agent_capability("reviewer-001", "llm_reasoning").
-agent_capability("reviewer-001", "validation").
-agent_capability("researcher-001", "knowledge_retrieval").
-
-% Agent Config
-agent_config("planner-001", "model", "gpt-4o").
-agent_config("executor-001", "model", "gpt-4o").
-agent_config("reviewer-001", "model", "gpt-4o").
-
-% Agent Status
-agent_status("planner-001", "available").
-agent_status("executor-001", "available").
-agent_status("executor-002", "available").
-agent_status("reviewer-001", "available").
-agent_status("researcher-001", "available").
-
-% Workflows
-workflow("content-pipeline", "Content Generation", "v1.0").
-workflow("simple-gen", "Simple Generation", "v1.0").
-
-% Workflow Nodes
-workflow_node("content-pipeline", "research", "agent", "researcher").
-workflow_node("content-pipeline", "plan", "agent", "planner").
-workflow_node("content-pipeline", "execute", "agent", "executor").
-workflow_node("content-pipeline", "review", "agent", "reviewer").
-
-workflow_node("simple-gen", "generate", "agent", "executor").
-workflow_node("simple-gen", "review", "agent", "reviewer").
-
-% Workflow Edges
-workflow_edge("content-pipeline", "research", "plan").
-workflow_edge("content-pipeline", "plan", "execute").
-workflow_edge("content-pipeline", "execute", "review").
-
-workflow_edge("simple-gen", "generate", "review").
-`
-	if err := s.engine.Runtime().AddPolicy(agentRules); err != nil {
+	if err := s.engine.Runtime().AddPolicy(defaultAgentRegistry); err != nil {
 		return fmt.Errorf("failed to load agent rules: %w", err)
 	}
 
@@ -195,7 +113,7 @@ workflow_edge("simple-gen", "generate", "review").
 
 // GetAgentsByRole retrieves all agents with the specified role
 func (s *AgentSystem) GetAgentsByRole(ctx context.Context, role string) ([]*Agent, error) {
-	query := fmt.Sprintf(`agent(AgentID, "%s"), agent_status(AgentID, "available").`, role)
+	query := fmt.Sprintf(`agent(AgentID, "%s"), agent_status(AgentID, "available").`, escapeDatalog(role))
 	results, err := s.engine.Query(ctx, []string{}, query)
 	if err != nil {
 		return nil, fmt.Errorf("query failed: %w", err)
@@ -228,37 +146,74 @@ func (s *AgentSystem) GetAgent(ctx context.Context, agentID string) (*Agent, err
 		return agent, nil
 	}
 
-	// Query agent
-	query := fmt.Sprintf(`agent("%s", Role).`, agentID)
-	results, err := s.engine.Query(ctx, []string{}, query)
-	if err != nil || len(results) == 0 {
+	// Fetch role, capabilities, config, and status in parallel instead of
+	// issuing 4 sequential Datalog queries. An agent that doesn't exist will
+	// surface as an empty role on the first query.
+	safeID := escapeDatalog(agentID)
+
+	var (
+		wg         sync.WaitGroup
+		queryErr   error
+		errOnce    sync.Once
+		setErr     = func(e error) { errOnce.Do(func() { queryErr = e }) }
+		role       string
+		capabilities []string
+		config     = make(map[string]string)
+		status     = StatusAvailable
+	)
+
+	wg.Add(4)
+	go func() {
+		defer wg.Done()
+		results, err := s.engine.Query(ctx, []string{}, fmt.Sprintf(`agent("%s", Role).`, safeID))
+		if err != nil {
+			setErr(fmt.Errorf("agent query failed: %w", err))
+			return
+		}
+		if len(results) > 0 {
+			role = results[0]["Role"]
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		results, err := s.engine.Query(ctx, []string{}, fmt.Sprintf(`agent_capability("%s", Capability).`, safeID))
+		if err != nil {
+			setErr(fmt.Errorf("capability query failed: %w", err))
+			return
+		}
+		for _, r := range results {
+			capabilities = append(capabilities, r["Capability"])
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		results, err := s.engine.Query(ctx, []string{}, fmt.Sprintf(`agent_config("%s", Key, Value).`, safeID))
+		if err != nil {
+			setErr(fmt.Errorf("config query failed: %w", err))
+			return
+		}
+		for _, r := range results {
+			config[r["Key"]] = r["Value"]
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		results, err := s.engine.Query(ctx, []string{}, fmt.Sprintf(`agent_status("%s", Status).`, safeID))
+		if err != nil {
+			// Status is optional; keep default and don't fail the call.
+			return
+		}
+		if len(results) > 0 {
+			status = AgentStatus(results[0]["Status"])
+		}
+	}()
+	wg.Wait()
+
+	if queryErr != nil {
+		return nil, queryErr
+	}
+	if role == "" {
 		return nil, fmt.Errorf("agent not found: %s", agentID)
-	}
-
-	role := results[0]["Role"]
-
-	// Query capabilities
-	capsQuery := fmt.Sprintf(`agent_capability("%s", Capability).`, agentID)
-	capsResults, err := s.engine.Query(ctx, []string{}, capsQuery)
-	var capabilities []string
-	for _, r := range capsResults {
-		capabilities = append(capabilities, r["Capability"])
-	}
-
-	// Query config
-	configQuery := fmt.Sprintf(`agent_config("%s", Key, Value).`, agentID)
-	configResults, err := s.engine.Query(ctx, []string{}, configQuery)
-	config := make(map[string]string)
-	for _, r := range configResults {
-		config[r["Key"]] = r["Value"]
-	}
-
-	// Query status
-	statusQuery := fmt.Sprintf(`agent_status("%s", Status).`, agentID)
-	statusResults, err := s.engine.Query(ctx, []string{}, statusQuery)
-	status := StatusAvailable
-	if err == nil && len(statusResults) > 0 {
-		status = AgentStatus(statusResults[0]["Status"])
 	}
 
 	agent = &Agent{
@@ -283,7 +238,7 @@ func (s *AgentSystem) FindAgentsForTask(ctx context.Context, task string) ([]*Ag
 		agent(AgentID, _),
 		agent_capability(AgentID, Capability),
 		agent_status(AgentID, "available"),
-		task_requires_capability("%s", Capability).`, task)
+		task_requires_capability("%s", Capability).`, escapeDatalog(task))
 
 	results, err := s.engine.Query(ctx, []string{}, query)
 	if err != nil {
@@ -314,7 +269,7 @@ func (s *AgentSystem) FindAgentsForTask(ctx context.Context, task string) ([]*Ag
 // GetRoleCapabilities returns capabilities for a given role
 func (s *AgentSystem) GetRoleCapabilities(ctx context.Context, role string) ([]string, error) {
 	// First check direct capabilities
-	query := fmt.Sprintf(`role_capability("%s", Capability).`, role)
+	query := fmt.Sprintf(`role_capability("%s", Capability).`, escapeDatalog(role))
 	results, err := s.engine.Query(ctx, []string{}, query)
 	if err != nil {
 		return nil, err
@@ -326,12 +281,12 @@ func (s *AgentSystem) GetRoleCapabilities(ctx context.Context, role string) ([]s
 	}
 
 	// Then check inherited roles
-	inheritQuery := fmt.Sprintf(`role_inherits("%s", InheritedRole).`, role)
+	inheritQuery := fmt.Sprintf(`role_inherits("%s", InheritedRole).`, escapeDatalog(role))
 	inheritResults, err := s.engine.Query(ctx, []string{}, inheritQuery)
 	if err == nil {
 		for _, r := range inheritResults {
 			inheritedRole := r["InheritedRole"]
-			subQuery := fmt.Sprintf(`role_capability("%s", Capability).`, inheritedRole)
+			subQuery := fmt.Sprintf(`role_capability("%s", Capability).`, escapeDatalog(inheritedRole))
 			subResults, err := s.engine.Query(ctx, []string{}, subQuery)
 			if err == nil {
 				for _, sr := range subResults {
@@ -352,7 +307,7 @@ func (s *AgentSystem) GetRoleCapabilities(ctx context.Context, role string) ([]s
 // GetWorkflow retrieves a workflow by name
 func (s *AgentSystem) GetWorkflow(ctx context.Context, workflowName string) (*Workflow, error) {
 	// Query workflow metadata
-	query := fmt.Sprintf(`workflow("%s", Name, Version).`, workflowName)
+	query := fmt.Sprintf(`workflow("%s", Name, Version).`, escapeDatalog(workflowName))
 	results, err := s.engine.Query(ctx, []string{}, query)
 	if err != nil || len(results) == 0 {
 		return nil, fmt.Errorf("workflow not found: %s", workflowName)
@@ -365,7 +320,7 @@ func (s *AgentSystem) GetWorkflow(ctx context.Context, workflowName string) (*Wo
 	}
 
 	// Query nodes
-	nodeQuery := fmt.Sprintf(`workflow_node("%s", NodeID, Type, Agent).`, workflowName)
+	nodeQuery := fmt.Sprintf(`workflow_node("%s", NodeID, Type, Agent).`, escapeDatalog(workflowName))
 	nodeResults, err := s.engine.Query(ctx, []string{}, nodeQuery)
 	if err == nil {
 		for _, r := range nodeResults {
@@ -376,7 +331,7 @@ func (s *AgentSystem) GetWorkflow(ctx context.Context, workflowName string) (*Wo
 			}
 
 			// Query node config
-			configQuery := fmt.Sprintf(`node_config("%s", "%s", Key, Value).`, workflowName, node.ID)
+			configQuery := fmt.Sprintf(`node_config("%s", "%s", Key, Value).`, escapeDatalog(workflowName), escapeDatalog(node.ID))
 			configResults, err := s.engine.Query(ctx, []string{}, configQuery)
 			if err == nil {
 				node.Config = make(map[string]string)
@@ -390,7 +345,7 @@ func (s *AgentSystem) GetWorkflow(ctx context.Context, workflowName string) (*Wo
 	}
 
 	// Query edges
-	edgeQuery := fmt.Sprintf(`workflow_edge("%s", From, To).`, workflowName)
+	edgeQuery := fmt.Sprintf(`workflow_edge("%s", From, To).`, escapeDatalog(workflowName))
 	edgeResults, err := s.engine.Query(ctx, []string{}, edgeQuery)
 	if err == nil {
 		for _, r := range edgeResults {
@@ -402,7 +357,7 @@ func (s *AgentSystem) GetWorkflow(ctx context.Context, workflowName string) (*Wo
 	}
 
 	// Query conditional edges
-	condQuery := fmt.Sprintf(`conditional_edge("%s", From, To, Condition).`, workflowName)
+	condQuery := fmt.Sprintf(`conditional_edge("%s", From, To, Condition).`, escapeDatalog(workflowName))
 	condResults, err := s.engine.Query(ctx, []string{}, condQuery)
 	if err == nil {
 		for _, r := range condResults {
@@ -467,7 +422,7 @@ func (s *AgentSystem) SetAgentStatus(ctx context.Context, agentID string, status
 
 // GetWorkflowEdges returns edges for a specific node
 func (s *AgentSystem) GetWorkflowEdges(ctx context.Context, workflowName, nodeID string) ([]WorkflowEdge, error) {
-	query := fmt.Sprintf(`workflow_edge("%s", "%s", To).`, workflowName, nodeID)
+	query := fmt.Sprintf(`workflow_edge("%s", "%s", To).`, escapeDatalog(workflowName), escapeDatalog(nodeID))
 	results, err := s.engine.Query(ctx, []string{}, query)
 	if err != nil {
 		return nil, err
@@ -482,7 +437,7 @@ func (s *AgentSystem) GetWorkflowEdges(ctx context.Context, workflowName, nodeID
 	}
 
 	// Check conditional edges
-	condQuery := fmt.Sprintf(`conditional_edge("%s", "%s", To, Condition).`, workflowName, nodeID)
+	condQuery := fmt.Sprintf(`conditional_edge("%s", "%s", To, Condition).`, escapeDatalog(workflowName), escapeDatalog(nodeID))
 	condResults, err := s.engine.Query(ctx, []string{}, condQuery)
 	if err == nil {
 		for _, r := range condResults {
@@ -506,7 +461,7 @@ func (s *AgentSystem) EvaluateCondition(ctx context.Context, condition string, c
 	// Build facts from context
 	var facts []string
 	for k, v := range contextData {
-		facts = append(facts, fmt.Sprintf(`context("%s", "%s").`, k, escapeDatalog(v)))
+		facts = append(facts, fmt.Sprintf(`context("%s", "%s").`, escapeDatalog(k), escapeDatalog(v)))
 	}
 
 	query := condition

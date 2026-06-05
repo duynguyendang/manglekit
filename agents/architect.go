@@ -4,6 +4,7 @@ package agents
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -141,7 +142,8 @@ func (a *ArchitectAgent) GetAuditTrail() string {
 	return a.frame.GetAuditSummary()
 }
 
-// sessionStoreAdapter adapts TransientStore to SessionStateStore
+// sessionStoreAdapter adapts TransientStore to SessionStateStore.
+// It serializes WorkflowInstance objects as JSON facts keyed by session+workflow ID.
 type sessionStoreAdapter struct {
 	store ports.TransientStore
 }
@@ -151,29 +153,76 @@ func newSessionStoreAdapter(store ports.TransientStore) *sessionStoreAdapter {
 }
 
 func (s *sessionStoreAdapter) Create(ctx context.Context, instance *core.WorkflowInstance) error {
-	return nil // Transient store doesn't need explicit create
+	if instance == nil {
+		return nil
+	}
+	data, err := json.Marshal(instance)
+	if err != nil {
+		return fmt.Errorf("failed to serialize workflow instance: %w", err)
+	}
+	return s.store.Put(ctx, instance.SessionID, instance.SessionKey(), &ports.TransientFact{
+		Subject:   instance.SessionID,
+		Predicate: "workflow_instance",
+		Object:    string(data),
+		Graph:     "session_state",
+	})
 }
 
 func (s *sessionStoreAdapter) Get(ctx context.Context, sessionKey string) (*core.WorkflowInstance, error) {
-	// Parse sessionKey to get sessionID and workflowID
-	// For now, return a simple instance
-	return core.NewWorkflowInstance(sessionKey, sessionKey), nil
+	fact, err := s.store.Get(ctx, sessionKey, sessionKey)
+	if err != nil || fact == nil {
+		// No existing instance; create a fresh one from the sessionKey.
+		return core.NewWorkflowInstance(sessionKey, sessionKey), nil
+	}
+	var instance core.WorkflowInstance
+	if err := json.Unmarshal([]byte(fact.Object), &instance); err != nil {
+		return nil, fmt.Errorf("failed to deserialize workflow instance: %w", err)
+	}
+	return &instance, nil
 }
 
 func (s *sessionStoreAdapter) Update(ctx context.Context, instance *core.WorkflowInstance) error {
-	return nil
+	if instance == nil {
+		return nil
+	}
+	data, err := json.Marshal(instance)
+	if err != nil {
+		return fmt.Errorf("failed to serialize workflow instance: %w", err)
+	}
+	return s.store.Put(ctx, instance.SessionID, instance.SessionKey(), &ports.TransientFact{
+		Subject:   instance.SessionID,
+		Predicate: "workflow_instance",
+		Object:    string(data),
+		Graph:     "session_state",
+	})
 }
 
 func (s *sessionStoreAdapter) Delete(ctx context.Context, sessionKey string) error {
-	return nil
+	return s.store.Delete(ctx, sessionKey, sessionKey)
 }
 
 func (s *sessionStoreAdapter) Exists(ctx context.Context, sessionKey string) bool {
-	return true
+	fact, err := s.store.Get(ctx, sessionKey, sessionKey)
+	return err == nil && fact != nil
 }
 
 func (s *sessionStoreAdapter) List(ctx context.Context, sessionID string) ([]*core.WorkflowInstance, error) {
-	return nil, nil
+	facts, err := s.store.GetAll(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	var instances []*core.WorkflowInstance
+	for _, fact := range facts {
+		if fact.Predicate != "workflow_instance" {
+			continue
+		}
+		var inst core.WorkflowInstance
+		if err := json.Unmarshal([]byte(fact.Object), &inst); err != nil {
+			continue
+		}
+		instances = append(instances, &inst)
+	}
+	return instances, nil
 }
 
 func (s *sessionStoreAdapter) ClearSession(ctx context.Context, sessionID string) error {

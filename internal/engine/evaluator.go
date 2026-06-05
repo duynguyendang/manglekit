@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -165,6 +166,14 @@ func structToFactsRecursive(entityID string, entity any, prefix string) ([]mangl
 	}
 
 	var atoms []mangleast.Atom
+	var errs []error
+
+	// collectErr accumulates field-level errors so we don't silently drop them.
+	collectErr := func(label string, err error) {
+		if err != nil {
+			errs = append(errs, fmt.Errorf("field %s: %w", label, err))
+		}
+	}
 
 	switch val.Kind() {
 	case reflect.Struct:
@@ -189,9 +198,7 @@ func structToFactsRecursive(entityID string, entity any, prefix string) ([]mangl
 			}
 
 			fieldAtoms, err := structToFactsRecursive(entityID, fieldVal.Interface(), tag)
-			if err != nil {
-				continue
-			}
+			collectErr(tag, err)
 			atoms = append(atoms, fieldAtoms...)
 		}
 
@@ -202,9 +209,7 @@ func structToFactsRecursive(entityID string, entity any, prefix string) ([]mangl
 			value := iter.Value().Interface()
 			predicate := prefix + "_" + key
 			valueAtoms, err := structToFactsRecursive(entityID, value, predicate)
-			if err != nil {
-				continue
-			}
+			collectErr(predicate, err)
 			atoms = append(atoms, valueAtoms...)
 		}
 
@@ -213,9 +218,7 @@ func structToFactsRecursive(entityID string, entity any, prefix string) ([]mangl
 			elem := val.Index(i).Interface()
 			elemPrefix := fmt.Sprintf("%s_%d", prefix, i)
 			elemAtoms, err := structToFactsRecursive(entityID, elem, elemPrefix)
-			if err != nil {
-				continue
-			}
+			collectErr(elemPrefix, err)
 			atoms = append(atoms, elemAtoms...)
 		}
 
@@ -243,5 +246,11 @@ func structToFactsRecursive(entityID string, entity any, prefix string) ([]mangl
 		return nil, fmt.Errorf("no valid facts could be extracted from entity")
 	}
 
+	// Return any accumulated field-level errors. The atoms collected so far
+	// are still returned — callers that only check atoms will get partial
+	// results, while callers that check the error see what was skipped.
+	if len(errs) > 0 {
+		return atoms, errors.Join(errs...)
+	}
 	return atoms, nil
 }

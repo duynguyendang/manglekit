@@ -21,12 +21,25 @@ lint:
 # Build the project
 .PHONY: build
 build:
-	$(GO) build -o $(BINARY) ./cmd/agent
+	$(GO) build -o $(BINARY) ./cmd/mkit
 
 # Run tests
 .PHONY: test
 test:
-	$(GO) test ./... -v
+	$(GO) test -race -count=1 ./... -v
+
+# Run tests with coverage
+.PHONY: coverage
+coverage:
+	$(GO) test -race -coverprofile=coverage.out ./...
+	$(GO) tool cover -func=coverage.out
+	@THRESHOLD=60; \
+	COVERAGE=$$($(GO) tool cover -func=coverage.out | grep total | awk '{print $$3}' | tr -d '%'); \
+	echo "Current coverage: $${COVERAGE}%"; \
+	if [ $$(echo "$${COVERAGE} < $${THRESHOLD}" | bc -l) -eq 1 ]; then \
+		echo "FAIL: Coverage $${COVERAGE}% is below threshold $${THRESHOLD}%"; \
+		exit 1; \
+	fi
 
 # Refresh project context docs (see AGENTS.md §7)
 .PHONY: context-refresh
@@ -37,7 +50,7 @@ context-refresh:
 # Run the server
 .PHONY: run
 run:
-	$(GO) run ./cmd/agent
+	$(GO) run ./cmd/mkit
 
 # Install the mkit CLI
 .PHONY: install-cli

@@ -45,3 +45,18 @@ type StateProvider interface {
 	//   - An error if cleanup fails.
 	Close(ctx context.Context) error
 }
+
+// StateManager defines the interface for durable session state persistence and recovery.
+// It is used by the SDK to checkpoint and hydrate execution state across restarts.
+// The DurableStateManager implementation is the concrete type returned by the SDK.
+type StateManager interface {
+	// Hydrate reconstructs a session state from durable storage.
+	// Returns nil, nil if the session does not exist (first run).
+	Hydrate(ctx context.Context, sessionID string) (*SessionState, error)
+
+	// Checkpoint persists the current session state after a successful execution.
+	Checkpoint(ctx context.Context, state *SessionState) error
+
+	// ExtractFacts extracts Datalog facts from an envelope for persistence.
+	ExtractFacts(ctx context.Context, envelope Envelope) ([]string, error)
+}
