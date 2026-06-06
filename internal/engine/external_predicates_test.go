@@ -90,7 +90,7 @@ func TestExternalPredicate_BaseStoreDirect(t *testing.T) {
 		ast.Atom{Predicate: ast.PredicateSym{Symbol: "result", Arity: 1}},
 		func(fact ast.Atom) error {
 			if len(fact.Args) > 0 {
-				if c, ok := fact.Args[0].(ast.Constant); ok && c.Symbol == "9" {
+				if c, ok := fact.Args[0].(ast.Constant); ok && c.NumValue == 9 {
 					found = true
 				}
 			}

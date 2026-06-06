@@ -285,9 +285,11 @@ func (e *PolicyEngine) LoadGherkinPolicy(ctx context.Context, featureContent str
 // The Decision.AuditTrail is populated from the gate evaluation,
 // carrying matched rules, tiers, latencies, and fact counts.
 func (e *PolicyEngine) AssessPlan(ctx context.Context, input core.Envelope) (core.Decision, error) {
-	err := e.Assess(ctx, core.ActionMetadata{}, input)
+	trail, err := e.assessInternal(ctx, core.ActionMetadata{}, input)
 
-	decision := core.Decision{}
+	decision := core.Decision{
+		AuditTrail: trail,
+	}
 
 	if err != nil {
 		// If authorization fails, it's a DENY

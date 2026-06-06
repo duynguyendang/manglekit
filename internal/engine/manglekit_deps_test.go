@@ -122,8 +122,12 @@ func TestPolicyEngine_Query_AllFeatures(t *testing.T) {
 	ctx := context.Background()
 
 	rules := `
+		Decl completeness_pct(D, S).
+		Decl threshold(D, M).
+		Decl needs_cap(P, C).
+		Decl has_cap(P, C).
 		passes_gate(D) :- completeness_pct(D, S), threshold(D, M), :ge(S, M).
-		missing_cap(P, C) :- needs_cap(P, C), !has_cap(_, C).
+		missing_cap(P, C) :- needs_cap(P, C), !has_cap("writer", C).
 	`
 	if err := engine.LoadPolicy(ctx, rules); err != nil {
 		t.Fatal(err)
