@@ -1112,6 +1112,30 @@ func findPredicateUsage(unit parse.SourceUnit, name string) (int, []string) {
 	return -1, nil
 }
 
+var (
+	// declLineRE matches the head of a `Decl pred(args)` statement. It
+	// deliberately does not require the terminating "." so that Decls
+	// with annotation clauses (descr [...], bound [...]) or multi-line
+	// Decls are still recognized.
+	declLineRE = regexp.MustCompile(`^\s*Decl\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)`)
+	// clauseHeadRE matches the head predicate of a rule or fact line.
+	clauseHeadRE = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
+)
+
+// declSym extracts the (symbol, arity) pair from a Decl line. A
+// zero-argument Decl (`Decl foo().`) yields arity 0.
+func declSym(line string) (ast.PredicateSym, bool) {
+	mm := declLineRE.FindStringSubmatch(line)
+	if mm == nil {
+		return ast.PredicateSym{}, false
+	}
+	arity := 0
+	if args := strings.TrimSpace(mm[2]); args != "" {
+		arity = len(strings.Split(args, ","))
+	}
+	return ast.PredicateSym{Symbol: mm[1], Arity: arity}, true
+}
+
 // collectCallerDecls scans the caller's source for `Decl pred(...)` lines
 // and returns the set of (symbol, arity) pairs the caller has already
 // declared. We use this to filter the std.dl merge in LoadFromSource so
@@ -1123,57 +1147,59 @@ func findPredicateUsage(unit parse.SourceUnit, name string) (int, []string) {
 // sufficient and avoids the cost of parsing twice.
 func collectCallerDecls(source string) map[ast.PredicateSym]bool {
 	decls := make(map[ast.PredicateSym]bool)
-	declRE := regexp.MustCompile(`(?m)^\s*Decl\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*\.`)
-	matches := declRE.FindAllStringSubmatch(source, -1)
-	for _, m := range matches {
-		if len(m) < 3 {
-			continue
+	for _, line := range strings.Split(source, "\n") {
+		if sym, ok := declSym(strings.TrimSpace(line)); ok {
+			decls[sym] = true
 		}
-		sym := m[1]
-		args := strings.Split(m[2], ",")
-		decls[ast.PredicateSym{Symbol: sym, Arity: len(args)}] = true
 	}
 	return decls
 }
 
 // prependStdLibIfMissing returns `stdLib + "\n" + source` with each
-// std.dl Decl line removed if the caller has already declared a
-// predicate with the same symbol and arity, or if the predicate name
-// appears in the external predicate registry. Defining rules for
-// external predicates (e.g. `triple(S,P,O) :- quad(...).`) are also
-// removed, since an external predicate cannot have an IDB definition.
-// This makes the std.dl merge idempotent and prevents collisions
-// between external predicates and std.dl's built-in vocabulary.
+// std.dl Decl removed if the caller has already declared a predicate
+// with the same symbol and arity, or if the predicate name appears in
+// the external predicate registry. Whole clauses (rules AND facts,
+// including multi-line ones) whose head is an external predicate are
+// also removed: an external predicate cannot have an IDB definition,
+// and base facts for it would shadow the Go callback. This makes the
+// std.dl merge idempotent and prevents collisions between external
+// predicates and std.dl's built-in vocabulary.
 func prependStdLibIfMissing(stdLib, source string, callerDecls map[ast.PredicateSym]bool, extPredNames map[string]bool) string {
 	if len(callerDecls) == 0 && len(extPredNames) == 0 {
 		return stdLib + "\n" + source
 	}
 	var filtered strings.Builder
+	skippingClause := false
 	for _, line := range strings.Split(stdLib, "\n") {
 		trimmed := strings.TrimSpace(line)
+
+		// Continuation lines of a multi-line statement being dropped.
+		if skippingClause {
+			if strings.HasSuffix(trimmed, ".") {
+				skippingClause = false
+			}
+			continue
+		}
+
+		drop := false
 		if strings.HasPrefix(trimmed, "Decl ") {
-			declRE := regexp.MustCompile(`^Decl\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*\.`)
-			if mm := declRE.FindStringSubmatch(trimmed); mm != nil {
-				arity := len(strings.Split(mm[2], ","))
-				sym := mm[1]
-				if callerDecls[ast.PredicateSym{Symbol: sym, Arity: arity}] {
-					continue
-				}
-				if extPredNames[sym] {
-					continue
-				}
+			if sym, ok := declSym(trimmed); ok {
+				drop = callerDecls[sym] || extPredNames[sym.Symbol]
+			}
+		} else if len(extPredNames) > 0 && !strings.HasPrefix(trimmed, "%") && !strings.HasPrefix(trimmed, "//") {
+			if mm := clauseHeadRE.FindStringSubmatch(trimmed); mm != nil && extPredNames[mm[1]] {
+				drop = true
 			}
 		}
-		// Remove defining rules for external predicates (e.g. `triple(S,P,O) :- quad(...).`)
-		// An external predicate must not have an IDB definition in the combined unit.
-		if len(extPredNames) > 0 && !strings.HasPrefix(trimmed, "%") && !strings.HasPrefix(trimmed, "//") {
-			headRE := regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
-			if mm := headRE.FindStringSubmatch(trimmed); mm != nil {
-				if extPredNames[mm[1]] && strings.Contains(line, ":-") {
-					continue
-				}
+		if drop {
+			// Statement may span multiple lines; skip until the
+			// terminating "." if this line doesn't carry it.
+			if !strings.HasSuffix(trimmed, ".") {
+				skippingClause = true
 			}
+			continue
 		}
+
 		filtered.WriteString(line)
 		filtered.WriteString("\n")
 	}

@@ -31,8 +31,9 @@ func (d *DummyAction) Metadata() core.ActionMetadata {
 
 func TestServe_Success(t *testing.T) {
 	ctx := context.Background()
-	// Create client with dummy action
-	client, err := sdk.NewClient(ctx)
+	// Create client with dummy action and steering enabled so
+	// EvaluateSteering can route requests via Datalog.
+	client, err := sdk.NewClient(ctx, sdk.WithSteeringEnabled())
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}

@@ -60,6 +60,17 @@ func WithFailMode(mode string) ClientOption {
 	}
 }
 
+// WithSteeringEnabled enables the EvaluateSteering Datalog path,
+// allowing policy-driven routing (route/retry) to control which
+// action runs next. Steering is disabled by default; the YAML
+// config path also sets it via cfg.Policy.SteeringEnabled.
+func WithSteeringEnabled() ClientOption {
+	return func(c *Client) error {
+		c.steeringEnabled = true
+		return nil
+	}
+}
+
 // WithLogger sets a custom logger for the client.
 //
 // Parameters:

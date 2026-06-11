@@ -91,6 +91,50 @@ func (m *HybridMemory) Recall(ctx context.Context, query string) (string, error)
 	return sb.String(), nil
 }
 
+// Ensure HybridMemory also implements the extended facts interface.
+var _ core.AgentMemoryWithFacts = (*HybridMemory)(nil)
+
+// RecallWithFacts retrieves relevant context like Recall, and additionally
+// returns the retrieved document IDs as `memory_hit_N` metadata entries.
+// The runtime merges these into the envelope metadata, where the policy
+// engine exposes them as meta("memory_hit_N", DocID) facts — the hook
+// access-control policies use to gate which retrieved documents a
+// request may carry (see hybrid_rag's unauthorized_hit rule).
+func (m *HybridMemory) RecallWithFacts(ctx context.Context, query string) (string, map[string]any, error) {
+	if m.Vectors == nil {
+		return "", nil, nil
+	}
+
+	topK := m.TopK
+	if topK <= 0 {
+		topK = 3
+	}
+
+	ids, err := m.Vectors.Search(ctx, query, topK)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to search vectors: %w", err)
+	}
+	if len(ids) == 0 {
+		return "", nil, nil
+	}
+
+	facts := make(map[string]any, len(ids))
+	var sb strings.Builder
+	hit := 0
+	for _, id := range ids {
+		content, err := m.Vectors.Get(ctx, id)
+		if err != nil {
+			continue
+		}
+		facts[fmt.Sprintf("memory_hit_%d", hit)] = id
+		hit++
+		sb.WriteString(content)
+		sb.WriteString("\n---\n")
+	}
+
+	return sb.String(), facts, nil
+}
+
 // Memorize stores a new interaction (Input/Output) for future recall.
 func (m *HybridMemory) Memorize(ctx context.Context, query string, answer string) error {
 	if m.Vectors == nil {

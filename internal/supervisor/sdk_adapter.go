@@ -14,6 +14,33 @@ type sdkEvaluatorAdapter struct {
 	inner core.Evaluator
 }
 
+// preCheckCtxKey carries the caller's envelope context through the
+// ReasoningPort interface, whose Verify/VerifyAtoms signatures have no
+// envelope parameter.
+type preCheckCtxKey struct{}
+
+// preCheckContext is the request context the supervised pre-flight
+// check needs to evaluate policies faithfully: the action name (for
+// action_operation/2), the caller's metadata (for meta/2), security
+// labels (for label/1), and any explicit facts on the input envelope.
+// Without it, the pre-check sees only payload-derived quads and
+// policies gated on action/metadata/labels can never fire.
+type preCheckContext struct {
+	actionName string
+	metadata   map[string]any
+	labels     []string
+	facts      []string
+}
+
+func withPreCheckContext(ctx context.Context, pc *preCheckContext) context.Context {
+	return context.WithValue(ctx, preCheckCtxKey{}, pc)
+}
+
+func preCheckFromContext(ctx context.Context) *preCheckContext {
+	pc, _ := ctx.Value(preCheckCtxKey{}).(*preCheckContext)
+	return pc
+}
+
 func (a *sdkEvaluatorAdapter) Verify(ctx context.Context, subject interface{}, genome []domain.DomainGene) (*domain.AuditResult, error) {
 	// Fail-closed: unknown types are treated as a Tier-0 violation.
 	atoms, ok := subject.([]domain.Atom)
@@ -28,7 +55,8 @@ func (a *sdkEvaluatorAdapter) Verify(ctx context.Context, subject interface{}, g
 }
 
 func (a *sdkEvaluatorAdapter) VerifyAtoms(ctx context.Context, atoms []domain.Atom, genome []domain.DomainGene) (*domain.AuditResult, error) {
-	if len(atoms) == 0 {
+	pc := preCheckFromContext(ctx)
+	if len(atoms) == 0 && pc == nil {
 		return &domain.AuditResult{Pass: true}, nil
 	}
 
@@ -42,6 +70,21 @@ func (a *sdkEvaluatorAdapter) VerifyAtoms(ctx context.Context, atoms []domain.At
 	env := core.Envelope{
 		Facts:    facts,
 		Metadata: make(map[string]any),
+	}
+
+	// Reflect the caller's request context into the assessment envelope
+	// so policies gated on action_operation/2, meta/2, or label/1 fire
+	// on the supervised execution path, not just on direct AssessPlan.
+	if pc != nil {
+		for k, v := range pc.metadata {
+			env.Metadata[k] = v
+		}
+		env.SecurityLabels = append(env.SecurityLabels, pc.labels...)
+		env.Facts = append(env.Facts, pc.facts...)
+		if pc.actionName != "" {
+			env.Facts = append(env.Facts,
+				fmt.Sprintf("action_operation(%q, %q).", core.EntityInput, pc.actionName))
+		}
 	}
 
 	decision, err := a.inner.AssessPlan(ctx, env)
@@ -189,7 +232,18 @@ func (a *supervisedActionV2) Execute(ctx context.Context, input core.Envelope) (
 		}
 	}
 
-	result, err := a.inner.ExecuteInternal(ctx, "default", payload)
+	// Thread the caller's envelope context (action name, metadata,
+	// security labels, explicit facts) through to the pre-flight check.
+	// ExecuteInternal only receives the payload; without this, policies
+	// gated on action_operation/meta/label can never fire.
+	pc := &preCheckContext{
+		actionName: a.wrapped.Metadata().Name,
+		metadata:   input.Metadata,
+		labels:     input.SecurityLabels,
+		facts:      input.Facts,
+	}
+
+	result, err := a.inner.ExecuteInternal(withPreCheckContext(ctx, pc), "default", payload)
 	if err != nil {
 		return core.Envelope{}, err
 	}
