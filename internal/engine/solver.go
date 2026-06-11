@@ -250,6 +250,23 @@ func (e *PolicyEngine) LoadPolicy(ctx context.Context, policy string) error {
 	return nil
 }
 
+// LoadFromSource loads a Datalog program from a raw string, replacing
+// any existing program state. Unlike LoadPolicy (which routes to
+// AddPolicy), this path also scans the external-predicate registry
+// and auto-emits the matching `Decl ... external()` declarations.
+// Use this when the policy references external predicates that were
+// registered via RegisterExternalPredicate.
+func (e *PolicyEngine) LoadFromSource(ctx context.Context, source string) error {
+	_ = ctx
+	if source == "" {
+		return nil
+	}
+	if err := e.runtime.LoadFromSource(source); err != nil {
+		return fmt.Errorf("failed to load policy from source: %w", err)
+	}
+	return nil
+}
+
 // LoadGherkinPolicy loads a Gherkin feature file and compiles it to Datalog.
 // This enables BDD-style policy definitions using natural language.
 //

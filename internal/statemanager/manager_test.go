@@ -51,6 +51,10 @@ func (m *mockEvaluator) LoadPolicy(ctx context.Context, policy string) error {
 	return nil
 }
 
+func (m *mockEvaluator) LoadGherkinPolicy(ctx context.Context, featureContent string) error {
+	return nil
+}
+
 func (m *mockEvaluator) AssessPlan(ctx context.Context, input core.Envelope) (core.Decision, error) {
 	return core.Decision{Outcome: core.DecisionProceed}, nil
 }

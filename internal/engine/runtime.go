@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -17,6 +18,8 @@ import (
 	"codeberg.org/TauCeti/mangle-go/engine"
 	"codeberg.org/TauCeti/mangle-go/factstore"
 	"codeberg.org/TauCeti/mangle-go/parse"
+
+	"github.com/duynguyendang/manglekit/internal/engine/resources"
 )
 
 // ExternalPredicate is a simple function type for external predicates.
@@ -438,12 +441,40 @@ func (r *MangleRuntime) Load(path string) error {
 
 // LoadFromSource parses and loads a full Datalog program from a string.
 // REPLACES current state.
+//
+// Unlike AddPolicy, this path scans the external-predicate registry
+// and auto-emits the matching `Decl ... external()` declarations. It
+// also implicitly merges the Manglekit standard library (std.dl) so
+// callers do not have to re-declare meta/2, triple/3, halt/2, etc.
+//
+// The std.dl merge is idempotent: if the caller's source already
+// declares a predicate with the same symbol and arity as one in
+// std.dl (e.g. the caller explicitly wants to mark a predicate as
+// `Decl ... external()`), the std.dl declaration for that
+// predicate is skipped. This avoids the "cannot redeclare" error
+// that would otherwise reject otherwise-valid policies.
 func (r *MangleRuntime) LoadFromSource(source string) error {
 	if source == "" {
 		return fmt.Errorf("source cannot be empty")
 	}
 
-	cleaned := cleanSource(source)
+	// Discover which predicate symbols/arity pairs the caller's
+	// source already declares, so we can filter the std.dl merge
+	// to only the predicates the caller did NOT declare.
+	callerDecls := collectCallerDecls(source)
+
+	// Also collect external predicate names from the registry so
+	// std.dl Decl and defining rules for those names can be
+	// filtered out. An external predicate cannot coexist with a
+	// std.dl IDB of the same name.
+	extPredRegistry := r.externalPreds.List()
+	extPredNames := make(map[string]bool, len(extPredRegistry))
+	for name := range extPredRegistry {
+		extPredNames[name] = true
+	}
+
+	combined := prependStdLibIfMissing(resources.StdLib(), source, callerDecls, extPredNames)
+	cleaned := cleanSource(combined)
 	unit, err := parse.Unit(strings.NewReader(cleaned))
 	if err != nil {
 		return fmt.Errorf("failed to parse source: %w", err)
@@ -455,7 +486,6 @@ func (r *MangleRuntime) LoadFromSource(source string) error {
 	// Add external predicates as extra declarations BEFORE analysis
 	// Infer arity and mode from the parsed policy
 	edbDeclarations := make(map[ast.PredicateSym]ast.Decl)
-	extPredNames := r.externalPreds.List()
 	for name := range extPredNames {
 		arity, mode := findPredicateUsage(unit, name)
 		if arity < 0 {
@@ -477,6 +507,9 @@ func (r *MangleRuntime) LoadFromSource(source string) error {
 		IdbPredicates: programInfo.IdbPredicates,
 		Rules:         programInfo.Rules,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to stratify program: %w", err)
+	}
 
 	// Create new store (resetting old facts if this is a full reload)
 	newBaseStore := factstore.NewSimpleInMemoryStore()
@@ -485,6 +518,17 @@ func (r *MangleRuntime) LoadFromSource(source string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Preserve any base facts the caller loaded before this policy
+	// reload (e.g. a knowledge graph injected via LoadFacts). The
+	// policy rules are replaced, but the base knowledge should
+	// survive — otherwise a second LoadFromSource wipes the graph
+	// the policy needs to reason about.
+	if r.ready {
+		merged := factstore.NewSimpleInMemoryStore()
+		merged.Merge(r.baseFactStore)
+		newBaseStore = merged
+	}
+
 	r.ruleUnits = newRuleUnits
 	r.baseFactStore = newBaseStore
 	r.programInfo = programInfo
@@ -492,7 +536,7 @@ func (r *MangleRuntime) LoadFromSource(source string) error {
 	r.predToStratum = predToStratum
 	r.ready = true
 
-	// Evaluate with empty base store
+	// Evaluate with the merged base store
 	if err := r.evaluate(r.baseFactStore); err != nil {
 		return fmt.Errorf("failed to evaluate program: %w", err)
 	}
@@ -654,7 +698,12 @@ func (r *MangleRuntime) QueryWithSolutions(ctx context.Context, facts []ast.Atom
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if _, err := engine.EvalStratifiedProgramWithStats(pInfo, strata, pStratum, workingStore); err != nil {
+	// Build eval options so external predicates (e.g. pii_scan) are
+	// invoked during query evaluation. Without this, the external
+	// callbacks never fire and queries against pii_scan/1 return
+	// zero solutions.
+	evalOpts := r.buildEvalOptions()
+	if _, err := engine.EvalStratifiedProgramWithStats(pInfo, strata, pStratum, workingStore, evalOpts...); err != nil {
 		return fmt.Errorf("evaluation failed: %w", err)
 	}
 
@@ -1061,4 +1110,72 @@ func findPredicateUsage(unit parse.SourceUnit, name string) (int, []string) {
 		}
 	}
 	return -1, nil
+}
+
+// collectCallerDecls scans the caller's source for `Decl pred(...)` lines
+// and returns the set of (symbol, arity) pairs the caller has already
+// declared. We use this to filter the std.dl merge in LoadFromSource so
+// callers that already declare a std predicate (e.g. to mark it as
+// external()) don't get a "cannot redeclare" error.
+//
+// The parser is intentionally permissive: we don't need a full Mangle
+// parse to discover Decl lines — a regex over the raw source is
+// sufficient and avoids the cost of parsing twice.
+func collectCallerDecls(source string) map[ast.PredicateSym]bool {
+	decls := make(map[ast.PredicateSym]bool)
+	declRE := regexp.MustCompile(`(?m)^\s*Decl\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*\.`)
+	matches := declRE.FindAllStringSubmatch(source, -1)
+	for _, m := range matches {
+		if len(m) < 3 {
+			continue
+		}
+		sym := m[1]
+		args := strings.Split(m[2], ",")
+		decls[ast.PredicateSym{Symbol: sym, Arity: len(args)}] = true
+	}
+	return decls
+}
+
+// prependStdLibIfMissing returns `stdLib + "\n" + source` with each
+// std.dl Decl line removed if the caller has already declared a
+// predicate with the same symbol and arity, or if the predicate name
+// appears in the external predicate registry. Defining rules for
+// external predicates (e.g. `triple(S,P,O) :- quad(...).`) are also
+// removed, since an external predicate cannot have an IDB definition.
+// This makes the std.dl merge idempotent and prevents collisions
+// between external predicates and std.dl's built-in vocabulary.
+func prependStdLibIfMissing(stdLib, source string, callerDecls map[ast.PredicateSym]bool, extPredNames map[string]bool) string {
+	if len(callerDecls) == 0 && len(extPredNames) == 0 {
+		return stdLib + "\n" + source
+	}
+	var filtered strings.Builder
+	for _, line := range strings.Split(stdLib, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Decl ") {
+			declRE := regexp.MustCompile(`^Decl\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*\.`)
+			if mm := declRE.FindStringSubmatch(trimmed); mm != nil {
+				arity := len(strings.Split(mm[2], ","))
+				sym := mm[1]
+				if callerDecls[ast.PredicateSym{Symbol: sym, Arity: arity}] {
+					continue
+				}
+				if extPredNames[sym] {
+					continue
+				}
+			}
+		}
+		// Remove defining rules for external predicates (e.g. `triple(S,P,O) :- quad(...).`)
+		// An external predicate must not have an IDB definition in the combined unit.
+		if len(extPredNames) > 0 && !strings.HasPrefix(trimmed, "%") && !strings.HasPrefix(trimmed, "//") {
+			headRE := regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
+			if mm := headRE.FindStringSubmatch(trimmed); mm != nil {
+				if extPredNames[mm[1]] && strings.Contains(line, ":-") {
+					continue
+				}
+			}
+		}
+		filtered.WriteString(line)
+		filtered.WriteString("\n")
+	}
+	return filtered.String() + source
 }
