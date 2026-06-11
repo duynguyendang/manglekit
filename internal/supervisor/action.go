@@ -106,7 +106,45 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 	// 5. Reflect (Post-Execution Validation)
 	// Flatten the result output to facts using the engine's output entity ID
 	outFacts := g.flattenToQuads(core.EntityOutput, result.Payload)
-	// Optional: g.verifier.VerifyAtoms(ctx, outFacts...)
+	// Convert output quads to atoms for verification
+	outAtoms := make([]domain.Atom, len(outFacts))
+	for i, q := range outFacts {
+		outAtoms[i] = domain.Atom{
+			Subject:   q.Subject,
+			Predicate: q.Predicate,
+			Object:    q.Object,
+			Weight:    1.0,
+		}
+	}
+
+	// Run post-check: thread the output entity ID so VerifyAtoms
+	// constructs action_operation("Output", ActionName) instead of
+	// action_operation("Req", ActionName).
+	postCheckPC := preCheckFromContext(ctx)
+	if postCheckPC != nil {
+		// Clone for post-check with output entity
+		postCheckPC = &preCheckContext{
+			actionName: postCheckPC.actionName,
+			metadata:   postCheckPC.metadata,
+			labels:     postCheckPC.labels,
+			facts:      postCheckPC.facts,
+			entityID:   core.EntityOutput,
+		}
+		postCtx := withPreCheckContext(ctx, postCheckPC)
+		if res, err := g.verifier.VerifyAtoms(postCtx, outAtoms, activeGenes); err == nil && !res.Pass {
+			envelope.Violations = append(envelope.Violations, core.ViolationRule{
+				RuleID:      res.ConflictPath,
+				Description: "Supervisor post-check (Reflect) failed.",
+				Severity:    0,
+			})
+			return domain.Envelope{}, core.NewPolicyViolationError(
+				string(res.ViolationTier),
+				res.ConflictPath,
+				"Supervisor post-check (Reflect) failed.",
+				"",
+			)
+		}
+	}
 
 	result.ContextFacts = append(result.ContextFacts, outFacts...)
 

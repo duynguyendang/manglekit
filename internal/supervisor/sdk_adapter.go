@@ -25,11 +25,18 @@ type preCheckCtxKey struct{}
 // labels (for label/1), and any explicit facts on the input envelope.
 // Without it, the pre-check sees only payload-derived quads and
 // policies gated on action/metadata/labels can never fire.
+//
+// entityID controls which entity the action_operation fact is bound to:
+//   - core.EntityInput ("Req") for pre-check
+//   - core.EntityOutput ("Output") for post-check (Reflect)
+//
+// See docs/precheck-fact-contract.md for the versioned guarantee.
 type preCheckContext struct {
 	actionName string
 	metadata   map[string]any
 	labels     []string
 	facts      []string
+	entityID   string // "Req" (pre-check) or "Output" (post-check)
 }
 
 func withPreCheckContext(ctx context.Context, pc *preCheckContext) context.Context {
@@ -82,9 +89,33 @@ func (a *sdkEvaluatorAdapter) VerifyAtoms(ctx context.Context, atoms []domain.At
 		env.SecurityLabels = append(env.SecurityLabels, pc.labels...)
 		env.Facts = append(env.Facts, pc.facts...)
 		if pc.actionName != "" {
+			entityID := pc.entityID
+			if entityID == "" {
+				entityID = core.EntityInput // backward compat
+			}
 			env.Facts = append(env.Facts,
-				fmt.Sprintf("action_operation(%q, %q).", core.EntityInput, pc.actionName))
+				fmt.Sprintf("action_operation(%q, %q).", entityID, pc.actionName))
 		}
+	}
+
+	entityID := core.EntityInput
+	if pc != nil && pc.entityID != "" {
+		entityID = pc.entityID
+	}
+
+	// Post-check: call Reflect instead of AssessPlan so the engine
+	// evaluates halt("Output", ...) rules.
+	if entityID == core.EntityOutput && pc != nil && pc.actionName != "" {
+		actionMeta := core.ActionMetadata{Name: pc.actionName}
+		_, reflectErr := a.inner.Reflect(ctx, actionMeta, env)
+		if reflectErr != nil {
+			return &domain.AuditResult{
+				Pass:          false,
+				ViolationTier: domain.Tier1Admin,
+				ConflictPath:  "sdk_adapter.post_check",
+			}, nil
+		}
+		return &domain.AuditResult{Pass: true}, nil
 	}
 
 	decision, err := a.inner.AssessPlan(ctx, env)
@@ -241,6 +272,7 @@ func (a *supervisedActionV2) Execute(ctx context.Context, input core.Envelope) (
 		metadata:   input.Metadata,
 		labels:     input.SecurityLabels,
 		facts:      input.Facts,
+		entityID:   core.EntityInput,
 	}
 
 	result, err := a.inner.ExecuteInternal(withPreCheckContext(ctx, pc), "default", payload)

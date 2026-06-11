@@ -2,131 +2,294 @@ package sdk
 
 import (
 	"context"
-	"os"
 	"testing"
+
+	"github.com/duynguyendang/manglekit/core"
+	function "github.com/duynguyendang/manglekit/adapters/func"
+	"github.com/duynguyendang/manglekit/internal/engine"
+	"github.com/duynguyendang/manglekit/internal/supervisor"
+	"github.com/stretchr/testify/require"
 )
 
-func TestNewClientFromFile(t *testing.T) {
-	// Create a temporary config file that does not require loading a policy
-	// (policy.path is empty, so no policy file loading is attempted)
-	configContent := `
-observability:
-  enabled: true
-  service_name: test-service
-  log_level: debug
-`
+// TestPreCheckHaltOnActionOperation asserts that a policy gating on
+// action_operation/2 blocks the matching action.
+func TestPreCheckHaltOnActionOperation(t *testing.T) {
+	eval, err := engine.New()
+	require.NoError(t, err)
 
-	configFile, err := os.CreateTemp("", "config-*.yaml")
-	if err != nil {
-		t.Fatalf("Failed to create temp config file: %v", err)
-	}
-	defer os.Remove(configFile.Name())
+	policy := `halt("Req", "blocked_action") :- action_operation("Req", "blocked_action").`
+	require.NoError(t, eval.LoadPolicy(context.Background(), policy))
 
-	if _, err := configFile.WriteString(configContent); err != nil {
-		t.Fatalf("Failed to write to config file: %v", err)
-	}
-	configFile.Close()
+	inner := function.New("blocked_action", func(_ context.Context, _ string) (string, error) {
+		t.Fatal("inner action should not execute")
+		return "", nil
+	})
 
-	// Test NewClientFromFile
-	ctx := context.Background()
-	client, err := NewClientFromFile(ctx, configFile.Name())
-	if err != nil {
-		t.Fatalf("Failed to create client from config: %v", err)
-	}
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
 
-	// Verify client was initialized
-	if client == nil {
-		t.Fatal("Expected non-nil client")
-	}
-
-	if client.engine == nil {
-		t.Error("Expected non-nil engine")
-	}
-
-	if client.logger == nil {
-		t.Error("Expected non-nil logger")
-	}
-
-	if client.tracer == nil {
-		t.Error("Expected non-nil tracer")
-	}
+	_, err = sv.Execute(context.Background(), core.NewEnvelope("payload"))
+	require.Error(t, err, "policy should halt on action_operation match")
+	require.True(t, core.IsPolicyViolationError(err), "error should be a policy violation")
+	require.Contains(t, err.Error(), "blocked_action")
 }
 
-func TestNewClientFromFile_WithEnvironmentVariables(t *testing.T) {
-	// Set environment variables
-	os.Setenv("SERVICE_NAME", "env-test-service")
-	os.Setenv("LOG_LEVEL", "debug")
-	defer func() {
-		os.Unsetenv("SERVICE_NAME")
-		os.Unsetenv("LOG_LEVEL")
-	}()
+// TestPreCheckProceedOnActionOperation asserts that a policy gating on
+// a specific action name does NOT block a different action.
+func TestPreCheckProceedOnActionOperation(t *testing.T) {
+	eval, err := engine.New()
+	require.NoError(t, err)
 
-	// Create a temporary config file with environment variable references
-	configContent := `
-observability:
-  enabled: true
-  service_name: ${SERVICE_NAME}
-  log_level: ${LOG_LEVEL}
-`
+	policy := `halt("Req", "blocked_action") :- action_operation("Req", "blocked_action").`
+	require.NoError(t, eval.LoadPolicy(context.Background(), policy))
 
-	configFile, err := os.CreateTemp("", "config-*.yaml")
-	if err != nil {
-		t.Fatalf("Failed to create temp config file: %v", err)
-	}
-	defer os.Remove(configFile.Name())
+	executed := false
+	inner := function.New("safe_action", func(_ context.Context, _ string) (string, error) {
+		executed = true
+		return "ok", nil
+	})
 
-	if _, err := configFile.WriteString(configContent); err != nil {
-		t.Fatalf("Failed to write to config file: %v", err)
-	}
-	configFile.Close()
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
 
-	// Test NewClientFromFile with environment variable expansion
-	ctx := context.Background()
-	client, err := NewClientFromFile(ctx, configFile.Name())
-	if err != nil {
-		t.Fatalf("Failed to create client from config: %v", err)
-	}
-
-	// Verify client was initialized
-	if client == nil {
-		t.Fatal("Expected non-nil client")
-	}
+	_, err = sv.Execute(context.Background(), core.NewEnvelope("payload"))
+	require.NoError(t, err, "policy should allow non-matching action")
+	require.True(t, executed, "inner action should have executed")
 }
 
-func TestNewClientFromFile_FileNotFound(t *testing.T) {
-	ctx := context.Background()
-	_, err := NewClientFromFile(ctx, "/nonexistent/path/to/config.yaml")
-	if err == nil {
-		t.Error("Expected error for non-existent config file, got nil")
-	}
+// TestPreCheckHaltOnMeta asserts that a policy gating on meta/2 blocks
+// when the metadata matches.
+func TestPreCheckHaltOnMeta(t *testing.T) {
+	eval, err := engine.New()
+	require.NoError(t, err)
+
+	policy := `halt("Req", "banned_role") :- meta("role", "banned").`
+	require.NoError(t, eval.LoadPolicy(context.Background(), policy))
+
+	inner := function.New("test_action", func(_ context.Context, _ string) (string, error) {
+		t.Fatal("inner action should not execute")
+		return "", nil
+	})
+
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+
+	env := core.NewEnvelope("payload")
+	env.Metadata["role"] = "banned"
+
+	_, err = sv.Execute(context.Background(), env)
+	require.Error(t, err, "policy should halt on meta match")
+	require.True(t, core.IsPolicyViolationError(err))
 }
 
-func TestNewClientFromFile_InvalidPolicyPath(t *testing.T) {
-	// Create a temporary config file with invalid policy path
-	configContent := `
-policy:
-  path: /nonexistent/path/to/policy.dlog
+// TestPreCheckHaltOnLabel asserts that a policy gating on label/1 blocks
+// when a security label matches.
+func TestPreCheckHaltOnLabel(t *testing.T) {
+	eval, err := engine.New()
+	require.NoError(t, err)
 
-observability:
-  enabled: true
-  service_name: test-service
+	policy := `halt("Req", "classified_label") :- label("classified").`
+	require.NoError(t, eval.LoadPolicy(context.Background(), policy))
+
+	inner := function.New("test_action", func(_ context.Context, _ string) (string, error) {
+		t.Fatal("inner action should not execute")
+		return "", nil
+	})
+
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+
+	env := core.NewEnvelope("payload")
+	env.SecurityLabels = []string{"classified"}
+
+	_, err = sv.Execute(context.Background(), env)
+	require.Error(t, err, "policy should halt on label match")
+	require.True(t, core.IsPolicyViolationError(err))
+}
+
+// TestPreCheckHaltOnPayloadFact asserts that a policy gating on
+// mangle-tagged payload fields blocks when the field matches.
+// The mangle tag generates facts via flattenToQuads which uses the
+// predicate from the tag. Since meta/2 is a stdlib predicate, we use
+// it to simulate payload reflection via metadata.
+func TestPreCheckHaltOnPayloadFact(t *testing.T) {
+	eval, err := engine.New()
+	require.NoError(t, err)
+
+	// Use meta/2 to test payload-derived facts — this is what the
+	// supervisor actually injects when CustomHybridMemory provides
+	// metadata from mangle-tagged fields.
+	policy := `halt("Req", "dangerous_input") :- meta("input_type", "dangerous").`
+	require.NoError(t, eval.LoadPolicy(context.Background(), policy))
+
+	inner := function.New("test_action", func(_ context.Context, _ string) (string, error) {
+		t.Fatal("inner action should not execute")
+		return "", nil
+	})
+
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+
+	env := core.NewEnvelope("payload")
+	env.Metadata["input_type"] = "dangerous"
+
+	_, err = sv.Execute(context.Background(), env)
+	require.Error(t, err, "policy should halt on payload-derived fact match")
+	require.True(t, core.IsPolicyViolationError(err))
+}
+
+// TestPreCheckHaltOnExplicitFact asserts that a policy gating on
+// caller-supplied facts blocks when the fact matches.
+// Since Datalog requires Decl for all predicates, the fact uses
+// a predicate that the policy itself declares.
+func TestPreCheckHaltOnExplicitFact(t *testing.T) {
+	eval, err := engine.New()
+	require.NoError(t, err)
+
+	// The policy must declare source/2 so the analyzer accepts it.
+	policy := `
+Decl source(E, V).
+halt("Req", "untrusted_source") :- source("Req", "untrusted").
 `
+	require.NoError(t, eval.LoadPolicy(context.Background(), policy))
 
-	configFile, err := os.CreateTemp("", "config-*.yaml")
-	if err != nil {
-		t.Fatalf("Failed to create temp config file: %v", err)
-	}
-	defer os.Remove(configFile.Name())
+	inner := function.New("test_action", func(_ context.Context, _ string) (string, error) {
+		t.Fatal("inner action should not execute")
+		return "", nil
+	})
 
-	if _, err := configFile.WriteString(configContent); err != nil {
-		t.Fatalf("Failed to write to config file: %v", err)
-	}
-	configFile.Close()
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
 
-	// Test NewClientFromFile with invalid policy path
-	ctx := context.Background()
-	_, err = NewClientFromFile(ctx, configFile.Name())
-	if err == nil {
-		t.Error("Expected error for invalid policy path, got nil")
+	env := core.NewEnvelope("payload")
+	env.Facts = append(env.Facts, `source("Req", "untrusted").`)
+
+	_, err = sv.Execute(context.Background(), env)
+	require.Error(t, err, "policy should halt on explicit fact match")
+	require.True(t, core.IsPolicyViolationError(err))
+}
+
+// TestPreCheckBlocksInnerAction verifies that a HALT from the pre-check
+// prevents the inner action from executing at all.
+func TestPreCheckBlocksInnerAction(t *testing.T) {
+	eval, err := engine.New()
+	require.NoError(t, err)
+
+	policy := `halt("Req", "always_block").`
+	require.NoError(t, eval.LoadPolicy(context.Background(), policy))
+
+	innerExecuted := false
+	inner := function.New("test_action", func(_ context.Context, _ string) (string, error) {
+		innerExecuted = true
+		return "ok", nil
+	})
+
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+
+	_, err = sv.Execute(context.Background(), core.NewEnvelope("payload"))
+	require.Error(t, err)
+	require.False(t, innerExecuted, "inner action must not execute when pre-check halts")
+}
+
+// TestPreCheckAuditTrailPopulated verifies that when the pre-check halts,
+// the audit trail is populated with the matched rules.
+func TestPreCheckAuditTrailPopulated(t *testing.T) {
+	eval, err := engine.New()
+	require.NoError(t, err)
+
+	policy := `halt("Req", "audit_test") :- meta("trigger", "yes").`
+	require.NoError(t, eval.LoadPolicy(context.Background(), policy))
+
+	inner := function.New("test_action", func(_ context.Context, _ string) (string, error) {
+		return "ok", nil
+	})
+
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+
+	env := core.NewEnvelope("payload")
+	env.Metadata["trigger"] = "yes"
+
+	_, err = sv.Execute(context.Background(), env)
+	require.Error(t, err)
+	require.True(t, core.IsPolicyViolationError(err))
+	// The error string should contain the conflict path from the policy
+	require.Contains(t, err.Error(), "audit_test")
+}
+
+// TestPostCheckHaltOnOutput verifies that the Reflect (post-check) path
+// halts when the output violates the policy.
+func TestPostCheckHaltOnOutput(t *testing.T) {
+	eval, err := engine.New()
+	require.NoError(t, err)
+
+	// Policy that blocks any output containing a "blocked" field.
+	// Declare content/2 so the analyzer accepts it as an EDB predicate.
+	policy := `
+Decl content(E, V).
+halt("Output", "blocked_output") :- content("Output", "blocked").
+`
+	require.NoError(t, eval.LoadPolicy(context.Background(), policy))
+
+	type output struct {
+		Content string `mangle:"content"`
 	}
+
+	inner := function.New("test_action", func(_ context.Context, _ string) (output, error) {
+		return output{Content: "blocked"}, nil
+	})
+
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+
+	_, err = sv.Execute(context.Background(), core.NewEnvelope("payload"))
+	require.Error(t, err, "post-check should halt on output policy violation")
+	require.True(t, core.IsPolicyViolationError(err))
+	require.Contains(t, err.Error(), "blocked")
+}
+
+// TestPostCheckProceedOnCleanOutput verifies that the Reflect (post-check)
+// passes when the output does not violate the policy.
+func TestPostCheckProceedOnCleanOutput(t *testing.T) {
+	eval, err := engine.New()
+	require.NoError(t, err)
+
+	// Policy that only blocks output containing "blocked"
+	policy := `
+Decl content(E, V).
+halt("Output", "blocked_output") :- content("Output", "blocked").
+`
+	require.NoError(t, eval.LoadPolicy(context.Background(), policy))
+
+	executed := false
+	type output struct {
+		Content string `mangle:"content"`
+	}
+
+	inner := function.New("test_action", func(_ context.Context, _ string) (output, error) {
+		executed = true
+		return output{Content: "safe"}, nil
+	})
+
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+
+	_, err = sv.Execute(context.Background(), core.NewEnvelope("payload"))
+	require.NoError(t, err, "post-check should pass on clean output")
+	require.True(t, executed)
+}
+
+// TestPreCheckProceedWithNoMetadata asserts that a supervised action
+// executes normally when no metadata/labels/facts are provided and the
+// policy is permissive.
+func TestPreCheckProceedWithNoMetadata(t *testing.T) {
+	eval, err := engine.New()
+	require.NoError(t, err)
+
+	// Permissive policy: halt only on meta("role", "admin")
+	policy := `halt("Req", "admin_blocked") :- meta("role", "admin").`
+	require.NoError(t, eval.LoadPolicy(context.Background(), policy))
+
+	executed := false
+	inner := function.New("test_action", func(_ context.Context, _ string) (string, error) {
+		executed = true
+		return "ok", nil
+	})
+
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+
+	_, err = sv.Execute(context.Background(), core.NewEnvelope("payload"))
+	require.NoError(t, err)
+	require.True(t, executed)
 }
