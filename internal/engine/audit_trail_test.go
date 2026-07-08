@@ -16,7 +16,7 @@ func TestPolicyEngine_QueryWithAudit(t *testing.T) {
 	}
 
 	// Add some test policies
-	err = engine.Runtime().AddPolicy(`
+	err = engine.Runtime().AddPolicy(context.Background(), `
 % Test governance rules - use different predicate names
 grant_access("reader", "read", "document").
 grant_access("writer", "write", "document").
@@ -55,7 +55,7 @@ func TestPolicyEngine_QueryWithAudit_NoMatch(t *testing.T) {
 		t.Fatalf("failed to create engine: %v", err)
 	}
 
-	err = engine.Runtime().AddPolicy(`
+	err = engine.Runtime().AddPolicy(context.Background(), `
 allow("reader", "read", "document").
 `)
 	if err != nil {

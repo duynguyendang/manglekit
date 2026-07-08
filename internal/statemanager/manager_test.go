@@ -42,7 +42,7 @@ type mockEvaluator struct {
 	loadedFacts []string
 }
 
-func (m *mockEvaluator) LoadFacts(facts []string) error {
+func (m *mockEvaluator) LoadFacts(ctx context.Context, facts []string) error {
 	m.loadedFacts = append(m.loadedFacts, facts...)
 	return nil
 }

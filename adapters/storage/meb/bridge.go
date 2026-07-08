@@ -176,9 +176,12 @@ func (b *KnowledgeBridge) StreamFacts(ctx context.Context, subject, predicate, o
 func (b *KnowledgeBridge) WithGraphID(graphID string) *KnowledgeBridge {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	bridge := *b
-	bridge.graphID = graphID
-	return &bridge
+	bridge := &KnowledgeBridge{
+		store:   b.store,
+		dict:    b.dict,
+		graphID: graphID,
+	}
+	return bridge
 }
 
 // ToMangleFact converts a MEB fact (Quad: S, P, O, G) to core.Fact format.

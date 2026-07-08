@@ -9,16 +9,16 @@
 It solves the **Stochastic Runtime Paradox** of modern AI: applications require **Deterministic Reliability** (strict protocols, type safety, logic), but LLMs are inherently **Probabilistic** (creative, non-deterministic).
 
 Manglekit bridges this gap by formalizing the agent lifecycle into an **OODA Loop** (Observe, Orient, Decide, Verify, Act) protected by a **Zero-Trust Supervisor** architecture:
-1.  **The Brain (Symbolic)**: The Datalog Engine and **Tiered GenePool** that handle verifiable reasoning and Shadow Audits.
+1.  **The Brain (Symbolic)**: The Datalog Engine and **Tiered GenePool** (the `.dl` policy set) that handle verifiable reasoning and fail-closed verification.
 2.  **The Planner (Neural)**: The Execution Runtime (Genkit) that drafts generative plans.
 3.  **The Memory (Silo)**: A persistent BadgerDB storage layer for SPO facts and vector embeddings.
 
 ## Core Capabilities
 
 1.  **OODA Loop Execution**: Orchestrates AI workflows using a structural Observe, Orient, Decide, Verify, Act pipeline.
-2.  **Shadow Audit (Self-Correction)**: The *Verify* step mathematically proves AI-generated plans against Tier 0 Axioms in the GenePool using Datalog *before* execution. If a policy is violated, the loop self-corrects using real-time generative feedback.
+2.  **Shadow Audit (Self-Correction)**: The *Verify* step evaluates AI-generated plans against the Tier 0/1/2 GenePool policies using Datalog *before* execution, in a **fail-closed** manner. If a policy is violated, the action is blocked rather than allowed through.
 3.  **The Silo (Persistent Knowledge)**: Native BadgerDB integration providing high-performance SPOg (Subject-Predicate-Object-Graph) quad indexing and vector storage for long-term memory.
-4.  **Source-to-Knowledge Pipeline**: Built-in extractors capable of ingesting Markdown/Code and dynamically inducing Tier 2 Datalog policies.
+4.  **Extractors**: Built-in extractors capable of ingesting Markdown/Code into structured data. (Dynamic rule induction is planned — see [ROADMAP.md](./ROADMAP.md).)
 5.  **Deep Observability**: Fully integrated OpenTelemetry tracing that links Genkit spans directly to logic rules, showing exactly *why* a decision was made.
 
 ## System Building Blocks
@@ -26,7 +26,7 @@ Manglekit bridges this gap by formalizing the agent lifecycle into an **OODA Loo
 | Component | Role | Responsibility |
 | :--- | :--- | :--- |
 | **SDK** | **Client** | The entry point. Developers use `client.SupervisedAction()` to wrap capabilities. |
-| **GenePool** | **Logic Store** | Datalog files (`.dl`) defining the Tier 0, 1, and 2 "Standard Operating Procedures". |
+| **GenePool** | **Logic Store** | Datalog files (`.dl`) defining the Tier 0, 1, and 2 "Standard Operating Procedures" enforced by the engine. |
 | **The Silo** | **Persistent Memory**| BadgerDB backed SPOg quad fact and vector storage. |
 | **Supervisor** | **Interceptor** | The zero-trust gateway that enforces the GenePool on every action. |
 | **Adapters** | **Drivers** | Universal adapters for LLMs (Genkit), Extractors, Tools (MCP), Functions, and Resilience. |
@@ -302,56 +302,39 @@ func main() {
 
 ---
 
-## Advanced: Integrating with GenePool (Policy Verification)
+## Advanced: Policy Verification with the GenePool (Datalog)
 
-The real power of Manglekit comes from integrating the OODA loop with the **GenePool** for policy-based verification:
+The real power of Manglekit is a fail-closed **supervisor** that verifies every
+action against a tiered set of Datalog policies — the **GenePool**. The GenePool is
+the *set of `.dl` policy files* the engine loads in tiers (Tier 0 axioms, Tier 1
+standard library, Tier 2 user policy); there is no separate Go "GenePool engine".
+Verification is performed by the live engine on every supervised action.
 
-### Step 1: Define Datalog Policies
+> Rule induction (learning new Tier-2 rules from experience) is **planned, not yet
+> built** — see [ROADMAP.md](./ROADMAP.md). Today you author policies directly as
+> `.dl` files.
+
+### Step 1: Define a Datalog Policy
 
 ```prolog
-% policies/main.dl
-
-% ==========================================
-% TIER 0: Immutable Core Axioms
-% ==========================================
+% policies/security_gate.dl
 
 % Allow by default
-allow(Req) :- request(Req).
+allow(Action) :- request(Action).
 
-% ==========================================
-% TIER 1: Governance Rules
-% ==========================================
+% Block unapproved production deploys
+deny(kubectl_deploy) :-
+    request(kubectl_deploy),
+    meta(target_env, "production"),
+    meta(has_approval, "false").
 
-% Require approval for high-risk actions
-deny(Req) :-
-    request(Req),
-    req_action(Req, Action),
-    Action == "delete_production".
-
-violation_msg("Cannot delete production resources without approval") :- deny(Req).
-
-% Budget limits
-deny(Req) :-
-    request(Req),
-    req_action(Req, "deploy"),
-    req_cost(Req, Cost),
-    Cost > 10000.
-
-violation_msg("Cost exceeds budget limit of $10,000") :- deny(Req).
-
-% ==========================================
-% TIER 2: AI-Induced Rules
-% =========================================%
-
-% Pattern-based security rules
-security_check(Req) :-
-    request(Req),
-    req_payload(Req, Text),
-    contains(Text, "password"),
-    contains(Text, "plaintext").
+% Block oversized replica scales (numeric pre-computed in Go)
+deny(kubectl_scale) :-
+    request(kubectl_scale),
+    scale_too_high(_).
 ```
 
-### Step 2: Implement Verifier with GenePool Integration
+### Step 2: Enforce the Policy via the Supervisor
 
 ```go
 package myapp
@@ -360,60 +343,49 @@ import (
     "context"
     "fmt"
 
-    "github.com/duynguyendang/manglekit/sdk/ooda"
-    "github.com/duynguyendang/manglekit/internal/genepool"
+    "github.com/duynguyendang/manglekit/core"
+    "github.com/duynguyendang/manglekit/sdk"
 )
 
-type PolicyVerifier struct {
-    pool *genepool.GenePool
-}
+func main() {
+    ctx := context.Background()
 
-func NewPolicyVerifier(pool *genepool.GenePool) *PolicyVerifier {
-    return &PolicyVerifier{pool: pool}
-}
-
-func (v *PolicyVerifier) Verify(ctx context.Context, frame *ooda.CognitiveFrame) error {
-    fmt.Printf("[VERIFY] Checking policies for: %s\n", frame.Intent)
-    
-    // Build Datalog query from frame
-    query := fmt.Sprintf(`request("%s"), req_action(Action).`, frame.Input)
-    
-    // Query GenePool
-    results, err := v.pool.Query(ctx, query)
+    // NewClient wires the live engine + fail-closed supervisor.
+    client, err := sdk.NewClient(ctx, sdk.WithBlueprintPath("policies/security_gate.dl"))
     if err != nil {
-        return fmt.Errorf("policy check failed: %w", err)
+        panic(err)
     }
-    
-    // Check results
-    if len(results) == 0 {
-        frame.Status = ooda.VerifyStatusPassed
-        frame.Proof = &ooda.AuditResult{
-            Pass: true,
-        }
-        return nil
+
+    // Build the action envelope (input facts + metadata) for an action.
+    env := core.NewEnvelope(nil)
+    env.Metadata["target_env"] = "production"
+    env.Metadata["has_approval"] = "false"
+
+    // Assess the action against the GenePool. The supervisor blocks
+    // this action before any side effect happens.
+    if err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_deploy"}, env); core.IsAlignmentError(err) {
+        fmt.Printf("🚫 Blocked by policy: %v\n", err)
     }
-    
-    // Check for violations
-    for _, result := range results {
-        if action, ok := result["Action"]; ok {
-            if action == "delete_production" {
-                frame.Status = ooda.VerifyStatusFailed
-                frame.Proof = &ooda.AuditResult{
-                    Pass:           false,
-                    ViolationTier:  ooda.Tier1Admin,
-                    TierID:         "governance-001",
-                    ConflictPath:   "main.dl:15",
-                    EntropyDelta:   0.5,
-                }
-                return fmt.Errorf("policy violation: cannot delete production")
-            }
-        }
+
+    // Approve it and re-assess — now it passes.
+    env.Metadata["has_approval"] = "true"
+    if err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_deploy"}, env); err != nil {
+        fmt.Printf("🚫 Blocked: %v\n", err)
+    } else {
+        fmt.Println("✅ Allowed: approved production deploy.")
     }
-    
-    frame.Status = ooda.VerifyStatusPassed
-    return nil
+
+    // Or wrap a real core.Action so its Execute() is gated:
+    // supervised := client.Supervise(myAction)
 }
+
+// Any core.Action (e.g. an adapter from adapters/func, adapters/ai, or your own)
+// can be passed to client.Supervise so its Execute() runs behind the same gate.
 ```
+
+A fully worked, runnable version of this gate (replica limits, business-hour
+destroys, open security groups) lives in
+[`manglekit-examples/devops_policy_gate`](https://github.com/duynguyendang/manglekit-examples).
 
 ---
 
@@ -770,7 +742,6 @@ manglekit/
 ├── internal/           # Private Implementation
 │   ├── engine/         # The Datalog Logic Engine (Solver, Runtime)
 │   ├── supervisor/     # The Governance Interceptor
-│   ├── genepool/       # Tiered Policy Management
 │   └── ...
 ├── sdk/                # The User-Facing API (Client, Loop)
 │   └── ooda/          # OODA Loop Implementation
@@ -1035,7 +1006,7 @@ Manglekit is a **Sovereign Logic Kernel** built on four core layers:
     *   **Observe**: Ingest raw signals and extract logical quad facts (SPOg) and embeddings into The Silo.
     *   **Orient**: Align input context against The Silo and Tiered Policy Rules.
     *   **Decide**: Generate an execution plan via the LLM Driver.
-    *   **Verify**: Mathematically prove the execution plan against Datalog GenePool policies (Shadow Audit).
+    *   **Verify**: Evaluate the execution plan against Datalog GenePool policies (fail-closed Shadow Audit).
     *   **Act**: Safely execute capability (Tool, API Call) through the Zero-Trust Supervisor.
 
 ### Layer 3: The Zero-Trust Supervisor (Interceptor)
@@ -1049,7 +1020,7 @@ Manglekit is a **Sovereign Logic Kernel** built on four core layers:
 *   **Role**: The deterministic reasoning and storage layer.
 *   **Components**:
     *   **The Silo**: Persistent BadgerDB storage for metadata, vectors, and facts (Quads).
-    *   **Tiered GenePool**: Segregates policies by trust level limits (Axioms, Governance, AI-induced).
+    *   **Tiered GenePool**: The set of `.dl` policy files the engine loads by trust level (Axioms, Governance, User). AI-induced rule learning is planned — see ROADMAP.md.
     *   **Policy Solver**: Robust Datalog Evaluator supporting comparisons (`:ge`/`:le`/`:gt`/`:lt`), negation (`!`), aggregation (`fn:sum`/`fn:max`/`fn:min`/`fn:count`), arithmetic (`fn:mult`/`fn:div`/`fn:plus`/`fn:minus`), and stratified execution.
 *   **Guarantees**: Fast (microsecond latency), deterministic, testable, verifiable.
 

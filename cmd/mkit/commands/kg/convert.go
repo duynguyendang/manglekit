@@ -36,11 +36,8 @@ var ConvertCmd = &cobra.Command{
 			ext := filepath.Ext(inFile)
 			switch ext {
 			case ".ttl":
-				// Turtle not supported in current quad version apparently, use nquads as fallback or error?
-				// return fmt.Errorf("turtle format not supported in this version")
-				// User explicitly asked for it, but if it's missing...
-				// I'll leave a TODO or try to map .ttl to something else if possible? No.
-				return fmt.Errorf("turtle format (.ttl) is currently not supported")
+				// Turtle is not supported by the underlying quad reader.
+				return fmt.Errorf("turtle (.ttl) is not supported; convert it to .nq/.nt first")
 			case ".nq":
 				format = "nquads"
 			case ".nt":
@@ -55,7 +52,7 @@ var ConvertCmd = &cobra.Command{
 		var r quad.Reader
 		switch format {
 		case "nquads", "ntriples":
-			// nquads.NewReader likely takes (io.Reader, bool) for strict mode. Default to false?
+			// nquads.NewReader takes (io.Reader, bool) for strict mode.
 			r = nquads.NewReader(f, false)
 		case "jsonld":
 			r = jsonld.NewReader(f)

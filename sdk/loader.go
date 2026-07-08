@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -8,7 +9,7 @@ import (
 )
 
 // LoadNTriplesFile opens a .nt file, parses it, and loads facts into the engine.
-func (c *Client) LoadNTriplesFile(path string) error {
+func (c *Client) LoadNTriplesFile(ctx context.Context, path string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("failed to open .nt file: %w", err)
@@ -20,5 +21,5 @@ func (c *Client) LoadNTriplesFile(path string) error {
 		return fmt.Errorf("failed to parse NTriples: %w", err)
 	}
 
-	return c.engine.LoadFacts(facts)
+	return c.engine.LoadFacts(ctx, facts)
 }

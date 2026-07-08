@@ -99,6 +99,36 @@ type MangleRuntime struct {
 
 	// External predicates for calling Go functions from Datalog rules
 	externalPreds *ExternalPredicateRegistry
+
+	// evalTimeout bounds a single Datalog evaluation. A runaway or
+	// pathological program is cancelled at the API boundary once the
+	// deadline elapses. Note: the Mangle engine does not support
+	// interruption, so the goroutine may continue in the background;
+	// the caller unblocks promptly. Zero means no wall-clock bound.
+	evalTimeout time.Duration
+
+	// maxCreatedFacts hard-limits the number of facts an evaluation may
+	// generate, providing a real bound on pathological programs that
+	// would otherwise expand forever. Zero means unbounded.
+	maxCreatedFacts int
+}
+
+// WithEvalTimeout sets the maximum duration for a single Datalog evaluation.
+func (r *MangleRuntime) WithEvalTimeout(d time.Duration) *MangleRuntime {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.evalTimeout = d
+	return r
+}
+
+// WithMaxCreatedFacts sets a hard cap on the number of facts a single
+// evaluation may create. This bounds pathological programs that would
+// otherwise generate facts without limit.
+func (r *MangleRuntime) WithMaxCreatedFacts(n int) *MangleRuntime {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.maxCreatedFacts = n
+	return r
 }
 
 // NewMangleRuntime initializes a new, empty MangleRuntime.
@@ -350,7 +380,7 @@ func (r *MangleRuntime) GetTemporalStore() *factstore.TemporalStore {
 
 // Load loads Datalog rules and facts from the specified path.
 // CRITICAL CHANGE: This REPLACES the current program state.
-func (r *MangleRuntime) Load(path string) error {
+func (r *MangleRuntime) Load(ctx context.Context, path string) error {
 	if path == "" {
 		return fmt.Errorf("path cannot be empty")
 	}
@@ -421,7 +451,7 @@ func (r *MangleRuntime) Load(path string) error {
 
 	// 4. Initial Evaluation (Validation)
 	// We run this on the local store to ensure the program doesn't crash on init.
-	if _, err := engine.EvalStratifiedProgramWithStats(programInfo, strata, predToStratum, newBaseStore); err != nil {
+	if _, err := evalStratifiedWithContext(ctx, programInfo, strata, predToStratum, newBaseStore, nil, 0); err != nil {
 		return fmt.Errorf("failed to evaluate base program: %w", err)
 	}
 
@@ -453,7 +483,7 @@ func (r *MangleRuntime) Load(path string) error {
 // `Decl ... external()`), the std.dl declaration for that
 // predicate is skipped. This avoids the "cannot redeclare" error
 // that would otherwise reject otherwise-valid policies.
-func (r *MangleRuntime) LoadFromSource(source string) error {
+func (r *MangleRuntime) LoadFromSource(ctx context.Context, source string) error {
 	if source == "" {
 		return fmt.Errorf("source cannot be empty")
 	}
@@ -537,7 +567,7 @@ func (r *MangleRuntime) LoadFromSource(source string) error {
 	r.ready = true
 
 	// Evaluate with the merged base store
-	if err := r.evaluate(r.baseFactStore); err != nil {
+	if err := r.evaluate(ctx, r.baseFactStore); err != nil {
 		return fmt.Errorf("failed to evaluate program: %w", err)
 	}
 
@@ -545,7 +575,7 @@ func (r *MangleRuntime) LoadFromSource(source string) error {
 }
 
 // LoadFacts injects a list of raw Datalog fact strings into the runtime's base knowledge.
-func (r *MangleRuntime) LoadFacts(facts []string) error {
+func (r *MangleRuntime) LoadFacts(ctx context.Context, facts []string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -558,7 +588,7 @@ func (r *MangleRuntime) LoadFacts(facts []string) error {
 	}
 
 	if r.ready {
-		if err := r.evaluate(r.baseFactStore); err != nil {
+		if err := r.evaluate(ctx, r.baseFactStore); err != nil {
 			return fmt.Errorf("failed to evaluate program with new facts: %w", err)
 		}
 	}
@@ -567,12 +597,12 @@ func (r *MangleRuntime) LoadFacts(facts []string) error {
 
 // LoadFromString parses and loads a full Datalog program provided as a string.
 // IMPORTANT: This REPLACES the current program state.
-func (r *MangleRuntime) LoadFromString(rule string) error {
-	return r.LoadFromSource(rule)
+func (r *MangleRuntime) LoadFromString(ctx context.Context, rule string) error {
+	return r.LoadFromSource(ctx, rule)
 }
 
 // AddPolicy adds new rules to the existing program state (Incremental Loading).
-func (r *MangleRuntime) AddPolicy(source string) error {
+func (r *MangleRuntime) AddPolicy(ctx context.Context, source string) error {
 	if source == "" {
 		return nil
 	}
@@ -617,7 +647,7 @@ func (r *MangleRuntime) AddPolicy(source string) error {
 	r.ready = true
 
 	// Re-evaluate base facts with new rules
-	if err := r.evaluate(r.baseFactStore); err != nil {
+	if err := r.evaluate(ctx, r.baseFactStore); err != nil {
 		return fmt.Errorf("failed to evaluate combined program: %w", err)
 	}
 
@@ -659,7 +689,7 @@ func (r *MangleRuntime) ExecuteQuery(ctx context.Context, facts []ast.Atom, quer
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	if _, err := engine.EvalStratifiedProgramWithStats(pInfo, strata, pStratum, workingStore); err != nil {
+	if _, err := evalStratifiedWithContext(ctx, pInfo, strata, pStratum, workingStore, nil, r.evalTimeout); err != nil {
 		return false, fmt.Errorf("evaluation failed: %w", err)
 	}
 
@@ -703,7 +733,10 @@ func (r *MangleRuntime) QueryWithSolutions(ctx context.Context, facts []ast.Atom
 	// callbacks never fire and queries against pii_scan/1 return
 	// zero solutions.
 	evalOpts := r.buildEvalOptions()
-	if _, err := engine.EvalStratifiedProgramWithStats(pInfo, strata, pStratum, workingStore, evalOpts...); err != nil {
+	if r.maxCreatedFacts > 0 {
+		evalOpts = append(evalOpts, engine.WithCreatedFactLimit(r.maxCreatedFacts))
+	}
+	if _, err := evalStratifiedWithContext(ctx, pInfo, strata, pStratum, workingStore, evalOpts, r.evalTimeout); err != nil {
 		return fmt.Errorf("evaluation failed: %w", err)
 	}
 
@@ -747,10 +780,52 @@ func (r *MangleRuntime) QueryWithSolutions(ctx context.Context, facts []ast.Atom
 	})
 }
 
+// evalStratifiedWithContext runs a stratified Datalog evaluation while
+// respecting cancellation and timeouts. The Mangle engine does not natively
+// support context cancellation, so the (store-mutating) evaluation runs in a
+// goroutine and is raced against the context. When the context is cancelled
+// or its deadline elapses, the caller unblocks promptly with the context's
+// error. The background goroutine may still run to completion, so callers
+// must treat an early return as best-effort cancellation.
+func evalStratifiedWithContext(ctx context.Context, programInfo *analysis.ProgramInfo, strata []analysis.Nodeset, predToStratum map[ast.PredicateSym]int, store factstore.FactStore, opts []engine.EvalOption, timeout time.Duration) (engine.Stats, error) {
+	if err := ctx.Err(); err != nil {
+		return engine.Stats{}, err
+	}
+
+	evalCtx := ctx
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		evalCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	type evalResult struct {
+		stats engine.Stats
+		err   error
+	}
+	ch := make(chan evalResult, 1)
+	go func() {
+		stats, err := engine.EvalStratifiedProgramWithStats(programInfo, strata, predToStratum, store, opts...)
+		ch <- evalResult{stats: stats, err: err}
+	}()
+
+	select {
+	case res := <-ch:
+		return res.stats, res.err
+	case <-evalCtx.Done():
+		// Best-effort cancellation: unblock the caller, but the engine
+		// goroutine may still be mutating the store in the background.
+		return engine.Stats{}, evalCtx.Err()
+	}
+}
+
 // evaluate helper (internal use only, assumes lock is held or local store)
-func (r *MangleRuntime) evaluate(store factstore.FactStore) error {
+func (r *MangleRuntime) evaluate(ctx context.Context, store factstore.FactStore) error {
 	opts := r.buildEvalOptions()
-	_, err := engine.EvalStratifiedProgramWithStats(r.programInfo, r.strata, r.predToStratum, store, opts...)
+	if r.maxCreatedFacts > 0 {
+		opts = append(opts, engine.WithCreatedFactLimit(r.maxCreatedFacts))
+	}
+	_, err := evalStratifiedWithContext(ctx, r.programInfo, r.strata, r.predToStratum, store, opts, r.evalTimeout)
 	return err
 }
 
@@ -1071,7 +1146,7 @@ func newExternalDeclFromSym(sym ast.PredicateSym, mode []string) ast.Decl {
 		args[i] = query.Args[i]
 	}
 	decl, _ := ast.NewDecl(ast.Atom{Predicate: sym, Args: args}, descrAtoms,
-		[]ast.BoundDecl{{unknownBounds}}, nil)
+		[]ast.BoundDecl{{Bounds: unknownBounds}}, nil)
 	return decl
 }
 

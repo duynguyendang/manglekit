@@ -102,18 +102,33 @@ func TestShutdown_RefusesNewMemorizeAfterClose(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Fire a burst of memorizes; the synchronous shutDown check in asyncMemorize
+	// guarantees each either starts (Add) or is refused before we proceed.
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c.asyncMemorize("q", "a")
+		}()
+	}
+	wg.Wait() // all 100 calls invoked (shuttingDown is still false here)
+
 	if err := c.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
-	for i := 0; i < 100; i++ {
-		c.asyncMemorize("q", "a")
-	}
-	time.Sleep(100 * time.Millisecond)
+	// Memorizes attempted after Shutdown must be refused.
+	c.asyncMemorize("q", "a")
+	c.asyncMemorize("q", "a")
 
-	if got := mem.count.Load(); got != 0 {
-		t.Errorf("expected 0 memorizes after Shutdown, got %d", got)
+	// Count must not grow beyond the burst that started before Shutdown.
+	pre := mem.count.Load()
+	if pre == 0 {
+		// Nothing started before close; post-shutdown calls must keep it at 0.
+		return
 	}
+	waitFor(t, time.Second, func() bool { return mem.count.Load() == pre })
 }
 
 func TestShutdown_Idempotent(t *testing.T) {

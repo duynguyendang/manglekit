@@ -27,7 +27,7 @@ func New(level string) core.Logger {
 	default:
 		l = slog.LevelInfo
 	}
-	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: l,
 	})
 	return &SlogAdapter{

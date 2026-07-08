@@ -35,8 +35,8 @@ const (
 
 // Standard Decision Values
 const (
-	DecisionProceed = "PROCEED" // Formerly "ALLOW"
-	DecisionHalt    = "HALT"    // Formerly "DENY"
+	DecisionProceed = "PROCEED"
+	DecisionHalt    = "HALT"
 	DecisionRetry   = "RETRY"
 	DecisionRoute   = "ROUTE"
 )
@@ -45,7 +45,7 @@ const (
 const (
 	EntityInput   = "Req"           // ID for Input Envelope
 	EntityOutput  = "Output"        // ID for Output Envelope
-	PredHalt      = "halt"          // Was "deny" or "infeasible"
+	PredHalt      = "halt"          // Predicate emitted when an action is denied
 	PredRetry     = "retry"         // Correction signal
 	PredRoute     = "route"         // Dynamic routing signal
 	PredViolation = "violation_msg" // To extract error messages
@@ -57,8 +57,8 @@ type IntentStr string
 // Observability & Trace Attributes
 const (
 	// Span Names
-	SpanPreCheck  = "Datalog.Assess"  // Formerly "Datalog.PreCheck"
-	SpanPostCheck = "Datalog.Reflect" // Formerly "Datalog.PostCheck"
+	SpanPreCheck  = "Datalog.Assess"
+	SpanPostCheck = "Datalog.Reflect"
 	SpanMemory    = "Mangle.Recall"   // RAG lookup
 
 	// Attribute Keys

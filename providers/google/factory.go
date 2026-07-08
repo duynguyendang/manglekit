@@ -22,7 +22,7 @@ func Enable(apiKey, modelName, actionName string) sdk.ClientOption {
 
 		// 3. Call Internal Wiring (Proxy Pattern from plugin.go)
 		// This handles the local instance creation and bug fixes.
-		wiredName, err := Init(ctx, g, apiKey, modelName)
+		wiredName, err := Init(ctx, g, apiKey, modelName, c.Logger())
 		if err != nil {
 			return fmt.Errorf("google.Enable failed to init plugin: %w", err)
 		}

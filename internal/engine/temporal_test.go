@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -147,7 +148,7 @@ func TestTemporal_DatalogRuleWithTemporalHead(t *testing.T) {
 		audit_trail(User, Resource)@[Start, End] :-
 			user_access(User, Resource)@[Start, End].
 	`
-	err := runtime.LoadFromSource(policy)
+	err := runtime.LoadFromSource(context.Background(), policy)
 	assert.NoError(t, err)
 
 	// Query the derived temporal facts

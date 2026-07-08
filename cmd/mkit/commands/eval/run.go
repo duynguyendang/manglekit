@@ -76,7 +76,7 @@ var EvalCmd = &cobra.Command{
 
 			// Load Facts
 			facts := knowledge.TriplesToFacts(triples)
-			if err := e.LoadFacts(facts); err != nil {
+			if err := e.LoadFacts(cmd.Context(), facts); err != nil {
 				return fmt.Errorf("failed to load knowledge facts: %w", err)
 			}
 			fmt.Printf("Loaded %d knowledge facts.\n", len(facts))
@@ -104,7 +104,7 @@ var EvalCmd = &cobra.Command{
 				return fmt.Errorf("failed to flatten data: %w", err)
 			}
 
-			if err := e.LoadFacts(dataFacts); err != nil {
+			if err := e.LoadFacts(cmd.Context(), dataFacts); err != nil {
 				return fmt.Errorf("failed to load data facts: %w", err)
 			}
 		}

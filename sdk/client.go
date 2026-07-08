@@ -60,6 +60,10 @@ type Client struct {
 	paradoxThreshold float64
 	// stateManager handles durable state persistence and recovery.
 	stateManager core.StateManager
+	// initCtx is the context passed to NewClient, reused during deferred
+	// (option-driven) initialization such as blueprint loading and memory
+	// hydration, so those I/O operations respect cancellation/timeout.
+	initCtx context.Context
 	// memWg tracks in-flight background memory operations.
 	memWg sync.WaitGroup
 	// memMu serializes checks of shuttingDown against memWg.Add,
@@ -85,6 +89,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		agentMemory: NewHybridMemory(core.NopStore{}, core.NopVectorStore{}, core.NopEmbedder{}),
 		registry:    make(map[string]core.Action),
 		failureMode: FailModeClosed, // Default to closed
+		initCtx:     ctx,
 	}
 
 	// Apply options
@@ -104,7 +109,9 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	if reg, ok := c.engine.(interface {
 		RegisterExternalPredicate(string, func(context.Context, []any) ([][]any, error)) error
 	}); ok {
-		predicates.RegisterAll(reg)
+		if err := predicates.RegisterAll(reg); err != nil {
+			return nil, fmt.Errorf("failed to register reference predicates: %w", err)
+		}
 	}
 
 	// Load deferred blueprint now that engine is ready.
@@ -151,12 +158,18 @@ func (c *Client) Engine() core.Evaluator {
 	return c.engine
 }
 
+// ParadoxThreshold returns the configured EAST paradox-injection threshold.
+// Pass it to ooda.OODAFlowConfig.ParadoxThreshold to steer the OODA loop.
+func (c *Client) ParadoxThreshold() float64 {
+	return c.paradoxThreshold
+}
+
 // LoadFacts allows manually injecting straight Datalog facts into the engine.
-func (c *Client) LoadFacts(facts []string) error {
+func (c *Client) LoadFacts(ctx context.Context, facts []string) error {
 	if c.engine == nil {
 		return fmt.Errorf("engine not initialized")
 	}
-	return c.engine.LoadFacts(facts)
+	return c.engine.LoadFacts(ctx, facts)
 }
 
 // LoadGherkinPolicy loads a Gherkin feature file and compiles it to Datalog.

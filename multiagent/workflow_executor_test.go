@@ -148,7 +148,7 @@ func TestWorkflowExecutor_ConditionalEdges(t *testing.T) {
 
 	system, _ := NewAgentSystem(ctx)
 
-	_ = system.Engine().Runtime().AddPolicy(`
+	_ = system.Engine().Runtime().AddPolicy(context.Background(), `
 % Test workflow with conditional edges
 workflow("conditional-test", "Conditional Test", "v1.0").
 

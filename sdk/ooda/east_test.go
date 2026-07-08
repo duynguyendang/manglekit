@@ -442,3 +442,29 @@ func TestShouldTerminate(t *testing.T) {
 		})
 	}
 }
+
+func TestEASTState_ShouldInjectParadox_DefaultThreshold(t *testing.T) {
+	high := EASTState{SteeringMagnitude: 0.81}
+	if !high.ShouldInjectParadox() {
+		t.Error("expected paradox injection at magnitude 0.81 (default 0.8)")
+	}
+	at := EASTState{SteeringMagnitude: 0.8}
+	if at.ShouldInjectParadox() {
+		t.Error("expected no paradox injection exactly at threshold 0.8")
+	}
+	low := EASTState{SteeringMagnitude: 0.5}
+	if low.ShouldInjectParadox() {
+		t.Error("expected no paradox injection at magnitude 0.5")
+	}
+}
+
+func TestEASTState_ShouldInjectParadox_CustomThreshold(t *testing.T) {
+	customLow := EASTState{SteeringMagnitude: 0.6, ParadoxThreshold: 0.5}
+	if !customLow.ShouldInjectParadox() {
+		t.Error("expected paradox injection with custom threshold 0.5 at magnitude 0.6")
+	}
+	customHigh := EASTState{SteeringMagnitude: 0.6, ParadoxThreshold: 0.9}
+	if customHigh.ShouldInjectParadox() {
+		t.Error("expected no paradox injection with custom threshold 0.9 at magnitude 0.6")
+	}
+}

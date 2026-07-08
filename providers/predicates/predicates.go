@@ -16,18 +16,20 @@ package predicates
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 )
 
-// RateLimitEntry tracks request counts per key within a sliding window.
+// RateLimitEntry tracks request counts per key within a fixed window.
 type RateLimitEntry struct {
 	Count     int
 	WindowEnd time.Time
 }
 
-// RateLimiter implements a simple in-memory sliding-window rate limiter.
+// RateLimiter implements a simple in-memory fixed-window rate limiter.
+// Each key accumulates a count that resets when the window elapses.
 type RateLimiter struct {
 	mu      sync.Mutex
 	entries map[string]*RateLimitEntry
@@ -128,7 +130,39 @@ var (
 	rateLimitersMu sync.Mutex
 	rateLimiters   = make(map[string]*RateLimiter)
 	rateCallCount  int
+	// lastEvict tracks when the limiter map was last swept so eviction
+	// also runs on a time basis (not only every 1000 calls). This bounds
+	// memory growth for low-traffic keys that would otherwise linger
+	// until the next 1000th call happens to touch the map.
+	lastEvict time.Time
 )
+
+// evictInterval bounds how often the limiter map is swept for expired
+// entries. A call that finds the interval elapsed triggers a sweep; this
+// keeps idle limiters from accumulating indefinitely between high-traffic
+// windows.
+const evictInterval = 30 * time.Second
+
+// evictExpiredLimiters removes limiters whose windows have fully elapsed.
+// Callers must hold rateLimitersMu.
+func evictExpiredLimiters() {
+	now := time.Now()
+	for ek, el := range rateLimiters {
+		el.mu.Lock()
+		expired := true
+		for _, e := range el.entries {
+			if now.Before(e.WindowEnd) {
+				expired = false
+				break
+			}
+		}
+		el.mu.Unlock()
+		if expired {
+			delete(rateLimiters, ek)
+		}
+	}
+	lastEvict = now
+}
 
 // getOrCreateLimiter returns a per-key limiter, creating one if needed.
 // Keys are formatted as "key:limit" so different limits get separate limiters.
@@ -143,24 +177,14 @@ func getOrCreateLimiter(key string, limit int) *RateLimiter {
 	l := NewRateLimiter(limit, time.Minute)
 	rateLimiters[k] = l
 
-	// Periodic eviction: every 1000 calls, evict expired entries
+	// Periodic eviction: every 1000 calls, or whenever evictInterval has
+	// elapsed since the last sweep. The time-based trigger ensures
+	// low-traffic keys are reclaimed promptly instead of waiting for the
+	// call-count threshold.
 	rateCallCount++
-	if rateCallCount%1000 == 0 {
-		now := time.Now()
-		for ek, el := range rateLimiters {
-			el.mu.Lock()
-			expired := true
-			for _, e := range el.entries {
-				if now.Before(e.WindowEnd) {
-					expired = false
-					break
-				}
-			}
-			el.mu.Unlock()
-			if expired {
-				delete(rateLimiters, ek)
-			}
-		}
+	now := time.Now()
+	if rateCallCount%1000 == 0 || now.Sub(lastEvict) >= evictInterval {
+		evictExpiredLimiters()
 	}
 
 	return l
@@ -190,34 +214,14 @@ func rateLimitExceeded(_ context.Context, inputs []any) ([][]any, error) {
 	return nil, nil
 }
 
-// hasClaim implements: has_claim(Entity, ClaimKey, ClaimValue).
-// Returns true if the claim exists with the given value.
+// hasClaim is intentionally NOT provided as an external predicate. Claims are
+// expressed directly in Datalog as metadata facts:
 //
-// Claims are passed as metadata facts: meta("claim.email", "user@example.com")
-// The predicate checks: meta("claim.<key>", value)
-func hasClaim(_ context.Context, inputs []any) ([][]any, error) {
-	if len(inputs) < 3 {
-		return nil, fmt.Errorf("has_claim requires 3 args: entity, claim_key, claim_value")
-	}
-
-	claimKey, ok := inputs[1].(string)
-	if !ok {
-		return nil, fmt.Errorf("claim_key must be string, got %T", inputs[1])
-	}
-	claimValue, ok := inputs[2].(string)
-	if !ok {
-		return nil, fmt.Errorf("claim_value must be string, got %T", inputs[2])
-	}
-
-	_ = claimKey
-	_ = claimValue
-
-	// This predicate works via Datalog metadata facts.
-	// The actual evaluation happens in the Datalog engine:
-	//   has_claim(Req, "email", V) :- meta("claim.email", V).
-	// This external predicate is a fallback for direct Go calls.
-	return nil, nil
-}
+//	has_claim(Req, "email", V) :- meta("claim.email", V).
+//
+// A previous Go fallback stub silently returned no solutions, which is security
+// theater: an external predicate cannot see the entity's facts. Claims must be
+// resolved by the engine against the entity's metadata, not by this stub.
 
 // RegisterAll registers all reference external predicates with the given engine.
 // This is the recommended way to enable predicates for your policies.
@@ -225,17 +229,27 @@ func hasClaim(_ context.Context, inputs []any) ([][]any, error) {
 // Example:
 //
 //	eng, _ := engine.New()
-//	predicates.RegisterAll(eng)
+//	if err := predicates.RegisterAll(eng); err != nil {
+//		log.Fatal(err)
+//	}
 //
 // Parameters:
 //   - reg: Anything that has RegisterExternalPredicate(name, fn) method.
 //     This includes *engine.PolicyEngine and *engine.MangleRuntime.
+//
+// Returns an aggregated error if any predicate registration fails; a failure
+// must not be silently ignored.
 func RegisterAll(reg interface {
 	RegisterExternalPredicate(name string, fn func(ctx context.Context, inputs []any) ([][]any, error)) error
-}) {
-	_ = reg.RegisterExternalPredicate("within_time_window", withinTimeWindow)
-	_ = reg.RegisterExternalPredicate("rate_limit_exceeded", rateLimitExceeded)
-	_ = reg.RegisterExternalPredicate("has_claim", hasClaim)
+}) error {
+	var errs []error
+	if err := reg.RegisterExternalPredicate("within_time_window", withinTimeWindow); err != nil {
+		errs = append(errs, fmt.Errorf("within_time_window: %w", err))
+	}
+	if err := reg.RegisterExternalPredicate("rate_limit_exceeded", rateLimitExceeded); err != nil {
+		errs = append(errs, fmt.Errorf("rate_limit_exceeded: %w", err))
+	}
+	return errors.Join(errs...)
 }
 
 // parseTime parses "HH:MM" format and returns hour, minute.

@@ -15,9 +15,9 @@ import (
 )
 
 var (
-	port         string
-	policyPath   string
-	mcpConfig    string
+	port       string
+	policyPath string
+	mcpConfig  string
 )
 
 var serveCmd = &cobra.Command{
@@ -25,7 +25,7 @@ var serveCmd = &cobra.Command{
 	Short: "Start the Manglekit HTTP Server",
 	Long:  `Exposes the Manglekit SDK via an HTTP API, enforcing governance policies on every request.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		runServer()
+		runServer(cmd.Context())
 	},
 }
 
@@ -36,13 +36,12 @@ func AddCommands(root *cobra.Command) {
 	root.AddCommand(serveCmd)
 }
 
-func runServer() {
+func runServer(ctx context.Context) {
 	opts := []sdk.ClientOption{}
 	if policyPath != "" {
 		opts = append(opts, sdk.WithBlueprintPath(policyPath))
 	}
 
-	ctx := context.Background()
 	client, err := sdk.NewClient(ctx, opts...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize client: %v\n", err)
@@ -100,9 +99,9 @@ func createHandler(client *sdk.Client) http.HandlerFunc {
 
 				// Create a structured response
 				resp := map[string]any{
-					"error": "Policy Violation",
-					"reasons": []string{alignErr.Message},
-					"rule_id": alignErr.RuleID,
+					"error":    "Policy Violation",
+					"reasons":  []string{alignErr.Message},
+					"rule_id":  alignErr.RuleID,
 					"decision": core.DecisionHalt,
 				}
 				json.NewEncoder(w).Encode(resp)

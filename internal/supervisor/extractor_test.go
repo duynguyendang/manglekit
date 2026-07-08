@@ -62,7 +62,7 @@ func (p *passThroughEvaluator) CheckRequirement(ctx context.Context, input core.
 }
 func (p *passThroughEvaluator) LoadPolicy(ctx context.Context, source string) error  { return nil }
 func (p *passThroughEvaluator) LoadGherkinPolicy(ctx context.Context, f string) error { return nil }
-func (p *passThroughEvaluator) LoadFacts(facts []string) error                        { return nil }
+func (p *passThroughEvaluator) LoadFacts(ctx context.Context, facts []string) error      { return nil }
 func (p *passThroughEvaluator) RegisterAction(meta core.ActionMetadata) error          { return nil }
 func (p *passThroughEvaluator) Query(ctx context.Context, facts []string, query string) ([]map[string]string, error) {
 	return nil, nil

@@ -36,6 +36,21 @@ func (m *mockAction) Metadata() core.ActionMetadata {
 	return core.ActionMetadata{}
 }
 
+// waitForTimeout polls until at least the circuit's ResetTimeout has elapsed
+// since it opened. This replaces a fixed time.Sleep so the test does not read
+// the half-open window early under CI scheduling jitter.
+func waitForTimeout(cb *CircuitBreaker, timeout time.Duration) {
+	for {
+		cb.mu.RLock()
+		elapsed := time.Since(cb.lastOpen)
+		cb.mu.RUnlock()
+		if elapsed >= timeout {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestCircuitBreaker(t *testing.T) {
 	mockErr := errors.New("mock error")
 	inner := &mockAction{
@@ -76,8 +91,8 @@ func TestCircuitBreaker(t *testing.T) {
 		t.Errorf("Expected ErrCircuitOpen, got %v", err)
 	}
 
-	// 3. Wait 150ms
-	time.Sleep(150 * time.Millisecond)
+	// 3. Wait for the reset timeout to elapse
+	waitForTimeout(cb, config.ResetTimeout)
 
 	// 4. Call Execute -> Should go through (Half-Open probing)
 	// Since inner action always fails, it should return mockErr, not ErrCircuitOpen
@@ -120,7 +135,7 @@ func TestCircuitBreakerRecovery(t *testing.T) {
 	cb.mu.RUnlock()
 
 	// Wait for timeout
-	time.Sleep(100 * time.Millisecond)
+	waitForTimeout(cb, config.ResetTimeout)
 
 	// Make inner succeed now
 	inner.mu.Lock()
@@ -168,7 +183,7 @@ func TestCircuitBreakerHalfOpenConcurrency(t *testing.T) {
 	cb.Execute(ctx, env) // Fail -> Open
 
 	// Wait timeout
-	time.Sleep(100 * time.Millisecond)
+	waitForTimeout(cb, config.ResetTimeout)
 
 	// Now try concurrent requests
 	// One should succeed (become probe), others should fail with ErrCircuitOpen

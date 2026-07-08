@@ -6,6 +6,12 @@ Thank you for your interest in contributing to Manglekit! We welcome contributio
 
 This project adheres to the [Contributor Covenant Code of Conduct](https://www.contributor-covenant.org/version/2/1/code_of_conduct.html). By participating, you are expected to uphold this code. Reports of unacceptable behavior can be sent to the project maintainers.
 
+## Maintainers
+
+- Module owner: **@duynguyendang** (github.com/duynguyendang/manglekit).
+- Code owners are declared per-directory in [`CODEOWNERS`](CODEOWNERS) (if present); otherwise the module owner reviews all changes.
+- For architectural questions, open a [Discussion](https://github.com/duynguyendang/manglekit/discussions).
+
 ## Reporting Bugs
 
 - Before opening an issue, search existing issues to avoid duplicates.
@@ -16,30 +22,30 @@ This project adheres to the [Contributor Covenant Code of Conduct](https://www.c
 ## Development Setup
 
 1. **Fork and Clone**:
-   ```
-   git clone https://github.com/your-username/manglekit.git
-   cd manglekit
-   git remote add upstream https://github.com/duynguyend/manglekit.git
-   ```
+    ```
+    git clone https://github.com/your-username/manglekit.git
+    cd manglekit
+    git remote add upstream https://github.com/duynguyendang/manglekit.git
+    ```
 
 2. **Install Dependencies**:
-   ```
-   go mod tidy
-   # Optional: Install golangci-lint for linting
-   go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-   ```
+    ```
+    go mod tidy
+    # Optional: Install golangci-lint for linting
+    go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+    ```
 
 3. **Set Environment Variables** (see README.md for details):
-   ```
-   export OPENAI_API_KEY=your-key
-   # Add others as needed (e.g., QDRANT_URL)
-   ```
+    ```
+    export OPENAI_API_KEY=your-key
+    # Add others as needed (e.g., GOOGLE_API_KEY)
+    ```
 
 4. **Build and Run**:
-   ```
-   make build  # Or: go build ./...
-   make run    # Or: go run ./cmd/agent
-   ```
+    ```
+    make build  # Or: go build ./...
+    make run    # Or: go run ./cmd/mkit run --policy path/to/policy.dl --data path/to/data.json --targets result
+    ```
 
 ## Building and Testing
 
@@ -48,7 +54,7 @@ This project adheres to the [Contributor Covenant Code of Conduct](https://www.c
 - **Format**: `go fmt ./...`
 - **Test**: `make test` or `go test ./... -v`
   - Run with coverage: `go test ./... -coverprofile=coverage.out && go tool cover -html=coverage.out`
-- **Examples**: Test examples with `go run examples/simple/main.go`
+- **Examples**: Runnable examples live in the separate [`manglekit-examples`](https://github.com/duynguyendang/manglekit-examples) module. Clone it alongside this repo and run, e.g., `go run ./devops_policy_gate`.
 
 Ensure all tests pass and linting succeeds before submitting changes.
 
@@ -104,4 +110,4 @@ We appreciate your contributions—let's make Manglekit better together!
 
 ---
 
-*Last updated: 2025-10-02*
+*Last updated: 2026-07-08*

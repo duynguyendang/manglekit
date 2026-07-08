@@ -7,15 +7,12 @@ import "context"
 type Evaluator interface {
 	// AssessPlan evaluates the policy for a given input (General purpose).
 	// It returns a Decision struct with the outcome.
-	// Formerly: Assess
 	AssessPlan(ctx context.Context, input Envelope) (Decision, error)
 
 	// Assess performs the Pre-Check phase (input validation).
-	// Formerly: Authorize
 	Assess(ctx context.Context, actionMeta ActionMetadata, input Envelope) error
 
 	// Reflect evaluates the outcome of an action (Post-Check).
-	// Formerly: Validate
 	Reflect(ctx context.Context, actionMeta ActionMetadata, output Envelope) (Envelope, error)
 
 	// EvaluateSteering determines the next step (Retry/Route) based on the output.
@@ -34,7 +31,7 @@ type Evaluator interface {
 	LoadGherkinPolicy(ctx context.Context, featureContent string) error
 
 	// LoadFacts injects dynamic facts into the engine.
-	LoadFacts(facts []string) error
+	LoadFacts(ctx context.Context, facts []string) error
 
 	// RegisterAction registers action metadata for discovery/planning.
 	RegisterAction(meta ActionMetadata) error

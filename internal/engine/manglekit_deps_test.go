@@ -29,7 +29,7 @@ func TestMangleRuntime_Comparisons(t *testing.T) {
 		passes_generic(D) :- generic_ratio_pct(D, R), max_generic_pct(D, M), :le(R, M).
 		passes_quality_gate(D) :- passes_completeness(D), passes_generic(D).
 	`
-	if err := runtime.LoadFromString(rules); err != nil {
+	if err := runtime.LoadFromString(context.Background(), rules); err != nil {
 		t.Fatal(err)
 	}
 	assertQueryTrue(t, runtime, `passes_completeness("BRD").`)
@@ -44,7 +44,7 @@ func TestMangleRuntime_QualityGateFails(t *testing.T) {
 		min_completeness_pct("CSD", 850).
 		passes_gate(D) :- completeness_pct(D, S), min_completeness_pct(D, M), :ge(S, M).
 	`
-	if err := runtime.LoadFromString(rules); err != nil {
+	if err := runtime.LoadFromString(context.Background(), rules); err != nil {
 		t.Fatal(err)
 	}
 	assertQueryFalse(t, runtime, `passes_gate("CSD").`)
@@ -59,7 +59,7 @@ func TestMangleRuntime_OverfittingDetection(t *testing.T) {
 		exceeds_max(T) :- task_pct(T, E), overfitting_max_pct(M), :gt(E, M).
 		below_min(T) :- task_pct(T, E), overfitting_min_pct(M), :lt(E, M).
 	`
-	if err := runtime.LoadFromString(rules); err != nil {
+	if err := runtime.LoadFromString(context.Background(), rules); err != nil {
 		t.Fatal(err)
 	}
 	assertOneResult(t, querySolutions(t, runtime, `exceeds_max(T).`), "T", "M1.2")
@@ -74,7 +74,7 @@ func TestMangleRuntime_Negation(t *testing.T) {
 		needs_cap("cloud", "scale"). needs_cap("cloud", "deploy").
 		missing(P, C) :- needs_cap(P, C), !has_cap(P, C).
 	`
-	if err := runtime.LoadFromString(rules); err != nil {
+	if err := runtime.LoadFromString(context.Background(), rules); err != nil {
 		t.Fatal(err)
 	}
 	assertOneResult(t, querySolutions(t, runtime, `missing("cloud", C).`), "C", "scale")
@@ -87,7 +87,7 @@ func TestMangleRuntime_NegationWildcard(t *testing.T) {
 		doc_needs("BRD", "doc_gen"). doc_needs("BRD", "quality"). doc_needs("EST", "data_analysis").
 		missing(D, C) :- doc_needs(D, C), !role_cap(_, C).
 	`
-	if err := runtime.LoadFromString(rules); err != nil {
+	if err := runtime.LoadFromString(context.Background(), rules); err != nil {
 		t.Fatal(err)
 	}
 	assertOneResult(t, querySolutions(t, runtime, `missing("EST", C).`), "C", "data_analysis")
@@ -102,7 +102,7 @@ func TestMangleRuntime_Aggregation(t *testing.T) {
 		max_e(M) :- task_effort(X, E) |> do fn:group_by(X), let M = fn:max(E).
 		min_e(M) :- task_effort(X, E) |> do fn:group_by(X), let M = fn:min(E).
 	`
-	if err := runtime.LoadFromString(rules); err != nil {
+	if err := runtime.LoadFromString(context.Background(), rules); err != nil {
 		t.Fatal(err)
 	}
 	r := querySolutions(t, runtime, `total(T).`)

@@ -65,13 +65,6 @@ func GetSteeringPrompts(magnitude float64) (headerKey, bodyKey string) {
 	return fallback.HeaderKey, fallback.BodyKey
 }
 
-// ParadoxThreshold is the EAST magnitude above which cognitive paradox injection
-// is triggered. Configurable via config.Policy.ParadoxThreshold (default 0.8).
-var ParadoxThreshold = 0.8
-
-// ShouldInjectParadox returns true if the system should forcefully inject
-// cognitive paradoxes (conflicting imperatives) to induce highly conservative,
-// step-by-step LLM output behavior due to extreme runtime logic failures.
-func ShouldInjectParadox(magnitude float64) bool {
-	return magnitude > ParadoxThreshold
-}
+// DefaultParadoxThreshold is the EAST magnitude above which cognitive paradox
+// injection is triggered when no per-state threshold is configured.
+const DefaultParadoxThreshold = 0.8

@@ -51,8 +51,8 @@ func (m *MockEvaluator) LoadGherkinPolicy(ctx context.Context, featureContent st
 	return args.Error(0)
 }
 
-func (m *MockEvaluator) LoadFacts(facts []string) error {
-	args := m.Called(facts)
+func (m *MockEvaluator) LoadFacts(ctx context.Context, facts []string) error {
+	args := m.Called(ctx, facts)
 	return args.Error(0)
 }
 

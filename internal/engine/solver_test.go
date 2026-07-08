@@ -18,7 +18,7 @@ func TestPolicyEngine_AuthorizeWithSimpleDenyRule(t *testing.T) {
 	// In Mangle, we can query for fact existence
 	// Mapped to halt("Req") in solver
 	rule := `halt("Req").`
-	if err := engine.runtime.LoadFromString(rule); err != nil {
+	if err := engine.runtime.LoadFromString(context.Background(), rule); err != nil {
 		t.Fatalf("failed to load rule: %v", err)
 	}
 
@@ -54,7 +54,7 @@ func TestMangleRuntime_ExecuteQuerySimple(t *testing.T) {
 
 	// Load a simple fact
 	rule := `allow("user").`
-	if err := runtime.LoadFromString(rule); err != nil {
+	if err := runtime.LoadFromString(context.Background(), rule); err != nil {
 		t.Fatalf("failed to load rule: %v", err)
 	}
 
@@ -74,7 +74,7 @@ func TestMangleRuntime_ExecuteQueryWithFacts(t *testing.T) {
 
 	// Load a rule that checks a fact
 	rule := `user_is_admin("alice").`
-	if err := runtime.LoadFromString(rule); err != nil {
+	if err := runtime.LoadFromString(context.Background(), rule); err != nil {
 		t.Fatalf("failed to load rule: %v", err)
 	}
 
@@ -104,7 +104,7 @@ func TestMangleRuntime_QueryWithSolutions_Number(t *testing.T) {
 
 	// Load a rule that produces a number
 	rule := `score("req", 100).`
-	if err := runtime.LoadFromString(rule); err != nil {
+	if err := runtime.LoadFromString(context.Background(), rule); err != nil {
 		t.Fatalf("failed to load rule: %v", err)
 	}
 

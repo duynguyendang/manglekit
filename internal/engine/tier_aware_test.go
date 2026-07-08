@@ -20,7 +20,7 @@ func TestTierAwareSolver_T0HaltBeatsT3Halt(t *testing.T) {
 halt("Req", "T3 user violation", "T3").
 halt("Req", "T0 axiom violation", "T0").
 `
-	if err := engine.runtime.AddPolicy(rule); err != nil {
+	if err := engine.runtime.AddPolicy(context.Background(), rule); err != nil {
 		t.Fatalf("failed to load rule: %v", err)
 	}
 
@@ -48,7 +48,7 @@ func TestTierAwareSolver_T3HaltFiresWhenNoT0(t *testing.T) {
 	}
 
 	rule := `halt("Req", "T3 user violation", "T3").`
-	if err := engine.runtime.AddPolicy(rule); err != nil {
+	if err := engine.runtime.AddPolicy(context.Background(), rule); err != nil {
 		t.Fatalf("failed to load rule: %v", err)
 	}
 
@@ -77,7 +77,7 @@ func TestTierAwareSolver_BackwardCompat_Arity2(t *testing.T) {
 	}
 
 	rule := `halt("Req", "legacy halt").`
-	if err := engine.runtime.AddPolicy(rule); err != nil {
+	if err := engine.runtime.AddPolicy(context.Background(), rule); err != nil {
 		t.Fatalf("failed to load rule: %v", err)
 	}
 
@@ -109,7 +109,7 @@ func TestTierAwareSolver_Arity3BeatsArity2(t *testing.T) {
 halt("Req", "legacy no-tier halt").
 halt("Req", "T1 governance halt", "T1").
 `
-	if err := engine.runtime.AddPolicy(rule); err != nil {
+	if err := engine.runtime.AddPolicy(context.Background(), rule); err != nil {
 		t.Fatalf("failed to load rule: %v", err)
 	}
 
@@ -165,7 +165,7 @@ func TestTierAwareSteering_RetryWithTier(t *testing.T) {
 	}
 
 	rule := `retry("Req", "fix alignment", "T1").`
-	if err := engine.runtime.AddPolicy(rule); err != nil {
+	if err := engine.runtime.AddPolicy(context.Background(), rule); err != nil {
 		t.Fatalf("failed to load rule: %v", err)
 	}
 

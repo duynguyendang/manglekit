@@ -230,14 +230,14 @@ func WithConfig(cfg *config.Config) ClientOption {
 		}
 
 		// 2. Load Policy (Blueprint)
-		// NOTE: context.TODO() is used because ClientOption doesn't receive the
-		// caller's context. A future API revision should propagate ctx through.
+		// Reuses the context supplied to NewClient so the policy read and
+		// evaluation can be cancelled or timed out by the caller.
 		if cfg.Policy.Path != "" {
 			content, err := os.ReadFile(cfg.Policy.Path)
 			if err != nil {
 				return fmt.Errorf("failed to read policy file %q: %w", cfg.Policy.Path, err)
 			}
-			if err := c.engine.LoadPolicy(context.TODO(), string(content)); err != nil {
+			if err := c.engine.LoadPolicy(c.initCtx, string(content)); err != nil {
 				return fmt.Errorf("failed to load policy from %q: %w", cfg.Policy.Path, err)
 			}
 		}
@@ -265,7 +265,7 @@ func WithConfig(cfg *config.Config) ClientOption {
 				return fmt.Errorf("failed to parse knowledge from %q: %w", path, err)
 			}
 
-			if err := c.engine.LoadFacts(facts); err != nil {
+			if err := c.engine.LoadFacts(c.initCtx, facts); err != nil {
 				return fmt.Errorf("failed to load knowledge facts from %q: %w", path, err)
 			}
 		}
@@ -278,7 +278,7 @@ func WithConfig(cfg *config.Config) ClientOption {
 			if err != nil {
 				return fmt.Errorf("memory provider %q not found: %w", cfg.Memory.Provider, err)
 			}
-			mem, err := factory(context.TODO(), cfg.Memory)
+			mem, err := factory(c.initCtx, cfg.Memory)
 			if err != nil {
 				return fmt.Errorf("failed to create memory: %w", err)
 			}
@@ -334,10 +334,8 @@ func WithConfig(cfg *config.Config) ClientOption {
 		c.steeringEnabled = cfg.Policy.SteeringEnabled
 		c.paradoxThreshold = cfg.Policy.ParadoxThreshold
 		if c.paradoxThreshold <= 0 {
-			c.paradoxThreshold = 0.8 // Default threshold
+			c.paradoxThreshold = logic.DefaultParadoxThreshold
 		}
-		// Wire the threshold into the logic package for prompt-level steering.
-		logic.ParadoxThreshold = c.paradoxThreshold
 
 		return nil
 	}

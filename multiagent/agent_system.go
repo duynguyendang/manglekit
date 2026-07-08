@@ -104,7 +104,7 @@ func (s *AgentSystem) QueryWithAudit(ctx context.Context, facts []string, query 
 // Callers may also load custom rules by calling Engine().Runtime().AddPolicy()
 // directly after this call.
 func (s *AgentSystem) LoadAgentDefinitions(ctx context.Context) error {
-	if err := s.engine.Runtime().AddPolicy(defaultAgentRegistry); err != nil {
+	if err := s.engine.Runtime().AddPolicy(ctx, defaultAgentRegistry); err != nil {
 		return fmt.Errorf("failed to load agent rules: %w", err)
 	}
 

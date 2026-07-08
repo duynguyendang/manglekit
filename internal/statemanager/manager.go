@@ -100,7 +100,7 @@ func (m *DurableStateManager) Hydrate(ctx context.Context, sessionID string) (*c
 			"session_id", sessionID,
 			"fact_count", len(state.LogicalFacts))
 
-		if err := m.engine.LoadFacts(state.LogicalFacts); err != nil {
+		if err := m.engine.LoadFacts(ctx, state.LogicalFacts); err != nil {
 			// Log warning but don't fail hydration
 			m.logger.Warn("Failed to prime engine with facts", "error", err)
 		}

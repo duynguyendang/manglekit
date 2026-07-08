@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/duynguyendang/manglekit/agents/tools"
@@ -152,6 +153,20 @@ func newSessionStoreAdapter(store ports.TransientStore) *sessionStoreAdapter {
 	return &sessionStoreAdapter{store: store}
 }
 
+// splitSessionKey recovers the sessionID partition from a "sessionID:workflowID"
+// key, mirroring how WorkflowInstance.SessionKey() composes it
+// (SessionID + ":" + WorkflowID, see core/workflow.go).
+//
+// We strip only the trailing segment via LastIndex (not SplitN) so a sessionID
+// that itself contains ":" is preserved; this relies on workflowID containing
+// no ":" (the same assumption SessionKey() makes when building the key).
+func splitSessionKey(sessionKey string) (sessionID, workflowID string) {
+	if i := strings.LastIndex(sessionKey, ":"); i >= 0 {
+		return sessionKey[:i], sessionKey[i+1:]
+	}
+	return sessionKey, sessionKey
+}
+
 func (s *sessionStoreAdapter) Create(ctx context.Context, instance *core.WorkflowInstance) error {
 	if instance == nil {
 		return nil
@@ -169,10 +184,11 @@ func (s *sessionStoreAdapter) Create(ctx context.Context, instance *core.Workflo
 }
 
 func (s *sessionStoreAdapter) Get(ctx context.Context, sessionKey string) (*core.WorkflowInstance, error) {
-	fact, err := s.store.Get(ctx, sessionKey, sessionKey)
+	sessionID, workflowID := splitSessionKey(sessionKey)
+	fact, err := s.store.Get(ctx, sessionID, sessionKey)
 	if err != nil || fact == nil {
 		// No existing instance; create a fresh one from the sessionKey.
-		return core.NewWorkflowInstance(sessionKey, sessionKey), nil
+		return core.NewWorkflowInstance(workflowID, sessionID), nil
 	}
 	var instance core.WorkflowInstance
 	if err := json.Unmarshal([]byte(fact.Object), &instance); err != nil {
@@ -198,11 +214,13 @@ func (s *sessionStoreAdapter) Update(ctx context.Context, instance *core.Workflo
 }
 
 func (s *sessionStoreAdapter) Delete(ctx context.Context, sessionKey string) error {
-	return s.store.Delete(ctx, sessionKey, sessionKey)
+	sessionID, _ := splitSessionKey(sessionKey)
+	return s.store.Delete(ctx, sessionID, sessionKey)
 }
 
 func (s *sessionStoreAdapter) Exists(ctx context.Context, sessionKey string) bool {
-	fact, err := s.store.Get(ctx, sessionKey, sessionKey)
+	sessionID, _ := splitSessionKey(sessionKey)
+	fact, err := s.store.Get(ctx, sessionID, sessionKey)
 	return err == nil && fact != nil
 }
 

@@ -1,7 +1,6 @@
 package run
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,11 +25,6 @@ var RunCmd = &cobra.Command{
 	Short: "Perform batch inference (Logic ETL)",
 	Long:  `Perform batch inference by loading raw data, applying Datalog rules, and exporting derived facts.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Validation
-		if policyPath == "" || dataPath == "" || targets == "" {
-			return fmt.Errorf("policy, data, and target are required")
-		}
-
 		// 1. Init Engine
 		eng, err := engine.New()
 		if err != nil {
@@ -42,7 +36,7 @@ var RunCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to read policy file: %w", err)
 		}
-		if err := eng.LoadPolicy(context.Background(), string(policyBytes)); err != nil {
+		if err := eng.LoadPolicy(cmd.Context(), string(policyBytes)); err != nil {
 			return fmt.Errorf("failed to load policy: %w", err)
 		}
 
@@ -82,7 +76,7 @@ var RunCmd = &cobra.Command{
 			return fmt.Errorf("unsupported data file extension: %s", ext)
 		}
 
-		if err := eng.LoadFacts(facts); err != nil {
+		if err := eng.LoadFacts(cmd.Context(), facts); err != nil {
 			return fmt.Errorf("failed to load facts: %w", err)
 		}
 
@@ -94,7 +88,7 @@ var RunCmd = &cobra.Command{
 		defer f.Close()
 
 		targetList := strings.Split(targets, ",")
-		ctx := context.Background()
+		ctx := cmd.Context()
 
 		for _, target := range targetList {
 			target = strings.TrimSpace(target)
@@ -106,14 +100,6 @@ var RunCmd = &cobra.Command{
 			if err == nil && len(results) > 0 {
 				for _, row := range results {
 					// N-Quads format: <Subject> <Predicate> <Object> .
-					// If the output format is JSON, adapt.
-					// Requirement says default "nquads", optional "json".
-					if format == "json" {
-						// Simple JSON object per line or just skip for now as nquads is primary
-						// Code skeleton implies N-Quads writing.
-						// I will implement N-Quads for now as per "And the file contains N-Quad lines like..."
-					}
-
 					s := row["S"]
 					o := row["O"]
 					// Write N-Quad: <S> <target> "O" .
@@ -152,11 +138,12 @@ func init() {
 	RunCmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output file path")
 	RunCmd.Flags().StringVar(&format, "format", "nquads", "Output format (nquads, json)")
 
-	// Mark required flags (optional, but good practice)
-	// RunCmd.MarkFlagRequired("policy")
-	// RunCmd.MarkFlagRequired("data")
-	// RunCmd.MarkFlagRequired("target")
-	// RunCmd.MarkFlagRequired("output")
+	// Required flags: cobra enforces these before RunE executes, producing
+	// consistent usage errors instead of ad-hoc manual checks.
+	cobra.CheckErr(RunCmd.MarkFlagRequired("policy"))
+	cobra.CheckErr(RunCmd.MarkFlagRequired("data"))
+	cobra.CheckErr(RunCmd.MarkFlagRequired("target"))
+	cobra.CheckErr(RunCmd.MarkFlagRequired("output"))
 }
 
 func AddCommands(rootCmd *cobra.Command) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // ToolFunc is the function signature for executable tools.
@@ -127,9 +129,10 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actionName string, args map[s
 
 	// Sovereign Violation: Action not found in registry
 	errMsg := fmt.Sprintf("SOVEREIGN VIOLATION: action '%s' not found in registry - capability mismatch", actionName)
-	fmt.Printf("⚠️ %s\n", errMsg)
-	fmt.Printf("   Available actions: %v\n", d.registry.List())
-	fmt.Printf("   Requested args: %v\n", args)
+	core.LoggerFromContext(ctx).Error("SOVEREIGN VIOLATION",
+		"action", actionName,
+		"available", d.registry.List(),
+		"args", args)
 
 	// Call SafeStop as mandatory safety fallback
 	if SafeStop != nil {

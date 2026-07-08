@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
@@ -12,7 +13,9 @@ import (
 
 // Init sets up the Google provider using a Proxy Pattern.
 // It isolates the Google plugin in a local instance and registers a proxy in the global registry.
-func Init(ctx context.Context, globalG *genkit.Genkit, apiKey string, modelName string) (string, error) {
+// logger receives a warning whenever the proxied request's GenerationConfig is dropped (see the
+// workaround below) so the loss of Temperature/MaxOutputTokens is observable rather than silent.
+func Init(ctx context.Context, globalG *genkit.Genkit, apiKey string, modelName string, logger core.Logger) (string, error) {
 	// 1. Fallback & Validation
 	if apiKey == "" {
 		apiKey = os.Getenv("GOOGLE_API_KEY")
@@ -65,7 +68,13 @@ func Init(ctx context.Context, globalG *genkit.Genkit, apiKey string, modelName 
 			// the config lets the request through to the real model which
 			// applies its own defaults. This should be removed once the
 			// upstream Genkit google plugin handles proxied configs correctly.
-			req.Config = nil
+			if req.Config != nil {
+				if logger != nil {
+					logger.Warn("google proxy dropping GenerationConfig; upstream plugin rejects config on proxied models",
+						"model", modelName)
+				}
+				req.Config = nil
+			}
 
 			// Forward to the real model in the sandbox
 			return realModel.Generate(ctx, req, cb)

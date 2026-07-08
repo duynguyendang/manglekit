@@ -19,7 +19,7 @@ func TestExternalPredicate_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	policy := `result(X) :- double(5, X).`
-	err = runtime.LoadFromString(policy)
+	err = runtime.LoadFromString(context.Background(), policy)
 	require.NoError(t, err)
 
 	// External predicate adds facts to base store during evaluation.
@@ -39,7 +39,7 @@ func TestExternalPredicate_Chained(t *testing.T) {
 	require.NoError(t, err)
 
 	policy := `result(X) :- add_one(10, X).`
-	err = runtime.LoadFromString(policy)
+	err = runtime.LoadFromString(context.Background(), policy)
 	require.NoError(t, err)
 
 	ok, err := runtime.ExecuteQuery(context.Background(), nil, "result(11)")
@@ -60,7 +60,7 @@ func TestExternalPredicate_InBodyChain(t *testing.T) {
 		intermediate(X) :- double(5, X).
 		final(Y) :- intermediate(X), Y = X.
 	`
-	err = runtime.LoadFromString(policy)
+	err = runtime.LoadFromString(context.Background(), policy)
 	require.NoError(t, err)
 
 	ok, err := runtime.ExecuteQuery(context.Background(), nil, "intermediate(10)")
@@ -80,7 +80,7 @@ func TestExternalPredicate_BaseStoreDirect(t *testing.T) {
 	require.NoError(t, err)
 
 	policy := `result(X) :- triple(3, X).`
-	err = runtime.LoadFromString(policy)
+	err = runtime.LoadFromString(context.Background(), policy)
 	require.NoError(t, err)
 	assert.True(t, called, "external predicate should be called during evaluation")
 

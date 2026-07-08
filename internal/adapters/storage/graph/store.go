@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -91,6 +92,15 @@ func (s *Store) Close() error {
 // AddFact persists a single quad into all four index permutations atomically.
 func (s *Store) AddFact(s_, p, o, g uint64) error {
 	return s.db.Update(func(txn *badger.Txn) error {
+		// Only count genuinely new facts. Value-less keys are idempotent on
+		// re-insert, so a duplicate AddFact must not inflate the counter.
+		spogKey := EncodeQuadKey(PrefixSPOg, s_, p, o, g)
+		_, err := txn.Get(spogKey)
+		isNew := errors.Is(err, badger.ErrKeyNotFound)
+		if err != nil && !isNew {
+			return err
+		}
+
 		prefixes := []byte{PrefixSPOg, PrefixPOSg, PrefixPSOg, PrefixGSPO}
 		for _, prefix := range prefixes {
 			key := EncodeQuadKey(prefix, s_, p, o, g)
@@ -99,11 +109,16 @@ func (s *Store) AddFact(s_, p, o, g uint64) error {
 			}
 		}
 
-		// Update counter
-		s.numFacts.Add(1)
-		countBuf := make([]byte, 8)
-		binary.BigEndian.PutUint64(countBuf, s.numFacts.Load())
-		return txn.Set(KeyFactCount, countBuf)
+		// Update counter only for new facts, persisted atomically with the fact.
+		if isNew {
+			s.numFacts.Add(1)
+			countBuf := make([]byte, 8)
+			binary.BigEndian.PutUint64(countBuf, s.numFacts.Load())
+			if err := txn.Set(KeyFactCount, countBuf); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 

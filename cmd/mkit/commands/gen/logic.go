@@ -22,7 +22,7 @@ type GeneratedPolicy struct {
 }
 
 // ValidatePolicySyntax checks if the generated Datalog code is valid using the Mangle engine.
-func ValidatePolicySyntax(datalog, schemaDeclarations string) error {
+func ValidatePolicySyntax(ctx context.Context, datalog, schemaDeclarations string) error {
 	// Initialize a runtime.
 	eng := engine.NewMangleRuntime()
 
@@ -32,7 +32,7 @@ func ValidatePolicySyntax(datalog, schemaDeclarations string) error {
 	fullProgram := stdDecls + "\n" + schemaDeclarations + "\n" + datalog
 
 	// Attempt to parse and compile the policy
-	return eng.LoadFromSource(fullProgram)
+	return eng.LoadFromSource(ctx, fullProgram)
 }
 
 // GenerateWithFeedback orchestrates the Teacher-Student protocol.
@@ -139,7 +139,7 @@ Output JSON only: {"datalog_content": "...", "explanation": "..."}`, factsList, 
 		if schema != nil && len(schema.Declarations) > 0 {
 			schemaDeclsVal = strings.Join(schema.Declarations, "\n")
 		}
-		if err := ValidatePolicySyntax(policy.DatalogContent, schemaDeclsVal); err != nil {
+		if err := ValidatePolicySyntax(ctx, policy.DatalogContent, schemaDeclsVal); err != nil {
 			lastErr = err
 			// Step D (Decision) - Update feedback
 			feedback := err.Error()

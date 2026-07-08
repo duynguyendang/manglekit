@@ -281,7 +281,7 @@ func executeWithDispatcher(ctx context.Context, frame *CognitiveFrame, decision 
 	result, err := frame.Dispatcher.Dispatch(ctx, action.Name, action.Arguments)
 	if err != nil {
 		// Log the sovereign violation
-		fmt.Printf("SOVEREIGN VIOLATION: %v\n", err)
+		core.LoggerFromContext(ctx).Error("SOVEREIGN VIOLATION", "error", err, "action", action.Name)
 
 		// Add violation to audit trail if available
 		if decision.AuditTrail != nil {

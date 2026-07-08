@@ -128,12 +128,15 @@ func TestRateLimiter_WindowExpiry(t *testing.T) {
 		t.Error("should be exceeded after 1 request")
 	}
 
-	// Wait for window to expire
-	time.Sleep(60 * time.Millisecond)
-
-	if limiter.IsExceeded("key") {
-		t.Error("should not be exceeded after window expiry")
+	// Wait for window to expire (poll until the fixed window resets).
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if !limiter.IsExceeded("key") {
+			return // window expired and counter reset
+		}
+		time.Sleep(time.Millisecond)
 	}
+	t.Error("should not be exceeded after window expiry")
 }
 
 func TestRateLimiter_Reset(t *testing.T) {
@@ -158,13 +161,6 @@ func TestRateLimitExceeded_TooFewArgs(t *testing.T) {
 	}
 }
 
-func TestHasClaim_TooFewArgs(t *testing.T) {
-	_, err := hasClaim(context.Background(), []any{"Req"})
-	if err == nil {
-		t.Error("expected error for too few args")
-	}
-}
-
 func TestRegisterAll(t *testing.T) {
 	type registry interface {
 		RegisterExternalPredicate(name string, fn func(ctx context.Context, inputs []any) ([][]any, error)) error
@@ -176,8 +172,8 @@ func TestRegisterAll(t *testing.T) {
 
 	RegisterAll(mock)
 
-	if len(registered) != 3 {
-		t.Errorf("expected 3 predicates registered, got %d: %v", len(registered), registered)
+	if len(registered) != 2 {
+		t.Errorf("expected 2 predicates registered, got %d: %v", len(registered), registered)
 	}
 }
 

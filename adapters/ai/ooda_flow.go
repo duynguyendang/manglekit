@@ -37,6 +37,9 @@ type OODAFlowConfig struct {
 	MaxRetries      int
 	Timeout         time.Duration
 	GenerateOptions []core.GenerateOption
+	// ParadoxThreshold is the EAST magnitude above which cognitive paradox
+	// injection is triggered. Defaults to 0.8 when unset.
+	ParadoxThreshold float64
 }
 
 type OODAFlow struct {
@@ -52,6 +55,9 @@ func NewOODAFlow(cfg *OODAFlowConfig) *OODAFlow {
 	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 5 * time.Minute
+	}
+	if cfg.ParadoxThreshold <= 0 {
+		cfg.ParadoxThreshold = 0.8
 	}
 	return &OODAFlow{config: cfg}
 }
@@ -69,6 +75,7 @@ func (f *OODAFlow) Run(ctx context.Context, input *OODAFlowInput) (*OODAFlowOutp
 	frame := ooda.NewCognitiveFrame(input.Input, intent, taskType)
 	frame.MaxRetries = f.config.MaxRetries
 	frame.Timeout = f.config.Timeout
+	frame.EAST.ParadoxThreshold = f.config.ParadoxThreshold
 
 	if f.config.Memory != nil {
 		frame.Memory = f.config.Memory

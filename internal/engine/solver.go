@@ -40,7 +40,7 @@ func New() (*PolicyEngine, error) {
 	}
 
 	// Auto-load Standard Library
-	if err := pe.runtime.AddPolicy(resources.StdLib()); err != nil {
+	if err := pe.runtime.AddPolicy(context.Background(), resources.StdLib()); err != nil {
 		return nil, fmt.Errorf("manglekit: failed to load std.dl: %w", err)
 	}
 
@@ -127,14 +127,14 @@ func NewWithObservability(tracer core.Tracer, logger core.Logger) (*PolicyEngine
 	}
 
 	// Load Planner Core Rules
-	if err := pe.runtime.AddPolicy(resources.GetPlannerRules()); err != nil {
+	if err := pe.runtime.AddPolicy(context.Background(), resources.GetPlannerRules()); err != nil {
 		if logger != nil {
 			logger.Error("failed to load planner core schema", "error", err)
 		}
 	}
 
 	// Load Manglekit Standard Library (std.dl)
-	if err := pe.runtime.AddPolicy(resources.StdLib()); err != nil {
+	if err := pe.runtime.AddPolicy(context.Background(), resources.StdLib()); err != nil {
 		if logger != nil {
 			logger.Error("failed to load standard library", "error", err)
 		}
@@ -189,8 +189,8 @@ func (e *PolicyEngine) Logger() core.Logger {
 //
 // Returns:
 //   - An error if parsing or evaluation fails.
-func (e *PolicyEngine) LoadFacts(facts []string) error {
-	return e.runtime.LoadFacts(facts)
+func (e *PolicyEngine) LoadFacts(ctx context.Context, facts []string) error {
+	return e.runtime.LoadFacts(ctx, facts)
 }
 
 // RegisterAction injects metadata about a registered action into the Datalog runtime.
@@ -220,7 +220,7 @@ func (e *PolicyEngine) RegisterAction(meta core.ActionMetadata) error {
 		facts = append(facts, fmt.Sprintf("has_output(\"%s\", \"%s\")", safeName, escapeString(meta.OutputType)))
 	}
 
-	return e.LoadFacts(facts)
+	return e.LoadFacts(context.Background(), facts)
 }
 
 // LoadPolicy loads policy rules from a raw Datalog string.
@@ -238,7 +238,7 @@ func (e *PolicyEngine) LoadPolicy(ctx context.Context, policy string) error {
 	}
 
 	// Load the rules into the Mangle runtime
-	if err := e.runtime.AddPolicy(policy); err != nil {
+	if err := e.runtime.AddPolicy(ctx, policy); err != nil {
 		return fmt.Errorf("failed to load policy: %w", err)
 	}
 
@@ -261,7 +261,7 @@ func (e *PolicyEngine) LoadFromSource(ctx context.Context, source string) error 
 	if source == "" {
 		return nil
 	}
-	if err := e.runtime.LoadFromSource(source); err != nil {
+	if err := e.runtime.LoadFromSource(ctx, source); err != nil {
 		return fmt.Errorf("failed to load policy from source: %w", err)
 	}
 	return nil
@@ -1002,7 +1002,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 
 	// Query arity-3 first: retry(Entity, Hint, Tier)
 	retryQ3 := fmt.Sprintf("%s(\"%s\", Hint, Tier)", core.PredRetry, core.EntityInput)
-	_ = e.runtime.QueryWithSolutions(ctx, facts, retryQ3, func(solution map[string]any) error {
+	if err := e.runtime.QueryWithSolutions(ctx, facts, retryQ3, func(solution map[string]any) error {
 		if hint, ok := solution["Hint"].(string); ok {
 			tier := core.TierUnknown
 			if t, ok := solution["Tier"].(string); ok && t != "" {
@@ -1011,16 +1011,20 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 			retryMatches = append(retryMatches, retryMatch{hint: hint, tier: tier})
 		}
 		return nil
-	})
+	}); err != nil {
+		return decision, metadata, fmt.Errorf("retry query failed: %w", err)
+	}
 
 	// Fallback to arity-2: retry(Hint)
 	if len(retryMatches) == 0 {
-		_ = e.runtime.QueryWithSolutions(ctx, facts, fmt.Sprintf("%s(Hint)", core.PredRetry), func(solution map[string]any) error {
+		if err := e.runtime.QueryWithSolutions(ctx, facts, fmt.Sprintf("%s(Hint)", core.PredRetry), func(solution map[string]any) error {
 			if hint, ok := solution["Hint"].(string); ok {
 				retryMatches = append(retryMatches, retryMatch{hint: hint, tier: core.TierUnknown})
 			}
 			return nil
-		})
+		}); err != nil {
+			return decision, metadata, fmt.Errorf("retry query failed: %w", err)
+		}
 	}
 
 	// 2. Check Routing — Tier-Aware
@@ -1032,7 +1036,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 
 	// Query arity-3 first: route(Entity, Target, Tier)
 	routeQ3 := fmt.Sprintf("%s(\"%s\", Target, Tier)", core.PredRoute, core.EntityInput)
-	_ = e.runtime.QueryWithSolutions(ctx, facts, routeQ3, func(solution map[string]any) error {
+	if err := e.runtime.QueryWithSolutions(ctx, facts, routeQ3, func(solution map[string]any) error {
 		if target, ok := solution["Target"].(string); ok {
 			tier := core.TierUnknown
 			if t, ok := solution["Tier"].(string); ok && t != "" {
@@ -1041,16 +1045,20 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 			routeMatches = append(routeMatches, routeMatch{target: target, tier: tier})
 		}
 		return nil
-	})
+	}); err != nil {
+		return decision, metadata, fmt.Errorf("route query failed: %w", err)
+	}
 
 	// Fallback to arity-2: route(Target)
 	if len(routeMatches) == 0 {
-		_ = e.runtime.QueryWithSolutions(ctx, facts, fmt.Sprintf("%s(Target)", core.PredRoute), func(solution map[string]any) error {
+		if err := e.runtime.QueryWithSolutions(ctx, facts, fmt.Sprintf("%s(Target)", core.PredRoute), func(solution map[string]any) error {
 			if target, ok := solution["Target"].(string); ok {
 				routeMatches = append(routeMatches, routeMatch{target: target, tier: core.TierUnknown})
 			}
 			return nil
-		})
+		}); err != nil {
+			return decision, metadata, fmt.Errorf("route query failed: %w", err)
+		}
 	}
 
 	// 3. Resolve by tier priority.

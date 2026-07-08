@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/core/logic"
 	"github.com/duynguyendang/manglekit/sdk/ports"
 	"github.com/google/uuid"
 )
@@ -118,6 +119,7 @@ type EASTState struct {
 	Activity           map[string]int `json:"activity"`            // A: fact/rule usage counts
 	Saliency           []string       `json:"saliency"`            // S: prioritized input signals
 	TrustTier          TrustTier      `json:"trust_tier"`          // T: T0 to T3
+	ParadoxThreshold   float64        `json:"paradox_threshold"`  // Magnitude above which paradox injection triggers
 }
 
 // Steer determines the execution path based on EAST metrics.
@@ -162,9 +164,14 @@ func (e *EASTState) CalculateMagnitude() float64 {
 	return e.SteeringMagnitude
 }
 
-// ShouldInjectParadox returns true if steering magnitude exceeds paradox threshold (0.8).
+// ShouldInjectParadox returns true if steering magnitude exceeds the configured
+// paradox threshold. Falls back to the default (0.8) when unset.
 func (e *EASTState) ShouldInjectParadox() bool {
-	return e.SteeringMagnitude > 0.8
+	threshold := e.ParadoxThreshold
+	if threshold <= 0 {
+		threshold = logic.DefaultParadoxThreshold
+	}
+	return e.SteeringMagnitude > threshold
 }
 
 // Temperature returns the recommended LLM temperature based on steering magnitude.
@@ -313,6 +320,7 @@ func NewCognitiveFrame(input string, intent IntentStr, taskType TaskType) *Cogni
 		MaxRetries:     3,
 		Timeout:        5 * time.Minute,
 		PhaseDurations: make(map[Phase]time.Duration),
+		EAST:            EASTState{ParadoxThreshold: logic.DefaultParadoxThreshold},
 	}
 }
 
@@ -333,6 +341,7 @@ func NewBuilder() *Builder {
 			MaxRetries:     3,
 			Timeout:        5 * time.Minute,
 			PhaseDurations: make(map[Phase]time.Duration),
+			EAST:           EASTState{ParadoxThreshold: logic.DefaultParadoxThreshold},
 		},
 	}
 }
