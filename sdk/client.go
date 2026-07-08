@@ -172,12 +172,66 @@ func (c *Client) LoadFacts(ctx context.Context, facts []string) error {
 	return c.engine.LoadFacts(ctx, facts)
 }
 
+// RegisterExternalPredicate registers a Go callback as an external Datalog
+// predicate, allowing policies to call into Go (e.g. for PII scans, HTTP
+// requests, custom checks). External predicates registered this way must be
+// declared with `Decl ... external()` in the loaded policy; use
+// Engine().LoadFromSource (or Client.LoadFromSource when available) so the
+// engine auto-emits the matching declarations.
+//
+// Example:
+//
+//	client.RegisterExternalPredicate("pii_scan",
+//	    func(_ context.Context, inputs []any) ([][]any, error) {
+//	        s, _ := inputs[0].(string)
+//	        if ssnPattern.MatchString(s) {
+//	            return [][]any{{s}}, nil
+//	        }
+//	        return nil, nil
+//	    })
+func (c *Client) RegisterExternalPredicate(name string, fn func(ctx context.Context, inputs []any) ([][]any, error)) error {
+	if c.engine == nil {
+		return fmt.Errorf("engine not initialized")
+	}
+	if reg, ok := c.engine.(interface {
+		RegisterExternalPredicate(string, func(context.Context, []any) ([][]any, error)) error
+	}); ok {
+		return reg.RegisterExternalPredicate(name, fn)
+	}
+	return fmt.Errorf("engine does not support registering external predicates")
+}
+
+// LoadPolicy loads policy rules from a raw Datalog string.
+func (c *Client) LoadPolicy(ctx context.Context, policy string) error {
+	if c.engine == nil {
+		return fmt.Errorf("engine not initialized")
+	}
+	return c.engine.LoadPolicy(ctx, policy)
+}
+
 // LoadGherkinPolicy loads a Gherkin feature file and compiles it to Datalog.
 func (c *Client) LoadGherkinPolicy(ctx context.Context, featureContent string) error {
 	if c.engine == nil {
 		return fmt.Errorf("engine not initialized")
 	}
 	return c.engine.LoadGherkinPolicy(ctx, featureContent)
+}
+
+// LoadFromSource loads a Datalog program from a raw string, replacing any
+// existing program state. Unlike LoadPolicy (which routes to AddPolicy), this
+// path also scans the external-predicate registry and auto-emits the matching
+// `Decl ... external()` declarations. Use this when the policy references
+// external predicates that were registered via RegisterExternalPredicate.
+func (c *Client) LoadFromSource(ctx context.Context, source string) error {
+	if c.engine == nil {
+		return fmt.Errorf("engine not initialized")
+	}
+	if lfs, ok := c.engine.(interface {
+		LoadFromSource(context.Context, string) error
+	}); ok {
+		return lfs.LoadFromSource(ctx, source)
+	}
+	return fmt.Errorf("engine does not support loading from source")
 }
 
 // Tracer returns the OpenTelemetry Tracer used by the client.
