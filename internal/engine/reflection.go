@@ -96,6 +96,13 @@ func escapeString(s string) string {
 	return sb.String()
 }
 
+// EscapeString escapes special characters so the result is a valid Mangle
+// string constant. It is safe to interpolate the return value into a Datalog
+// fact; callers must still validate predicate/subject identifiers separately.
+func EscapeString(s string) string {
+	return escapeString(s)
+}
+
 func toFactsRecursive(id, path string, v reflect.Value, facts *[]string, visited map[uintptr]bool, args ...string) error {
 	if !v.IsValid() {
 		return nil

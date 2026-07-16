@@ -4,11 +4,27 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"regexp"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/core/domain"
 	"github.com/duynguyendang/manglekit/internal/core/ports"
+	"github.com/duynguyendang/manglekit/internal/engine"
 )
+
+// predicateIdentRE matches a safe Datalog predicate identifier. Facts whose
+// predicate is not a plain identifier are dropped to prevent Datalog injection.
+var predicateIdentRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// atomToDatalog renders a single Datalog fact, escaping the subject/object
+// values and validating the predicate identifier. It returns an empty string
+// when the predicate is not a safe identifier (the caller should skip it).
+func atomToDatalog(pred, subject, object string) string {
+	if !predicateIdentRE.MatchString(pred) {
+		return ""
+	}
+	return fmt.Sprintf(`%s("%s", "%s").`, pred, engine.EscapeString(subject), engine.EscapeString(object))
+}
 
 type sdkEvaluatorAdapter struct {
 	inner core.Evaluator
@@ -70,7 +86,9 @@ func (a *sdkEvaluatorAdapter) VerifyAtoms(ctx context.Context, atoms []domain.At
 	facts := make([]string, 0, len(atoms))
 	for _, atm := range atoms {
 		if atm.Subject != "" && atm.Predicate != "" {
-			facts = append(facts, fmt.Sprintf(`%s("%s", "%s").`, atm.Predicate, atm.Subject, atm.Object))
+			if f := atomToDatalog(atm.Predicate, atm.Subject, atm.Object); f != "" {
+				facts = append(facts, f)
+			}
 		}
 	}
 
@@ -208,11 +226,13 @@ func (a *sdkActionAdapter) Execute(ctx context.Context, input domain.Envelope) (
 	coreEnv := core.Envelope{
 		Payload:  input.Payload,
 		Metadata: input.Metadata,
-		Facts:    make([]string, len(input.ContextFacts)),
+		Facts:    make([]string, 0, len(input.ContextFacts)),
 	}
 
-	for i, q := range input.ContextFacts {
-		coreEnv.Facts[i] = fmt.Sprintf(`%s("%s", "%s").`, q.Predicate, q.Subject, q.Object)
+	for _, q := range input.ContextFacts {
+		if f := atomToDatalog(q.Predicate, q.Subject, q.Object); f != "" {
+			coreEnv.Facts = append(coreEnv.Facts, f)
+		}
 	}
 
 	result, err := a.inner.Execute(ctx, coreEnv)
