@@ -2,10 +2,12 @@ package ooda
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/duynguyendang/manglekit/core"
+	genkcore "github.com/firebase/genkit/go/core"
 )
 
 // ValidationError represents a validation failure with tier information.
@@ -37,6 +39,14 @@ func VerifySchema(ctx context.Context, frame *CognitiveFrame) error {
 	if frame.Brain != nil {
 		auditTrail, err := frame.Brain.Verify(ctx, frame)
 		if err != nil {
+			var schemaErr *genkcore.SchemaValidationError
+			if errors.As(err, &schemaErr) {
+				return &ValidationError{
+					RuleName: "SCHEMA_VALIDATION",
+					Tier:     Tier1Admin,
+					Message:  fmt.Sprintf("action '%s' output failed schema validation: %v", actionName, schemaErr),
+				}
+			}
 			return fmt.Errorf("schema verification failed: %w", err)
 		}
 		frame.AuditTrail = auditTrail

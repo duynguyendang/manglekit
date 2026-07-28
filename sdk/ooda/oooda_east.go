@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/duynguyendang/manglekit/core"
 )
 
 var (
@@ -59,8 +61,8 @@ func RunOODAEAST(ctx context.Context, frame *CognitiveFrame) (*CognitiveFrame, e
 
 	// 5. Decide (always run — fast-path only skips EAST steering enrichment)
 	if path == PathFast {
-		fmt.Printf("EAST fast-path: simplified Decide (entropy=%.2f, trust=%s)\n",
-			frame.EAST.Entropy, frame.EAST.TrustTier)
+		core.LoggerFromContext(ctx).Debug("EAST fast-path: simplified Decide",
+			"entropy", frame.EAST.Entropy, "trust", frame.EAST.TrustTier)
 	}
 	if err := decideWithEAST(ctx, frame); err != nil {
 		return frame, fmt.Errorf("decide failed: %w", err)
@@ -274,8 +276,8 @@ func eastPostAct(ctx context.Context, frame *CognitiveFrame) (*CognitiveFrame, e
 		}
 		frame.RawContext["refinement_feedback"] = feedback
 
-		fmt.Printf("EAST retry %d/%d: entropy=%.2f, reason=%s\n",
-			attempt+1, maxRetries, frame.EAST.Entropy, audit.ViolationTier)
+		core.LoggerFromContext(ctx).Warn("EAST retry",
+			"attempt", attempt+1, "max", maxRetries, "entropy", frame.EAST.Entropy, "reason", audit.ViolationTier)
 
 		// Re-Decide with feedback
 		if err := decideWithEAST(ctx, frame); err != nil {
@@ -306,16 +308,4 @@ func totalRulesCount(frame *CognitiveFrame) int {
 	return len(frame.Context) + len(frame.AttentionSink)
 }
 
-func max(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
-}
 
-func min(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-	return b
-}

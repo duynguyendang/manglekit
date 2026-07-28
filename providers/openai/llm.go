@@ -72,12 +72,22 @@ func (l *LLM) Generate(ctx context.Context, prompt string, opts ...core.Generate
 		},
 	}
 
-	// Apply options
 	if cfg.Temperature > 0 {
 		req.Temperature = float32(cfg.Temperature)
 	}
 	if cfg.MaxTokens > 0 {
 		req.MaxTokens = cfg.MaxTokens
+	}
+	if cfg.TopP > 0 {
+		req.TopP = float32(cfg.TopP)
+	}
+	if len(cfg.StopSequences) > 0 {
+		req.Stop = cfg.StopSequences
+	}
+	if cfg.JSONMode {
+		req.ResponseFormat = &openai.ChatCompletionResponseFormat{
+			Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+		}
 	}
 
 	resp, err := l.client.CreateChatCompletion(ctx, req)

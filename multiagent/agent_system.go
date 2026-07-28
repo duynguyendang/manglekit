@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -473,11 +472,8 @@ func (s *AgentSystem) EvaluateCondition(ctx context.Context, condition string, c
 	return len(results) > 0, nil
 }
 
-// escapeDatalog escapes special characters for Datalog
 func escapeDatalog(s string) string {
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	return s
+	return engine.EscapeString(s)
 }
 
 // Envelope wraps the input/output for agent execution

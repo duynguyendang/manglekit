@@ -80,8 +80,7 @@ func (m *HybridMemory) Recall(ctx context.Context, query string) (string, error)
 	for _, id := range ids {
 		content, err := m.Vectors.Get(ctx, id)
 		if err != nil {
-			// If a document is missing, we skip it but log/warn if we had a logger.
-			// For now, continue.
+			core.LoggerFromContext(ctx).Warn("skipping missing document in recall", "id", id, "error", err)
 			continue
 		}
 		sb.WriteString(content)
@@ -124,6 +123,7 @@ func (m *HybridMemory) RecallWithFacts(ctx context.Context, query string) (strin
 	for _, id := range ids {
 		content, err := m.Vectors.Get(ctx, id)
 		if err != nil {
+			core.LoggerFromContext(ctx).Warn("skipping missing document in recall", "id", id, "error", err)
 			continue
 		}
 		facts[fmt.Sprintf("memory_hit_%d", hit)] = id

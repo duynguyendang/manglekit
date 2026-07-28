@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/internal/engine"
 )
 
 type NodeExecutor interface {
@@ -339,7 +340,7 @@ func (e *WorkflowExecutor) evaluateCondition(ctx context.Context, condition stri
 func formatValue(v interface{}) string {
 	switch val := v.(type) {
 	case string:
-		return strings.ReplaceAll(val, `"`, `\"`)
+		return engine.EscapeString(val)
 	case nil:
 		return "null"
 	default:

@@ -1,5 +1,7 @@
 package config
 
+import "fmt"
+
 // Config is the root configuration structure for Manglekit.
 // It maps to the YAML configuration file and defines all settings for the system.
 type Config struct {
@@ -104,6 +106,31 @@ type ActionConfig struct {
 
 	// Options contains arbitrary provider-specific settings.
 	Options map[string]interface{} `yaml:"options" mapstructure:"options"`
+}
+
+// Validate checks the configuration for invalid values.
+func (c *Config) Validate() error {
+	switch c.FailureMode {
+	case "", FailureModeClosed, FailureModeOpen:
+	default:
+		return fmt.Errorf("failure_mode must be %q or %q, got %q", FailureModeClosed, FailureModeOpen, c.FailureMode)
+	}
+
+	switch c.Observability.LogLevel {
+	case "", "debug", "info", "warn", "error":
+	default:
+		return fmt.Errorf("log_level must be one of debug, info, warn, error; got %q", c.Observability.LogLevel)
+	}
+
+	if c.Policy.EvaluationTimeout < 0 {
+		return fmt.Errorf("policy.evaluation_timeout must be non-negative, got %d", c.Policy.EvaluationTimeout)
+	}
+
+	if c.Policy.MaxSteps < 0 {
+		return fmt.Errorf("policy.max_steps must be non-negative, got %d", c.Policy.MaxSteps)
+	}
+
+	return nil
 }
 
 // MCPServerConfig defines how to connect to an MCP server.

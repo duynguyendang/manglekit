@@ -190,11 +190,13 @@ func (e *Envelope) MergeLabels(other []string) {
 }
 
 // SetHistory serializes a list of chat messages into the envelope's metadata.
-func (e *Envelope) SetHistory(msgs []Message) {
+func (e *Envelope) SetHistory(msgs []Message) error {
 	b, err := json.Marshal(msgs)
-	if err == nil {
-		e.SetMeta(KeyHistory, string(b))
+	if err != nil {
+		return fmt.Errorf("failed to marshal history: %w", err)
 	}
+	e.SetMeta(KeyHistory, string(b))
+	return nil
 }
 
 // Decision: Structured result from the Policy Engine.

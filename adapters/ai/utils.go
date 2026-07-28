@@ -3,11 +3,13 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/ai"
+	genkcore "github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
 )
 
@@ -38,14 +40,20 @@ func GenerateStruct[T any](ctx context.Context, gen core.TextGenerator, sysPromp
 			ai.NewUserMessage(ai.NewTextPart(effectiveUserPrompt)),
 		}
 
-		// Use native genkit.Generate directly on the model
-		resp, err := genkit.Generate(ctx, adapter.GenkitInstance(),
+		genCtx := injectTelemetryLabels(ctx)
+
+		// Use native genkit.Generate directly on the model with constrained decoding
+		resp, err := genkit.Generate(genCtx, adapter.GenkitInstance(),
 			ai.WithModel(adapter.GenkitModel()),
 			ai.WithMessages(messages...),
-			ai.WithOutputType(new(T)), // <--- Native Structured Output
+			ai.WithOutputType(new(T)), // <--- Native Structured Output (constrained decoding)
 		)
 
 		if err != nil {
+			var schemaErr *genkcore.SchemaValidationError
+			if errors.As(err, &schemaErr) {
+				return result, fmt.Errorf("structured output validation failed: %w", schemaErr)
+			}
 			return result, fmt.Errorf("genkit native generation failed: %w", err)
 		}
 

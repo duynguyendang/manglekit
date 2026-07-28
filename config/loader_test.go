@@ -231,3 +231,95 @@ observability:
 		t.Errorf("Expected service name reader-test, got %q", cfg.Observability.ServiceName)
 	}
 }
+
+func TestExpandEnvWithDefaults_DefaultSyntax(t *testing.T) {
+	os.Unsetenv("POLICY_PATH")
+	result := expandEnvWithDefaults("path: ${POLICY_PATH:-./policies/main.dl}")
+	expected := "path: ./policies/main.dl"
+	if result != expected {
+		t.Errorf("Expected %q, got %q", expected, result)
+	}
+
+	os.Setenv("POLICY_PATH", "/custom/path.dl")
+	defer os.Unsetenv("POLICY_PATH")
+	result = expandEnvWithDefaults("path: ${POLICY_PATH:-./policies/main.dl}")
+	expected = "path: /custom/path.dl"
+	if result != expected {
+		t.Errorf("Expected %q, got %q", expected, result)
+	}
+}
+
+func TestExpandEnvWithDefaults_Allowlist(t *testing.T) {
+	os.Setenv("SECRET_KEY", "super-secret")
+	defer os.Unsetenv("SECRET_KEY")
+
+	result := expandEnvWithDefaults("key: ${SECRET_KEY}")
+	if result != "key: " {
+		t.Errorf("Expected disallowed var to expand to empty, got %q", result)
+	}
+
+	os.Setenv("API_KEY", "allowed-key")
+	defer os.Unsetenv("API_KEY")
+	result = expandEnvWithDefaults("key: ${API_KEY}")
+	if result != "key: allowed-key" {
+		t.Errorf("Expected allowed var to expand, got %q", result)
+	}
+}
+
+func TestExpandEnvWithDefaults_DisallowedWithDefault(t *testing.T) {
+	os.Unsetenv("SECRET_TOKEN")
+	result := expandEnvWithDefaults("token: ${SECRET_TOKEN:-fallback}")
+	if result != "token: fallback" {
+		t.Errorf("Expected disallowed var to use default, got %q", result)
+	}
+}
+
+func TestValidate_InvalidFailureMode(t *testing.T) {
+	cfg := &Config{FailureMode: "banana"}
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Expected error for invalid failure_mode, got nil")
+	}
+}
+
+func TestValidate_InvalidLogLevel(t *testing.T) {
+	cfg := &Config{Observability: ObservabilityConfig{LogLevel: "verbose"}}
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Expected error for invalid log_level, got nil")
+	}
+}
+
+func TestValidate_NegativeTimeout(t *testing.T) {
+	cfg := &Config{Policy: PolicyConfig{EvaluationTimeout: -1}}
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Expected error for negative evaluation_timeout, got nil")
+	}
+}
+
+func TestValidate_NegativeMaxSteps(t *testing.T) {
+	cfg := &Config{Policy: PolicyConfig{MaxSteps: -5}}
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Expected error for negative max_steps, got nil")
+	}
+}
+
+func TestValidate_ValidConfig(t *testing.T) {
+	cfg := &Config{
+		FailureMode:   FailureModeClosed,
+		Observability: ObservabilityConfig{LogLevel: "debug"},
+		Policy:        PolicyConfig{EvaluationTimeout: 30, MaxSteps: 10},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Expected valid config to pass, got: %v", err)
+	}
+}
+
+func TestValidate_EmptyOptionalFields(t *testing.T) {
+	cfg := &Config{}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Expected empty config to pass validation, got: %v", err)
+	}
+}

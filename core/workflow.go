@@ -79,22 +79,37 @@ func (w *WorkflowDef) GetOutgoingEdges(nodeID string) []EdgeDef {
 }
 
 func (w *WorkflowDef) FindStartNode() *NodeDef {
+	if w.RootNodeID != "" {
+		if node := w.GetNode(w.RootNodeID); node != nil {
+			return node
+		}
+	}
+
 	hasIncoming := make(map[string]bool)
 	for _, edge := range w.Edges {
 		hasIncoming[edge.To] = true
 	}
 
+	var best *NodeDef
 	for id, node := range w.Nodes {
 		if !hasIncoming[id] {
-			return &node
+			if best == nil || id < best.ID {
+				n := node
+				best = &n
+			}
 		}
 	}
-
-	for _, node := range w.Nodes {
-		return &node
+	if best != nil {
+		return best
 	}
 
-	return nil
+	for id, node := range w.Nodes {
+		if best == nil || id < best.ID {
+			n := node
+			best = &n
+		}
+	}
+	return best
 }
 
 func (w *WorkflowDef) Validate() error {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/core/tracing"
 	"github.com/firebase/genkit/go/genkit"
 )
 
@@ -96,7 +97,7 @@ func (g *genkitAdapter) Complete(ctx context.Context, prompt string) (string, er
 }
 
 // Generate implements the core.TextGenerator interface using Genkit.
-// Supports genkit 1.7 middleware via WithMiddleware, WithRetry, WithFallback, etc.
+// Supports genkit 1.7+ middleware via WithMiddleware, WithRetry, WithFallback, etc.
 func (g *genkitAdapter) Generate(ctx context.Context, prompt string, opts ...core.GenerateOption) (*core.LLMResponse, error) {
 	// Initialize Config
 	cfg := &core.GenerationConfig{
@@ -105,6 +106,8 @@ func (g *genkitAdapter) Generate(ctx context.Context, prompt string, opts ...cor
 	for _, opt := range opts {
 		opt(cfg)
 	}
+
+	ctx = injectTelemetryLabels(ctx)
 
 	var messages []*ai.Message
 
@@ -193,6 +196,7 @@ func (g *genkitAdapter) Generate(ctx context.Context, prompt string, opts ...cor
 // Stream implements the core.TextGenerator interface.
 // It uses Genkit's streaming callback to deliver incremental chunks.
 func (g *genkitAdapter) Stream(ctx context.Context, prompt string) (<-chan core.StreamChunk, error) {
+	ctx = injectTelemetryLabels(ctx)
 	ch := make(chan core.StreamChunk, 8)
 
 	streamCb := func(ctx context.Context, chunk *ai.ModelResponseChunk) error {
@@ -224,4 +228,33 @@ func (g *genkitAdapter) Stream(ctx context.Context, prompt string) (<-chan core.
 	}()
 
 	return ch, nil
+}
+
+// injectTelemetryLabels propagates manglekit tracing metadata (TraceID, SessionID)
+// into Genkit's telemetry label system so Dev UI spans are correlated with OODA frames.
+func injectTelemetryLabels(ctx context.Context) context.Context {
+	facts := core.ContextFacts(ctx)
+	if facts == nil {
+		return ctx
+	}
+
+	labels := tracing.TelemetryLabelsFromContext(ctx)
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+
+	if v, ok := facts[core.KeyTraceID]; ok && v != "" {
+		labels["manglekit.trace_id"] = v
+	}
+	if v, ok := facts["session_id"]; ok && v != "" {
+		labels["manglekit.session_id"] = v
+	}
+	if v, ok := facts["parent_id"]; ok && v != "" {
+		labels["manglekit.parent_id"] = v
+	}
+
+	if len(labels) > 0 {
+		ctx = tracing.WithTelemetryLabels(ctx, labels)
+	}
+	return ctx
 }

@@ -6,7 +6,7 @@ require (
 	codeberg.org/TauCeti/mangle-go v0.5.0
 	github.com/cayleygraph/quad v1.3.0
 	github.com/dgraph-io/badger/v4 v4.9.1
-	github.com/firebase/genkit/go v1.7.0
+	github.com/firebase/genkit/go v1.11.0
 	github.com/google/generative-ai-go v0.20.1
 	github.com/google/jsonschema-go v0.4.2
 	github.com/google/uuid v1.6.0
@@ -85,7 +85,7 @@ require (
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	google.golang.org/genai v1.51.0 // indirect
+	google.golang.org/genai v1.57.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260128011058-8636f8732409 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260203192932-546029d2fa20 // indirect
 	google.golang.org/grpc v1.78.0 // indirect

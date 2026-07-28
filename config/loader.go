@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -23,20 +24,70 @@ func Load(path string) (*Config, error) {
 }
 
 // ParseConfig unmarshals a byte slice into a Config object.
-// It also expands environment variables in the YAML content before unmarshaling.
+// It expands environment variables referenced with ${VAR_NAME} or ${VAR_NAME:-default}
+// syntax before unmarshaling. Only explicitly referenced variables are expanded.
 func ParseConfig(data []byte) (*Config, error) {
-	// Expand environment variables in the YAML content
-	expandedContent := []byte(os.ExpandEnv(string(data)))
+	expandedContent := []byte(expandEnvWithDefaults(string(data)))
 
 	var cfg Config
 	if err := yaml.Unmarshal(expandedContent, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal YAML: %w", err)
 	}
 
-	// Apply defaults
 	applyDefaults(&cfg)
 
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
 	return &cfg, nil
+}
+
+var allowedEnvPrefixes = []string{
+	"MANGLEKIT_",
+	"POLICY_",
+	"SERVICE_",
+	"LOG_",
+	"OTLP_",
+	"API_",
+	"GOOGLE_",
+	"OPENAI_",
+	"MCP_",
+}
+
+func isAllowedEnvVar(name string) bool {
+	for _, prefix := range allowedEnvPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func expandEnvWithDefaults(s string) string {
+	return os.Expand(s, func(key string) string {
+		varName := key
+		defaultVal := ""
+		hasDefault := false
+
+		if idx := strings.Index(key, ":-"); idx >= 0 {
+			varName = key[:idx]
+			defaultVal = key[idx+2:]
+			hasDefault = true
+		}
+
+		if !isAllowedEnvVar(varName) {
+			if hasDefault {
+				return defaultVal
+			}
+			return ""
+		}
+
+		if v, ok := os.LookupEnv(varName); ok {
+			return v
+		}
+		return defaultVal
+	})
 }
 
 // LoadFromReader reads a YAML configuration from the provided reader and returns a Config object.

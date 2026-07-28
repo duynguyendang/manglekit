@@ -86,12 +86,12 @@ func NewAuditRecordFromTrail(trail *AuditTrail, step int, outcome string) AuditR
 func (s *SessionState) MarshalJSON() ([]byte, error) {
 	type Alias SessionState
 
-	// Create a copy with the payload type captured
-	if s.ActiveEnvelope.Payload != nil {
-		s.PayloadType = fmt.Sprintf("%T", s.ActiveEnvelope.Payload)
+	clone := *s
+	if clone.ActiveEnvelope.Payload != nil {
+		clone.PayloadType = fmt.Sprintf("%T", clone.ActiveEnvelope.Payload)
 	}
 
-	return json.Marshal((*Alias)(s))
+	return json.Marshal((*Alias)(&clone))
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling for SessionState.

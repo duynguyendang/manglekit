@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	adapterai "github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/ai"
@@ -82,8 +83,7 @@ func (l *Loader) WithLogger(logger core.Logger) *Loader {
 // If FailOnStartup is false (default), it logs a warning and returns "Unhealthy" actions
 // for expected tools defined in the config.
 func (l *Loader) Load(ctx context.Context) ([]core.Action, error) {
-	// Initialize Genkit context
-	g := genkit.Init(ctx)
+	g := adapterai.GetGenkit(ctx)
 
 	client, err := l.factory.CreateClient(ctx, l.config)
 	if err == nil {

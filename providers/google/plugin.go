@@ -11,12 +11,33 @@ import (
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 )
 
+// Config holds configuration for the Google AI provider.
+type Config struct {
+	APIKey     string
+	ModelName  string
+	Project    string // Vertex AI project (enables Vertex mode)
+	Location   string // Vertex AI region (e.g. "us-central1", "us", "eu", "global")
+	APIVersion string // Vertex AI API version override (e.g. "v1", "v1beta")
+}
+
 // Init sets up the Google provider using a Proxy Pattern.
 // It isolates the Google plugin in a local instance and registers a proxy in the global registry.
 // logger receives a warning whenever the proxied request's GenerationConfig is dropped (see the
 // workaround below) so the loss of Temperature/MaxOutputTokens is observable rather than silent.
 func Init(ctx context.Context, globalG *genkit.Genkit, apiKey string, modelName string, logger core.Logger) (string, error) {
-	// 1. Fallback & Validation
+	return InitWithConfig(ctx, globalG, Config{APIKey: apiKey, ModelName: modelName}, logger)
+}
+
+// InitWithConfig sets up the Google provider with full configuration including Vertex AI multi-region support.
+func InitWithConfig(ctx context.Context, globalG *genkit.Genkit, cfg Config, logger core.Logger) (string, error) {
+	apiKey := cfg.APIKey
+	modelName := cfg.ModelName
+
+	if cfg.Project != "" {
+		return initVertexAI(ctx, globalG, cfg, logger)
+	}
+
+	// Google AI (API key) mode
 	if apiKey == "" {
 		apiKey = os.Getenv("GOOGLE_API_KEY")
 	}
@@ -24,34 +45,70 @@ func Init(ctx context.Context, globalG *genkit.Genkit, apiKey string, modelName 
 		return "", fmt.Errorf("google provider: API Key is required")
 	}
 
-	// 2. Setup Local Sandbox (Isolated Genkit Instance)
-	// We init the plugin here to avoid polluting the global state or dealing with version conflicts.
 	plugin := &googlegenai.GoogleAI{APIKey: apiKey}
 	localG := genkit.Init(context.Background(), genkit.WithPlugins(plugin))
 	if localG == nil {
 		return "", fmt.Errorf("failed to init local genkit sandbox for google")
 	}
 
-	// 3. Lookup Real Model in Sandbox
-	// Note: The plugin usually registers models simply by name or with 'googleai/' prefix.
 	realModel := genkit.LookupModel(localG, modelName)
 	if realModel == nil {
-		// Try prefix if direct lookup fails
 		realModel = genkit.LookupModel(localG, "googleai/"+modelName)
 	}
 	if realModel == nil {
 		return "", fmt.Errorf("model '%s' not found in local google plugin", modelName)
 	}
 
-	// 4. Register Proxy in Global Registry
-	// We use a standardized name in the global registry: "googleai/{modelName}"
 	globalName := "googleai/" + modelName
-
-	// Avoid re-registering if already exists
 	if genkit.LookupModel(globalG, globalName) != nil {
 		return globalName, nil
 	}
 
+	registerProxy(globalG, globalName, modelName, realModel, logger)
+	return globalName, nil
+}
+
+// initVertexAI sets up the Vertex AI provider with multi-region support.
+func initVertexAI(ctx context.Context, globalG *genkit.Genkit, cfg Config, logger core.Logger) (string, error) {
+	location := cfg.Location
+	if location == "" {
+		location = os.Getenv("GOOGLE_CLOUD_LOCATION")
+	}
+	if location == "" {
+		location = os.Getenv("GOOGLE_CLOUD_REGION")
+	}
+	if location == "" {
+		location = "us-central1"
+	}
+
+	plugin := &googlegenai.VertexAI{
+		ProjectID:  cfg.Project,
+		Location:   location,
+		APIVersion: cfg.APIVersion,
+	}
+	localG := genkit.Init(context.Background(), genkit.WithPlugins(plugin))
+	if localG == nil {
+		return "", fmt.Errorf("failed to init local genkit sandbox for vertex ai")
+	}
+
+	realModel := genkit.LookupModel(localG, cfg.ModelName)
+	if realModel == nil {
+		realModel = genkit.LookupModel(localG, "vertexai/"+cfg.ModelName)
+	}
+	if realModel == nil {
+		return "", fmt.Errorf("model '%s' not found in vertex ai plugin (project=%s, location=%s)", cfg.ModelName, cfg.Project, location)
+	}
+
+	globalName := "vertexai/" + cfg.ModelName
+	if genkit.LookupModel(globalG, globalName) != nil {
+		return globalName, nil
+	}
+
+	registerProxy(globalG, globalName, cfg.ModelName, realModel, logger)
+	return globalName, nil
+}
+
+func registerProxy(globalG *genkit.Genkit, globalName, modelName string, realModel ai.Model, logger core.Logger) {
 	meta := &ai.ModelOptions{
 		Label: modelName,
 		Supports: &ai.ModelSupports{
@@ -59,15 +116,8 @@ func Init(ctx context.Context, globalG *genkit.Genkit, apiKey string, modelName 
 		},
 	}
 
-	// Define the Proxy
-	// This function forwards calls from Global -> Local
 	genkit.DefineModel(globalG, globalName, meta,
 		func(ctx context.Context, req *ai.ModelRequest, cb func(context.Context, *ai.ModelResponseChunk) error) (*ai.ModelResponse, error) {
-			// WORKAROUND: The google plugin rejects standard GenerationConfig
-			// (e.g. Temperature, MaxOutputTokens) on proxied models. Clearing
-			// the config lets the request through to the real model which
-			// applies its own defaults. This should be removed once the
-			// upstream Genkit google plugin handles proxied configs correctly.
 			if req.Config != nil {
 				if logger != nil {
 					logger.Warn("google proxy dropping GenerationConfig; upstream plugin rejects config on proxied models",
@@ -75,11 +125,7 @@ func Init(ctx context.Context, globalG *genkit.Genkit, apiKey string, modelName 
 				}
 				req.Config = nil
 			}
-
-			// Forward to the real model in the sandbox
 			return realModel.Generate(ctx, req, cb)
 		},
 	)
-
-	return globalName, nil
 }

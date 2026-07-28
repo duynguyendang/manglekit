@@ -241,8 +241,7 @@ func act(ctx context.Context, frame *CognitiveFrame) error {
 			Graph:     "session",
 		})
 		if err != nil {
-			// Log but don't fail the action
-			fmt.Printf("Warning: failed to commit action result to transient store: %v\n", err)
+			core.LoggerFromContext(ctx).Warn("failed to commit action result to transient store", "error", err)
 		}
 	}
 
@@ -327,7 +326,7 @@ func actWithRetry(ctx context.Context, frame *CognitiveFrame) error {
 		if frame.Executor != nil && frame.ActionResult != nil {
 			rollbackErr := frame.Executor.Rollback(ctx, frame, frame.ActionResult)
 			if rollbackErr != nil {
-				fmt.Printf("Warning: rollback failed: %v\n", rollbackErr)
+				core.LoggerFromContext(ctx).Warn("rollback failed", "error", rollbackErr)
 			}
 		}
 	}
@@ -361,7 +360,7 @@ func verify(ctx context.Context, frame *CognitiveFrame) error {
 			Graph:     "session",
 		})
 		if err != nil {
-			fmt.Printf("Warning: failed to store verify status: %v\n", err)
+			core.LoggerFromContext(ctx).Warn("failed to store verify status", "error", err)
 		}
 
 		// If verification failed, flag for retry

@@ -251,7 +251,9 @@ func (c *Client) injectContext(ctx context.Context, env *core.Envelope, payload 
 
 	// Inject chat history
 	if len(params.CurrentHistory) > 0 && params.MemoryMode != core.MemoryModeNone {
-		env.SetHistory(params.CurrentHistory)
+		if err := env.SetHistory(params.CurrentHistory); err != nil {
+			c.logger.Warn("failed to set history on envelope", "error", err)
+		}
 	}
 
 	// Inject semantic memory (RAG)
