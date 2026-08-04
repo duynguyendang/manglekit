@@ -18,22 +18,19 @@ type Action interface {
 // SupervisedAction wraps an inner capability with the Zero-Trust Gatekeeper.
 // LLD 6.1: Intercepts execution, shadows audit, and reflects on output.
 type SupervisedAction struct {
-	inner       Action
-	verifier    ports.ReasoningPort
-	genePool    ports.GenePoolPort
-	failureMode string // "open" (lenient on soft tiers) or "closed" (block all tiers)
+	inner    Action
+	verifier ports.ReasoningPort
+	genePool ports.GenePoolPort
 }
 
-// New wraps an inner capability with the Zero-Trust Gatekeeper. The failure
-// mode defaults to "open" (lenient for Tier-2/3 soft rules) to preserve
-// backward compatibility; the SDK client passes its configured mode
-// (defaulting to "closed").
+// New wraps an inner capability with the Zero-Trust Gatekeeper.
+// The pre-flight gate is always fail-closed: verifier errors and Tier-0/1
+// violations block execution.
 func New(inner Action, verifier ports.ReasoningPort, genePool ports.GenePoolPort) *SupervisedAction {
 	return &SupervisedAction{
-		inner:       inner,
-		verifier:    verifier,
-		genePool:    genePool,
-		failureMode: "open",
+		inner:    inner,
+		verifier: verifier,
+		genePool: genePool,
 	}
 }
 

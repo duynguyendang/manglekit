@@ -1,0 +1,10 @@
+% Policy for the "{{.Snake}}" skill.
+%
+% halt/2 blocks the action pre-flight (fail-closed) at Tier 0/1.
+% Facts available at pre-check: action_operation/2, meta/2, label/1,
+% plus mangle-tagged payload fields (see the pre-check fact contract).
+
+% Block requests explicitly flagged via metadata (exercised by the contract test).
+halt("Req", "request flagged as blocked") :-
+    action_operation("Req", "{{.Snake}}"),
+    meta("blocked", "true").

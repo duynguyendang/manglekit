@@ -10,6 +10,7 @@ import (
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/kg"
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/run"
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/serve"
+	"github.com/duynguyendang/manglekit/cmd/mkit/commands/skill"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
@@ -40,5 +41,6 @@ func main() {
 	eval.AddCommands(rootCmd)
 	run.AddCommands(rootCmd)
 	serve.AddCommands(rootCmd)
+	skill.AddCommands(rootCmd)
 	Execute()
 }

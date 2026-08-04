@@ -13,21 +13,19 @@ import (
 // 1. HistoryStore (Sequential Chat Logs)
 // 2. VectorStore (Semantic Search / RAG)
 type HybridMemory struct {
-	History        core.HistoryStore
-	Vectors        core.VectorStore
-	Embedder       core.Embedder // Kept for interface compatibility, but VectorStore handles embedding.
-	CollectionName string        // Deprecated: VectorStore handles collections internally or ignores them.
-	TopK           int           // Number of results to retrieve (default: 3)
+	History  core.HistoryStore
+	Vectors  core.VectorStore
+	Embedder core.Embedder // Kept for interface compatibility, but VectorStore handles embedding.
+	TopK     int           // Number of results to retrieve (default: 3)
 }
 
 // NewHybridMemory creates a new memory orchestrator with default RAG settings.
 func NewHybridMemory(h core.HistoryStore, v core.VectorStore, e core.Embedder) *HybridMemory {
 	return &HybridMemory{
-		History:        h,
-		Vectors:        v,
-		Embedder:       e,
-		CollectionName: "default",
-		TopK:           3,
+		History:  h,
+		Vectors:  v,
+		Embedder: e,
+		TopK:     3,
 	}
 }
 

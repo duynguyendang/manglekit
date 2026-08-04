@@ -244,11 +244,10 @@ func (a *sdkActionAdapter) Execute(ctx context.Context, input domain.Envelope) (
 }
 
 type supervisedActionV2 struct {
-	inner       *SupervisedAction
-	wrapped     core.Action
-	extractor   Extractor // optional: converts free-text payloads to structured data
-	failureMode string    // "open" or "closed" — controls extraction failure behavior
-	logger      core.Logger
+	inner     *SupervisedAction
+	wrapped   core.Action
+	extractor Extractor // optional: converts free-text payloads to structured data
+	logger    core.Logger
 }
 
 // Extractor defines the interface for converting free-text payloads to structured data.
@@ -268,18 +267,10 @@ func (a *supervisedActionV2) Execute(ctx context.Context, input core.Envelope) (
 		if text, ok := payload.(string); ok {
 			extracted, err := a.extractor.Extract(ctx, text)
 			if err != nil {
-				if a.failureMode == "open" {
-					// Fail-open: log and continue with raw text
-					if a.logger != nil {
-						a.logger.Warn("extraction failed, continuing with raw text", "error", err)
-					}
-				} else {
-					// Fail-closed (default): block execution
-					return core.Envelope{}, fmt.Errorf("extraction failed (fail-closed): %w", err)
-				}
-			} else {
-				payload = extracted
+				// Fail-closed: block execution on extraction failure.
+				return core.Envelope{}, fmt.Errorf("extraction failed (fail-closed): %w", err)
 			}
+			payload = extracted
 		}
 	}
 
@@ -307,7 +298,7 @@ func (a *supervisedActionV2) Metadata() core.ActionMetadata {
 	return a.wrapped.Metadata()
 }
 
-func NewSupervisedActionFromSDK(action core.Action, evaluator core.Evaluator, failureMode string, logger core.Logger) core.Action {
+func NewSupervisedActionFromSDK(action core.Action, evaluator core.Evaluator, logger core.Logger) core.Action {
 	reasoningAdapter := &sdkEvaluatorAdapter{inner: evaluator}
 	genePoolAdapter := &sdkGenePoolAdapter{evaluator: evaluator}
 
@@ -324,10 +315,9 @@ func NewSupervisedActionFromSDK(action core.Action, evaluator core.Evaluator, fa
 	}
 
 	return &supervisedActionV2{
-		inner:       supervised,
-		wrapped:     action,
-		failureMode: failureMode,
-		logger:      logger,
+		inner:   supervised,
+		wrapped: action,
+		logger:  logger,
 	}
 }
 

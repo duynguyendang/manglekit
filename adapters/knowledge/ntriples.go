@@ -100,16 +100,3 @@ func escape(s string) string {
 	return s
 }
 
-// NTriplesLoader is a zero-dependency, high-performance loader for N-Triples data.
-// Deprecated: Use ParseNTriples function instead.
-type NTriplesLoader struct{}
-
-// NewNTriplesLoader creates a new instance of NTriplesLoader.
-func NewNTriplesLoader() *NTriplesLoader {
-	return &NTriplesLoader{}
-}
-
-// Parse delegates to ParseNTriples.
-func (l *NTriplesLoader) Parse(r io.Reader) ([]string, error) {
-	return ParseNTriples(r)
-}

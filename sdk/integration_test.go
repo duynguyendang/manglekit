@@ -25,7 +25,7 @@ func TestPreCheckHaltOnActionOperation(t *testing.T) {
 		return "", nil
 	})
 
-	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, core.NopLogger{})
 
 	_, err = sv.Execute(context.Background(), core.NewEnvelope("payload"))
 	require.Error(t, err, "policy should halt on action_operation match")
@@ -48,7 +48,7 @@ func TestPreCheckProceedOnActionOperation(t *testing.T) {
 		return "ok", nil
 	})
 
-	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, core.NopLogger{})
 
 	_, err = sv.Execute(context.Background(), core.NewEnvelope("payload"))
 	require.NoError(t, err, "policy should allow non-matching action")
@@ -69,7 +69,7 @@ func TestPreCheckHaltOnMeta(t *testing.T) {
 		return "", nil
 	})
 
-	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, core.NopLogger{})
 
 	env := core.NewEnvelope("payload")
 	env.Metadata["role"] = "banned"
@@ -93,7 +93,7 @@ func TestPreCheckHaltOnLabel(t *testing.T) {
 		return "", nil
 	})
 
-	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, core.NopLogger{})
 
 	env := core.NewEnvelope("payload")
 	env.SecurityLabels = []string{"classified"}
@@ -123,7 +123,7 @@ func TestPreCheckHaltOnPayloadFact(t *testing.T) {
 		return "", nil
 	})
 
-	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, core.NopLogger{})
 
 	env := core.NewEnvelope("payload")
 	env.Metadata["input_type"] = "dangerous"
@@ -153,7 +153,7 @@ halt("Req", "untrusted_source") :- source("Req", "untrusted").
 		return "", nil
 	})
 
-	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, core.NopLogger{})
 
 	env := core.NewEnvelope("payload")
 	env.Facts = append(env.Facts, `source("Req", "untrusted").`)
@@ -178,7 +178,7 @@ func TestPreCheckBlocksInnerAction(t *testing.T) {
 		return "ok", nil
 	})
 
-	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, core.NopLogger{})
 
 	_, err = sv.Execute(context.Background(), core.NewEnvelope("payload"))
 	require.Error(t, err)
@@ -198,7 +198,7 @@ func TestPreCheckAuditTrailPopulated(t *testing.T) {
 		return "ok", nil
 	})
 
-	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, core.NopLogger{})
 
 	env := core.NewEnvelope("payload")
 	env.Metadata["trigger"] = "yes"
@@ -232,7 +232,7 @@ halt("Output", "blocked_output") :- content("Output", "blocked").
 		return output{Content: "blocked"}, nil
 	})
 
-	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, core.NopLogger{})
 
 	_, err = sv.Execute(context.Background(), core.NewEnvelope("payload"))
 	require.Error(t, err, "post-check should halt on output policy violation")
@@ -263,7 +263,7 @@ halt("Output", "blocked_output") :- content("Output", "blocked").
 		return output{Content: "safe"}, nil
 	})
 
-	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, core.NopLogger{})
 
 	_, err = sv.Execute(context.Background(), core.NewEnvelope("payload"))
 	require.NoError(t, err, "post-check should pass on clean output")
@@ -287,7 +287,7 @@ func TestPreCheckProceedWithNoMetadata(t *testing.T) {
 		return "ok", nil
 	})
 
-	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+	sv := supervisor.NewSupervisedActionFromSDK(inner, eval, core.NopLogger{})
 
 	_, err = sv.Execute(context.Background(), core.NewEnvelope("payload"))
 	require.NoError(t, err)

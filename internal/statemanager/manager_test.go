@@ -47,6 +47,14 @@ func (m *mockEvaluator) LoadFacts(ctx context.Context, facts []string) error {
 	return nil
 }
 
+func (m *mockEvaluator) LoadFromSource(ctx context.Context, source string) error {
+	return nil
+}
+
+func (m *mockEvaluator) RegisterExternalPredicate(name string, fn func(ctx context.Context, inputs []any) ([][]any, error)) error {
+	return nil
+}
+
 func (m *mockEvaluator) LoadPolicy(ctx context.Context, policy string) error {
 	return nil
 }

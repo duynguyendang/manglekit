@@ -8,11 +8,6 @@ type Config struct {
 	// Policy configuration for the Datalog engine.
 	Policy PolicyConfig `yaml:"policy" mapstructure:"policy"`
 
-	// FailureMode determines how the system behaves when the policy engine or guard fails.
-	// - "closed" (Default): Blocks the action (returns error).
-	// - "open": Allows the action to proceed (logs warning).
-	FailureMode string `yaml:"failure_mode" mapstructure:"failure_mode"`
-
 	// Observability configuration (Logging and Tracing).
 	Observability ObservabilityConfig `yaml:"observability" mapstructure:"observability"`
 
@@ -29,13 +24,6 @@ type Config struct {
 	// Memory configuration for Semantic Memory (RAG).
 	Memory MemoryConfig `yaml:"memory" mapstructure:"memory"`
 }
-
-const (
-	// FailureModeClosed ensures the system blocks on governance errors.
-	FailureModeClosed = "closed"
-	// FailureModeOpen allows the system to proceed (fail-open) on governance errors.
-	FailureModeOpen = "open"
-)
 
 // KnowledgeConfig settings for loading static knowledge bases.
 type KnowledgeConfig struct {
@@ -110,12 +98,6 @@ type ActionConfig struct {
 
 // Validate checks the configuration for invalid values.
 func (c *Config) Validate() error {
-	switch c.FailureMode {
-	case "", FailureModeClosed, FailureModeOpen:
-	default:
-		return fmt.Errorf("failure_mode must be %q or %q, got %q", FailureModeClosed, FailureModeOpen, c.FailureMode)
-	}
-
 	switch c.Observability.LogLevel {
 	case "", "debug", "info", "warn", "error":
 	default:

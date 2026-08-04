@@ -83,7 +83,7 @@ func TestServe_PolicyViolation(t *testing.T) {
 		ctx := context.Background()
 
 		// Use failure mode "closed" (default) to ensure blockage
-		client, err := sdk.NewClient(ctx, sdk.WithFailMode("closed"))
+		client, err := sdk.NewClient(ctx)
 		if err != nil {
 			t.Fatalf("Failed to create client: %v", err)
 		}

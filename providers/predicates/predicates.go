@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/duynguyendang/manglekit/core"
 )
 
 // RateLimitEntry tracks request counts per key within a fixed window.
@@ -234,14 +236,12 @@ func rateLimitExceeded(_ context.Context, inputs []any) ([][]any, error) {
 //	}
 //
 // Parameters:
-//   - reg: Anything that has RegisterExternalPredicate(name, fn) method.
-//     This includes *engine.PolicyEngine and *engine.MangleRuntime.
+//   - reg: Any core.ExternalPredicateRegistrar. This includes
+//     *engine.PolicyEngine, *engine.MangleRuntime, and core.Evaluator.
 //
 // Returns an aggregated error if any predicate registration fails; a failure
 // must not be silently ignored.
-func RegisterAll(reg interface {
-	RegisterExternalPredicate(name string, fn func(ctx context.Context, inputs []any) ([][]any, error)) error
-}) error {
+func RegisterAll(reg core.ExternalPredicateRegistrar) error {
 	var errs []error
 	if err := reg.RegisterExternalPredicate("within_time_window", withinTimeWindow); err != nil {
 		errs = append(errs, fmt.Errorf("within_time_window: %w", err))

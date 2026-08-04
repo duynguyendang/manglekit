@@ -2,9 +2,9 @@ package core
 
 import "context"
 
-// Evaluator: The Mangle Logic Engine.
-// It defines the contract for policy execution, validation, and steering.
-type Evaluator interface {
+// Assessor evaluates policies against envelopes: the pre-check, post-check,
+// steering, and configuration queries.
+type Assessor interface {
 	// AssessPlan evaluates the policy for a given input (General purpose).
 	// It returns a Decision struct with the outcome.
 	AssessPlan(ctx context.Context, input Envelope) (Decision, error)
@@ -23,9 +23,24 @@ type Evaluator interface {
 
 	// CheckRequirement checks if a capability is needed. e.g., requires(Req, "memory").
 	CheckRequirement(ctx context.Context, input Envelope, reqName string) (bool, error)
+}
 
-	// LoadPolicy loads policy rules from a source string or file content.
+// ExternalPredicateRegistrar registers Go callbacks as external Datalog
+// predicates. Implemented by the policy engine and the raw Mangle runtime.
+type ExternalPredicateRegistrar interface {
+	RegisterExternalPredicate(name string, fn func(ctx context.Context, inputs []any) ([][]any, error)) error
+}
+
+// PolicyLoader loads policies and facts into the engine.
+type PolicyLoader interface {
+	ExternalPredicateRegistrar
+
+	// LoadPolicy loads policy rules incrementally from a source string.
 	LoadPolicy(ctx context.Context, source string) error
+
+	// LoadFromSource loads a Datalog program from a raw string, replacing
+	// existing state and auto-emitting external predicate declarations.
+	LoadFromSource(ctx context.Context, source string) error
 
 	// LoadGherkinPolicy loads a Gherkin feature file and compiles it to Datalog.
 	LoadGherkinPolicy(ctx context.Context, featureContent string) error
@@ -35,10 +50,22 @@ type Evaluator interface {
 
 	// RegisterAction registers action metadata for discovery/planning.
 	RegisterAction(meta ActionMetadata) error
+}
 
-	// Query executes a Datalog query and returns all matching solutions.
-	// It is used by the planner to reason about goals and generate action sequences.
+// Querier executes Datalog queries and returns all matching solutions.
+// It is used by the planner to reason about goals and generate action sequences.
+type Querier interface {
 	Query(ctx context.Context, facts []string, queryStr string) ([]map[string]string, error)
+}
+
+// Evaluator: The Mangle Logic Engine.
+// Full engine contract composed of Assessor, PolicyLoader, and Querier.
+// Consumers that need only part of the surface should depend on the
+// narrower interface instead.
+type Evaluator interface {
+	Assessor
+	PolicyLoader
+	Querier
 
 	// Logger returns the engine's logger.
 	Logger() Logger

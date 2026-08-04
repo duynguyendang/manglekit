@@ -31,7 +31,7 @@ func TestContextFacts(t *testing.T) {
 }
 
 func TestDefineAndRun(t *testing.T) {
-	client, err := sdk.NewDefault()
+	client, err := sdk.NewClient(context.Background())
 	require.NoError(t, err)
 
 	handler := func(ctx context.Context, in TestInput) (TestOutput, error) {
@@ -54,7 +54,7 @@ func TestDefineAndRun(t *testing.T) {
 }
 
 func TestRunError(t *testing.T) {
-	client, err := sdk.NewDefault()
+	client, err := sdk.NewClient(context.Background())
 	require.NoError(t, err)
 
 	handler := func(ctx context.Context, in TestInput) (TestOutput, error) {

@@ -49,17 +49,6 @@ func WithBlueprintPath(path string) ClientOption {
 	}
 }
 
-// WithFailMode sets the resilience strategy for the client.
-//
-// Parameters:
-//   - mode: "open" (allow execution on error) or "closed" (block execution on error).
-func WithFailMode(mode string) ClientOption {
-	return func(c *Client) error {
-		c.failureMode = mode
-		return nil
-	}
-}
-
 // WithSteeringEnabled enables the EvaluateSteering Datalog path,
 // allowing policy-driven routing (route/retry) to control which
 // action runs next. Steering is disabled by default; the YAML
@@ -211,6 +200,18 @@ func (l *lazyStateManager) ExtractFacts(ctx context.Context, envelope core.Envel
 	return l.actual.ExtractFacts(ctx, envelope)
 }
 
+// WithConfigFile loads configuration from a YAML file and applies it.
+// It is the file-based counterpart to WithConfig.
+func WithConfigFile(path string) ClientOption {
+	return func(c *Client) error {
+		cfg, err := config.Load(path)
+		if err != nil {
+			return fmt.Errorf("failed to load configuration: %w", err)
+		}
+		return WithConfig(cfg)(c)
+	}
+}
+
 // WithConfig applies settings from a loaded configuration struct.
 // It handles wiring of providers, actions, policy, knowledge, and memory.
 func WithConfig(cfg *config.Config) ClientOption {
@@ -253,8 +254,7 @@ func WithConfig(cfg *config.Config) ClientOption {
 				if err != nil {
 					return fmt.Errorf("failed to open knowledge file %q: %w", path, err)
 				}
-				loader := knowledge.NewNTriplesLoader()
-				facts, err = loader.Parse(f)
+				facts, err = knowledge.ParseNTriples(f)
 				f.Close()
 			} else {
 				loader := knowledge.NewRDFLoader()
@@ -320,12 +320,7 @@ func WithConfig(cfg *config.Config) ClientOption {
 			}
 		}
 
-		// 7. Failure Mode
-		if cfg.FailureMode != "" {
-			c.failureMode = cfg.FailureMode
-		}
-
-		// 8. MaxSteps from YAML config
+		// 7. MaxSteps from YAML config
 		if cfg.Policy.MaxSteps > 0 {
 			c.maxSteps = cfg.Policy.MaxSteps
 		}

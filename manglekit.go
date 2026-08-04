@@ -39,9 +39,6 @@ func Define[In any, Out any](
 // --- Option Wrappers ---
 func WithBlueprintPath(path string) ClientOption { return sdk.WithBlueprintPath(path) }
 
-// Deprecated: Use WithBlueprintPath instead.
-func WithPolicyPath(path string) ClientOption { return sdk.WithBlueprintPath(path) }
-func WithFailMode(mode string) ClientOption           { return sdk.WithFailMode(mode) }
 func WithLogger(l core.Logger) ClientOption           { return sdk.WithLogger(l) }
 func WithHistory(store core.HistoryStore) ClientOption { return sdk.WithHistory(store) }
 func WithMemory(mem core.AgentMemory) ClientOption    { return sdk.WithMemory(mem) }

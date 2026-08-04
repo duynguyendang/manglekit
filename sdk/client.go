@@ -8,21 +8,14 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/supervisor"
 	"github.com/duynguyendang/manglekit/providers/predicates"
 )
 
-const (
-	// TracerName is the instrumentation scope name for Manglekit tracing.
-	TracerName = "github.com/duynguyendang/manglekit/sdk"
-
-	// Failure modes determine the system's resilience strategy.
-	FailModeOpen   = "open"   // Allow execution on system error (Fail-Open)
-	FailModeClosed = "closed" // Block execution on system error (Fail-Closed)
-)
+// TracerName is the instrumentation scope name for Manglekit tracing.
+const TracerName = "github.com/duynguyendang/manglekit/sdk"
 
 // Client is the primary entry point for the Manglekit system.
 // It acts as the governance kernel, managing blueprints, observability, and action execution.
@@ -42,8 +35,6 @@ type Client struct {
 	registry map[string]core.Action
 	// registryLock guards concurrent access to the registry.
 	registryLock sync.RWMutex
-	// failureMode determines the system's resilience strategy ("open" or "closed").
-	failureMode string
 	// blueprintPath stores the path loaded at startup (for debugging/reloading).
 	blueprintPath string
 	// shutdownFunc is a cleanup function to stop exporters/tracers.
@@ -87,9 +78,8 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		logger: logger.NewDefault(),
 		// Default to HybridMemory with Nop stores
 		agentMemory: NewHybridMemory(core.NopStore{}, core.NopVectorStore{}, core.NopEmbedder{}),
-		registry:    make(map[string]core.Action),
-		failureMode: FailModeClosed, // Default to closed
-		initCtx:     ctx,
+		registry: make(map[string]core.Action),
+		initCtx:  ctx,
 	}
 
 	// Apply options
@@ -106,12 +96,8 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 
 	// Register reference external predicates (time, rate, identity).
 	// These are available to all Datalog policies by default.
-	if reg, ok := c.engine.(interface {
-		RegisterExternalPredicate(string, func(context.Context, []any) ([][]any, error)) error
-	}); ok {
-		if err := predicates.RegisterAll(reg); err != nil {
-			return nil, fmt.Errorf("failed to register reference predicates: %w", err)
-		}
+	if err := predicates.RegisterAll(c.engine); err != nil {
+		return nil, fmt.Errorf("failed to register reference predicates: %w", err)
 	}
 
 	// Load deferred blueprint now that engine is ready.
@@ -129,28 +115,9 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 	return c, nil
 }
 
-// NewClientFromFile initializes a Client by loading configuration from a YAML file.
-func NewClientFromFile(ctx context.Context, configPath string, opts ...ClientOption) (*Client, error) {
-	// Load configuration from file
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load configuration: %w", err)
-	}
-
-	// Prepend WithConfig to opts
-	newOpts := append([]ClientOption{WithConfig(cfg)}, opts...)
-	return NewClient(ctx, newOpts...)
-}
-
-// NewClientFromConfig initializes a Client using a pre-loaded Config object.
-func NewClientFromConfig(ctx context.Context, cfg *config.Config, opts ...ClientOption) (*Client, error) {
-	newOpts := append([]ClientOption{WithConfig(cfg)}, opts...)
-	return NewClient(ctx, newOpts...)
-}
-
 // Supervise wraps a raw core.Action in a SupervisedAction using v2 patterns.
 func (c *Client) Supervise(action core.Action) core.Action {
-	return supervisor.NewSupervisedActionFromSDK(action, c.engine, c.failureMode, c.logger)
+	return supervisor.NewSupervisedActionFromSDK(action, c.engine, c.logger)
 }
 
 // Engine returns the underlying policy engine (Evaluator).
@@ -193,12 +160,7 @@ func (c *Client) RegisterExternalPredicate(name string, fn func(ctx context.Cont
 	if c.engine == nil {
 		return fmt.Errorf("engine not initialized")
 	}
-	if reg, ok := c.engine.(interface {
-		RegisterExternalPredicate(string, func(context.Context, []any) ([][]any, error)) error
-	}); ok {
-		return reg.RegisterExternalPredicate(name, fn)
-	}
-	return fmt.Errorf("engine does not support registering external predicates")
+	return c.engine.RegisterExternalPredicate(name, fn)
 }
 
 // LoadPolicy loads policy rules from a raw Datalog string.
@@ -226,12 +188,7 @@ func (c *Client) LoadFromSource(ctx context.Context, source string) error {
 	if c.engine == nil {
 		return fmt.Errorf("engine not initialized")
 	}
-	if lfs, ok := c.engine.(interface {
-		LoadFromSource(context.Context, string) error
-	}); ok {
-		return lfs.LoadFromSource(ctx, source)
-	}
-	return fmt.Errorf("engine does not support loading from source")
+	return c.engine.LoadFromSource(ctx, source)
 }
 
 // Tracer returns the OpenTelemetry Tracer used by the client.
@@ -242,11 +199,6 @@ func (c *Client) Tracer() trace.Tracer {
 // Logger returns the configured Logger instance.
 func (c *Client) Logger() core.Logger {
 	return c.logger
-}
-
-// NewDefault initializes a Client with sensible default settings.
-func NewDefault() (*Client, error) {
-	return NewClient(context.Background())
 }
 
 // SetLLM manually configures the TextGenerator (LLM) for the client.

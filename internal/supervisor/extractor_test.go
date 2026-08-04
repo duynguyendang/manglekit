@@ -61,6 +61,12 @@ func (p *passThroughEvaluator) CheckRequirement(ctx context.Context, input core.
 	return false, nil
 }
 func (p *passThroughEvaluator) LoadPolicy(ctx context.Context, source string) error  { return nil }
+func (p *passThroughEvaluator) LoadFromSource(ctx context.Context, source string) error {
+	return nil
+}
+func (p *passThroughEvaluator) RegisterExternalPredicate(name string, fn func(ctx context.Context, inputs []any) ([][]any, error)) error {
+	return nil
+}
 func (p *passThroughEvaluator) LoadGherkinPolicy(ctx context.Context, f string) error { return nil }
 func (p *passThroughEvaluator) LoadFacts(ctx context.Context, facts []string) error      { return nil }
 func (p *passThroughEvaluator) RegisterAction(meta core.ActionMetadata) error          { return nil }
@@ -71,7 +77,7 @@ func (p *passThroughEvaluator) Logger() core.Logger { return core.NopLogger{} }
 
 // makeTestSV2 creates a supervisedActionV2 using the production constructor.
 func makeTestSV2(inner core.Action) *supervisedActionV2 {
-	action := NewSupervisedActionFromSDK(inner, &passThroughEvaluator{}, "closed", core.NopLogger{})
+	action := NewSupervisedActionFromSDK(inner, &passThroughEvaluator{}, core.NopLogger{})
 	return action.(*supervisedActionV2)
 }
 

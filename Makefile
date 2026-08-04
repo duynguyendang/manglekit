@@ -41,10 +41,10 @@ coverage:
 		exit 1; \
 	fi
 
-# Refresh project context docs (see AGENTS.md §7)
+# Refresh project context docs (see workspace AGENTS.md § Context maintenance)
 .PHONY: context-refresh
 context-refresh:
-	@echo "[context-refresh] Analyze recent changes and update the OKF knowledge bundle at docs/okf/." \
+	@echo "[context-refresh] Analyze recent changes and update the context docs at ../docs/context/." \
 	 && echo "Use: agent_tool_call: update-context --auto (preferred in agent flows)."
 
 # Run the server

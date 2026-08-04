@@ -1,0 +1,45 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/duynguyendang/manglekit/sdk"
+)
+
+// {{.Pascal}}Request is the typed input for the skill.
+// Fields tagged with `mangle:"..."` become Datalog facts at pre-check.
+type {{.Pascal}}Request struct {
+	Text string `mangle:"text"`
+}
+
+// {{.Pascal}}Response is the typed output for the skill.
+type {{.Pascal}}Response struct {
+	Result string `mangle:"result"`
+}
+
+// newSkill registers the skill handler under the zero-trust supervisor.
+func newSkill(client *sdk.Client) *sdk.Runnable[{{.Pascal}}Request, {{.Pascal}}Response] {
+	return sdk.Define(client, "{{.Snake}}", func(ctx context.Context, in {{.Pascal}}Request) ({{.Pascal}}Response, error) {
+		return {{.Pascal}}Response{Result: "processed: " + in.Text}, nil
+	})
+}
+
+func main() {
+	ctx := context.Background()
+
+	client, err := sdk.NewClient(ctx, sdk.WithBlueprintPath("policy.dl"))
+	if err != nil {
+		log.Fatalf("init client: %v", err)
+	}
+	defer client.Shutdown(ctx)
+
+	skill := newSkill(client)
+
+	out, err := skill.Run(ctx, {{.Pascal}}Request{Text: "hello world"})
+	if err != nil {
+		log.Fatalf("skill blocked or failed: %v", err)
+	}
+	fmt.Println(out.Result)
+}

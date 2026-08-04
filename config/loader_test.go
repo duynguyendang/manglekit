@@ -274,14 +274,6 @@ func TestExpandEnvWithDefaults_DisallowedWithDefault(t *testing.T) {
 	}
 }
 
-func TestValidate_InvalidFailureMode(t *testing.T) {
-	cfg := &Config{FailureMode: "banana"}
-	err := cfg.Validate()
-	if err == nil {
-		t.Error("Expected error for invalid failure_mode, got nil")
-	}
-}
-
 func TestValidate_InvalidLogLevel(t *testing.T) {
 	cfg := &Config{Observability: ObservabilityConfig{LogLevel: "verbose"}}
 	err := cfg.Validate()
@@ -308,7 +300,6 @@ func TestValidate_NegativeMaxSteps(t *testing.T) {
 
 func TestValidate_ValidConfig(t *testing.T) {
 	cfg := &Config{
-		FailureMode:   FailureModeClosed,
 		Observability: ObservabilityConfig{LogLevel: "debug"},
 		Policy:        PolicyConfig{EvaluationTimeout: 30, MaxSteps: 10},
 	}

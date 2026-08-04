@@ -64,8 +64,8 @@ func TestLoad(t *testing.T) {
 	// Expect client to return tools
 	mockClient.On("GetActiveTools", ctx, mock.Anything).Return([]ai.Tool{testTool}, nil)
 
-	// Execute Load
-	actions, err := LoadWithFactory(ctx, []config.MCPServerConfig{cfg}, mockFactory, core.NopLogger{})
+	// Execute Load via the blessed loader API
+	actions, err := NewLoader(cfg).WithFactory(mockFactory).WithLogger(core.NopLogger{}).Load(ctx)
 
 	// Verify
 	assert.NoError(t, err)

@@ -33,7 +33,7 @@ type TestResp struct {
 
 func TestExecute_Typed_FastPath(t *testing.T) {
 	ctx := context.Background()
-	client, err := sdk.NewDefault()
+	client, err := sdk.NewClient(context.Background())
 	require.NoError(t, err)
 
 	handle := sdk.DefineAction[TestReq, TestResp]("test_fast")
@@ -53,7 +53,7 @@ func TestExecute_Typed_FastPath(t *testing.T) {
 
 func TestExecute_Typed_SlowPath(t *testing.T) {
 	ctx := context.Background()
-	client, err := sdk.NewDefault()
+	client, err := sdk.NewClient(context.Background())
 	require.NoError(t, err)
 
 	handle := sdk.DefineAction[TestReq, TestResp]("test_slow")
@@ -75,7 +75,7 @@ func TestExecute_Typed_SlowPath(t *testing.T) {
 
 func TestExecute_Typed_ExecutionError(t *testing.T) {
 	ctx := context.Background()
-	client, err := sdk.NewDefault()
+	client, err := sdk.NewClient(context.Background())
 	require.NoError(t, err)
 
 	handle := sdk.DefineAction[TestReq, TestResp]("test_error")
@@ -94,7 +94,7 @@ func TestExecute_Typed_ExecutionError(t *testing.T) {
 
 func TestExecute_Typed_ConversionError(t *testing.T) {
 	ctx := context.Background()
-	client, err := sdk.NewDefault()
+	client, err := sdk.NewClient(context.Background())
 	require.NoError(t, err)
 
 	handle := sdk.DefineAction[TestReq, TestResp]("test_bad_type")

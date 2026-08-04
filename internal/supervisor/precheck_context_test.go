@@ -33,7 +33,7 @@ func (r *recordingEvaluator) AssessPlan(ctx context.Context, input core.Envelope
 func TestSupervisedV2_PreCheckSeesRequestContext(t *testing.T) {
 	eval := &recordingEvaluator{}
 	inner := &mockSDKAction{}
-	sv := NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+	sv := NewSupervisedActionFromSDK(inner, eval, core.NopLogger{})
 
 	env := core.NewEnvelope("payload text")
 	env.Metadata["user"] = "alice"
@@ -71,7 +71,7 @@ func TestSupervisedV2_PreCheckSeesRequestContext(t *testing.T) {
 func TestSupervisedV2_PreCheckHaltBlocksExecution(t *testing.T) {
 	eval := &recordingEvaluator{halt: true}
 	inner := &mockSDKAction{}
-	sv := NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+	sv := NewSupervisedActionFromSDK(inner, eval, core.NopLogger{})
 
 	env := core.NewEnvelope("payload text")
 	env.Metadata["user"] = "mallory"
@@ -92,7 +92,7 @@ func TestSupervisedV2_PreCheckHaltBlocksExecution(t *testing.T) {
 func TestSupervisedV2_NoContextStillPasses(t *testing.T) {
 	eval := &recordingEvaluator{}
 	inner := &mockSDKAction{}
-	sv := NewSupervisedActionFromSDK(inner, eval, "closed", core.NopLogger{})
+	sv := NewSupervisedActionFromSDK(inner, eval, core.NopLogger{})
 
 	if _, err := sv.Execute(context.Background(), core.NewEnvelope("plain text")); err != nil {
 		t.Fatalf("Execute returned error: %v", err)

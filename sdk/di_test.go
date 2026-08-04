@@ -41,6 +41,14 @@ func (m *MockEvaluator) CheckRequirement(ctx context.Context, input core.Envelop
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockEvaluator) LoadFromSource(ctx context.Context, source string) error {
+	return nil
+}
+
+func (m *MockEvaluator) RegisterExternalPredicate(name string, fn func(ctx context.Context, inputs []any) ([][]any, error)) error {
+	return nil
+}
+
 func (m *MockEvaluator) LoadPolicy(ctx context.Context, policy string) error {
 	args := m.Called(ctx, policy)
 	return args.Error(0)
