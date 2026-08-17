@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -92,6 +94,15 @@ type MangleRuntime struct {
 	ruleUnits     []parse.SourceUnit
 	ready         bool // Flag to indicate if the runtime is initialized
 
+	// explicitFactStore mirrors the facts the caller explicitly loaded
+	// (LoadFacts, fact files under Load, facts surviving a reload).
+	// baseFactStore additionally accumulates rule-derived facts (evaluate
+	// mutates it in place); the mirror lets ReloadFromSource drop stale
+	// derivations WITHOUT discarding explicitly loaded facts whose
+	// predicate happens to be IDB in the old program (e.g. triple/3,
+	// which std.dl derives from quad/4).
+	explicitFactStore factstore.SimpleInMemoryStore
+
 	// Temporal store for time-based facts (optional)
 	temporalStore   *factstore.TemporalStore
 	temporalEnabled bool
@@ -101,16 +112,48 @@ type MangleRuntime struct {
 	externalPreds *ExternalPredicateRegistry
 
 	// evalTimeout bounds a single Datalog evaluation. A runaway or
-	// pathological program is cancelled at the API boundary once the
-	// deadline elapses. Note: the Mangle engine does not support
-	// interruption, so the goroutine may continue in the background;
-	// the caller unblocks promptly. Zero means no wall-clock bound.
+	// pathological program is cancelled cooperatively inside the
+	// evaluation loop once the deadline elapses (see cancellableStore);
+	// no orphaned evaluation goroutine keeps burning CPU. Zero means no
+	// wall-clock bound.
 	evalTimeout time.Duration
 
 	// maxCreatedFacts hard-limits the number of facts an evaluation may
 	// generate, providing a real bound on pathological programs that
 	// would otherwise expand forever. Zero means unbounded.
 	maxCreatedFacts int
+
+	// Derived-fact (IDB) cache. Query paths used to copy the whole base
+	// store and re-run the full stratified evaluation per query; a single
+	// supervised gate check issued ~10 such evaluations over the same
+	// fact set. The cache stores evaluated working stores keyed on
+	// (program version, base-fact version, request-fact hash); it is
+	// invalidated whenever policies or base facts change.
+	idbCacheMu     sync.Mutex
+	idbCache       map[uint64]*factstore.SimpleInMemoryStore
+	baseVersion    uint64 // bumped whenever baseFactStore changes
+	programVersion uint64 // bumped whenever the rule program changes
+
+	// disableIDBCache forces cache bypass (tests/benchmarks only).
+	disableIDBCache bool
+
+	// evalCount counts stratified evaluations triggered through the
+	// query/load paths (test hook for batch APIs).
+	evalCount int
+}
+
+// maxIDBCacheEntries bounds the derived-fact cache. Entries are entire
+// evaluated stores; a small ring is enough to cover a gate's sub-queries.
+const maxIDBCacheEntries = 8
+
+// IsReady reports whether a program has been loaded. Callers that need a
+// cheap readiness check (e.g. the fail-closed gate) must use this instead
+// of reading runtime fields directly, so a concurrent policy reload's
+// atomic swap cannot race the check.
+func (r *MangleRuntime) IsReady() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.ready
 }
 
 // WithEvalTimeout sets the maximum duration for a single Datalog evaluation.
@@ -134,10 +177,11 @@ func (r *MangleRuntime) WithMaxCreatedFacts(n int) *MangleRuntime {
 // NewMangleRuntime initializes a new, empty MangleRuntime.
 func NewMangleRuntime() *MangleRuntime {
 	return &MangleRuntime{
-		predToStratum: make(map[ast.PredicateSym]int),
-		baseFactStore: factstore.NewSimpleInMemoryStore(),
-		ready:         false,
-		externalPreds: NewExternalPredicateRegistry(),
+		predToStratum:     make(map[ast.PredicateSym]int),
+		baseFactStore:     factstore.NewSimpleInMemoryStore(),
+		explicitFactStore: factstore.NewSimpleInMemoryStore(),
+		ready:             false,
+		externalPreds:     NewExternalPredicateRegistry(),
 	}
 }
 
@@ -451,6 +495,10 @@ func (r *MangleRuntime) Load(ctx context.Context, path string) error {
 
 	// 4. Initial Evaluation (Validation)
 	// We run this on the local store to ensure the program doesn't crash on init.
+	// Snapshot the explicitly loaded facts BEFORE evaluation, which adds
+	// derived facts to the store; only the snapshot survives a later reload.
+	explicitFacts := factstore.NewSimpleInMemoryStore()
+	explicitFacts.Merge(newBaseStore)
 	if _, err := evalStratifiedWithContext(ctx, programInfo, strata, predToStratum, newBaseStore, nil, 0); err != nil {
 		return fmt.Errorf("failed to evaluate base program: %w", err)
 	}
@@ -461,10 +509,13 @@ func (r *MangleRuntime) Load(ctx context.Context, path string) error {
 
 	r.ruleUnits = newRuleUnits
 	r.baseFactStore = newBaseStore
+	r.explicitFactStore = explicitFacts
 	r.programInfo = programInfo
 	r.strata = strata
 	r.predToStratum = predToStratum
 	r.ready = true
+	r.programVersion++
+	r.invalidateIDBCacheLocked()
 
 	return nil
 }
@@ -484,6 +535,16 @@ func (r *MangleRuntime) Load(ctx context.Context, path string) error {
 // predicate is skipped. This avoids the "cannot redeclare" error
 // that would otherwise reject otherwise-valid policies.
 func (r *MangleRuntime) LoadFromSource(ctx context.Context, source string) error {
+	return r.ReloadFromSource(ctx, source)
+}
+
+// ReloadFromSource replaces the whole policy with source, atomically and
+// fail-safe: the new program is parsed, analyzed, stratified, and evaluated
+// against a copy of the current base facts BEFORE any state is swapped. A
+// failed reload returns the error and leaves the old policy fully active;
+// a successful reload swaps all program state in one critical section and
+// invalidates the IDB cache. Base facts loaded beforehand are preserved.
+func (r *MangleRuntime) ReloadFromSource(ctx context.Context, source string) error {
 	if source == "" {
 		return fmt.Errorf("source cannot be empty")
 	}
@@ -494,9 +555,9 @@ func (r *MangleRuntime) LoadFromSource(ctx context.Context, source string) error
 	callerDecls := collectCallerDecls(source)
 
 	// Also collect external predicate names from the registry so
-	// std.dl Decl and defining rules for those names can be
-	// filtered out. An external predicate cannot coexist with a
-	// std.dl IDB of the same name.
+	// std.dl Decl and defining rules for those names can be filtered
+	// out. An external predicate cannot coexist with a std.dl IDB of
+	// the same name.
 	extPredRegistry := r.externalPreds.List()
 	extPredNames := make(map[string]bool, len(extPredRegistry))
 	for name := range extPredRegistry {
@@ -541,37 +602,98 @@ func (r *MangleRuntime) LoadFromSource(ctx context.Context, source string) error
 		return fmt.Errorf("failed to stratify program: %w", err)
 	}
 
-	// Create new store (resetting old facts if this is a full reload)
-	newBaseStore := factstore.NewSimpleInMemoryStore()
-
-	// Atomic Swap
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	// Preserve any base facts the caller loaded before this policy
 	// reload (e.g. a knowledge graph injected via LoadFacts). The
 	// policy rules are replaced, but the base knowledge should
 	// survive — otherwise a second LoadFromSource wipes the graph
-	// the policy needs to reason about.
-	if r.ready {
-		merged := factstore.NewSimpleInMemoryStore()
-		merged.Merge(r.baseFactStore)
-		newBaseStore = merged
+	// the policy needs to reason about. Facts for predicates that
+	// were IDB (rule-derived) in the OLD program are dropped UNLESS
+	// the caller explicitly loaded them: derived facts are artifacts
+	// of the replaced rules and must not leak into the new policy as
+	// base facts, but a fact loaded via LoadFacts must survive even
+	// when its predicate is IDB in the old program (std.dl, which
+	// every program embeds, derives triple/3 from quad/4, so plain
+	// knowledge-graph triple facts are "IDB" by that definition).
+	r.mu.RLock()
+	var oldIDB map[ast.PredicateSym]bool
+	if r.programInfo != nil {
+		oldIDB = make(map[ast.PredicateSym]bool, len(r.programInfo.IdbPredicates))
+		for sym := range r.programInfo.IdbPredicates {
+			oldIDB[sym] = true
+		}
+	}
+	explicit := factstore.NewSimpleInMemoryStore()
+	explicit.Merge(r.explicitFactStore)
+	merged := filterBaseFacts(r.baseFactStore, oldIDB, explicit)
+	r.mu.RUnlock()
+
+	// Pre-validate: evaluate the NEW program against the merged base
+	// facts before swapping. If this fails (bad program, timeout, fact
+	// limit), the old policy remains fully active and its IDB cache
+	// untouched.
+	r.mu.Lock()
+	r.evalCount++
+	opts := r.buildEvalOptionsFor(programInfo)
+	if r.maxCreatedFacts > 0 {
+		opts = append(opts, engine.WithCreatedFactLimit(r.maxCreatedFacts))
+	}
+	timeout := r.evalTimeout
+	r.mu.Unlock()
+
+	if _, err := evalStratifiedWithContext(ctx, programInfo, strata, predToStratum, merged, opts, timeout); err != nil {
+		return fmt.Errorf("failed to evaluate program: %w", err)
 	}
 
+	// Atomic Swap (Critical Section) — only reached after full validation.
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	r.ruleUnits = newRuleUnits
-	r.baseFactStore = newBaseStore
+	r.baseFactStore = merged
+	// The pre-validation evaluation above added new-program derivations
+	// into merged; the explicit-fact snapshot (taken before evaluation,
+	// after old-derivation filtering) is exact, because filterBaseFacts
+	// kept only explicitly loaded atoms.
+	r.explicitFactStore = explicit
 	r.programInfo = programInfo
 	r.strata = strata
 	r.predToStratum = predToStratum
 	r.ready = true
-
-	// Evaluate with the merged base store
-	if err := r.evaluate(ctx, r.baseFactStore); err != nil {
-		return fmt.Errorf("failed to evaluate program: %w", err)
-	}
+	r.programVersion++
+	r.baseVersion++
+	r.invalidateIDBCacheLocked()
 
 	return nil
+}
+
+// filterBaseFacts copies the base-fact store, dropping facts whose
+// predicate was IDB (rule-derived) in the old program — unless the fact
+// was explicitly loaded by the caller (via LoadFacts or a fact file) —
+// so a policy reload does not keep stale derivations of the replaced
+// rules as base facts.
+func filterBaseFacts(store factstore.SimpleInMemoryStore, oldIDB map[ast.PredicateSym]bool, explicit factstore.SimpleInMemoryStore) factstore.SimpleInMemoryStore {
+	out := factstore.NewSimpleInMemoryStore()
+	if oldIDB == nil {
+		out.Merge(store)
+		return out
+	}
+	for _, sym := range store.ListPredicates() {
+		if oldIDB[sym] {
+			// Keep only the explicitly loaded atoms of this predicate.
+			_ = store.GetFacts(ast.NewQuery(sym), func(a ast.Atom) error {
+				if explicit.Contains(a) {
+					out.Add(a)
+				}
+				return nil
+			})
+			continue
+		}
+		_ = store.GetFacts(ast.NewQuery(sym), func(a ast.Atom) error {
+			out.Add(a)
+			return nil
+		})
+	}
+	return out
 }
 
 // LoadFacts injects a list of raw Datalog fact strings into the runtime's base knowledge.
@@ -585,9 +707,12 @@ func (r *MangleRuntime) LoadFacts(ctx context.Context, facts []string) error {
 			return fmt.Errorf("failed to parse fact '%s': %w", factStr, err)
 		}
 		r.baseFactStore.Add(atom)
+		r.explicitFactStore.Add(atom)
 	}
 
 	if r.ready {
+		r.baseVersion++
+		r.invalidateIDBCacheLocked()
 		if err := r.evaluate(ctx, r.baseFactStore); err != nil {
 			return fmt.Errorf("failed to evaluate program with new facts: %w", err)
 		}
@@ -602,6 +727,10 @@ func (r *MangleRuntime) LoadFromString(ctx context.Context, rule string) error {
 }
 
 // AddPolicy adds new rules to the existing program state (Incremental Loading).
+// Like LoadFromSource, it scans the external-predicate registry and auto-emits
+// the matching `Decl ... external()` declarations for predicates referenced by
+// the combined program, so RegisterExternalPredicate / AddPolicy ordering does
+// not matter.
 func (r *MangleRuntime) AddPolicy(ctx context.Context, source string) error {
 	if source == "" {
 		return nil
@@ -622,9 +751,26 @@ func (r *MangleRuntime) AddPolicy(ctx context.Context, source string) error {
 	newRuleUnits[len(r.ruleUnits)] = unit
 
 	// Re-Analyze
+	// Auto-declare external predicates (same behavior as LoadFromSource):
+	// for every predicate in the external registry that the (combined)
+	// program references, emit the matching `Decl ... external()` so the
+	// policy loads cleanly regardless of whether the Go callback was
+	// registered before or after the policy. Predicates not referenced by
+	// any loaded rule unit are skipped.
 	edbDeclarations := make(map[ast.PredicateSym]ast.Decl)
-	// Note: external predicates get synthetic decls from Analyze (same as before).
-	// The engine's callback map (via buildEvalOptions) handles external predicate dispatch.
+	for name := range r.externalPreds.List() {
+		for i := range newRuleUnits {
+			arity, mode := findPredicateUsage(newRuleUnits[i], name)
+			if arity < 0 {
+				continue // predicate not referenced in this unit
+			}
+			sym := ast.PredicateSym{Symbol: name, Arity: arity}
+			if _, exists := edbDeclarations[sym]; !exists {
+				edbDeclarations[sym] = newExternalDeclFromSym(sym, mode)
+			}
+			break
+		}
+	}
 	programInfo, err := analysis.Analyze(newRuleUnits, edbDeclarations)
 	if err != nil {
 		return fmt.Errorf("failed to analyze combined program: %w", err)
@@ -645,6 +791,8 @@ func (r *MangleRuntime) AddPolicy(ctx context.Context, source string) error {
 	r.strata = strata
 	r.predToStratum = predToStratum
 	r.ready = true
+	r.programVersion++
+	r.invalidateIDBCacheLocked()
 
 	// Re-evaluate base facts with new rules
 	if err := r.evaluate(ctx, r.baseFactStore); err != nil {
@@ -654,46 +802,128 @@ func (r *MangleRuntime) AddPolicy(ctx context.Context, source string) error {
 	return nil
 }
 
+// invalidateIDBCacheLocked clears the derived-fact (IDB) cache. The caller
+// must hold r.mu for writing (or otherwise exclude concurrent queries);
+// taking idbCacheMu under r.mu is safe (queries take r.mu.RLock before
+// idbCacheMu, never the reverse order while r.mu is held for writing).
+func (r *MangleRuntime) invalidateIDBCacheLocked() {
+	r.idbCacheMu.Lock()
+	r.idbCache = nil
+	r.idbCacheMu.Unlock()
+}
+
+// idbCacheKey computes the cache key for an evaluated working store:
+// program version + base-fact version + a hash of the request-scoped facts.
+func idbCacheKey(programVersion, baseVersion uint64, facts []ast.Atom) uint64 {
+	h := fnv.New64a()
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:], programVersion)
+	h.Write(buf[:])
+	binary.LittleEndian.PutUint64(buf[:], baseVersion)
+	h.Write(buf[:])
+	for _, f := range facts {
+		h.Write([]byte(f.String()))
+		h.Write([]byte{0})
+	}
+	return h.Sum64()
+}
+
+// evaluatedWorkingStore returns a fully evaluated working store containing
+// the base facts plus the request-scoped facts. It is the shared hot path
+// for ExecuteQuery and QueryWithSolutions. When the runtime is cacheable
+// (no external predicates, no temporal store — both of which make results
+// non-deterministic across identical inputs), the evaluated store is cached
+// keyed on (program version, base-fact version, request facts), so the
+// gate's sub-queries over the same envelope run the stratified evaluation
+// only once.
+func (r *MangleRuntime) evaluatedWorkingStore(ctx context.Context, facts []ast.Atom, opts []engine.EvalOption) (*factstore.SimpleInMemoryStore, error) {
+	r.mu.RLock()
+	if !r.ready {
+		r.mu.RUnlock()
+		return nil, fmt.Errorf("runtime not initialized")
+	}
+
+	// Snapshot the state needed for evaluation.
+	pInfo := r.programInfo
+	strata := r.strata
+	pStratum := r.predToStratum
+	progV, baseV := r.programVersion, r.baseVersion
+	cacheable := !r.disableIDBCache &&
+		r.externalPreds.Count() == 0 &&
+		!r.temporalEnabled
+
+	// Consult the cache BEFORE paying the O(N) base-store copy: a hit
+	// returns the previously evaluated working store directly.
+	var cacheKey uint64
+	if cacheable {
+		cacheKey = idbCacheKey(progV, baseV, facts)
+		r.idbCacheMu.Lock()
+		if r.idbCache == nil {
+			r.idbCache = make(map[uint64]*factstore.SimpleInMemoryStore)
+		}
+		if cached, ok := r.idbCache[cacheKey]; ok {
+			r.idbCacheMu.Unlock()
+			r.mu.RUnlock()
+			return cached, nil
+		}
+		r.idbCacheMu.Unlock()
+	}
+
+	// We copy the base store to avoid contaminating the global state with
+	// request-scoped facts. Note: This is O(N) where N is base facts.
+	workingStore := factstore.NewSimpleInMemoryStore()
+	workingStore.Merge(r.baseFactStore)
+
+	r.mu.RUnlock() // Release lock early to allow concurrent evaluations
+
+	// Box the store so the cache shares one evaluated instance.
+	working := workingStore
+
+	// Add request-scoped facts.
+	for _, fact := range facts {
+		working.Add(fact)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	// Evaluate (expensive part, runs without blocking the main lock).
+	r.mu.Lock()
+	r.evalCount++
+	timeout := r.evalTimeout
+	r.mu.Unlock()
+
+	if _, err := evalStratifiedWithContext(ctx, pInfo, strata, pStratum, working, opts, timeout); err != nil {
+		return nil, fmt.Errorf("evaluation failed: %w", err)
+	}
+
+	if cacheable {
+		r.idbCacheMu.Lock()
+		if len(r.idbCache) >= maxIDBCacheEntries {
+			// Simple eviction: drop the whole (small) cache rather
+			// than tracking recency for 8 heavyweight entries.
+			r.idbCache = make(map[uint64]*factstore.SimpleInMemoryStore)
+		}
+		r.idbCache[cacheKey] = &working
+		r.idbCacheMu.Unlock()
+	}
+
+	return &working, nil
+}
+
 // ExecuteQuery runs a boolean Datalog query.
 func (r *MangleRuntime) ExecuteQuery(ctx context.Context, facts []ast.Atom, queryStr string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
 
-	r.mu.RLock()
-	// Check readiness under lock
-	if !r.ready {
-		r.mu.RUnlock()
-		return false, fmt.Errorf("runtime not initialized")
-	}
-
-	// 1. Snapshot the state needed for evaluation
-	// We copy the base store to avoid contaminating the global state with request-scoped facts.
-	// Note: This is O(N) where N is base facts.
-	workingStore := factstore.NewSimpleInMemoryStore()
-	workingStore.Merge(r.baseFactStore)
-
-	// Capture pointers to analysis structures (they are read-only during eval)
-	pInfo := r.programInfo
-	strata := r.strata
-	pStratum := r.predToStratum
-
-	r.mu.RUnlock() // Release lock early to allow concurrent evaluations
-
-	// 2. Add temporary facts
-	for _, fact := range facts {
-		workingStore.Add(fact)
-	}
-
-	// 3. Evaluate (Expensive part, runs without blocking main lock)
-	if err := ctx.Err(); err != nil {
+	workingStore, err := r.evaluatedWorkingStore(ctx, facts, nil)
+	if err != nil {
 		return false, err
 	}
-	if _, err := evalStratifiedWithContext(ctx, pInfo, strata, pStratum, workingStore, nil, r.evalTimeout); err != nil {
-		return false, fmt.Errorf("evaluation failed: %w", err)
-	}
 
-	// 4. Check result
+	// Check result
 	queryAtom, err := parse.Atom(queryStr)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse query '%s': %w", queryStr, err)
@@ -708,36 +938,18 @@ func (r *MangleRuntime) QueryWithSolutions(ctx context.Context, facts []ast.Atom
 		return err
 	}
 
-	r.mu.RLock()
-	if !r.ready {
-		r.mu.RUnlock()
-		return fmt.Errorf("runtime not initialized")
-	}
-
-	workingStore := factstore.NewSimpleInMemoryStore()
-	workingStore.Merge(r.baseFactStore)
-	pInfo := r.programInfo
-	strata := r.strata
-	pStratum := r.predToStratum
-	r.mu.RUnlock()
-
-	for _, fact := range facts {
-		workingStore.Add(fact)
-	}
-
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	// Build eval options so external predicates (e.g. pii_scan) are
 	// invoked during query evaluation. Without this, the external
 	// callbacks never fire and queries against pii_scan/1 return
 	// zero solutions.
-	evalOpts := r.buildEvalOptions()
+	evalOpts := r.buildEvalOptionsLockedSnapshot()
 	if r.maxCreatedFacts > 0 {
 		evalOpts = append(evalOpts, engine.WithCreatedFactLimit(r.maxCreatedFacts))
 	}
-	if _, err := evalStratifiedWithContext(ctx, pInfo, strata, pStratum, workingStore, evalOpts, r.evalTimeout); err != nil {
-		return fmt.Errorf("evaluation failed: %w", err)
+
+	workingStore, err := r.evaluatedWorkingStore(ctx, facts, evalOpts)
+	if err != nil {
+		return err
 	}
 
 	queryAtom, err := parse.Atom(queryStr)
@@ -780,13 +992,43 @@ func (r *MangleRuntime) QueryWithSolutions(ctx context.Context, facts []ast.Atom
 	})
 }
 
-// evalStratifiedWithContext runs a stratified Datalog evaluation while
-// respecting cancellation and timeouts. The Mangle engine does not natively
-// support context cancellation, so the (store-mutating) evaluation runs in a
-// goroutine and is raced against the context. When the context is cancelled
-// or its deadline elapses, the caller unblocks promptly with the context's
-// error. The background goroutine may still run to completion, so callers
-// must treat an early return as best-effort cancellation.
+// cancellableStore wraps a FactStore with a context check on every fact
+// lookup, giving cooperative cancellation INSIDE the evaluation loop:
+// mangle-go has no native ctx support, but it propagates callback errors
+// out of the semi-naive loop, so a cancelled context aborts the evaluation
+// at the next premise join instead of burning CPU in an orphaned goroutine.
+type cancellableStore struct {
+	inner factstore.FactStore
+	ctx   context.Context
+}
+
+func (s *cancellableStore) GetFacts(q ast.Atom, fn func(ast.Atom) error) error {
+	if err := s.ctx.Err(); err != nil {
+		return err
+	}
+	return s.inner.GetFacts(q, func(a ast.Atom) error {
+		if err := s.ctx.Err(); err != nil {
+			return err
+		}
+		return fn(a)
+	})
+}
+
+func (s *cancellableStore) Contains(a ast.Atom) bool { return s.inner.Contains(a) }
+
+func (s *cancellableStore) ListPredicates() []ast.PredicateSym { return s.inner.ListPredicates() }
+
+func (s *cancellableStore) EstimateFactCount() int { return s.inner.EstimateFactCount() }
+
+func (s *cancellableStore) Add(a ast.Atom) bool { return s.inner.Add(a) }
+
+func (s *cancellableStore) Merge(ro factstore.ReadOnlyFactStore) { s.inner.Merge(ro) }
+
+// evalStratifiedWithContext runs a stratified Datalog evaluation
+// synchronously, with cooperative cancellation: the store wrapper checks
+// the context on every fact lookup and aborts the evaluation loop when it
+// is cancelled or the deadline elapses. No goroutine is spawned, so a
+// timeout can never leak a runaway evaluation.
 func evalStratifiedWithContext(ctx context.Context, programInfo *analysis.ProgramInfo, strata []analysis.Nodeset, predToStratum map[ast.PredicateSym]int, store factstore.FactStore, opts []engine.EvalOption, timeout time.Duration) (engine.Stats, error) {
 	if err := ctx.Err(); err != nil {
 		return engine.Stats{}, err
@@ -799,29 +1041,26 @@ func evalStratifiedWithContext(ctx context.Context, programInfo *analysis.Progra
 		defer cancel()
 	}
 
-	type evalResult struct {
-		stats engine.Stats
-		err   error
+	cs := &cancellableStore{inner: store, ctx: evalCtx}
+	stats, err := engine.EvalStratifiedProgramWithStats(programInfo, strata, predToStratum, cs, opts...)
+	if err != nil {
+		// Translate the abort injected by the store wrapper into the
+		// context error so callers see context.Canceled/DeadlineExceeded.
+		if cerr := evalCtx.Err(); cerr != nil {
+			return engine.Stats{}, cerr
+		}
+		return engine.Stats{}, err
 	}
-	ch := make(chan evalResult, 1)
-	go func() {
-		stats, err := engine.EvalStratifiedProgramWithStats(programInfo, strata, predToStratum, store, opts...)
-		ch <- evalResult{stats: stats, err: err}
-	}()
-
-	select {
-	case res := <-ch:
-		return res.stats, res.err
-	case <-evalCtx.Done():
-		// Best-effort cancellation: unblock the caller, but the engine
-		// goroutine may still be mutating the store in the background.
-		return engine.Stats{}, evalCtx.Err()
+	if cerr := evalCtx.Err(); cerr != nil {
+		return engine.Stats{}, cerr
 	}
+	return stats, nil
 }
 
 // evaluate helper (internal use only, assumes lock is held or local store)
 func (r *MangleRuntime) evaluate(ctx context.Context, store factstore.FactStore) error {
-	opts := r.buildEvalOptions()
+	r.evalCount++
+	opts := r.buildEvalOptionsFor(r.programInfo)
 	if r.maxCreatedFacts > 0 {
 		opts = append(opts, engine.WithCreatedFactLimit(r.maxCreatedFacts))
 	}
@@ -829,8 +1068,21 @@ func (r *MangleRuntime) evaluate(ctx context.Context, store factstore.FactStore)
 	return err
 }
 
-// buildEvalOptions builds evaluation options including external predicates and temporal store.
-func (r *MangleRuntime) buildEvalOptions() []engine.EvalOption {
+// buildEvalOptionsLockedSnapshot snapshots the current program info under
+// a read lock and builds evaluation options for it. Query paths must use
+// this (not read r.programInfo directly) so a concurrent policy reload's
+// atomic swap cannot race the option build.
+func (r *MangleRuntime) buildEvalOptionsLockedSnapshot() []engine.EvalOption {
+	r.mu.RLock()
+	pi := r.programInfo
+	r.mu.RUnlock()
+	return r.buildEvalOptionsFor(pi)
+}
+
+// buildEvalOptionsFor is buildEvalOptions against an explicit program
+// (used by ReloadFromSource, which must validate the NEW program before
+// it is swapped in).
+func (r *MangleRuntime) buildEvalOptionsFor(pi *analysis.ProgramInfo) []engine.EvalOption {
 	opts := []engine.EvalOption{}
 
 	// Add temporal store if enabled
@@ -849,7 +1101,7 @@ func (r *MangleRuntime) buildEvalOptions() []engine.EvalOption {
 		callbacks := make(map[ast.PredicateSym]engine.ExternalPredicateCallback, len(extPreds))
 		for name, fn := range extPreds {
 			// Find the PredicateSym (with correct arity) from program info
-			for edbPred := range r.programInfo.EdbPredicates {
+			for edbPred := range pi.EdbPredicates {
 				if edbPred.Symbol == name {
 					callbacks[edbPred] = &externalPredicateAdapter{fn: fn}
 					break

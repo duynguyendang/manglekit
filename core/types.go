@@ -59,7 +59,7 @@ const (
 	// Span Names
 	SpanPreCheck  = "Datalog.Assess"
 	SpanPostCheck = "Datalog.Reflect"
-	SpanMemory    = "Mangle.Recall"   // RAG lookup
+	SpanMemory    = "Mangle.Recall" // RAG lookup
 
 	// Attribute Keys
 	AttrPolicyName   = "policy.name"

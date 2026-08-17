@@ -5,10 +5,10 @@ import (
 )
 
 var GenCmd = &cobra.Command{
-	Use:   "generate",
-	Short: "Generate Manglekit assets",
+	Use:     "generate",
+	Short:   "Generate Manglekit assets",
 	Aliases: []string{"gen"},
-	Args:  cobra.NoArgs,
+	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},

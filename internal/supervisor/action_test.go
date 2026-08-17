@@ -318,3 +318,116 @@ func TestSupervisedAction_FlattenToQuads_Pointer(t *testing.T) {
 		t.Errorf("expected 1 quad for pointer to struct, got %d", len(quads))
 	}
 }
+
+// multiCallReasoningPort returns different results per VerifyAtoms call,
+// so tests can distinguish the pre-check (call 1) from the post-check
+// (call 2, Reflect).
+type multiCallReasoningPort struct {
+	results []*domain.AuditResult
+	errs    []error
+	calls   int
+}
+
+func (m *multiCallReasoningPort) Verify(ctx context.Context, subject interface{}, genome []domain.DomainGene) (*domain.AuditResult, error) {
+	return nil, nil
+}
+
+func (m *multiCallReasoningPort) VerifyAtoms(ctx context.Context, atoms []domain.Atom, genome []domain.DomainGene) (*domain.AuditResult, error) {
+	i := m.calls
+	m.calls++
+	if i >= len(m.results) {
+		return &domain.AuditResult{Pass: true}, nil
+	}
+	return m.results[i], m.errs[i]
+}
+
+func (m *multiCallReasoningPort) Query(ctx context.Context, query string, genome []domain.DomainGene) ([]domain.Atom, error) {
+	return nil, nil
+}
+
+// postCheckTestEnv builds a context carrying the pre-check context so
+// ExecuteInternal runs the post-check (Reflect) path.
+func postCheckTestEnv(ctx context.Context) context.Context {
+	return withPreCheckContext(ctx, &preCheckContext{
+		actionName: "test-action",
+		entityID:   core.EntityInput,
+	})
+}
+
+func TestSupervisedAction_PostCheck_VerifierError_FailClosed(t *testing.T) {
+	inner := &mockAction{
+		executeResult: domain.Envelope{Payload: "result"},
+	}
+	verifier := &multiCallReasoningPort{
+		results: []*domain.AuditResult{
+			{Pass: true}, // pre-check passes
+			{Pass: false, ViolationTier: domain.Tier0Kernel}, // unused; error below wins
+		},
+		errs: []error{
+			nil,
+			errors.New("verifier exploded during Reflect"),
+		},
+	}
+	genePool := &mockGenePoolPort{activeGenes: []domain.DomainGene{{Name: "g", Tier: domain.Tier0Kernel}}}
+
+	supervised := New(inner, verifier, genePool)
+
+	_, err := supervised.ExecuteInternal(postCheckTestEnv(context.Background()), "test-intent", core.Envelope{Payload: "test-input"})
+	if err == nil {
+		t.Fatal("expected error when post-check verifier errors (fail-closed)")
+	}
+	if !errors.Is(err, core.ErrSupervisorFailure) {
+		t.Errorf("expected ErrSupervisorFailure, got %v", err)
+	}
+	if verifier.calls != 2 {
+		t.Errorf("expected pre-check + post-check = 2 verifier calls, got %d", verifier.calls)
+	}
+}
+
+func TestSupervisedAction_PostCheck_Violation_Blocks(t *testing.T) {
+	inner := &mockAction{
+		executeResult: domain.Envelope{Payload: "result"},
+	}
+	verifier := &multiCallReasoningPort{
+		results: []*domain.AuditResult{
+			{Pass: true}, // pre-check passes
+			{Pass: false, ViolationTier: domain.Tier1Admin, ConflictPath: "post-rule"}, // post-check fails
+		},
+		errs: []error{nil, nil},
+	}
+	genePool := &mockGenePoolPort{activeGenes: []domain.DomainGene{{Name: "g", Tier: domain.Tier0Kernel}}}
+
+	supervised := New(inner, verifier, genePool)
+
+	_, err := supervised.ExecuteInternal(postCheckTestEnv(context.Background()), "test-intent", core.Envelope{Payload: "test-input"})
+	if err == nil {
+		t.Fatal("expected error when post-check fails")
+	}
+	if !errors.Is(err, core.ErrPolicyViolation) {
+		t.Errorf("expected ErrPolicyViolation, got %v", err)
+	}
+}
+
+func TestSupervisedAction_PostCheck_Pass_StillSucceeds(t *testing.T) {
+	inner := &mockAction{
+		executeResult: domain.Envelope{Payload: "result"},
+	}
+	verifier := &multiCallReasoningPort{
+		results: []*domain.AuditResult{
+			{Pass: true},
+			{Pass: true},
+		},
+		errs: []error{nil, nil},
+	}
+	genePool := &mockGenePoolPort{activeGenes: []domain.DomainGene{{Name: "g", Tier: domain.Tier0Kernel}}}
+
+	supervised := New(inner, verifier, genePool)
+
+	result, err := supervised.ExecuteInternal(postCheckTestEnv(context.Background()), "test-intent", core.Envelope{Payload: "test-input"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Payload != "result" {
+		t.Errorf("expected payload 'result', got %v", result.Payload)
+	}
+}

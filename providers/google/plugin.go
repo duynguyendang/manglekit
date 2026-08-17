@@ -108,6 +108,13 @@ func initVertexAI(ctx context.Context, globalG *genkit.Genkit, cfg Config, logge
 	return globalName, nil
 }
 
+// registerProxy registers a proxy model in the global registry. The Genkit
+// streaming callback (cb) is forwarded verbatim to the underlying Google
+// model, so streaming generation works through this proxy: the googlegenai
+// plugin implements the Genkit Model streaming contract natively, and
+// adapters/ai (genkitAdapter.Stream) requests it via ai.WithStreaming.
+// TODO(T-013): no provider-level google LLM client exists yet (enhancement
+// E6); once one is added, its Stream method should mirror providers/openai.
 func registerProxy(globalG *genkit.Genkit, globalName, modelName string, realModel ai.Model, logger core.Logger) {
 	meta := &ai.ModelOptions{
 		Label: modelName,

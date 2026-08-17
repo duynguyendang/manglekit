@@ -151,14 +151,14 @@ func (s *AgentSystem) GetAgent(ctx context.Context, agentID string) (*Agent, err
 	safeID := escapeDatalog(agentID)
 
 	var (
-		wg         sync.WaitGroup
-		queryErr   error
-		errOnce    sync.Once
-		setErr     = func(e error) { errOnce.Do(func() { queryErr = e }) }
-		role       string
+		wg           sync.WaitGroup
+		queryErr     error
+		errOnce      sync.Once
+		setErr       = func(e error) { errOnce.Do(func() { queryErr = e }) }
+		role         string
 		capabilities []string
-		config     = make(map[string]string)
-		status     = StatusAvailable
+		config       = make(map[string]string)
+		status       = StatusAvailable
 	)
 
 	wg.Add(4)

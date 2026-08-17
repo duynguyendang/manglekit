@@ -78,8 +78,8 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		logger: logger.NewDefault(),
 		// Default to HybridMemory with Nop stores
 		agentMemory: NewHybridMemory(core.NopStore{}, core.NopVectorStore{}, core.NopEmbedder{}),
-		registry: make(map[string]core.Action),
-		initCtx:  ctx,
+		registry:    make(map[string]core.Action),
+		initCtx:     ctx,
 	}
 
 	// Apply options
@@ -100,15 +100,15 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		return nil, fmt.Errorf("failed to register reference predicates: %w", err)
 	}
 
-	// Load deferred blueprint now that engine is ready.
+	// Load deferred policy now that engine is ready.
 	// Uses the caller's context for proper cancellation/timeout propagation.
 	if c.blueprintPath != "" {
 		content, err := os.ReadFile(c.blueprintPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read blueprint %q: %w", c.blueprintPath, err)
+			return nil, fmt.Errorf("failed to read policy %q: %w", c.blueprintPath, err)
 		}
 		if err := c.engine.LoadPolicy(ctx, string(content)); err != nil {
-			return nil, fmt.Errorf("failed to load blueprint %q: %w", c.blueprintPath, err)
+			return nil, fmt.Errorf("failed to load policy %q: %w", c.blueprintPath, err)
 		}
 	}
 
@@ -141,10 +141,10 @@ func (c *Client) LoadFacts(ctx context.Context, facts []string) error {
 
 // RegisterExternalPredicate registers a Go callback as an external Datalog
 // predicate, allowing policies to call into Go (e.g. for PII scans, HTTP
-// requests, custom checks). External predicates registered this way must be
-// declared with `Decl ... external()` in the loaded policy; use
-// Engine().LoadFromSource (or Client.LoadFromSource when available) so the
-// engine auto-emits the matching declarations.
+// requests, custom checks). External predicates registered this way are
+// auto-declared (`Decl ... external()`) by all policy load paths
+// (WithPolicyPath, LoadPolicy, LoadFromSource), so the registration may
+// happen before or after the policy is loaded.
 //
 // Example:
 //
@@ -163,7 +163,25 @@ func (c *Client) RegisterExternalPredicate(name string, fn func(ctx context.Cont
 	return c.engine.RegisterExternalPredicate(name, fn)
 }
 
-// LoadPolicy loads policy rules from a raw Datalog string.
+// Policy loading — three entry points, one rule of thumb:
+//
+//  1. WithPolicyPath (or QuickClient): the blessed path for file-based
+//     policies; the file is read and loaded during NewClient with typed errors.
+//  2. LoadPolicy: append Datalog rules from a string at runtime. Since v0.7
+//     this path auto-emits `Decl ... external()` declarations for registered
+//     external predicates (like LoadFromSource), so load order relative to
+//     RegisterExternalPredicate no longer matters.
+//  3. LoadFromSource: REPLACE the whole program from a string (base facts
+//     loaded beforehand are preserved). Use for full policy reloads.
+//
+// Use WithPolicyPath/LoadPolicy for incremental loads; LoadFromSource only
+// when you intentionally want to discard existing rules. LoadGherkinPolicy
+// compiles a Gherkin feature file to Datalog and routes through LoadPolicy.
+
+// LoadPolicy loads policy rules from a raw Datalog string, adding them to
+// the existing program. Registered external predicates are auto-declared,
+// so a policy referencing RegisterExternalPredicate predicates loads cleanly
+// here — no need for the LoadFromSource workaround.
 func (c *Client) LoadPolicy(ctx context.Context, policy string) error {
 	if c.engine == nil {
 		return fmt.Errorf("engine not initialized")
@@ -180,10 +198,8 @@ func (c *Client) LoadGherkinPolicy(ctx context.Context, featureContent string) e
 }
 
 // LoadFromSource loads a Datalog program from a raw string, replacing any
-// existing program state. Unlike LoadPolicy (which routes to AddPolicy), this
-// path also scans the external-predicate registry and auto-emits the matching
-// `Decl ... external()` declarations. Use this when the policy references
-// external predicates that were registered via RegisterExternalPredicate.
+// existing program state (base facts survive). See the "Policy loading"
+// block above for when to prefer it over LoadPolicy.
 func (c *Client) LoadFromSource(ctx context.Context, source string) error {
 	if c.engine == nil {
 		return fmt.Errorf("engine not initialized")
@@ -218,6 +234,22 @@ func (c *Client) RegisterAction(name string, action core.Action) {
 			c.logger.Warn("failed to register action metadata to engine", "action", name, "error", err)
 		}
 	}
+}
+
+// RegisterSupervised is the one-liner for the most common setup pattern:
+// it wraps act in the Zero-Trust gatekeeper (Supervise) and registers the
+// supervised action under name, so it is immediately callable via
+// ExecuteByName. It returns the supervised action.
+//
+//	client.RegisterSupervised("my_action", rawAction)
+//
+// is equivalent to
+//
+//	client.RegisterAction("my_action", client.Supervise(rawAction))
+func (c *Client) RegisterSupervised(name string, act core.Action) core.Action {
+	supervised := c.Supervise(act)
+	c.RegisterAction(name, supervised)
+	return supervised
 }
 
 // Shutdown cleans up resources used by the client.

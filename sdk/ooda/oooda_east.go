@@ -307,5 +307,3 @@ func violationsCount(audit *AuditResult) int {
 func totalRulesCount(frame *CognitiveFrame) int {
 	return len(frame.Context) + len(frame.AttentionSink)
 }
-
-

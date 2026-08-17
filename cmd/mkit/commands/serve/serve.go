@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
@@ -48,11 +51,34 @@ func runServer(ctx context.Context) {
 		os.Exit(1)
 	}
 
-	handler := createHandler(client)
-	http.Handle("/", handler)
+	// Hot policy reload: SIGHUP re-reads the policy file and atomically
+	// swaps it in. A failed reload (parse/evaluation error) keeps the old
+	// policy serving; in-flight requests are unaffected.
+	if policyPath != "" {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGHUP)
+		go func() {
+			for range sigCh {
+				if err := client.ReloadPolicy(ctx, policyPath); err != nil {
+					fmt.Fprintf(os.Stderr, "Policy reload failed (keeping old policy): %v\n", err)
+				} else {
+					fmt.Printf("Policy reloaded from %s\n", policyPath)
+				}
+			}
+		}()
+	}
+
+	srv := &http.Server{Addr: ":" + port, Handler: createHandler(client)}
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
 
 	fmt.Printf("Manglekit HTTP Server listening on :%s\n", port)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fmt.Fprintf(os.Stderr, "Server failed: %v\n", err)
 		os.Exit(1)
 	}

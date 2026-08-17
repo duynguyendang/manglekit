@@ -1,6 +1,35 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
+
+// Centralized defaults. These must match the SDK/engine behavior:
+//
+//	DefaultPolicyMaxSteps mirrors sdk.DefaultMaxSteps (10).
+//	DefaultPolicyEvaluationTimeout of 0 means "no explicit timeout"
+//	(the engine applies its own internal default).
+const (
+	// DefaultServiceName is the observability.service_name default.
+	DefaultServiceName = "manglekit-app"
+	// DefaultLogLevel is the observability.log_level default.
+	DefaultLogLevel = "info"
+	// DefaultPolicyMaxSteps mirrors sdk.DefaultMaxSteps.
+	DefaultPolicyMaxSteps = 10
+	// DefaultPolicyEvaluationTimeout: 0 = use the engine's internal default.
+	DefaultPolicyEvaluationTimeout = 0
+)
+
+// KnownMemoryProviders lists the memory provider names known to the core
+// distribution. Plugins can register additional providers with
+// sdk.RegisterMemoryProvider; append them here (or in the plugin's init) so
+// config validation accepts them.
+var KnownMemoryProviders = []string{"inmem", "qdrant"}
+
+// KnownMCPTransports lists the valid mcp[].transport values understood by
+// the MCP adapter.
+var KnownMCPTransports = []string{"stdio", "sse"}
 
 // Config is the root configuration structure for Manglekit.
 // It maps to the YAML configuration file and defines all settings for the system.
@@ -112,7 +141,43 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("policy.max_steps must be non-negative, got %d", c.Policy.MaxSteps)
 	}
 
+	// policy.path: when set, the file (or directory) must exist. Failing
+	// here gives an actionable message instead of a deep wrapped error at
+	// sdk.NewClient time.
+	if c.Policy.Path != "" {
+		if _, err := os.Stat(c.Policy.Path); err != nil {
+			return fmt.Errorf("policy.path %q does not exist or is not readable: %w", c.Policy.Path, err)
+		}
+	}
+
+	// memory.provider must be a known provider.
+	if c.Memory.Provider != "" && !containsString(KnownMemoryProviders, c.Memory.Provider) {
+		return fmt.Errorf("memory.provider %q is not one of the known providers %v; "+
+			"register custom providers with sdk.RegisterMemoryProvider and add them to config.KnownMemoryProviders",
+			c.Memory.Provider, KnownMemoryProviders)
+	}
+
+	// mcp[].transport must be a supported transport.
+	for i, srv := range c.MCP {
+		if srv.Transport == "" {
+			continue
+		}
+		if !containsString(KnownMCPTransports, srv.Transport) {
+			return fmt.Errorf("mcp[%d] (%s): transport %q must be one of %v",
+				i, srv.Name, srv.Transport, KnownMCPTransports)
+		}
+	}
+
 	return nil
+}
+
+func containsString(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // MCPServerConfig defines how to connect to an MCP server.

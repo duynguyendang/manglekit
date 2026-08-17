@@ -1,7 +1,7 @@
 # Building OODA Applications
 
 > Moved from the README in v0.6. For the high-level design see
-> [ARCHITECTURE.md](../../../ARCHITECTURE.md) (workspace root); for current-state
+> [manglekit-hld.md](../../../docs/design/manglekit-hld.md); for current-state
 > context see [docs/context/architecture/ooda-loop.md](../../../docs/context/architecture/ooda-loop.md).
 
 This section provides a comprehensive guide on building applications using the OODA (Observe-Orient-Decide-Verify-Act) cognitive loop in Manglekit.
@@ -280,7 +280,7 @@ standard library, Tier 2 user policy); there is no separate Go "GenePool engine"
 Verification is performed by the live engine on every supervised action.
 
 > Rule induction (learning new Tier-2 rules from experience) is **planned, not yet
-> built** — see [ROADMAP.md](./ROADMAP.md). Today you author policies directly as
+> built** — see [ROADMAP.md](../../ROADMAP.md). Today you author policies directly as
 > `.dl` files.
 
 ### Step 1: Define a Datalog Policy
@@ -312,15 +312,17 @@ import (
     "context"
     "fmt"
 
+    "github.com/duynguyendang/manglekit"
     "github.com/duynguyendang/manglekit/core"
-    "github.com/duynguyendang/manglekit/sdk"
 )
 
 func main() {
     ctx := context.Background()
 
-    // NewClient wires the live engine + fail-closed supervisor.
-    client, err := sdk.NewClient(ctx, sdk.WithBlueprintPath("policies/security_gate.dl"))
+    // QuickClient wires the live engine + fail-closed supervisor and loads
+    // the policy in one step. (sdk.NewClient + sdk.WithPolicyPath is the
+    // explicit equivalent; WithBlueprintPath still works but is deprecated.)
+    client, err := manglekit.QuickClient(ctx, "policies/security_gate.dl")
     if err != nil {
         panic(err)
     }
@@ -344,8 +346,10 @@ func main() {
         fmt.Println("✅ Allowed: approved production deploy.")
     }
 
-    // Or wrap a real core.Action so its Execute() is gated:
-    // supervised := client.Supervise(myAction)
+    // Or wrap a real core.Action so its Execute() is gated and register it
+    // in one step:
+    // client.RegisterSupervised("kubectl_deploy", myAction)
+    // out, err := client.ExecuteByName(ctx, "kubectl_deploy", payload, env)
 }
 
 // Any core.Action (e.g. an adapter from adapters/func, adapters/ai, or your own)
@@ -503,7 +507,12 @@ func (d *MyDecider) Decide(ctx context.Context, frame *ooda.CognitiveFrame) erro
 
 ## Error Handling
 
-Manglekit provides structured error types for proper error categorization:
+Manglekit provides structured error types for proper error categorization.
+Deny errors are **actionable**: they carry the action name, the matched rule
+text, and the tier, populated from the engine's audit trail (real rule
+instantiation, not heuristics). `IsPolicyViolationError` matches both policy
+violations and alignment errors, giving one block-detection idiom across the
+Assess / Execute paths (`AssessPlan` reports denies as `DecisionHalt` instead).
 
 ```go
 import (
@@ -515,10 +524,15 @@ import (
 if core.IsPolicyViolationError(err) {
     var pve *core.PolicyViolationError
     if errors.As(err, &pve) {
-        log.Printf("Blocked by policy: %s at %s", pve.Tier, pve.RuleID)
+        log.Printf("action %q blocked by policy: rule %q (tier %s)",
+            pve.ActionName, pve.MatchedRule, pve.Tier)
     }
 }
 ```
+
+For a full derivation tree of *why* an action was denied, use
+`Client.Explain(ctx, query, facts)` or `mkit eval --explain` — see the
+[Datalog guide](./datalog.md#explain-derivation-trees).
 
 ---
 
@@ -599,6 +613,39 @@ Genkit automatically creates an HTTP endpoint for each defined flow:
 curl -X POST http://localhost:8080/myOodaFlow \
   -H "Content-Type: application/json" \
   -d '{"data": {"input": "Generate architecture", "intent": "doc_gen"}}'
+```
+
+### Supervised Streaming
+
+LLM actions can stream while staying behind the governance gate. The OpenAI
+provider implements the Genkit streaming contract, and
+`mkai.NewStreamingSupervisedAction` gates the stream: the supervisor's
+pre-check runs **before** the first chunk (a policy deny means zero provider
+requests), chunks stream to the caller as they arrive, and the post-check
+(Reflect, fail-closed) runs on the assembled full response.
+
+```go
+action, err := mkai.NewStreamingSupervisedAction("summarize", generator, client.Engine())
+if err != nil {
+    panic(err)
+}
+
+chunks, err := action.Stream(ctx, envelope)
+if err != nil {
+    // Pre-check denied — no provider request was ever made.
+    log.Printf("blocked: %v", err)
+    return
+}
+for chunk := range chunks {
+    if chunk.Err != nil {
+        // Post-check denial surfaces as a terminal chunk carrying the
+        // policy error; FinalEnvelope is only set when it passes.
+        log.Printf("stream error: %v", chunk.Err)
+        break
+    }
+    fmt.Print(chunk.Text)
+}
+_ = action.FinalEnvelope() // post-checked envelope (set on success)
 ```
 
 ### Middleware in OODA Flows

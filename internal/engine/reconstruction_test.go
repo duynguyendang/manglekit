@@ -93,22 +93,22 @@ func TestFromFacts_Graph(t *testing.T) {
 }
 
 func TestParseAtomContent_CommaInQuotes(t *testing.T) {
-    // This tests the improvement I made to parse/atom.go
+	// This tests the improvement I made to parse/atom.go
 
-    type Data struct {
-        Value string `mangle:"val"`
-    }
+	type Data struct {
+		Value string `mangle:"val"`
+	}
 
-    facts := []string{
-        `json_str("id1", "val", "Hello, World")`,
-    }
+	facts := []string{
+		`json_str("id1", "val", "Hello, World")`,
+	}
 
-    d, err := FromFacts[Data]("id1", facts)
-    if err != nil {
-        t.Fatalf("FromFacts failed: %v", err)
-    }
+	d, err := FromFacts[Data]("id1", facts)
+	if err != nil {
+		t.Fatalf("FromFacts failed: %v", err)
+	}
 
-    if d.Value != "Hello, World" {
-        t.Errorf("Expected 'Hello, World', got '%s'", d.Value)
-    }
+	if d.Value != "Hello, World" {
+		t.Errorf("Expected 'Hello, World', got '%s'", d.Value)
+	}
 }

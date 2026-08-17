@@ -3,7 +3,8 @@
 > Moved from the README in v0.6. Reference docs:
 > [predicates](../../../docs/context/datalog/predicates.md),
 > [standard library](../../../docs/context/datalog/standard-library.md),
-> [policy authoring](../../../docs/context/governance/datalog-policies.md).
+> [policy authoring](../../../docs/context/governance/datalog-policies.md),
+> [engine architecture](../../../docs/context/architecture/datalog-engine.md).
 
 The Manglekit Datalog engine (powered by [mangle-go](https://codeberg.org/TauCeti/mangle-go)) supports a rich set of predicates, functions, and operators for declarative logic.
 
@@ -144,6 +145,59 @@ passes_quality_gate(D) :-
     passes_consistency(D),
     passes_generic(D).
 ```
+
+---
+
+## Engine Behaviors (v0.6.1+)
+
+### External Predicates
+
+External predicates (resolved by Go callbacks instead of Datalog facts, e.g.
+`pii_scan/1`) must be registered on the runtime via
+`RegisterExternalPredicate`, but **registration order no longer matters**: all
+policy load paths (`LoadPolicy`/`AddPolicy`, `LoadFromSource`) scan the
+external-predicate registry and auto-emit the required `Decl ... external()`
+declarations for every referenced predicate. Previously this worked only with
+`LoadFromSource` and only if registration happened before loading.
+
+### Evaluation Caching
+
+The engine keeps a version-keyed cache of derived facts (IDB). Queries that
+run against an unchanged program and fact base reuse the cached evaluation
+instead of copying the fact store and re-running full stratified evaluation —
+a governance gate check drops from ~700µs to ~18µs on a 1k-fact store. The
+cache is invalidated automatically whenever policies or facts change, and is
+disabled automatically while external predicates or temporal mode are active
+(their results are not deterministic in the fact base alone).
+
+Batch APIs avoid repeated re-evaluation at startup: `RegisterActions` loads
+all action metadata with a single evaluation, and `Store.AddFacts` bulk-writes
+quads in one Badger write batch.
+
+### Cancellation
+
+Query evaluation is cooperatively cancellable: passing a cancelled or timed-out
+`context.Context` aborts the evaluation loop between rule iterations
+(`context.Canceled` / `DeadlineExceeded`) instead of racing a goroutine, so
+timeouts don't leave orphaned evaluations burning CPU.
+
+### Hot Reload
+
+`Client.ReloadPolicy(ctx, path)` (runtime: `ReloadFromSource`) swaps policies
+atomically: the new program is parsed, analyzed, and evaluated **before** the
+swap, so an invalid policy keeps the old one active and serving. Facts you
+loaded explicitly (e.g. knowledge graphs) survive the reload; only facts that
+were derived by the *old* rules are dropped, so stale derivations never leak
+into the new policy. `mkit serve` reloads on `SIGHUP`.
+
+### EXPLAIN (Derivation Trees)
+
+`Client.Explain(ctx, query, facts)` (CLI: `mkit eval --explain`) returns a
+structured `core.Explanation`: the full derivation tree of rule firings that
+produced each answer — grounded atoms, rule text, variable bindings, and tier
+provenance taken from the actual rule instantiation (e.g. a bound `Tier`
+variable in the rule head), not from filename heuristics. The same structure
+feeds `QueryWithAudit`, so audit trails carry real provenance.
 
 ---
 

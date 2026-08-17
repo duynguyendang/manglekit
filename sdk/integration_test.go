@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/core"
 	function "github.com/duynguyendang/manglekit/adapters/func"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/duynguyendang/manglekit/internal/supervisor"
 	"github.com/stretchr/testify/require"

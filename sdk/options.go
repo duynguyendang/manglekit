@@ -33,8 +33,29 @@ func WithEngine(e core.Evaluator) ClientOption {
 	}
 }
 
+// WithPolicyPath specifies the file path of the Datalog policy to load at
+// client construction ("policy" is the canonical term; config `policy.path`
+// and the CLI `--policy` use the same naming).
+//
+// The actual file I/O is deferred until the Client is fully constructed,
+// using the context passed to NewClient. This avoids context.Background()
+// and enables proper cancellation propagation.
+//
+// Parameters:
+//   - path: A file path to the .dl policy file.
+func WithPolicyPath(path string) ClientOption {
+	return func(c *Client) error {
+		c.blueprintPath = path
+		return nil
+	}
+}
+
 // WithBlueprintPath specifies the file path to load Datalog rules from.
 // "Blueprint" is the new terminology for "Policy".
+//
+// Deprecated: use WithPolicyPath instead — the rest of the system (config
+// `policy.path`, CLI `--policy`) standardized on "policy". WithBlueprintPath
+// remains a functional alias and will be removed in v0.8.
 //
 // The actual file I/O is deferred until the Client is fully constructed,
 // using the context passed to NewClient. This avoids context.Background()
@@ -43,10 +64,7 @@ func WithEngine(e core.Evaluator) ClientOption {
 // Parameters:
 //   - path: A file path to the .dl blueprint file.
 func WithBlueprintPath(path string) ClientOption {
-	return func(c *Client) error {
-		c.blueprintPath = path
-		return nil
-	}
+	return WithPolicyPath(path)
 }
 
 // WithSteeringEnabled enables the EvaluateSteering Datalog path,
@@ -75,15 +93,18 @@ func WithLogger(l core.Logger) ClientOption {
 
 // WithAgentMemory configures the semantic memory (RAG) provider.
 //
+// Memory option mental model (there are three overlapping options):
+//   - WithMemory / WithAgentMemory: replace the whole memory implementation
+//     (full control — history + vectors + embedder).
+//   - WithHistory: set only the chat-history component, composing with the
+//     default HybridMemory; it never silently discards a custom memory.
+//
+// WithAgentMemory is an alias of WithMemory; prefer WithMemory.
+//
 // Parameters:
 //   - mem: A core.AgentMemory implementation.
 func WithAgentMemory(mem core.AgentMemory) ClientOption {
-	return func(c *Client) error {
-		if mem != nil {
-			c.agentMemory = mem
-		}
-		return nil
-	}
+	return WithMemory(mem)
 }
 
 // WithTracerProvider configures the OpenTelemetry tracer provider.
@@ -102,7 +123,18 @@ func WithTracerProvider(tp trace.TracerProvider) ClientOption {
 	}
 }
 
-// WithHistory configures a custom persistence store for chat history.
+// WithHistory configures the chat-history persistence store, composing with
+// the memory already configured on the client:
+//
+//   - Default (or no) memory: installs a HybridMemory wrapping this store
+//     with Nop vector/embedder components.
+//   - An existing *HybridMemory (the default memory or one built via
+//     NewHybridMemory): only its History component is replaced; the vector
+//     store and embedder are preserved.
+//   - A custom non-hybrid memory set via WithMemory/WithAgentMemory:
+//     returns an error instead of silently discarding it. Compose manually
+//     with NewHybridMemory(store, yourVectorStore, yourEmbedder) and pass
+//     the result to WithMemory.
 //
 // Parameters:
 //   - store: A core.HistoryStore implementation (e.g., Redis backed).
@@ -114,18 +146,27 @@ func WithHistory(store core.HistoryStore) ClientOption {
 		// If agentMemory is already a HybridMemory, update its History component.
 		if hm, ok := c.agentMemory.(*HybridMemory); ok {
 			hm.History = store
-		} else {
-			// Otherwise wrap it in a new HybridMemory (losing previous non-hybrid memory if any)
-			c.agentMemory = NewHybridMemory(store, core.NopVectorStore{}, core.NopEmbedder{})
+			return nil
 		}
+		if c.agentMemory != nil {
+			return fmt.Errorf(
+				"WithHistory: refusing to discard the custom memory of type %T; "+
+					"compose with sdk.NewHybridMemory(store, vectorStore, embedder) and pass it to WithMemory",
+				c.agentMemory)
+		}
+		c.agentMemory = NewHybridMemory(store, core.NopVectorStore{}, core.NopEmbedder{})
 		return nil
 	}
 }
 
 // WithMemory allows injecting a custom memory implementation (e.g., Hybrid HNSW).
+// It replaces the whole memory (history + RAG components); see WithHistory to
+// set only the history store. A nil mem is ignored.
 func WithMemory(mem core.AgentMemory) ClientOption {
 	return func(c *Client) error {
-		c.agentMemory = mem
+		if mem != nil {
+			c.agentMemory = mem
+		}
 		return nil
 	}
 }
@@ -344,6 +385,14 @@ type ExecutionParams struct {
 	MemoryMode core.MemoryMode
 	// Metadata contains additional context to be injected into the execution envelope.
 	Metadata map[string]string
+
+	// fwdFacts/fwdLabels/fwdMeta carry the explicit facts, security labels,
+	// and metadata forwarded from a caller-supplied core.Envelope passed to
+	// ExecuteByName. Managed internally by ExecuteByName; not settable via
+	// ExecuteOption.
+	fwdFacts  []string
+	fwdLabels []string
+	fwdMeta   map[string]any
 	// MaxSteps limits the total number of loop iterations.
 	// Zero uses the default (DefaultMaxSteps).
 	MaxSteps int

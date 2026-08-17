@@ -13,18 +13,18 @@ import (
 )
 
 type OODAFlowInput struct {
-	Input    string          `json:"input"`
-	Intent   string          `json:"intent,omitempty"`
-	TaskType ooda.TaskType  `json:"task_type,omitempty"`
+	Input    string        `json:"input"`
+	Intent   string        `json:"intent,omitempty"`
+	TaskType ooda.TaskType `json:"task_type,omitempty"`
 }
 
 type OODAFlowOutput struct {
-	Output         string                     `json:"output"`
-	Status         ooda.VerifyStatus         `json:"status"`
+	Output         string                       `json:"output"`
+	Status         ooda.VerifyStatus            `json:"status"`
 	PhaseDurations map[ooda.Phase]time.Duration `json:"phase_durations"`
-	RetryCount     int                       `json:"retry_count"`
-	AuditTrail     string                    `json:"audit_trail,omitempty"`
-	Error          string                    `json:"error,omitempty"`
+	RetryCount     int                          `json:"retry_count"`
+	AuditTrail     string                       `json:"audit_trail,omitempty"`
+	Error          string                       `json:"error,omitempty"`
 }
 
 type OODAFlowConfig struct {
@@ -95,10 +95,10 @@ func (f *OODAFlow) Run(ctx context.Context, input *OODAFlowInput) (*OODAFlowOutp
 	_, err := ooda.RunOODA(ctx, frame)
 	if err != nil {
 		return &OODAFlowOutput{
-			Error:         err.Error(),
-			Status:        frame.Status,
+			Error:          err.Error(),
+			Status:         frame.Status,
 			PhaseDurations: frame.PhaseDurations,
-			RetryCount:    frame.RetryCount,
+			RetryCount:     frame.RetryCount,
 		}, nil
 	}
 
@@ -150,7 +150,7 @@ func (f *OODAFlow) DefineStreamingFlow(g *genkit.Genkit, name string) {
 
 type OODAFlowWithMiddleware struct {
 	*OODAFlow
-	g      *genkit.Genkit
+	g *genkit.Genkit
 }
 
 func NewOODAFlowWithGenkit(cfg *OODAFlowConfig, g *genkit.Genkit) *OODAFlowWithMiddleware {

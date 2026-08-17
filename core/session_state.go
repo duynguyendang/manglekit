@@ -33,13 +33,13 @@ type SessionState struct {
 // AuditRecord is a trimmed, serializable snapshot of AuditTrail for persistence.
 // It captures the essential rule attribution data without internal pointers.
 type AuditRecord struct {
-	Step         int              `json:"step"`
-	Rules        []RuleSnapshot   `json:"rules"`
-	Outcome      string           `json:"outcome"` // "PROCEED", "HALT", "RETRY", "ROUTE"
-	Timestamp    string           `json:"timestamp"`
-	LatencyMs    int64            `json:"latency_ms"`
-	FactCount    int              `json:"fact_count"`
-	MatchedCount int              `json:"matched_count"`
+	Step         int            `json:"step"`
+	Rules        []RuleSnapshot `json:"rules"`
+	Outcome      string         `json:"outcome"` // "PROCEED", "HALT", "RETRY", "ROUTE"
+	Timestamp    string         `json:"timestamp"`
+	LatencyMs    int64          `json:"latency_ms"`
+	FactCount    int            `json:"fact_count"`
+	MatchedCount int            `json:"matched_count"`
 }
 
 // RuleSnapshot is a serializable snapshot of a single matched rule.

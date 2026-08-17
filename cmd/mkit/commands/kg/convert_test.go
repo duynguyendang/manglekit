@@ -7,21 +7,31 @@ import (
 	"testing"
 )
 
-func TestConvertRejectsTurtleWithCleanError(t *testing.T) {
+func TestConvertTurtle(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "input.ttl")
-	if err := os.WriteFile(in, []byte("@prefix ex: <http://example.org/> ."), 0o600); err != nil {
+	// Note: the knowledge-rdf turtle parser is prefix/dot naive, so use
+	// simple prefixed terms (matching what `mkit eval --knowledge` accepts).
+	ttl := "@prefix ex: <http://example.org/> .\nex:s ex:p \"value\" .\n"
+	if err := os.WriteFile(in, []byte(ttl), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "out.nq")
 
 	inFile, outFile, inFmt, outFmt = in, out, "", "nquads"
-	err := ConvertCmd.RunE(ConvertCmd, nil)
-	if err == nil {
-		t.Fatal("expected an error for .ttl input")
+	if err := ConvertCmd.RunE(ConvertCmd, nil); err != nil {
+		t.Fatalf("expected .ttl conversion to succeed, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "turtle") {
-		t.Errorf("expected clean turtle-not-supported error, got: %v", err)
+
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "<ex:s>") {
+		t.Errorf("expected converted output to contain the subject, got: %q", string(got))
+	}
+	if !strings.Contains(string(got), "\"value\"") {
+		t.Errorf("expected converted output to contain the object literal, got: %q", string(got))
 	}
 }
 

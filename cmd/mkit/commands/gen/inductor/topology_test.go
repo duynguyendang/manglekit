@@ -25,9 +25,9 @@ _:b1 <http://spending_limit> "5000" .`
 	// Decl works_in(S, O).       % Sample: works_in("s", "dept_engineering")
 	// Decl spending_limit(S, O). % Sample: spending_limit("b1", "5000")
 
-    // Note: sanitization might change "s" or "dept_engineering" depending on full URI.
-    // In the input <http://s>, sanitize returns "s".
-    // <http://dept_engineering> -> "dept_engineering".
+	// Note: sanitization might change "s" or "dept_engineering" depending on full URI.
+	// In the input <http://s>, sanitize returns "s".
+	// <http://dept_engineering> -> "dept_engineering".
 
 	foundWorksIn := false
 	foundSpending := false

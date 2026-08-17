@@ -7,7 +7,7 @@ import (
 	"github.com/duynguyendang/manglekit/adapters/vector"
 )
 
-type MockEmbedder struct {}
+type MockEmbedder struct{}
 
 func (m *MockEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	// Simple deterministic embedding for testing

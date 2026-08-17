@@ -82,12 +82,7 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 			Description: "Supervisor Pre-Flight check failed.",
 			Severity:    0,
 		})
-		return envelope, core.NewPolicyViolationError(
-			string(res.ViolationTier),
-			res.ConflictPath,
-			"Supervisor Pre-Flight check failed.",
-			"",
-		)
+		return envelope, policyViolationFromResult(ctx, res, "Supervisor Pre-Flight check failed.")
 	}
 
 	// 4. Act (Execute Inner)
@@ -134,18 +129,22 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 			entityID:   core.EntityOutput,
 		}
 		postCtx := withPreCheckContext(ctx, postCheckPC)
-		if res, err := g.verifier.VerifyAtoms(postCtx, outAtoms, activeGenes); err == nil && !res.Pass {
+		// Post-check (Reflect) is fail-closed, consistent with the
+		// pre-check: a verifier error blocks the result instead of
+		// silently passing it through (ADR-001; enforcement contract).
+		res, err := g.verifier.VerifyAtoms(postCtx, outAtoms, activeGenes)
+		if err != nil {
+			return domain.Envelope{}, &core.SupervisorError{
+				Reason: fmt.Errorf("post-check (Reflect) verifier error: %w", err),
+			}
+		}
+		if res != nil && !res.Pass {
 			envelope.Violations = append(envelope.Violations, core.ViolationRule{
 				RuleID:      res.ConflictPath,
 				Description: "Supervisor post-check (Reflect) failed.",
 				Severity:    0,
 			})
-			return domain.Envelope{}, core.NewPolicyViolationError(
-				string(res.ViolationTier),
-				res.ConflictPath,
-				"Supervisor post-check (Reflect) failed.",
-				"",
-			)
+			return domain.Envelope{}, policyViolationFromResult(ctx, res, "Supervisor post-check (Reflect) failed.")
 		}
 	}
 
@@ -184,4 +183,33 @@ func (g *SupervisedAction) flattenToQuads(subjectID string, v any) []domain.Quad
 		})
 	}
 	return quads
+}
+
+// policyViolationFromResult builds the structured PolicyViolationError the
+// supervisor returns on a gate block. It enriches the basic tier/rule fields
+// with the action name (from the pre-check context) and, when the engine's
+// AuditTrail is attached to the result, the matched rule text and real
+// governance tier, so callers get an actionable deny error.
+func policyViolationFromResult(ctx context.Context, res *domain.AuditResult, description string) *core.PolicyViolationError {
+	err := core.NewPolicyViolationError(
+		string(res.ViolationTier),
+		res.ConflictPath,
+		description,
+		"",
+	)
+	if pc := preCheckFromContext(ctx); pc != nil {
+		err.ActionName = pc.actionName
+	}
+	if res.Trail != nil {
+		for _, rule := range res.Trail.MatchedRules {
+			if rule.Definition != "" {
+				err.MatchedRule = rule.Definition
+				if rule.Tier != "" {
+					err.Tier = string(rule.Tier)
+				}
+				break
+			}
+		}
+	}
+	return err
 }

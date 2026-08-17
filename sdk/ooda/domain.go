@@ -119,7 +119,7 @@ type EASTState struct {
 	Activity           map[string]int `json:"activity"`            // A: fact/rule usage counts
 	Saliency           []string       `json:"saliency"`            // S: prioritized input signals
 	TrustTier          TrustTier      `json:"trust_tier"`          // T: T0 to T3
-	ParadoxThreshold   float64        `json:"paradox_threshold"`  // Magnitude above which paradox injection triggers
+	ParadoxThreshold   float64        `json:"paradox_threshold"`   // Magnitude above which paradox injection triggers
 }
 
 // Steer determines the execution path based on EAST metrics.
@@ -320,7 +320,7 @@ func NewCognitiveFrame(input string, intent IntentStr, taskType TaskType) *Cogni
 		MaxRetries:     3,
 		Timeout:        5 * time.Minute,
 		PhaseDurations: make(map[Phase]time.Duration),
-		EAST:            EASTState{ParadoxThreshold: logic.DefaultParadoxThreshold},
+		EAST:           EASTState{ParadoxThreshold: logic.DefaultParadoxThreshold},
 	}
 }
 

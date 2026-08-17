@@ -11,7 +11,7 @@ package ai
 // Automatically retries failed model calls with exponential backoff:
 //
 //	import mkai "github.com/duynguyendang/manglekit/adapters/ai"
-//	
+//
 //	resp, err := gen.Generate(ctx, prompt,
 //	    mkai.WithRetry(3), // retry up to 3 times
 //	)

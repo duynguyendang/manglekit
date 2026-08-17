@@ -16,13 +16,13 @@ type ProofNode struct {
 
 // AuditResult represents the outcome of a verification phase.
 type AuditResult struct {
-	Pass          bool              `json:"pass"`
-	ViolationTier TrustTier         `json:"violation_tier"`
-	TierID        string            `json:"tier_id"`
-	ConflictPath  string            `json:"conflict_path"` // "safety.dl:42"
-	ProofTree     *ProofNode        `json:"proof_tree"`    // "Why" it failed
-	EntropyDelta  float64           `json:"entropy_delta"` // Feedback for EAST
-	Trail         *core.AuditTrail  `json:"-"`             // Governance audit trail from gate evaluation
+	Pass          bool             `json:"pass"`
+	ViolationTier TrustTier        `json:"violation_tier"`
+	TierID        string           `json:"tier_id"`
+	ConflictPath  string           `json:"conflict_path"` // "safety.dl:42"
+	ProofTree     *ProofNode       `json:"proof_tree"`    // "Why" it failed
+	EntropyDelta  float64          `json:"entropy_delta"` // Feedback for EAST
+	Trail         *core.AuditTrail `json:"-"`             // Governance audit trail from gate evaluation
 }
 
 // EASTState captures the current Entropic Activation Steering metrics.

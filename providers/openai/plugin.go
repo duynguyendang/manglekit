@@ -2,8 +2,11 @@ package openai
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
@@ -58,13 +61,39 @@ func Init(g *genkit.Genkit, modelID string, cfg Config) error {
 	return nil
 }
 
-// generate handles the translation logic
+// generate handles the translation logic. When cb is non-nil the response is
+// streamed incrementally through cb and the assembled full response is
+// returned once the stream completes (Genkit ai.ModelFunc contract).
 func generate(ctx context.Context, client *openai.Client, explicitModelID string, req *ai.ModelRequest, cb func(context.Context, *ai.ModelResponseChunk) error) (*ai.ModelResponse, error) {
-	// CONSTRAINT: No Streaming Support yet
+	oaiReq := buildChatCompletionRequest(explicitModelID, req)
+
 	if cb != nil {
-		return nil, fmt.Errorf("streaming is not supported by this provider yet")
+		return generateStream(ctx, client, oaiReq, cb)
 	}
 
+	resp, err := client.CreateChatCompletion(ctx, oaiReq)
+	if err != nil {
+		return nil, fmt.Errorf("openai completion error: %w", err)
+	}
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("openai returned no choices")
+	}
+
+	// 5. Return Response
+	return &ai.ModelResponse{
+		Message: ai.NewModelTextMessage(resp.Choices[0].Message.Content),
+		// Fill Usage if available
+		Usage: &ai.GenerationUsage{
+			InputTokens:  resp.Usage.PromptTokens,
+			OutputTokens: resp.Usage.CompletionTokens,
+			TotalTokens:  resp.Usage.TotalTokens,
+		},
+	}, nil
+}
+
+// buildChatCompletionRequest maps a Genkit ModelRequest to an OpenAI
+// ChatCompletionRequest.
+func buildChatCompletionRequest(explicitModelID string, req *ai.ModelRequest) openai.ChatCompletionRequest {
 	// 1. Map Messages
 	msgs := []openai.ChatCompletionMessage{}
 	for _, m := range req.Messages {
@@ -108,23 +137,57 @@ func generate(ctx context.Context, client *openai.Client, explicitModelID string
 		}
 	}
 
-	// 4. Execute
-	resp, err := client.CreateChatCompletion(ctx, oaiReq)
+	return oaiReq
+}
+
+// generateStream executes the request against OpenAI's streaming API. Each
+// delta is forwarded to the Genkit streaming callback as an incremental
+// ModelResponseChunk; the assembled full response (with token usage, when the
+// server reports it) is returned after the stream ends.
+func generateStream(ctx context.Context, client *openai.Client, oaiReq openai.ChatCompletionRequest, cb func(context.Context, *ai.ModelResponseChunk) error) (*ai.ModelResponse, error) {
+	// Request token usage on the final streamed chunk.
+	oaiReq.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
+
+	stream, err := client.CreateChatCompletionStream(ctx, oaiReq)
 	if err != nil {
-		return nil, fmt.Errorf("openai completion error: %w", err)
+		return nil, fmt.Errorf("openai stream request error: %w", err)
 	}
-	if len(resp.Choices) == 0 {
-		return nil, fmt.Errorf("openai returned no choices")
+	defer stream.Close()
+
+	var aggregated strings.Builder
+	var usage openai.Usage
+
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("openai stream error: %w", err)
+		}
+		if len(resp.Choices) > 0 {
+			if delta := resp.Choices[0].Delta.Content; delta != "" {
+				aggregated.WriteString(delta)
+				chunk := &ai.ModelResponseChunk{
+					Role:    ai.RoleModel,
+					Content: []*ai.Part{ai.NewTextPart(delta)},
+				}
+				if err := cb(ctx, chunk); err != nil {
+					return nil, fmt.Errorf("openai stream callback error: %w", err)
+				}
+			}
+		}
+		if resp.Usage != nil {
+			usage = *resp.Usage
+		}
 	}
 
-	// 5. Return Response
 	return &ai.ModelResponse{
-		Message: ai.NewModelTextMessage(resp.Choices[0].Message.Content),
-		// Fill Usage if available
+		Message: ai.NewModelTextMessage(aggregated.String()),
 		Usage: &ai.GenerationUsage{
-			InputTokens:  resp.Usage.PromptTokens,
-			OutputTokens: resp.Usage.CompletionTokens,
-			TotalTokens:  resp.Usage.TotalTokens,
+			InputTokens:  usage.PromptTokens,
+			OutputTokens: usage.CompletionTokens,
+			TotalTokens:  usage.TotalTokens,
 		},
 	}, nil
 }

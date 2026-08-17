@@ -22,15 +22,27 @@ type Store struct {
 
 // NewStore initializes a high-performance BadgerDB instance optimized for
 // Manglekit's read-heavy Datalog workloads and asynchronous agent write-behinds.
+// Writes are asynchronous (WithSyncWrites(false)) — the right default for
+// cache-style, re-derivable state. For session persistence that must survive
+// a crash, use NewStoreWithOptions with syncWrites=true.
 func NewStore(path string, readOnly bool) (*Store, error) {
+	return NewStoreWithOptions(path, readOnly, false)
+}
+
+// NewStoreWithOptions is NewStore with an explicit durability stance.
+// syncWrites=true makes Badger fsync on write (WithSyncWrites(true)), the
+// opt-in durability option for session persistence; the default (false)
+// keeps asynchronous writes for cache-style usage.
+func NewStoreWithOptions(path string, readOnly, syncWrites bool) (*Store, error) {
 	opts := badger.DefaultOptions(path)
 
 	if readOnly {
 		opts = opts.WithReadOnly(true)
 	} else {
 		// Asynchronous writes are critical to preventing the OODA loop from
-		// blocking on disk I/O when writing transient agent states.
-		opts = opts.WithSyncWrites(false)
+		// blocking on disk I/O when writing transient agent states — unless
+		// the caller explicitly opted into durable session persistence.
+		opts = opts.WithSyncWrites(syncWrites)
 	}
 
 	opts.Logger = nil // Disable default Badger spam
@@ -120,6 +132,71 @@ func (s *Store) AddFact(s_, p, o, g uint64) error {
 		}
 		return nil
 	})
+}
+
+// Quad is a batch-friendly tuple of the four quad components. See AddFact
+// for the per-index layout.
+type Quad struct {
+	S, P, O, G uint64
+}
+
+// AddFacts persists a batch of quads using a single Badger write batch
+// instead of one transaction per quad. The fact counter is updated once,
+// atomically with the batch, counting only genuinely new facts (duplicate
+// SPOg keys within or before the batch do not inflate it).
+func (s *Store) AddFacts(quads []Quad) error {
+	if len(quads) == 0 {
+		return nil
+	}
+
+	// Pre-scan for duplicates so the counter stays exact.
+	var newCount uint64
+	newSet := make(map[[4]uint64]struct{}, len(quads))
+	err := s.db.View(func(txn *badger.Txn) error {
+		for _, q := range quads {
+			key := [4]uint64{q.S, q.P, q.O, q.G}
+			if _, dup := newSet[key]; dup {
+				continue
+			}
+			newSet[key] = struct{}{}
+			_, err := txn.Get(EncodeQuadKey(PrefixSPOg, q.S, q.P, q.O, q.G))
+			if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
+				return err
+			}
+			if errors.Is(err, badger.ErrKeyNotFound) {
+				newCount++
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to pre-scan batch for duplicates: %w", err)
+	}
+
+	wb := s.db.NewWriteBatch()
+	defer wb.Cancel()
+
+	prefixes := []byte{PrefixSPOg, PrefixPOSg, PrefixPSOg, PrefixGSPO}
+	for q := range newSet {
+		for _, prefix := range prefixes {
+			if err := wb.Set(EncodeQuadKey(prefix, q[0], q[1], q[2], q[3]), nil); err != nil {
+				return fmt.Errorf("failed to queue batch write: %w", err)
+			}
+		}
+	}
+
+	if newCount > 0 {
+		countBuf := make([]byte, 8)
+		binary.BigEndian.PutUint64(countBuf, s.numFacts.Add(newCount))
+		if err := wb.Set(KeyFactCount, countBuf); err != nil {
+			return fmt.Errorf("failed to queue fact count write: %w", err)
+		}
+	}
+
+	if err := wb.Flush(); err != nil {
+		return fmt.Errorf("failed to flush batch: %w", err)
+	}
+	return nil
 }
 
 // Scan performs a prefix scan over a specific index permutation.

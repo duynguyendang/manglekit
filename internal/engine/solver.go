@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"codeberg.org/TauCeti/mangle-go/ast"
@@ -16,6 +18,87 @@ import (
 
 var ErrSolutionFound = errors.New("solution found")
 
+// maxFactParseCacheEntries bounds the envelope fact-string parse cache so a
+// long-lived PolicyEngine does not grow without limit on adversarial inputs.
+const maxFactParseCacheEntries = 4096
+
+// appendEnvelopeFacts converts an envelope's explicit facts (raw Datalog
+// strings) and metadata (meta/2, attempt/1) into ast.Atom values, appending
+// them to facts. Metadata atoms are constructed directly instead of the old
+// fmt.Sprintf -> parse.Atom round-trip. actionName is included in error
+// messages so callers can attribute parse failures to a specific action.
+//
+// On a parse error the partially-appended facts slice is returned together
+// with the error; lenient callers may keep the valid prefix.
+func (e *PolicyEngine) appendEnvelopeFacts(facts []ast.Atom, env core.Envelope, actionName string) ([]ast.Atom, error) {
+	for _, factStr := range env.Facts {
+		atom, err := e.parseCachedAtom(factStr)
+		if err != nil {
+			return facts, fmt.Errorf("action %q: failed to parse envelope fact %q: %w", actionName, factStr, err)
+		}
+		facts = append(facts, atom)
+	}
+
+	for k, v := range env.Metadata {
+		// Handle slice values: meta("key", "val1"), meta("key", "val2")
+		rv := reflect.ValueOf(v)
+		if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
+			for i := 0; i < rv.Len(); i++ {
+				facts = append(facts, ast.NewAtom("meta", ast.String(k), ast.String(fmt.Sprintf("%v", rv.Index(i).Interface()))))
+			}
+			continue
+		}
+
+		// Single value: meta("key", "value")
+		vStr := fmt.Sprintf("%v", v)
+		facts = append(facts, ast.NewAtom("meta", ast.String(k), ast.String(vStr)))
+
+		// attempt(N) from retry_count — preserve numeric constants.
+		if k == "retry_count" {
+			facts = append(facts, ast.NewAtom("attempt", stringTerm(vStr)))
+		}
+	}
+
+	return facts, nil
+}
+
+// stringTerm builds a BaseTerm from a raw metadata value string, preserving
+// the numeric constant type the Datalog parser would have produced for an
+// unquoted token like `attempt(2)`.
+func stringTerm(s string) ast.BaseTerm {
+	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return ast.Number(i)
+	}
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		return ast.Float64(f)
+	}
+	return ast.String(s)
+}
+
+// parseCachedAtom parses a Datalog fact string with a small bounded cache,
+// so repeated conversion of the same envelope (e.g. the gate's sub-queries)
+// does not re-parse identical fact strings.
+func (e *PolicyEngine) parseCachedAtom(factStr string) (ast.Atom, error) {
+	e.factCacheMu.Lock()
+	defer e.factCacheMu.Unlock()
+
+	if e.factCache == nil {
+		e.factCache = make(map[string]ast.Atom)
+	}
+	if atom, ok := e.factCache[factStr]; ok {
+		return atom, nil
+	}
+
+	atom, err := parse.Atom(factStr)
+	if err != nil {
+		return ast.Atom{}, err
+	}
+	if len(e.factCache) < maxFactParseCacheEntries {
+		e.factCache[factStr] = atom
+	}
+	return atom, nil
+}
+
 // PolicyEngine is the core decision-making component of Manglekit.
 // It orchestrates the loading of policies, maintaining the Datalog runtime,
 // and executing authorization (Pre-Check) and validation (Post-Check) logic.
@@ -25,6 +108,11 @@ type PolicyEngine struct {
 	logger       core.Logger
 	runtime      *MangleRuntime
 	queryTimeout time.Duration
+
+	// factCache caches parsed envelope fact strings (bounded) so repeated
+	// envelope-to-facts conversion does not re-parse identical strings.
+	factCacheMu sync.Mutex
+	factCache   map[string]ast.Atom
 }
 
 // New creates a new PolicyEngine with default no-op observability.
@@ -223,6 +311,36 @@ func (e *PolicyEngine) RegisterAction(meta core.ActionMetadata) error {
 	return e.LoadFacts(context.Background(), facts)
 }
 
+// RegisterActions is the batch form of RegisterAction: it injects metadata
+// for multiple actions with a single LoadFacts call, triggering exactly one
+// re-evaluation of the runtime instead of one per action. Use it at startup
+// when registering many actions.
+//
+// Returns:
+//   - An error if fact loading fails.
+func (e *PolicyEngine) RegisterActions(metas []core.ActionMetadata) error {
+	if len(metas) == 0 {
+		return nil
+	}
+
+	var facts []string
+	for _, meta := range metas {
+		safeName := escapeString(meta.Name)
+
+		facts = append(facts, fmt.Sprintf("action(\"%s\")", safeName))
+
+		if meta.InputType != "" {
+			facts = append(facts, fmt.Sprintf("has_input(\"%s\", \"%s\")", safeName, escapeString(meta.InputType)))
+		}
+
+		if meta.OutputType != "" {
+			facts = append(facts, fmt.Sprintf("has_output(\"%s\", \"%s\")", safeName, escapeString(meta.OutputType)))
+		}
+	}
+
+	return e.LoadFacts(context.Background(), facts)
+}
+
 // LoadPolicy loads policy rules from a raw Datalog string.
 // This decouples the engine from file I/O.
 //
@@ -263,6 +381,25 @@ func (e *PolicyEngine) LoadFromSource(ctx context.Context, source string) error 
 	}
 	if err := e.runtime.LoadFromSource(ctx, source); err != nil {
 		return fmt.Errorf("failed to load policy from source: %w", err)
+	}
+	return nil
+}
+
+// ReloadPolicySource atomically replaces the whole policy with source.
+// The new program is parsed, analyzed, and evaluated against a copy of the
+// current base facts BEFORE anything is swapped: on any failure the old
+// policy stays active and the error is returned; on success concurrent
+// queries observe either the old or the new policy, never a mix. Base
+// facts loaded beforehand (e.g. a knowledge graph) are preserved.
+func (e *PolicyEngine) ReloadPolicySource(ctx context.Context, source string) error {
+	if source == "" {
+		return fmt.Errorf("policy source cannot be empty")
+	}
+	if err := e.runtime.ReloadFromSource(ctx, source); err != nil {
+		return fmt.Errorf("failed to reload policy: %w", err)
+	}
+	if e.logger != nil {
+		e.logger.Debug("policy reloaded", "length", len(source))
 	}
 	return nil
 }
@@ -339,7 +476,7 @@ func (e *PolicyEngine) AssessPlan(ctx context.Context, input core.Envelope) (cor
 func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope) (map[string]string, error) {
 	config := make(map[string]string)
 
-	if e.runtime == nil || e.runtime.programInfo == nil {
+	if e.runtime == nil || !e.runtime.IsReady() {
 		return config, nil
 	}
 
@@ -353,52 +490,14 @@ func (e *PolicyEngine) GetActionConfig(ctx context.Context, input core.Envelope)
 		return config, nil
 	}
 
-	// Inject Envelope Facts
-	for _, factStr := range input.Facts {
-		atom, err := parse.Atom(factStr)
-		if err != nil {
-			if e.logger != nil {
-				e.logger.Error("failed to parse envelop fact", "fact", factStr, "error", err)
-			}
-			// Continue without this fact
-			continue
+	// Inject Envelope Facts + Metadata (meta/2, attempt/1)
+	if extra, err := e.appendEnvelopeFacts(facts, input, ""); err != nil {
+		if e.logger != nil {
+			e.logger.Debug("failed to convert envelope to facts for config", "error", err)
 		}
-		facts = append(facts, atom)
-	}
-
-	// Inject Metadata facts: meta(Key, Value) and attempt(N)
-	for k, v := range input.Metadata {
-		safeK := escapeString(k)
-
-		// Handle slice values: meta("key", "val1"), meta("key", "val2")
-		rv := reflect.ValueOf(v)
-		if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
-			for i := 0; i < rv.Len(); i++ {
-				item := rv.Index(i).Interface()
-				itemStr := fmt.Sprintf("%v", item)
-				metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, escapeString(itemStr))
-				if atom, err := parse.Atom(metaFact); err == nil {
-					facts = append(facts, atom)
-				}
-			}
-		} else {
-			// Single value
-			vStr := fmt.Sprintf("%v", v)
-			safeV := escapeString(vStr)
-
-			metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
-			if atom, err := parse.Atom(metaFact); err == nil {
-				facts = append(facts, atom)
-			}
-
-			// attempt(N) from retry_count
-			if k == "retry_count" {
-				attemptFact := fmt.Sprintf("attempt(%s)", vStr)
-				if atom, err := parse.Atom(attemptFact); err == nil {
-					facts = append(facts, atom)
-				}
-			}
-		}
+		facts = extra // keep the valid prefix; config lookup stays lenient
+	} else {
+		facts = extra
 	}
 
 	// Execute query: config(Key, Value)
@@ -446,14 +545,12 @@ func (e *PolicyEngine) ExtractActionArguments(ctx context.Context, input core.En
 		return args, nil // Return empty on error
 	}
 
-	// Inject Envelope Facts
-	for _, factStr := range input.Facts {
-		atom, err := parse.Atom(factStr)
-		if err != nil {
-			continue
-		}
-		facts = append(facts, atom)
-	}
+	// Convert the envelope (lenient: malformed input is skipped) through
+	// the shared helper so the parse cache is warmed and behavior stays
+	// consistent with the other envelope consumers. The queries below
+	// historically run against the base store only (facts not passed),
+	// which is preserved here.
+	_, _ = e.appendEnvelopeFacts(facts, input, actionName)
 
 	// Try to extract from action_args(ActionName, Key, Value) pattern
 	queryStr := fmt.Sprintf("action_args(\"%s\", Key, Value)", actionName)
@@ -575,13 +672,8 @@ func (e *PolicyEngine) assessInternal(ctx context.Context, actionMeta core.Actio
 
 	// Inject Action Metadata facts: action_operation("Req", "Name")
 	if actionMeta.Name != "" {
-		safeName := core.EntityInput
-		safeOp := actionMeta.Name
-		opFactStr := fmt.Sprintf("action_operation(\"%s\", \"%s\")", escapeString(safeName), escapeString(safeOp))
-		opAtom, err := parse.Atom(opFactStr)
-		if err == nil {
-			extraFacts = append(extraFacts, opAtom)
-		}
+		extraFacts = append(extraFacts, ast.NewAtom("action_operation",
+			ast.String(core.EntityInput), ast.String(actionMeta.Name)))
 	}
 
 	// Use infeasible(Req, Reason) with fallback to deny(Req)
@@ -663,8 +755,11 @@ func (e *PolicyEngine) evaluateGate(ctx context.Context, actionName string, enti
 // explaining which rules matched and at what tier. The trail is populated from
 // the actual halt/retry/route matches collected during evaluation.
 func (e *PolicyEngine) evaluateGateWithTrail(ctx context.Context, actionName string, entityID string, env core.Envelope, extraFacts ...ast.Atom) (*core.AuditTrail, error) {
-	if e.runtime == nil || e.runtime.programInfo == nil {
-		return nil, &core.AlignmentError{Message: "policy engine not initialized: fail-closed"}
+	if e.runtime == nil || !e.runtime.IsReady() {
+		return nil, &core.AlignmentError{
+			Message:    "policy engine not initialized: fail-closed",
+			ActionName: actionName,
+		}
 	}
 
 	// 1. ToFacts: Convert Payload
@@ -699,51 +794,13 @@ func (e *PolicyEngine) evaluateGateWithTrail(ctx context.Context, actionName str
 		facts = append(facts, atom)
 	}
 
-	// 4. Inject Explicit Facts from Envelope
-	for _, f := range env.Facts {
-		atom, err := parse.Atom(f)
-		if err != nil {
-			if e.logger != nil {
-				e.logger.Error("failed to parse envelop fact", "fact", f, "error", err)
-			}
-			return nil, &core.InputError{Err: fmt.Errorf("envelope fact parsing error: %w", err)}
+	// 4. Inject Explicit Facts from Envelope + 5. Metadata (meta/2, attempt/1)
+	facts, err = e.appendEnvelopeFacts(facts, env, actionName)
+	if err != nil {
+		if e.logger != nil {
+			e.logger.Error("failed to convert envelope to facts", "action", actionName, "error", err)
 		}
-		facts = append(facts, atom)
-	}
-
-	// 5. Inject Metadata
-	for k, v := range env.Metadata {
-		safeK := escapeString(k)
-
-		// Handle slice values: meta("key", "val1"), meta("key", "val2")
-		rv := reflect.ValueOf(v)
-		if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
-			for i := 0; i < rv.Len(); i++ {
-				item := rv.Index(i).Interface()
-				itemStr := fmt.Sprintf("%v", item)
-				metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, escapeString(itemStr))
-				if atom, err := parse.Atom(metaFact); err == nil {
-					facts = append(facts, atom)
-				}
-			}
-		} else {
-			// Single value
-			vStr := fmt.Sprintf("%v", v)
-			safeV := escapeString(vStr)
-
-			metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
-			if atom, err := parse.Atom(metaFact); err == nil {
-				facts = append(facts, atom)
-			}
-
-			// attempt(N) from retry_count
-			if k == "retry_count" {
-				attemptFact := fmt.Sprintf("attempt(%s)", vStr)
-				if atom, err := parse.Atom(attemptFact); err == nil {
-					facts = append(facts, atom)
-				}
-			}
-		}
+		return nil, &core.InputError{Err: fmt.Errorf("envelope fact parsing error: %w", err)}
 	}
 
 	// 6. Run Query — Tier-Aware Resolution
@@ -847,11 +904,17 @@ func (e *PolicyEngine) evaluateGateWithTrail(ctx context.Context, actionName str
 		trail := core.NewAuditTrail("manglekit-engine", fmt.Sprintf("halt(\"%s\", ...)", entityID))
 		for _, m := range matches {
 			trail.AddRule("halt", fmt.Sprintf("halt(\"%s\", \"%s\", \"%s\")", entityID, m.reason, m.tier),
-			 getSourceFileForPredicate("halt"), "halt", m.tier, nil)
+				getSourceFileForPredicate("halt"), "halt", m.tier, nil)
 		}
 		trail.MatchedCount = len(matches)
 
-		return trail, &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
+		return trail, &core.AlignmentError{
+			Message:     violationMsg,
+			RuleID:      ruleID,
+			ActionName:  actionName,
+			MatchedRule: fmt.Sprintf("halt(\"%s\", \"%s\", \"%s\")", entityID, best.reason, best.tier),
+			Tier:        best.tier,
+		}
 	}
 
 	// Priority 2: deny(Entity) (Backward Compatibility)
@@ -899,7 +962,13 @@ func (e *PolicyEngine) evaluateGateWithTrail(ctx context.Context, actionName str
 		if e.logger != nil {
 			e.logger.Debug("gate violation detected (deny)", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
 		}
-		return nil, &core.AlignmentError{Message: violationMsg, RuleID: ruleID}
+		return nil, &core.AlignmentError{
+			Message:     violationMsg,
+			RuleID:      ruleID,
+			ActionName:  actionName,
+			MatchedRule: fmt.Sprintf("%s(\"%s\")", core.PredHalt, entityID),
+			Tier:        core.TierUnknown,
+		}
 	}
 
 	return nil, nil
@@ -947,7 +1016,7 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 	decision := core.DecisionProceed
 	metadata := make(map[string]string)
 
-	if e.runtime == nil || e.runtime.programInfo == nil {
+	if e.runtime == nil || !e.runtime.IsReady() {
 		return decision, metadata, nil
 	}
 
@@ -961,36 +1030,13 @@ func (e *PolicyEngine) EvaluateSteering(ctx context.Context, input core.Envelope
 		return decision, metadata, fmt.Errorf("failed to convert input to facts: %w", err)
 	}
 
-	// [NEW] Inject Explicit Facts from Envelope
-	for _, factStr := range input.Facts {
-		atom, err := parse.Atom(factStr)
-		if err != nil {
-			if e.logger != nil {
-				e.logger.Error("failed to parse envelop fact", "fact", factStr, "error", err)
-			}
-			return decision, metadata, fmt.Errorf("envelope fact parsing error: %w", err)
+	// Inject Explicit Facts from Envelope + Metadata (meta/2, attempt/1)
+	facts, err = e.appendEnvelopeFacts(facts, input, "")
+	if err != nil {
+		if e.logger != nil {
+			e.logger.Error("failed to convert envelope to facts for steering", "error", err)
 		}
-		facts = append(facts, atom)
-	}
-
-	// Inject Metadata facts: meta(Key, Value) and attempt(N)
-	for k, v := range input.Metadata {
-		safeK := escapeString(k)
-		vStr := fmt.Sprintf("%v", v)
-		safeV := escapeString(vStr)
-		// meta("key", "val")
-		metaFact := fmt.Sprintf("meta(\"%s\", \"%s\")", safeK, safeV)
-		if atom, err := parse.Atom(metaFact); err == nil {
-			facts = append(facts, atom)
-		}
-
-		// attempt(N) from retry_count
-		if k == "retry_count" {
-			attemptFact := fmt.Sprintf("attempt(%s)", vStr)
-			if atom, err := parse.Atom(attemptFact); err == nil {
-				facts = append(facts, atom)
-			}
-		}
+		return decision, metadata, fmt.Errorf("envelope fact parsing error: %w", err)
 	}
 
 	// 1. Check Correction (Retry) — Tier-Aware
@@ -1276,16 +1322,28 @@ func (e *PolicyEngine) QueryWithAudit(ctx context.Context, facts []string, query
 			}
 		}
 		results = append(results, strMap)
-
-		// Extract rule information from the solution
-		// This is a simplified version - in production, you'd inspect the proof
-		extractRuleInference(auditTrail, solution, queryStr)
-
 		return nil
 	})
 
 	if err != nil {
 		return nil, err
+	}
+
+	// Populate the audit trail with real rule provenance: reconstruct the
+	// derivation tree for the matching facts so MatchedRules carry the
+	// actual rule text, variable bindings, and derivable tier (instead of
+	// the old predicate-name/filename heuristics). The IDB cache makes
+	// this second evaluation of the same fact set cheap.
+	if expl, explErr := e.runtime.Explain(queryCtx, atomFacts, queryStr); explErr == nil {
+		for _, d := range expl.Derivations {
+			definition := d.Rule
+			if definition == "" {
+				definition = d.Fact
+			}
+			auditTrail.AddRule(d.Predicate, definition, "", d.Predicate, d.Tier, d.Bindings)
+		}
+	} else if e.logger != nil {
+		e.logger.Debug("failed to reconstruct rule provenance for audit trail", "error", explErr)
 	}
 
 	auditTrail.MatchedCount = len(results)
@@ -1297,38 +1355,9 @@ func (e *PolicyEngine) QueryWithAudit(ctx context.Context, facts []string, query
 	}, nil
 }
 
-// extractRuleInference extracts rule inference information from the query solution.
-// This is a simplified implementation that tries to identify which predicates matched.
-func extractRuleInference(auditTrail *core.AuditTrail, solution map[string]any, queryStr string) {
-	// Extract predicate names from the query
-	// The query might look like: "can_execute(Agent, Action)" or "allow(Subject, Object)"
-	// We need to identify which predicates in the knowledge base matched
-
-	// For now, we'll create a basic inference entry
-	// In a full implementation, you'd use mangle-go's proof/explanation API
-
-	predicate := extractPredicateFromQuery(queryStr)
-	if predicate == "" {
-		return
-	}
-
-	// Try to determine the rule name and tier from the predicate
-	ruleName := predicate
-	tier := determineTierFromPredicate(predicate)
-	sourceFile := getSourceFileForPredicate(predicate)
-
-	// Convert solution values to string bindings
-	bindings := make(map[string]string)
-	for k, v := range solution {
-		bindings[k] = fmt.Sprintf("%v", v)
-	}
-
-	definition := fmt.Sprintf("%s with bindings %v", predicate, bindings)
-
-	auditTrail.AddRule(ruleName, definition, sourceFile, predicate, tier, bindings)
-}
-
-// extractPredicateFromQuery extracts the main predicate from a Datalog query string.
+// extractPredicateFromQuery extracts the main predicate from a Datalog
+// query string (e.g. "can_execute(Agent, Action)" -> "can_execute").
+// Retained as a utility for audit-trail helpers.
 func extractPredicateFromQuery(queryStr string) string {
 	// Simple extraction - take the first term before parenthesis
 	queryStr = strings.TrimSpace(queryStr)
@@ -1343,6 +1372,11 @@ func extractPredicateFromQuery(queryStr string) string {
 }
 
 // TierMapping maps predicate prefixes to governance tiers.
+//
+// Deprecated heuristic: the audit/explain paths now derive tier and rule
+// provenance from actual rule instantiations (see MangleRuntime.Explain
+// and core.Explanation). This map is kept for backward compatibility with
+// external callers only.
 var TierMapping = map[string]core.Tier{
 	"allow":           core.TierT1_Governance,
 	"deny":            core.TierT1_Governance,

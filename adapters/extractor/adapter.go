@@ -77,7 +77,7 @@ func (e *ExtractorAction) Execute(ctx context.Context, input core.Envelope) (cor
 
 	promptEnv := core.NewEnvelope(promptBuilder.String())
 	// Propagate metadata if necessary (e.g. tracing IDs)
-    // For now we just create a new envelope.
+	// For now we just create a new envelope.
 
 	// Call LLM
 	respEnv, err := e.llm.Execute(ctx, promptEnv)
@@ -94,18 +94,18 @@ func (e *ExtractorAction) Execute(ctx context.Context, input core.Envelope) (cor
 	// We need a pointer to a new instance for json.Unmarshal
 	// If e.target is `Order` (struct type), reflect.New(e.target) creates `*Order`.
 	// If e.target is `*Order` (ptr type), reflect.New(e.target) creates `**Order`.
-    // Usually targetStruct is `Order{}`, so e.target is `Order`.
+	// Usually targetStruct is `Order{}`, so e.target is `Order`.
 	ptr := reflect.New(e.target).Interface()
 
 	if err := json.Unmarshal([]byte(respText), ptr); err != nil {
 		return core.Envelope{}, fmt.Errorf("%w: extraction failed: %v", core.ErrSystemError, err)
 	}
 
-    // Return the value, not the pointer, to match the "struct definition" concept usually.
-    // However, the prompt says: "Return a new Envelope containing the Struct as the payload."
-    // If I pass `Order{}` to New, I expect `Order` in Payload.
-    // reflect.New returns pointer to zero value.
-    result := reflect.ValueOf(ptr).Elem().Interface()
+	// Return the value, not the pointer, to match the "struct definition" concept usually.
+	// However, the prompt says: "Return a new Envelope containing the Struct as the payload."
+	// If I pass `Order{}` to New, I expect `Order` in Payload.
+	// reflect.New returns pointer to zero value.
+	result := reflect.ValueOf(ptr).Elem().Interface()
 
 	return core.NewEnvelope(result), nil
 }

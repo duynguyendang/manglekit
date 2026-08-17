@@ -43,18 +43,24 @@ func buildFactIndex(facts []string) (FactIndex, error) {
 			continue // Skip malformed facts
 		}
 
-		if len(args) < 2 { continue }
+		if len(args) < 2 {
+			continue
+		}
 
 		var subject, key, value string
 
 		switch pred {
 		case "json_str", "json_num", "json_bool", "json_link":
-			if len(args) < 3 { continue }
+			if len(args) < 3 {
+				continue
+			}
 			subject = args[0]
 			key = args[1]
 			value = args[2]
 		case "triple":
-			if len(args) < 3 { continue }
+			if len(args) < 3 {
+				continue
+			}
 			subject = args[0]
 			key = args[1] // Predicate acts as key
 			value = args[2]
@@ -97,16 +103,24 @@ func hydrate(val reflect.Value, currentID string, index FactIndex) error {
 		field := typ.Field(i)
 		fieldVal := val.Field(i)
 
-		if !field.IsExported() { continue }
+		if !field.IsExported() {
+			continue
+		}
 
 		// Get mapping key
 		tag := field.Tag.Get("mangle")
-		if tag == "-" { continue }
-		if tag == "" { tag = strings.ToLower(field.Name) }
+		if tag == "-" {
+			continue
+		}
+		if tag == "" {
+			tag = strings.ToLower(field.Name)
+		}
 
 		// Look up values
 		values, found := nodeData[tag]
-		if !found { continue }
+		if !found {
+			continue
+		}
 
 		// Handle Slice
 		if fieldVal.Kind() == reflect.Slice {
@@ -158,26 +172,38 @@ func setPrimitive(v reflect.Value, s string) error {
 		v.SetString(s)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		n, err := strconv.ParseInt(s, 10, 64)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		v.SetInt(n)
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		n, err := strconv.ParseUint(s, 10, 64)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		v.SetUint(n)
 	case reflect.Float32, reflect.Float64:
 		f, err := strconv.ParseFloat(s, 64)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		v.SetFloat(f)
 	case reflect.Bool:
 		b, err := strconv.ParseBool(s)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		v.SetBool(b)
 	}
 	return nil
 }
 
 func isStructOrPtr(t reflect.Type) bool {
-	if t.Kind() == reflect.Struct { return true }
-	if t.Kind() == reflect.Ptr && t.Elem().Kind() == reflect.Struct { return true }
+	if t.Kind() == reflect.Struct {
+		return true
+	}
+	if t.Kind() == reflect.Ptr && t.Elem().Kind() == reflect.Struct {
+		return true
+	}
 	return false
 }

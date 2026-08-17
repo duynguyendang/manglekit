@@ -92,7 +92,7 @@ Ensure all tests pass and linting succeeds before submitting changes.
 
 ## Code Style
 
-Follow Go best practices as outlined in [AGENTS.md](AGENTS.md):
+Follow Go best practices:
 - Use `gofmt` and `go vet`.
 - Wrap errors: `fmt.Errorf("context: %w", err)`.
 - Keep packages focused; no global mutable state.

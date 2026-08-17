@@ -30,6 +30,13 @@ func WithMaxSteps(n int) ExecuteOption {
 }
 
 // ExecuteByName executes a registered action by its name, handling the Semantic State Machine loop.
+//
+// If input is a core.Envelope, its explicit Facts, SecurityLabels, and
+// Metadata are forwarded to the gate: the envelope's Payload becomes the
+// action payload and the rest is merged into the per-execution envelope
+// (explicit ExecuteOptions take precedence over forwarded metadata). This
+// means policies can consume facts attached to a caller-built envelope —
+// they are no longer silently dropped in favor of Metadata-only meta/2 facts.
 func (c *Client) ExecuteByName(ctx context.Context, actionName string, input any, opts ...ExecuteOption) (core.Envelope, error) {
 	params := ExecutionParams{
 		MemoryMode: core.MemoryModeNone,
@@ -37,6 +44,21 @@ func (c *Client) ExecuteByName(ctx context.Context, actionName string, input any
 	for _, opt := range opts {
 		opt(&params)
 	}
+
+	// Forward a caller-supplied envelope's facts/labels/metadata so the
+	// gate sees the same context a direct Assess call would.
+	if env, ok := input.(core.Envelope); ok {
+		params.fwdFacts = append(params.fwdFacts, env.Facts...)
+		params.fwdLabels = append(params.fwdLabels, env.SecurityLabels...)
+		if len(env.Metadata) > 0 {
+			params.fwdMeta = make(map[string]any, len(env.Metadata))
+			for k, v := range env.Metadata {
+				params.fwdMeta[k] = v
+			}
+		}
+		input = env.Payload
+	}
+
 	return c.runLoopInternal(ctx, actionName, input, params)
 }
 
@@ -170,6 +192,18 @@ func (c *Client) ExecuteSingleStep(ctx context.Context, actionName string, paylo
 	// 2. Create envelope and inject context
 	env := core.NewEnvelope(payload)
 	env.ContentType = action.Metadata().InputContentType
+
+	// Merge the forwarded envelope context (facts/labels/metadata from a
+	// caller-supplied core.Envelope) BEFORE injectContext, so explicit
+	// ExecuteOption metadata takes precedence over the forwarded metadata.
+	env.Facts = append(env.Facts, params.fwdFacts...)
+	env.SecurityLabels = append(env.SecurityLabels, params.fwdLabels...)
+	for k, v := range params.fwdMeta {
+		if _, exists := env.Metadata[k]; !exists {
+			env.Metadata[k] = v
+		}
+	}
+
 	c.injectContext(ctx, &env, payload, params)
 
 	// 3. Execute action (includes Blueprint pre-check)
