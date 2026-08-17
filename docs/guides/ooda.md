@@ -321,7 +321,7 @@ func main() {
 
     // QuickClient wires the live engine + fail-closed supervisor and loads
     // the policy in one step. (sdk.NewClient + sdk.WithPolicyPath is the
-    // explicit equivalent; WithBlueprintPath still works but is deprecated.)
+    // explicit equivalent: sdk.NewClient + sdk.WithPolicyPath.)
     client, err := manglekit.QuickClient(ctx, "policies/security_gate.dl")
     if err != nil {
         panic(err)

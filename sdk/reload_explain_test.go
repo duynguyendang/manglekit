@@ -33,7 +33,7 @@ func TestClientReloadPolicy_HotSwapAndFailSafe(t *testing.T) {
 	pathV1 := writePolicy(t, reloadTestPolicyV1)
 	pathV2 := writePolicy(t, reloadTestPolicyV2)
 
-	client, err := NewClient(ctx, WithBlueprintPath(pathV1))
+	client, err := NewClient(ctx, WithPolicyPath(pathV1))
 	require.NoError(t, err)
 
 	meta := core.ActionMetadata{Name: "test"}
@@ -66,7 +66,7 @@ func TestClientReloadPolicy_ConcurrentGateChecks(t *testing.T) {
 	pathV1 := writePolicy(t, reloadTestPolicyV1)
 	pathV2 := writePolicy(t, reloadTestPolicyV2)
 
-	client, err := NewClient(ctx, WithBlueprintPath(pathV1))
+	client, err := NewClient(ctx, WithPolicyPath(pathV1))
 	require.NoError(t, err)
 
 	meta := core.ActionMetadata{Name: "test"}
@@ -125,7 +125,7 @@ func TestClientExplain(t *testing.T) {
 	ctx := context.Background()
 	path := writePolicy(t, reloadTestPolicyV1)
 
-	client, err := NewClient(ctx, WithBlueprintPath(path))
+	client, err := NewClient(ctx, WithPolicyPath(path))
 	require.NoError(t, err)
 
 	expl, err := client.Explain(ctx, `halt("Req", Reason, Tier)`, nil)

@@ -42,7 +42,7 @@ func AddCommands(root *cobra.Command) {
 func runServer(ctx context.Context) {
 	opts := []sdk.ClientOption{}
 	if policyPath != "" {
-		opts = append(opts, sdk.WithBlueprintPath(policyPath))
+		opts = append(opts, sdk.WithPolicyPath(policyPath))
 	}
 
 	client, err := sdk.NewClient(ctx, opts...)

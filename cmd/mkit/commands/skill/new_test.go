@@ -69,7 +69,7 @@ func TestRunNew_ScaffoldsValidGo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(mainSrc), "PiiScanRequest") || !strings.Contains(string(mainSrc), "sdk.WithBlueprintPath") {
+	if !strings.Contains(string(mainSrc), "PiiScanRequest") || !strings.Contains(string(mainSrc), "sdk.WithPolicyPath") {
 		t.Error("main.go missing typed request or blessed policy-loading option")
 	}
 }

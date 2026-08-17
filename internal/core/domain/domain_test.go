@@ -41,12 +41,6 @@ func TestTaskAndOutputTypeConstants(t *testing.T) {
 	}
 }
 
-func TestParadoxInjectionThreshold(t *testing.T) {
-	if ParadoxInjectionThreshold <= 0 || ParadoxInjectionThreshold > 1 {
-		t.Errorf("ParadoxInjectionThreshold should be in (0,1], got %v", ParadoxInjectionThreshold)
-	}
-}
-
 func TestPayloadIteration(t *testing.T) {
 	p := Payload(func(yield func(Atom) bool) {
 		yield(Atom{Subject: "s1", Predicate: "p", Object: "o1"})

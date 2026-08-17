@@ -45,9 +45,9 @@ func TestWithHistoryRefusesToDiscardCustomMemory(t *testing.T) {
 	assert.Contains(t, err.Error(), "custom memory")
 }
 
-// WithAgentMemory is an alias of WithMemory and must install the memory.
-func TestWithAgentMemoryAlias(t *testing.T) {
-	c, err := NewClient(context.Background(), WithAgentMemory(nil))
+// TestWithMemory_InstallsMemory ensures WithMemory installs the memory.
+func TestWithMemory_InstallsMemory(t *testing.T) {
+	c, err := NewClient(context.Background(), WithMemory(nil))
 	require.NoError(t, err)
 	defer c.Shutdown(context.Background())
 	assert.NotNil(t, c.Memory(), "nil must be ignored, keeping the default memory")
@@ -70,8 +70,8 @@ func TestWithPolicyPath(t *testing.T) {
 		assert.Contains(t, err.Error(), "failed to read policy")
 	})
 
-	t.Run("deprecated alias still works", func(t *testing.T) {
-		c, err := NewClient(ctx, WithBlueprintPath("testdata/policy.dl"))
+	t.Run("policy path loads cleanly", func(t *testing.T) {
+		c, err := NewClient(ctx, WithPolicyPath("testdata/policy.dl"))
 		require.NoError(t, err)
 		defer c.Shutdown(ctx)
 	})

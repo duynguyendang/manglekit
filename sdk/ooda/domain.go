@@ -1,13 +1,9 @@
 package ooda
 
 import (
-	"context"
-	"fmt"
-	"math"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/core/logic"
 	"github.com/duynguyendang/manglekit/sdk/ports"
 	"github.com/google/uuid"
 )
@@ -109,6 +105,10 @@ type AuditResult struct {
 	EntropyDelta  float64   `json:"entropy_delta"` // Feedback for EAST
 }
 
+// DefaultParadoxThreshold is the EAST magnitude above which cognitive paradox
+// injection is triggered when no per-state threshold is configured.
+const DefaultParadoxThreshold = 0.8
+
 // EASTState tracks the cognitive pressure metrics for steering.
 // E = Entropy (conflict), A = Activity (hot atoms), S = Saliency (input importance), T = Trust (source tier)
 type EASTState struct {
@@ -120,90 +120,6 @@ type EASTState struct {
 	Saliency           []string       `json:"saliency"`            // S: prioritized input signals
 	TrustTier          TrustTier      `json:"trust_tier"`          // T: T0 to T3
 	ParadoxThreshold   float64        `json:"paradox_threshold"`   // Magnitude above which paradox injection triggers
-}
-
-// Steer determines the execution path based on EAST metrics.
-func (e *EASTState) Steer(frame *CognitiveFrame) ExecutionPath {
-	// Fast-path: low entropy + trusted source + known pattern
-	if e.Entropy < 0.2 && e.TrustTier == Tier0Kernel && isKnownPattern(frame) {
-		return PathFast
-	}
-	// Slow-path: high entropy or low trust
-	if e.Entropy > 0.7 || e.TrustTier == Tier3User || e.TrustTier == Tier2AI {
-		return PathSlow
-	}
-	return PathStandard
-}
-
-// SteerKB determines the execution path by querying Datalog rules directly (14-east.dl).
-// Falls back to in-memory Steer() if ReasoningPort is nil or query fails.
-func (e *EASTState) SteerKB(ctx context.Context, frame *CognitiveFrame, reasoner ports.ReasoningPort) ExecutionPath {
-	if reasoner == nil {
-		return e.Steer(frame)
-	}
-
-	// Query fast_path(Frame) from 14-east.dl
-	if results, err := reasoner.VerifyWithDatalog(ctx, fmt.Sprintf("fast_path(%s)", frame.ID)); err == nil && len(results) > 0 {
-		return PathFast
-	}
-
-	// Query slow_path(Frame) from 14-east.dl
-	if results, err := reasoner.VerifyWithDatalog(ctx, fmt.Sprintf("slow_path(%s)", frame.ID)); err == nil && len(results) > 0 {
-		return PathSlow
-	}
-
-	return PathStandard
-}
-
-// CalculateMagnitude computes the steering formula: P = exp(1-L) / N
-func (e *EASTState) CalculateMagnitude() float64 {
-	if e.EntropyCoefficient == 0 {
-		return 0
-	}
-	e.SteeringMagnitude = math.Exp(1.0-e.LogicSuccess) / e.EntropyCoefficient
-	return e.SteeringMagnitude
-}
-
-// ShouldInjectParadox returns true if steering magnitude exceeds the configured
-// paradox threshold. Falls back to the default (0.8) when unset.
-func (e *EASTState) ShouldInjectParadox() bool {
-	threshold := e.ParadoxThreshold
-	if threshold <= 0 {
-		threshold = logic.DefaultParadoxThreshold
-	}
-	return e.SteeringMagnitude > threshold
-}
-
-// Temperature returns the recommended LLM temperature based on steering magnitude.
-func (e *EASTState) Temperature() float64 {
-	switch {
-	case e.SteeringMagnitude < 0.3:
-		return 0.9 // Creative exploration
-	case e.SteeringMagnitude < 0.6:
-		return 0.7 // Balanced
-	case e.SteeringMagnitude < 0.8:
-		return 0.4 // Conservative
-	default:
-		return 0.1 // Paradox injection, highly deterministic
-	}
-}
-
-// isKnownPattern checks if the frame's input matches a known project pattern.
-func isKnownPattern(frame *CognitiveFrame) bool {
-	if frame == nil {
-		return false
-	}
-	// Check if Saliency contains a known pattern
-	for _, s := range frame.EAST.Saliency {
-		if s == "known_pattern" {
-			return true
-		}
-	}
-	// Check if Orient found a matching project type
-	if v, ok := frame.RawContext["project_type"].(string); ok && v != "" {
-		return true
-	}
-	return false
 }
 
 // ExecutionObject is the unified output of the ORIENT phase.
@@ -320,7 +236,7 @@ func NewCognitiveFrame(input string, intent IntentStr, taskType TaskType) *Cogni
 		MaxRetries:     3,
 		Timeout:        5 * time.Minute,
 		PhaseDurations: make(map[Phase]time.Duration),
-		EAST:           EASTState{ParadoxThreshold: logic.DefaultParadoxThreshold},
+		EAST:           EASTState{ParadoxThreshold: DefaultParadoxThreshold},
 	}
 }
 
@@ -341,7 +257,7 @@ func NewBuilder() *Builder {
 			MaxRetries:     3,
 			Timeout:        5 * time.Minute,
 			PhaseDurations: make(map[Phase]time.Duration),
-			EAST:           EASTState{ParadoxThreshold: logic.DefaultParadoxThreshold},
+			EAST:           EASTState{ParadoxThreshold: DefaultParadoxThreshold},
 		},
 	}
 }

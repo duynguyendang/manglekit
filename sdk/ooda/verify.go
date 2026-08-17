@@ -79,7 +79,7 @@ func ValidateAgainstRules(ctx context.Context, frame *CognitiveFrame) (*AuditRes
 		frame.AuditTrail = auditTrail
 
 		// 2. Classify violations by tier
-		worstTier := classifyViolations(auditTrail)
+		worstTier := ClassifyViolations(auditTrail)
 		result.ViolationTier = worstTier
 
 		if len(auditTrail.MatchedRules) > 0 {
@@ -125,7 +125,7 @@ func TieredVerify(ctx context.Context, frame *CognitiveFrame) (*AuditResult, err
 		return nil, err
 	}
 
-	worstTier := classifyViolations(auditTrail)
+	worstTier := ClassifyViolations(auditTrail)
 	result.ViolationTier = worstTier
 
 	// Find violations and classify by tier
@@ -200,8 +200,9 @@ func NewRefinementContext(audit *AuditResult, draft any, attempt int) *Refinemen
 	}
 }
 
-// classifyViolations returns the worst tier found in the audit trail.
-func classifyViolations(trail *core.AuditTrail) TrustTier {
+// ClassifyViolations returns the worst tier found in the audit trail.
+// Exported for use by the x/east extension.
+func ClassifyViolations(trail *core.AuditTrail) TrustTier {
 	if trail == nil || len(trail.MatchedRules) == 0 {
 		return Tier3User
 	}

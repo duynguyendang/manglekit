@@ -54,11 +54,6 @@ func (m *MockEvaluator) LoadPolicy(ctx context.Context, policy string) error {
 	return args.Error(0)
 }
 
-func (m *MockEvaluator) LoadGherkinPolicy(ctx context.Context, featureContent string) error {
-	args := m.Called(ctx, featureContent)
-	return args.Error(0)
-}
-
 func (m *MockEvaluator) LoadFacts(ctx context.Context, facts []string) error {
 	args := m.Called(ctx, facts)
 	return args.Error(0)
@@ -104,7 +99,7 @@ func TestJITInitialization(t *testing.T) {
 	assert.NotNil(t, client.Tracer())
 }
 
-func TestWithBlueprintPath_LoadsPolicy(t *testing.T) {
+func TestWithPolicyPath_LoadsPolicy(t *testing.T) {
 	// Create a temporary policy file with a deny rule
 	// We use "Req" as the entity ID because that's core.EntityInput
 	content := `halt("Req").`
@@ -117,7 +112,7 @@ func TestWithBlueprintPath_LoadsPolicy(t *testing.T) {
 	tmpfile.Close()
 
 	// Initialize client with path
-	client, err := NewClient(context.Background(), WithBlueprintPath(tmpfile.Name()))
+	client, err := NewClient(context.Background(), WithPolicyPath(tmpfile.Name()))
 	assert.NoError(t, err)
 	assert.NotNil(t, client)
 

@@ -42,9 +42,6 @@ type PolicyLoader interface {
 	// existing state and auto-emitting external predicate declarations.
 	LoadFromSource(ctx context.Context, source string) error
 
-	// LoadGherkinPolicy loads a Gherkin feature file and compiles it to Datalog.
-	LoadGherkinPolicy(ctx context.Context, featureContent string) error
-
 	// LoadFacts injects dynamic facts into the engine.
 	LoadFacts(ctx context.Context, facts []string) error
 

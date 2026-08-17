@@ -60,7 +60,7 @@ func TestShutdown_WaitsForInFlightMemorize(t *testing.T) {
 	block := make(chan struct{})
 	mem := &testMemory{block: block}
 
-	c, err := NewClient(context.Background(), WithAgentMemory(mem))
+	c, err := NewClient(context.Background(), WithMemory(mem))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestShutdown_WaitsForInFlightMemorize(t *testing.T) {
 
 func TestShutdown_RefusesNewMemorizeAfterClose(t *testing.T) {
 	mem := &testMemory{}
-	c, err := NewClient(context.Background(), WithAgentMemory(mem))
+	c, err := NewClient(context.Background(), WithMemory(mem))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestShutdown_CtxCancellationReturnsError(t *testing.T) {
 	defer close(block)
 	mem := &testMemory{block: block}
 
-	c, err := NewClient(context.Background(), WithAgentMemory(mem))
+	c, err := NewClient(context.Background(), WithMemory(mem))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestShutdown_CtxCancellationReturnsError(t *testing.T) {
 
 func TestShutdown_ConcurrentStress(t *testing.T) {
 	mem := &testMemory{}
-	c, err := NewClient(context.Background(), WithAgentMemory(mem))
+	c, err := NewClient(context.Background(), WithMemory(mem))
 	if err != nil {
 		t.Fatal(err)
 	}

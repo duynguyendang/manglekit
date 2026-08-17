@@ -61,11 +61,6 @@ func Define[In any, Out any](
 // `policy.path` and the CLI `--policy` flag.
 func WithPolicyPath(path string) ClientOption { return sdk.WithPolicyPath(path) }
 
-// WithBlueprintPath specifies the file path to load Datalog rules from.
-//
-// Deprecated: use WithPolicyPath instead (removal target: v0.8).
-func WithBlueprintPath(path string) ClientOption { return sdk.WithBlueprintPath(path) }
-
 // WithEngine allows injecting a custom or mock core.Evaluator.
 func WithEngine(e core.Evaluator) ClientOption { return sdk.WithEngine(e) }
 
@@ -85,11 +80,6 @@ func WithStdoutTracer() ClientOption { return sdk.WithStdoutTracer() }
 
 // WithMemory replaces the whole memory implementation (history + RAG).
 func WithMemory(mem core.AgentMemory) ClientOption { return sdk.WithMemory(mem) }
-
-// WithAgentMemory is an alias of WithMemory.
-//
-// Deprecated: use WithMemory instead.
-func WithAgentMemory(mem core.AgentMemory) ClientOption { return sdk.WithAgentMemory(mem) }
 
 // WithHistory sets only the chat-history component of the memory, composing
 // with an existing HybridMemory. It returns an error at construction time

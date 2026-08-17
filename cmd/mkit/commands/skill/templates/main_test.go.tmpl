@@ -11,7 +11,7 @@ import (
 func newTestClient(t *testing.T) *sdk.Client {
 	t.Helper()
 	ctx := context.Background()
-	client, err := sdk.NewClient(ctx, sdk.WithBlueprintPath("policy.dl"))
+	client, err := sdk.NewClient(ctx, sdk.WithPolicyPath("policy.dl"))
 	if err != nil {
 		t.Fatalf("init client: %v", err)
 	}

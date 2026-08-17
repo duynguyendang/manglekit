@@ -250,3 +250,30 @@ func TestTemporal_HelperMethods(t *testing.T) {
 	assert.NoError(t, err)
 	t.Logf("Results during June: %v", results)
 }
+
+func TestPolicyEngine_TemporalWrapper(t *testing.T) {
+	pe, err := New()
+	assert.NoError(t, err)
+
+	assert.False(t, pe.IsTemporalEnabled())
+	pe.EnableTemporal()
+	assert.True(t, pe.IsTemporalEnabled())
+
+	now := time.Now()
+	assert.NoError(t, pe.AddTemporalFact(`perm("alice", "read")`, now.Add(-time.Hour), now.Add(time.Hour)))
+	assert.NoError(t, pe.AddTemporalFactAt(`perm("alice", "write")`, now))
+	assert.NoError(t, pe.AddTemporalFactInPast(`perm("bob", "read")`, time.Hour))
+	assert.NoError(t, pe.AddTemporalFactInFuture(`perm("carol", "read")`, time.Hour))
+	assert.NoError(t, pe.AddEternalFact(`role("root", "admin")`))
+
+	pe.SetEvaluationTime(now)
+	assert.Equal(t, now, pe.GetEvaluationTime())
+
+	facts, err := pe.QueryTemporalFactsAt(`perm("alice", "write")`, now)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, facts)
+
+	contains, err := pe.ContainsTemporalFact(`role("root", "admin")`)
+	assert.NoError(t, err)
+	assert.True(t, contains)
+}

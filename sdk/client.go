@@ -175,8 +175,7 @@ func (c *Client) RegisterExternalPredicate(name string, fn func(ctx context.Cont
 //     loaded beforehand are preserved). Use for full policy reloads.
 //
 // Use WithPolicyPath/LoadPolicy for incremental loads; LoadFromSource only
-// when you intentionally want to discard existing rules. LoadGherkinPolicy
-// compiles a Gherkin feature file to Datalog and routes through LoadPolicy.
+// when you intentionally want to discard existing rules.
 
 // LoadPolicy loads policy rules from a raw Datalog string, adding them to
 // the existing program. Registered external predicates are auto-declared,
@@ -187,14 +186,6 @@ func (c *Client) LoadPolicy(ctx context.Context, policy string) error {
 		return fmt.Errorf("engine not initialized")
 	}
 	return c.engine.LoadPolicy(ctx, policy)
-}
-
-// LoadGherkinPolicy loads a Gherkin feature file and compiles it to Datalog.
-func (c *Client) LoadGherkinPolicy(ctx context.Context, featureContent string) error {
-	if c.engine == nil {
-		return fmt.Errorf("engine not initialized")
-	}
-	return c.engine.LoadGherkinPolicy(ctx, featureContent)
 }
 
 // LoadFromSource loads a Datalog program from a raw string, replacing any

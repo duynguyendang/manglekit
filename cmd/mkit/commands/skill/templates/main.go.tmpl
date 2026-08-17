@@ -29,7 +29,7 @@ func newSkill(client *sdk.Client) *sdk.Runnable[{{.Pascal}}Request, {{.Pascal}}R
 func main() {
 	ctx := context.Background()
 
-	client, err := sdk.NewClient(ctx, sdk.WithBlueprintPath("policy.dl"))
+	client, err := sdk.NewClient(ctx, sdk.WithPolicyPath("policy.dl"))
 	if err != nil {
 		log.Fatalf("init client: %v", err)
 	}

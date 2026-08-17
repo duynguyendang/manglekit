@@ -55,7 +55,7 @@ func main() {
     ctx := context.Background()
 
     // Create the client with a Datalog policy blueprint.
-    client, err := sdk.NewClient(ctx, sdk.WithBlueprintPath("policy.dl"))
+    client, err := sdk.NewClient(ctx, sdk.WithPolicyPath("policy.dl"))
     if err != nil {
         log.Fatalf("client init: %v", err)
     }

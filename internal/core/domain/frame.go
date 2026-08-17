@@ -21,19 +21,8 @@ type AuditResult struct {
 	TierID        string           `json:"tier_id"`
 	ConflictPath  string           `json:"conflict_path"` // "safety.dl:42"
 	ProofTree     *ProofNode       `json:"proof_tree"`    // "Why" it failed
-	EntropyDelta  float64          `json:"entropy_delta"` // Feedback for EAST
 	Trail         *core.AuditTrail `json:"-"`             // Governance audit trail from gate evaluation
 }
-
-// EASTState captures the current Entropic Activation Steering metrics.
-type EASTState struct {
-	LogicSuccess       float64 `json:"logic_success"`       // L (0.0 - 1.0)
-	EntropyCoefficient float64 `json:"entropy_coefficient"` // N (Novelty)
-	SteeringMagnitude  float64 `json:"steering_magnitude"`  // P = exp(1-L) / N
-}
-
-// Paradox injection triggers when P > ParadoxInjectionThreshold
-const ParadoxInjectionThreshold = 0.8
 
 // CognitiveFrame represents the state of a single reasoning Epoch.
 // It is the central data structure carrying context and traces through the OODA loop.
@@ -59,7 +48,6 @@ type CognitiveFrame struct {
 	// Telemetry
 	TraceID        string
 	SessionHistory []AuditResult // Temporal conversation trace
-	EAST           EASTState     // Cognitive Pressure metrics
 
 	// Staging
 	IsProposal bool

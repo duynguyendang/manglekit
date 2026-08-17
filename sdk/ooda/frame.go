@@ -74,7 +74,7 @@ func Run(ctx context.Context, frame *CognitiveFrame) (*CognitiveFrame, error) {
 	}
 
 	// Phase 2: Orient
-	if err := orient(ctx, frame); err != nil {
+	if err := Orient(ctx, frame); err != nil {
 		return frame, fmt.Errorf("orient phase failed: %w", err)
 	}
 
@@ -123,8 +123,9 @@ func observe(ctx context.Context, frame *CognitiveFrame) error {
 	return nil
 }
 
-// orient retrieves relevant context from Memory (MEB) and Session Store
-func orient(ctx context.Context, frame *CognitiveFrame) error {
+// Orient retrieves relevant context from Memory (MEB) and Session Store.
+// Exported for use by the x/east extension.
+func Orient(ctx context.Context, frame *CognitiveFrame) error {
 	start := time.Now()
 	frame.Phase = PhaseOrient
 
@@ -207,8 +208,9 @@ func decide(ctx context.Context, frame *CognitiveFrame) error {
 	return nil
 }
 
-// act executes the chosen action
-func act(ctx context.Context, frame *CognitiveFrame) error {
+// Act executes the chosen action.
+// Exported for use by the x/east extension.
+func Act(ctx context.Context, frame *CognitiveFrame) error {
 	start := time.Now()
 	frame.Phase = PhaseAct
 
@@ -316,7 +318,7 @@ func actWithRetry(ctx context.Context, frame *CognitiveFrame) error {
 			}
 		}
 
-		err := act(ctx, frame)
+		err := Act(ctx, frame)
 		if err == nil {
 			return nil
 		}

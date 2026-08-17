@@ -143,7 +143,7 @@ func actWithSimpleRetry(ctx context.Context, frame *CognitiveFrame) error {
 			}
 		}
 
-		err := act(ctx, frame)
+		err := Act(ctx, frame)
 		if err == nil {
 			return nil
 		}

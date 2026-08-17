@@ -34,7 +34,7 @@ coverage:
 	$(GO) test -race -coverprofile=coverage.out ./...
 	$(GO) tool cover -func=coverage.out
 	@THRESHOLD=60; \
-	COVERAGE=$$($(GO) tool cover -func=coverage.out | grep total | awk '{print $$3}' | tr -d '%'); \
+	COVERAGE=$$($(GO) tool cover -func=coverage.out | grep '^total:' | awk '{print $$3}' | tr -d '%'); \
 	echo "Current coverage: $${COVERAGE}%"; \
 	if [ $$(echo "$${COVERAGE} < $${THRESHOLD}" | bc -l) -eq 1 ]; then \
 		echo "FAIL: Coverage $${COVERAGE}% is below threshold $${THRESHOLD}%"; \

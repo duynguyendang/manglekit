@@ -20,7 +20,7 @@ var newCmd = &cobra.Command{
 	Use:   "new <name>",
 	Short: "Scaffold a new policy-gated skill (main.go + policy.dl + contract test)",
 	Long: `Scaffold a new Manglekit skill using only the blessed APIs
-(sdk.NewClient + sdk.WithBlueprintPath + sdk.Define).
+(sdk.NewClient + sdk.WithPolicyPath + sdk.Define).
 
 Emits into <dir>/<name>/:
   - main.go       typed skill wired through the zero-trust supervisor

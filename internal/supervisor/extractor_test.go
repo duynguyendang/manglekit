@@ -67,9 +67,8 @@ func (p *passThroughEvaluator) LoadFromSource(ctx context.Context, source string
 func (p *passThroughEvaluator) RegisterExternalPredicate(name string, fn func(ctx context.Context, inputs []any) ([][]any, error)) error {
 	return nil
 }
-func (p *passThroughEvaluator) LoadGherkinPolicy(ctx context.Context, f string) error { return nil }
-func (p *passThroughEvaluator) LoadFacts(ctx context.Context, facts []string) error   { return nil }
-func (p *passThroughEvaluator) RegisterAction(meta core.ActionMetadata) error         { return nil }
+func (p *passThroughEvaluator) LoadFacts(ctx context.Context, facts []string) error { return nil }
+func (p *passThroughEvaluator) RegisterAction(meta core.ActionMetadata) error       { return nil }
 func (p *passThroughEvaluator) Query(ctx context.Context, facts []string, query string) ([]map[string]string, error) {
 	return nil, nil
 }

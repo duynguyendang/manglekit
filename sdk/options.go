@@ -13,12 +13,12 @@ import (
 	mcpAdapter "github.com/duynguyendang/manglekit/adapters/mcp"
 	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/internal/core/logic"
 	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/duynguyendang/manglekit/internal/logger"
 	"github.com/duynguyendang/manglekit/internal/statemanager"
 	"github.com/duynguyendang/manglekit/internal/supervisor"
 	"github.com/duynguyendang/manglekit/internal/telemetry"
+	"github.com/duynguyendang/manglekit/sdk/ooda"
 	"github.com/duynguyendang/manglekit/sdk/ports"
 )
 
@@ -50,23 +50,6 @@ func WithPolicyPath(path string) ClientOption {
 	}
 }
 
-// WithBlueprintPath specifies the file path to load Datalog rules from.
-// "Blueprint" is the new terminology for "Policy".
-//
-// Deprecated: use WithPolicyPath instead — the rest of the system (config
-// `policy.path`, CLI `--policy`) standardized on "policy". WithBlueprintPath
-// remains a functional alias and will be removed in v0.8.
-//
-// The actual file I/O is deferred until the Client is fully constructed,
-// using the context passed to NewClient. This avoids context.Background()
-// and enables proper cancellation propagation.
-//
-// Parameters:
-//   - path: A file path to the .dl blueprint file.
-func WithBlueprintPath(path string) ClientOption {
-	return WithPolicyPath(path)
-}
-
 // WithSteeringEnabled enables the EvaluateSteering Datalog path,
 // allowing policy-driven routing (route/retry) to control which
 // action runs next. Steering is disabled by default; the YAML
@@ -89,22 +72,6 @@ func WithLogger(l core.Logger) ClientOption {
 		}
 		return nil
 	}
-}
-
-// WithAgentMemory configures the semantic memory (RAG) provider.
-//
-// Memory option mental model (there are three overlapping options):
-//   - WithMemory / WithAgentMemory: replace the whole memory implementation
-//     (full control — history + vectors + embedder).
-//   - WithHistory: set only the chat-history component, composing with the
-//     default HybridMemory; it never silently discards a custom memory.
-//
-// WithAgentMemory is an alias of WithMemory; prefer WithMemory.
-//
-// Parameters:
-//   - mem: A core.AgentMemory implementation.
-func WithAgentMemory(mem core.AgentMemory) ClientOption {
-	return WithMemory(mem)
 }
 
 // WithTracerProvider configures the OpenTelemetry tracer provider.
@@ -131,7 +98,7 @@ func WithTracerProvider(tp trace.TracerProvider) ClientOption {
 //   - An existing *HybridMemory (the default memory or one built via
 //     NewHybridMemory): only its History component is replaced; the vector
 //     store and embedder are preserved.
-//   - A custom non-hybrid memory set via WithMemory/WithAgentMemory:
+//   - A custom non-hybrid memory set via WithMemory:
 //     returns an error instead of silently discarding it. Compose manually
 //     with NewHybridMemory(store, yourVectorStore, yourEmbedder) and pass
 //     the result to WithMemory.
@@ -370,7 +337,7 @@ func WithConfig(cfg *config.Config) ClientOption {
 		c.steeringEnabled = cfg.Policy.SteeringEnabled
 		c.paradoxThreshold = cfg.Policy.ParadoxThreshold
 		if c.paradoxThreshold <= 0 {
-			c.paradoxThreshold = logic.DefaultParadoxThreshold
+			c.paradoxThreshold = ooda.DefaultParadoxThreshold
 		}
 
 		return nil

@@ -1,8 +1,17 @@
-package ooda
+// Package east implements EAST (Entropy-Activity-Steering-Throttling), the
+// OODA v4 generative/research path. It is an extension to the deterministic
+// core OODA loop (sdk/ooda): callers that want creative/steered generation
+// opt into this package explicitly.
+//
+// It depends only on the public sdk/ooda surface (CognitiveFrame, EASTState,
+// Atom, TrustTier) and is never imported by the core, sdk, or adapters.
+package east
 
 import (
 	"math"
 	"strings"
+
+	"github.com/duynguyendang/manglekit/sdk/ooda"
 )
 
 // MeasureSaliency evaluates input importance based on keyword detection.
@@ -46,7 +55,7 @@ func CalculateEntropy(conflictCount, totalRules int) float64 {
 }
 
 // CalculateActivity builds a usage map from atoms accessed during Orient.
-func CalculateActivity(atoms []Atom) map[string]int {
+func CalculateActivity(atoms []ooda.Atom) map[string]int {
 	activity := make(map[string]int)
 	for _, atom := range atoms {
 		key := atom.Predicate + ":" + atom.Subject
@@ -56,8 +65,9 @@ func CalculateActivity(atoms []Atom) map[string]int {
 }
 
 // DetectConflicts counts atoms that contradict AttentionSink axioms.
-// A conflict occurs when an atom with Weight < 0.5 contradicts an axiom with Weight = 1.0.
-func DetectConflicts(context []Atom, axioms []Atom) int {
+// A conflict occurs when an atom with Weight < 0.5 contradicts an axiom
+// with Weight = 1.0.
+func DetectConflicts(context []ooda.Atom, axioms []ooda.Atom) int {
 	conflicts := 0
 	axiomMap := make(map[string]string) // predicate:object → "axiom"
 	for _, a := range axioms {
@@ -85,16 +95,16 @@ func DetectConflicts(context []Atom, axioms []Atom) int {
 }
 
 // ClassifyTrustTier determines the trust tier from the decision source.
-func ClassifyTrustTier(source string) TrustTier {
+func ClassifyTrustTier(source string) ooda.TrustTier {
 	switch source {
 	case "kernel_axiom":
-		return Tier0Kernel
+		return ooda.Tier0Kernel
 	case "admin_config":
-		return Tier1Admin
+		return ooda.Tier1Admin
 	case "ai_induced":
-		return Tier2AI
+		return ooda.Tier2AI
 	default:
-		return Tier3User
+		return ooda.Tier3User
 	}
 }
 
