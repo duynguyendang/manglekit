@@ -4,12 +4,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/duynguyendang/manglekit/adapters/mcp"
+	"github.com/duynguyendang/manglekit/config"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/genkit"
 )
 
 // DummyAction is a mock action for testing
@@ -157,4 +164,78 @@ func TestServe_PolicyViolation(t *testing.T) {
 			t.Errorf("Expected reason 'Blocked by Test Policy', got %v", reasons)
 		}
 	*/
+}
+
+func TestLoadMCPActions_MissingFile(t *testing.T) {
+	if _, err := loadMCPActions(context.Background(), filepath.Join(t.TempDir(), "absent.json")); err == nil {
+		t.Fatal("expected error for missing config file")
+	}
+}
+
+func TestLoadMCPActions_BadJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mcp.json")
+	if err := os.WriteFile(path, []byte(`{"not": "an array"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadMCPActions(context.Background(), path); err == nil {
+		t.Fatal("expected parse error for non-array config")
+	}
+}
+
+// A server whose client fails, with FailOnStartup=false: the loader returns
+// unhealthy stub actions (one per expected tool) instead of failing.
+type failFactory struct{}
+
+func (failFactory) CreateClient(context.Context, config.MCPServerConfig) (mcp.Client, error) {
+	return failClient{}, nil
+}
+
+type failClient struct{}
+
+func (failClient) GetActiveTools(context.Context, *genkit.Genkit) ([]ai.Tool, error) {
+	return nil, errors.New("connection refused")
+}
+
+func TestLoadMCPActions_UnhealthyStubs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mcp.json")
+	cfg := `[{"name":"todo","transport":"stdio","command":"echo","tools":["create","list"]}]`
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	actions, err := loadMCPActionsWithFactory(context.Background(), path, failFactory{})
+	if err != nil {
+		t.Fatalf("expected degraded start with unhealthy stubs, got %v", err)
+	}
+	if len(actions) != 2 {
+		t.Fatalf("want 2 unhealthy actions, got %d", len(actions))
+	}
+}
+
+func TestLoadMCPActions_FailOnStartup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mcp.json")
+	cfg := `[{"name":"todo","transport":"stdio","command":"echo","fail_on_startup":true}]`
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadMCPActionsWithFactory(context.Background(), path, failFactory{}); err == nil {
+		t.Fatal("expected error when FailOnStartup is set")
+	}
+}
+
+// JSON keys in the config file map via the config struct's json tags.
+func TestLoadMCPActions_ParsesLowercaseKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mcp.json")
+	cfg := `[{"name":"s1","transport":"unknown-transport","command":"x","tools":["t"]}]`
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// An unknown transport yields an unhealthy stub (no real client) rather
+	// than a hard failure: proves the entry parsed and reached the loader.
+	actions, err := loadMCPActionsWithFactory(context.Background(), path, failFactory{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(actions) != 1 {
+		t.Fatalf("want 1 action, got %d", len(actions))
+	}
 }

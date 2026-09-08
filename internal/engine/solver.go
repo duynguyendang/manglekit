@@ -214,8 +214,8 @@ func NewWithObservability(tracer core.Tracer, logger core.Logger) (*PolicyEngine
 		runtime: NewMangleRuntime(),
 	}
 
-	// Load Planner Core Rules
-	if err := pe.runtime.AddPolicy(context.Background(), resources.GetPlannerRules()); err != nil {
+	// Load Planner Core Rules (persistent: survives policy reloads)
+	if err := pe.runtime.AddPersistentPolicy(context.Background(), resources.GetPlannerRules()); err != nil {
 		if logger != nil {
 			logger.Error("failed to load planner core schema", "error", err)
 		}
@@ -390,7 +390,8 @@ func (e *PolicyEngine) LoadFromSource(ctx context.Context, source string) error 
 // current base facts BEFORE anything is swapped: on any failure the old
 // policy stays active and the error is returned; on success concurrent
 // queries observe either the old or the new policy, never a mix. Base
-// facts loaded beforehand (e.g. a knowledge graph) are preserved.
+// facts loaded beforehand (e.g. a knowledge graph) and persistent builtin
+// rule units (planner.dl — see the runtime's AddPersistentPolicy) survive.
 func (e *PolicyEngine) ReloadPolicySource(ctx context.Context, source string) error {
 	if source == "" {
 		return fmt.Errorf("policy source cannot be empty")

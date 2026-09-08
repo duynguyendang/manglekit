@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/duynguyendang/manglekit/adapters/knowledge"
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/exitcode"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/spf13/cobra"
 )
@@ -185,14 +187,27 @@ Exit codes: 0 success, 1 policy-deny, 2 usage error, 3 runtime error.`,
 		default:
 			if len(results) == 0 {
 				progress("No results found.")
-				return nil
+			} else {
+				printTable(stdout, results)
 			}
-			printTable(stdout, results)
+		}
+
+		// 8. Policy-deny exit-code contract: a query whose goal is a
+		// policy-control predicate (halt/deny) that finds any solution means
+		// the policy DENIES the input — exit 1 for CI gates (results were
+		// already written to stdout).
+		if denyQueryRE.MatchString(queryString) && len(results) > 0 {
+			return fmt.Errorf("policy-deny: %q matched %d solution(s): %w",
+				queryString, len(results), core.ErrPolicyViolation)
 		}
 
 		return nil
 	},
 }
+
+// denyQueryRE matches eval queries whose top-level goal is a policy-control
+// predicate (halt/deny). A non-empty result set for such a query is a deny.
+var denyQueryRE = regexp.MustCompile(`^\s*(halt|deny)\s*\(`)
 
 // printTable renders query results ([]map[string]string bindings) as an
 // aligned table with sorted column names.

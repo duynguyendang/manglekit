@@ -92,7 +92,13 @@ type MangleRuntime struct {
 	predToStratum map[ast.PredicateSym]int
 	baseFactStore factstore.SimpleInMemoryStore
 	ruleUnits     []parse.SourceUnit
-	ready         bool // Flag to indicate if the runtime is initialized
+	// persistentUnits are engine-builtin rule units (e.g. planner.dl, the
+	// multiagent registry) that SURVIVE ReloadFromSource: a reload swaps
+	// the user policy program, never the builtins. persistentSources keeps
+	// their text so the std.dl Decl-merge can filter against them too.
+	persistentUnits   []parse.SourceUnit
+	persistentSources []string
+	ready             bool // Flag to indicate if the runtime is initialized
 
 	// explicitFactStore mirrors the facts the caller explicitly loaded
 	// (LoadFacts, fact files under Load, facts surviving a reload).
@@ -521,7 +527,8 @@ func (r *MangleRuntime) Load(ctx context.Context, path string) error {
 }
 
 // LoadFromSource parses and loads a full Datalog program from a string.
-// REPLACES current state.
+// REPLACES the user policy program (persistent builtin units such as
+// planner.dl survive; std.dl is re-merged into the loaded source).
 //
 // Unlike AddPolicy, this path scans the external-predicate registry
 // and auto-emits the matching `Decl ... external()` declarations. It
@@ -544,15 +551,29 @@ func (r *MangleRuntime) LoadFromSource(ctx context.Context, source string) error
 // failed reload returns the error and leaves the old policy fully active;
 // a successful reload swaps all program state in one critical section and
 // invalidates the IDB cache. Base facts loaded beforehand are preserved.
+//
+// The swap replaces the USER program (the previously loaded policy and any
+// rules added via AddPolicy); persistent builtin units (planner.dl, the
+// multiagent registry — see AddPersistentPolicy) survive the reload, and
+// std.dl is re-merged into the new main unit.
 func (r *MangleRuntime) ReloadFromSource(ctx context.Context, source string) error {
 	if source == "" {
 		return fmt.Errorf("source cannot be empty")
 	}
 
+	// Snapshot persistent builtin units (and their source text) so the
+	// reloaded program keeps them and the std.dl Decl filter accounts for
+	// their declarations.
+	r.mu.Lock()
+	persistentUnits := append([]parse.SourceUnit(nil), r.persistentUnits...)
+	persistentSources := append([]string(nil), r.persistentSources...)
+	r.mu.Unlock()
+
 	// Discover which predicate symbols/arity pairs the caller's
-	// source already declares, so we can filter the std.dl merge
-	// to only the predicates the caller did NOT declare.
-	callerDecls := collectCallerDecls(source)
+	// source (and the persistent builtins) already declare, so we
+	// can filter the std.dl merge to only the predicates not already
+	// declared.
+	callerDecls := collectCallerDecls(source + "\n" + strings.Join(persistentSources, "\n"))
 
 	// Also collect external predicate names from the registry so
 	// std.dl Decl and defining rules for those names can be filtered
@@ -571,20 +592,25 @@ func (r *MangleRuntime) ReloadFromSource(ctx context.Context, source string) err
 		return fmt.Errorf("failed to parse source: %w", err)
 	}
 
-	// Local state build
-	newRuleUnits := []parse.SourceUnit{unit}
+	// Local state build: the new main unit plus the persistent builtins.
+	newRuleUnits := make([]parse.SourceUnit, 0, 1+len(persistentUnits))
+	newRuleUnits = append(newRuleUnits, unit)
+	newRuleUnits = append(newRuleUnits, persistentUnits...)
 
 	// Add external predicates as extra declarations BEFORE analysis
-	// Infer arity and mode from the parsed policy
+	// Infer arity and mode from the parsed policy (main unit + builtins)
 	edbDeclarations := make(map[ast.PredicateSym]ast.Decl)
 	for name := range extPredNames {
-		arity, mode := findPredicateUsage(unit, name)
-		if arity < 0 {
-			continue // predicate not found in policy, skip
-		}
-		sym := ast.PredicateSym{Symbol: name, Arity: arity}
-		if _, exists := edbDeclarations[sym]; !exists {
-			edbDeclarations[sym] = newExternalDeclFromSym(sym, mode)
+		for i := range newRuleUnits {
+			arity, mode := findPredicateUsage(newRuleUnits[i], name)
+			if arity < 0 {
+				continue // predicate not referenced in this unit
+			}
+			sym := ast.PredicateSym{Symbol: name, Arity: arity}
+			if _, exists := edbDeclarations[sym]; !exists {
+				edbDeclarations[sym] = newExternalDeclFromSym(sym, mode)
+			}
+			break
 		}
 	}
 
@@ -731,7 +757,22 @@ func (r *MangleRuntime) LoadFromString(ctx context.Context, rule string) error {
 // the matching `Decl ... external()` declarations for predicates referenced by
 // the combined program, so RegisterExternalPredicate / AddPolicy ordering does
 // not matter.
+//
+// AddPolicy'd units belong to the USER program: a later ReloadFromSource
+// swaps them away. Use AddPersistentPolicy for engine-builtin rules that
+// must survive reloads.
 func (r *MangleRuntime) AddPolicy(ctx context.Context, source string) error {
+	return r.addPolicy(ctx, source, false)
+}
+
+// AddPersistentPolicy adds rules that SURVIVE ReloadFromSource (the reload
+// swaps the user policy program only). Intended for engine-internal builtin
+// rule sets (planner.dl, the multiagent registry).
+func (r *MangleRuntime) AddPersistentPolicy(ctx context.Context, source string) error {
+	return r.addPolicy(ctx, source, true)
+}
+
+func (r *MangleRuntime) addPolicy(ctx context.Context, source string, persistent bool) error {
 	if source == "" {
 		return nil
 	}
@@ -787,6 +828,10 @@ func (r *MangleRuntime) AddPolicy(ctx context.Context, source string) error {
 
 	// Update State
 	r.ruleUnits = newRuleUnits
+	if persistent {
+		r.persistentUnits = append(r.persistentUnits, unit)
+		r.persistentSources = append(r.persistentSources, cleaned)
+	}
 	r.programInfo = programInfo
 	r.strata = strata
 	r.predToStratum = predToStratum

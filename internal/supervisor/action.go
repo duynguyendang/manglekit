@@ -21,6 +21,7 @@ type SupervisedAction struct {
 	inner    Action
 	verifier ports.ReasoningPort
 	genePool ports.GenePoolPort
+	logger   core.Logger
 }
 
 // New wraps an inner capability with the Zero-Trust Gatekeeper.
@@ -31,6 +32,7 @@ func New(inner Action, verifier ports.ReasoningPort, genePool ports.GenePoolPort
 		inner:    inner,
 		verifier: verifier,
 		genePool: genePool,
+		logger:   core.NopLogger{},
 	}
 }
 
@@ -139,12 +141,22 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 			}
 		}
 		if res != nil && !res.Pass {
-			envelope.Violations = append(envelope.Violations, core.ViolationRule{
-				RuleID:      res.ConflictPath,
-				Description: "Supervisor post-check (Reflect) failed.",
-				Severity:    0,
-			})
-			return domain.Envelope{}, policyViolationFromResult(ctx, res, "Supervisor post-check (Reflect) failed.")
+			// Tier semantics mirror the pre-flight gate (P0.7): explicit
+			// Tier-2/3 (playbook/user) rules are advisory — they do not
+			// block. Unknown/absent tiers block (fail-closed default).
+			// Verifier errors above always block (ADR-001).
+			if res.ViolationTier == domain.Tier0Kernel || res.ViolationTier == domain.Tier1Admin {
+				envelope.Violations = append(envelope.Violations, core.ViolationRule{
+					RuleID:      res.ConflictPath,
+					Description: "Supervisor post-check (Reflect) failed.",
+					Severity:    0,
+				})
+				return domain.Envelope{}, policyViolationFromResult(ctx, res, "Supervisor post-check (Reflect) failed.")
+			}
+			if g.logger != nil {
+				g.logger.Warn("post-check soft violation (advisory tier)",
+					"tier", string(res.ViolationTier), "rule", res.ConflictPath)
+			}
 		}
 	}
 

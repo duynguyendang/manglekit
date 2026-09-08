@@ -128,3 +128,81 @@ can_access(User, Module) :-
 	}))
 	assert.False(t, found, "old-policy derivations must not survive a reload")
 }
+
+// Persistent builtin units (planner.dl-style, agent registry) must survive
+// a policy reload; AddPolicy'd USER rules are still replaced (that is the
+// documented swap semantics). Regression test for the v0.8-era finding that
+// reload dropped engine builtins along with the user program.
+func TestReloadFromSource_PreservesPersistentUnits(t *testing.T) {
+	e, err := New()
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	require.NoError(t, e.runtime.AddPersistentPolicy(ctx, `
+Decl src(X).
+persisted(Y) :- src(Y).
+`))
+	require.NoError(t, e.runtime.AddPolicy(ctx, `
+ephemeral(Y) :- src(Y).
+`))
+	require.NoError(t, e.LoadFacts(ctx, []string{`src("a").`}))
+
+	// Both rules active before reload.
+	ok, err := e.ExecuteQuery(ctx, nil, `persisted("a")`)
+	require.NoError(t, err)
+	require.True(t, ok)
+	ok, err = e.ExecuteQuery(ctx, nil, `ephemeral("a")`)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	// Reload a brand-new user policy.
+	require.NoError(t, e.ReloadPolicySource(ctx, `
+Decl flagged2(X).
+risky2(X) :- flagged2(X).
+`))
+	require.NoError(t, e.LoadFacts(ctx, []string{`flagged2("b").`}))
+
+	// New user policy is active.
+	ok, err = e.ExecuteQuery(ctx, nil, `risky2("b")`)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	// Persistent builtin rule survived the reload.
+	ok, err = e.ExecuteQuery(ctx, nil, `persisted("a")`)
+	require.NoError(t, err)
+	require.True(t, ok, "persistent units must survive ReloadFromSource")
+
+	// The previous user policy's rules were replaced (swap semantics).
+	ok, err = e.ExecuteQuery(ctx, nil, `ephemeral("a")`)
+	require.NoError(t, err)
+	assert.False(t, ok, "user rules from the previous program must not survive")
+}
+
+// The engine constructor's planner core rules (loaded via
+// NewWithObservability) must remain queryable after a policy reload.
+func TestReloadFromSource_PlannerSurvives(t *testing.T) {
+	e, err := NewWithObservability(nil, nil)
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	require.NoError(t, e.LoadFacts(ctx, []string{
+		`goal("g1").`,
+		`subgoal("g1", "deploy", 1).`,
+	}))
+	ok, err := e.ExecuteQuery(ctx, nil, `plan_step("deploy", 1)`)
+	require.NoError(t, err)
+	require.True(t, ok, "planner rule active before reload")
+
+	require.NoError(t, e.ReloadPolicySource(ctx, `
+Decl marker(X).
+marker("m").
+`))
+
+	ok, err = e.ExecuteQuery(ctx, nil, `plan_step("deploy", 1)`)
+	require.NoError(t, err)
+	require.True(t, ok, "planner.dl rules must survive a policy reload")
+
+	ok, err = e.ExecuteQuery(ctx, nil, `marker("m")`)
+	require.NoError(t, err)
+	require.True(t, ok, "reloaded policy is active")
+}

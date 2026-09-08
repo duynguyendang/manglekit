@@ -119,7 +119,7 @@ type ActionConfig struct {
 	Provider string `yaml:"provider" mapstructure:"provider"`
 
 	// FailOnStartup determines if the application should crash if this action fails to load.
-	FailOnStartup bool `yaml:"fail_on_startup" mapstructure:"fail_on_startup"`
+	FailOnStartup bool `yaml:"fail_on_startup" json:"fail_on_startup" mapstructure:"fail_on_startup"`
 
 	// Options contains arbitrary provider-specific settings.
 	Options map[string]interface{} `yaml:"options" mapstructure:"options"`
@@ -183,19 +183,19 @@ func containsString(list []string, s string) bool {
 // MCPServerConfig defines how to connect to an MCP server.
 type MCPServerConfig struct {
 	// Name is a unique identifier for this MCP server connection.
-	Name string `yaml:"name" mapstructure:"name"`
+	Name string `yaml:"name" json:"name" mapstructure:"name"`
 	// Transport specifies the connection method: "stdio" or "sse".
-	Transport string `yaml:"transport" mapstructure:"transport"`
+	Transport string `yaml:"transport" json:"transport" mapstructure:"transport"`
 	// Command is the executable command (for stdio) or URL (for sse).
-	Command string `yaml:"command" mapstructure:"command"`
+	Command string `yaml:"command" json:"command" mapstructure:"command"`
 	// Args are command-line arguments (for stdio).
-	Args []string `yaml:"args" mapstructure:"args"`
+	Args []string `yaml:"args" json:"args" mapstructure:"args"`
 	// Env specifies environment variables for the process (for stdio).
-	Env []string `yaml:"env" mapstructure:"env"`
+	Env []string `yaml:"env" json:"env" mapstructure:"env"`
 	// FailOnStartup determines if the application should crash if this server fails to connect.
-	FailOnStartup bool `yaml:"fail_on_startup" mapstructure:"fail_on_startup"`
+	FailOnStartup bool `yaml:"fail_on_startup" json:"fail_on_startup" mapstructure:"fail_on_startup"`
 	// Tools lists expected tool names for resilience.
 	// If the server fails to connect, these tools will be registered as "Unhealthy"
 	// so the agent knows they exist but are unavailable.
-	Tools []string `yaml:"tools" mapstructure:"tools"`
+	Tools []string `yaml:"tools" json:"tools" mapstructure:"tools"`
 }

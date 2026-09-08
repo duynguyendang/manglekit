@@ -99,11 +99,13 @@ func (s *AgentSystem) QueryWithAudit(ctx context.Context, facts []string, query 
 }
 
 // LoadAgentDefinitions loads agent definitions from Datalog.
-// The default registry is embedded in the binary from assets/agent_registry.dlog.
-// Callers may also load custom rules by calling Engine().Runtime().AddPolicy()
-// directly after this call.
+// The default registry is embedded in the binary from assets/agent_registry.dlog
+// and is loaded as a PERSISTENT unit, so a policy reload does not silently
+// strip the agent registry. Callers may also load custom rules by calling
+// Engine().Runtime().AddPolicy() directly after this call (those belong to
+// the user program and are replaced by a reload).
 func (s *AgentSystem) LoadAgentDefinitions(ctx context.Context) error {
-	if err := s.engine.Runtime().AddPolicy(ctx, defaultAgentRegistry); err != nil {
+	if err := s.engine.Runtime().AddPersistentPolicy(ctx, defaultAgentRegistry); err != nil {
 		return fmt.Errorf("failed to load agent rules: %w", err)
 	}
 

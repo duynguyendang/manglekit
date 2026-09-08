@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"regexp"
@@ -11,6 +12,68 @@ import (
 	"github.com/duynguyendang/manglekit/internal/core/ports"
 	"github.com/duynguyendang/manglekit/internal/engine"
 )
+
+// maxFactsPerVerify bounds the number of payload-derived atoms a single
+// gate check may feed to the engine. Struct payloads are naturally small
+// (one fact per `mangle`-tagged field); the cap protects against fact-store
+// blowup from pathological or adversarial payloads (P0.5 residual).
+// Exceeding it fails closed as a Tier-0 violation.
+const maxFactsPerVerify = 1000
+
+// mapCoreTier translates the engine's governance tier into the supervisor's
+// TrustTier vocabulary. Unknown/absent tiers map to Tier1Admin: halts that
+// do not carry an explicit tier (halt/2, deny/1, AssessPlan errors without
+// trail) keep blocking — softness is opt-in via explicit T2/T3 tiers only.
+func mapCoreTier(t core.Tier) domain.TrustTier {
+	switch t {
+	case core.TierT0_Axiom:
+		return domain.Tier0Kernel
+	case core.TierT1_Governance:
+		return domain.Tier1Admin
+	case core.TierT2_Playbook:
+		return domain.Tier2AI
+	case core.TierT3_User:
+		return domain.Tier3User
+	default:
+		return domain.Tier1Admin
+	}
+}
+
+// violationTierFromDecision reports the most severe governance tier among
+// the halt rules captured in the decision's audit trail. A decision without
+// a trail (e.g. the legacy deny path) defaults to Tier1Admin (blocking).
+func violationTierFromDecision(d *core.Decision) domain.TrustTier {
+	if d == nil || d.AuditTrail == nil {
+		return domain.Tier1Admin
+	}
+	severe := core.Tier("")
+	for _, r := range d.AuditTrail.MatchedRules {
+		if r.Tier == "" {
+			continue
+		}
+		if severe == "" || tierSeverity(r.Tier) < tierSeverity(severe) {
+			severe = r.Tier
+		}
+	}
+	return mapCoreTier(severe)
+}
+
+// tierSeverity orders tiers by blocking priority (lower = more severe).
+// Unknown/empty tiers rank as T1: they must block, unlike explicit T2/T3.
+func tierSeverity(t core.Tier) int {
+	switch t {
+	case core.TierT0_Axiom:
+		return 0
+	case core.TierT1_Governance, "":
+		return 1
+	case core.TierT2_Playbook:
+		return 2
+	case core.TierT3_User:
+		return 3
+	default:
+		return 1
+	}
+}
 
 // predicateIdentRE matches a safe Datalog predicate identifier. Facts whose
 // predicate is not a plain identifier are dropped to prevent Datalog injection.
@@ -83,6 +146,16 @@ func (a *sdkEvaluatorAdapter) VerifyAtoms(ctx context.Context, atoms []domain.At
 		return &domain.AuditResult{Pass: true}, nil
 	}
 
+	// Fail-closed fact-count cap: an unbounded payload-derived atom set is a
+	// resource-exhaustion vector (P0.5 residual).
+	if len(atoms) > maxFactsPerVerify {
+		return &domain.AuditResult{
+			Pass:          false,
+			ViolationTier: domain.Tier0Kernel,
+			ConflictPath:  fmt.Sprintf("sdk_adapter.fact_limit_exceeded (%d>%d)", len(atoms), maxFactsPerVerify),
+		}, nil
+	}
+
 	facts := make([]string, 0, len(atoms))
 	for _, atm := range atoms {
 		if atm.Subject != "" && atm.Predicate != "" {
@@ -127,11 +200,27 @@ func (a *sdkEvaluatorAdapter) VerifyAtoms(ctx context.Context, atoms []domain.At
 		actionMeta := core.ActionMetadata{Name: pc.actionName}
 		_, reflectErr := a.inner.Reflect(ctx, actionMeta, env)
 		if reflectErr != nil {
-			return &domain.AuditResult{
-				Pass:          false,
-				ViolationTier: domain.Tier1Admin,
-				ConflictPath:  "sdk_adapter.post_check",
-			}, nil
+			var alignErr *core.AlignmentError
+			if errors.As(reflectErr, &alignErr) {
+				// Policy deny: carry the rule's real governance tier so the
+				// gate can apply tier semantics (P0.7).
+				conflictPath := alignErr.Message
+				if conflictPath == "" {
+					conflictPath = "sdk_adapter.post_check"
+				}
+				if alignErr.RuleID != "" {
+					conflictPath = alignErr.RuleID
+				}
+				return &domain.AuditResult{
+					Pass:          false,
+					ViolationTier: mapCoreTier(alignErr.Tier),
+					ConflictPath:  conflictPath,
+				}, nil
+			}
+			// Engine failure: surface as a Go error so the gate wraps it in
+			// core.SupervisorError — still fail-closed (blocks), but the
+			// caller can distinguish "system broke" from "policy denied".
+			return nil, fmt.Errorf("sdk_adapter post-check: %w", reflectErr)
 		}
 		return &domain.AuditResult{Pass: true}, nil
 	}
@@ -139,12 +228,9 @@ func (a *sdkEvaluatorAdapter) VerifyAtoms(ctx context.Context, atoms []domain.At
 	decision, err := a.inner.AssessPlan(ctx, env)
 
 	if err != nil {
-		return &domain.AuditResult{
-			Pass:          false,
-			ViolationTier: domain.Tier1Admin,
-			ConflictPath:  "sdk_adapter.verify",
-			Trail:         decision.AuditTrail,
-		}, nil
+		// Engine failure (not a policy deny): return the error so the gate
+		// fails closed with core.SupervisorError (enforcement contract).
+		return nil, fmt.Errorf("sdk_adapter verify: %w", err)
 	}
 
 	if decision.Outcome == core.DecisionHalt {
@@ -154,7 +240,7 @@ func (a *sdkEvaluatorAdapter) VerifyAtoms(ctx context.Context, atoms []domain.At
 		}
 		return &domain.AuditResult{
 			Pass:          false,
-			ViolationTier: domain.Tier1Admin,
+			ViolationTier: violationTierFromDecision(&decision),
 			ConflictPath:  conflictPath,
 			Trail:         decision.AuditTrail,
 		}, nil
@@ -312,6 +398,7 @@ func NewSupervisedActionFromSDK(action core.Action, evaluator core.Evaluator, lo
 		inner:    innerAdapter,
 		verifier: reasoningAdapter,
 		genePool: genePoolAdapter,
+		logger:   logger,
 	}
 
 	return &supervisedActionV2{

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/duynguyendang/manglekit/adapters/knowledge"
+	"github.com/duynguyendang/manglekit/cmd/mkit/commands/exitcode"
 	"github.com/duynguyendang/manglekit/internal/engine"
 	"github.com/spf13/cobra"
 )
@@ -20,11 +21,31 @@ var (
 	format     string
 )
 
+// Supported --format values.
+const (
+	formatNQuads = "nquads"
+	formatJSON   = "json"
+)
+
+// derivedFact is one materialized fact, serialized as an N-Quad line or a
+// JSON object depending on --format.
+type derivedFact struct {
+	Subject   string `json:"subject"`
+	Predicate string `json:"predicate"`
+	Object    string `json:"object"`
+}
+
 var RunCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Perform batch inference (Logic ETL)",
 	Long:  `Perform batch inference by loading raw data, applying Datalog rules, and exporting derived facts.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		switch format {
+		case formatNQuads, formatJSON:
+		default:
+			return exitcode.UsageErrorf("invalid --format %q: must be %q or %q", format, formatNQuads, formatJSON)
+		}
+
 		// 1. Init Engine
 		eng, err := engine.New()
 		if err != nil {
@@ -80,34 +101,25 @@ var RunCmd = &cobra.Command{
 			return fmt.Errorf("failed to load facts: %w", err)
 		}
 
-		// 4. Inference & Output
-		f, err := os.Create(outputPath)
-		if err != nil {
-			return fmt.Errorf("failed to create output file: %w", err)
-		}
-		defer f.Close()
-
+		// 4. Inference: materialize derived facts for each target.
 		targetList := strings.Split(targets, ",")
 		ctx := cmd.Context()
 
+		var derived []derivedFact
 		for _, target := range targetList {
 			target = strings.TrimSpace(target)
 			// Heuristic: Try Arity 2 first: target(S, O)
 			query := fmt.Sprintf("%s(S, O)", target)
 			results, err := eng.Query(ctx, nil, query)
 
-			// If Arity 2 yields results, output them
+			// If Arity 2 yields results, collect them
 			if err == nil && len(results) > 0 {
 				for _, row := range results {
-					// N-Quads format: <Subject> <Predicate> <Object> .
-					s := row["S"]
-					o := row["O"]
-					// Write N-Quad: <S> <target> "O" .
-					// Ensure quotes for object if it's a literal?
-					// In Mangle results, strings are usually raw values.
-					// The output example shows: <tx_123> <high_risk> "true" .
-					line := fmt.Sprintf("<%s> <%s> \"%v\" .\n", s, target, o)
-					f.WriteString(line)
+					derived = append(derived, derivedFact{
+						Subject:   row["S"],
+						Predicate: target,
+						Object:    row["O"],
+					})
 				}
 				continue
 			}
@@ -117,12 +129,42 @@ var RunCmd = &cobra.Command{
 			results, err = eng.Query(ctx, nil, query)
 			if err == nil && len(results) > 0 {
 				for _, row := range results {
-					s := row["S"]
-					// Arity 1: <S> <target> "true" . (boolean flag style)
-					line := fmt.Sprintf("<%s> <%s> \"true\" .\n", s, target)
-					f.WriteString(line)
+					// Arity 1: boolean flag style (object is "true")
+					derived = append(derived, derivedFact{
+						Subject:   row["S"],
+						Predicate: target,
+						Object:    "true",
+					})
 				}
 				continue
+			}
+		}
+
+		// 5. Emit output in the requested format.
+		f, err := os.Create(outputPath)
+		if err != nil {
+			return fmt.Errorf("failed to create output file: %w", err)
+		}
+		defer f.Close()
+
+		switch format {
+		case formatJSON:
+			if derived == nil {
+				derived = []derivedFact{}
+			}
+			out, err := json.MarshalIndent(derived, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON output: %w", err)
+			}
+			if _, err := f.Write(append(out, '\n')); err != nil {
+				return fmt.Errorf("failed to write output: %w", err)
+			}
+		default: // formatNQuads
+			for _, d := range derived {
+				// N-Quad line: <Subject> <Predicate> "Object" .
+				if _, err := fmt.Fprintf(f, "<%s> <%s> %q .\n", d.Subject, d.Predicate, d.Object); err != nil {
+					return fmt.Errorf("failed to write output: %w", err)
+				}
 			}
 		}
 
@@ -136,7 +178,7 @@ func init() {
 	RunCmd.Flags().StringVarP(&dataPath, "data", "d", "", "Path to input file (.json or .nq/nt)")
 	RunCmd.Flags().StringVarP(&targets, "target", "t", "", "Comma-separated list of predicates to infer")
 	RunCmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output file path")
-	RunCmd.Flags().StringVar(&format, "format", "nquads", "Output format (nquads, json)")
+	RunCmd.Flags().StringVar(&format, "format", formatNQuads, "Output format (nquads, json)")
 
 	// Required flags: cobra enforces these before RunE executes, producing
 	// consistent usage errors instead of ad-hoc manual checks.

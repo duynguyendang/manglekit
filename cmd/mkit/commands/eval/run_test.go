@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/duynguyendang/manglekit/cmd/mkit/commands/exitcode"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -118,4 +119,72 @@ func TestEvalInvalidOutputModeIsUsageError(t *testing.T) {
 		t.Fatal("expected error for invalid --output value")
 	}
 	assert.Contains(t, err.Error(), `must be "json" or "table"`)
+}
+
+// Policy-deny exit-code contract: a halt/deny query with solutions means the
+// policy denies the input — eval must return an error mapping to exit 1.
+func TestEvalDenyQueryReturnsPolicyViolation(t *testing.T) {
+	dir := t.TempDir()
+	policy := filepath.Join(dir, "policy.dl")
+	if err := os.WriteFile(policy, []byte(`Decl risky(X).
+risky(S) :- json_str(S, "level", "high").
+halt(Req, "high risk", "T1") :- risky(Req).
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data := filepath.Join(dir, "data.json")
+	if err := os.WriteFile(data, []byte(`{"level": "high"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	EvalCmd.SetOut(&stdout)
+	EvalCmd.SetErr(&stderr)
+	EvalCmd.SetArgs([]string{
+		"--policy", policy,
+		"--data", data,
+		"--query", `halt(R, Msg, Tier)`,
+		"--output", "json",
+		"--quiet",
+	})
+	err := EvalCmd.Execute()
+	if err == nil {
+		t.Fatal("expected policy-deny error when the halt query has solutions")
+	}
+	if !strings.Contains(err.Error(), "policy-deny") {
+		t.Errorf("expected policy-deny error, got: %v", err)
+	}
+	if code := exitcode.CodeFor(err); code != exitcode.PolicyDeny {
+		t.Errorf("exit code = %d, want %d", code, exitcode.PolicyDeny)
+	}
+}
+
+// The deny case must NOT fire when the halt query finds no solution, and a
+// non-deny goal with results keeps exit 0.
+func TestEvalAllowedQueryExitsZero(t *testing.T) {
+	dir := t.TempDir()
+	policy := filepath.Join(dir, "policy.dl")
+	if err := os.WriteFile(policy, []byte(`Decl risky(X).
+risky(S) :- json_str(S, "level", "high").
+halt(Req, "high risk", "T1") :- risky(Req).
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data := filepath.Join(dir, "data.json")
+	if err := os.WriteFile(data, []byte(`{"level": "low"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	EvalCmd.SetOut(&stdout)
+	EvalCmd.SetErr(&stderr)
+	EvalCmd.SetArgs([]string{
+		"--policy", policy,
+		"--data", data,
+		"--query", `halt(R, Msg, Tier)`,
+		"--output", "json",
+	})
+	if err := EvalCmd.Execute(); err != nil {
+		t.Fatalf("expected exit success for non-matching halt query, got %v", err)
+	}
 }
