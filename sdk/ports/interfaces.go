@@ -35,13 +35,6 @@ type GenerativePort interface {
 	Generate(ctx context.Context, frame any) (any, error)
 }
 
-// GenePoolPort handles fetching and mapping crystallized logic rules.
-type GenePoolPort interface {
-	// LoadActiveGenes fetches the relevant domain logic bounds for the current phase.
-	// The frame parameter is an interface to avoid circular imports.
-	LoadActiveGenes(ctx context.Context, frame any) ([]any, error)
-}
-
 // StoragePort guarantees persistence across the Hexagonal system.
 type StoragePort interface {
 	// SaveTrace records the final result of a CognitiveFrame epoch.

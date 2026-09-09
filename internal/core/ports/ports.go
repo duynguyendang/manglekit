@@ -2,36 +2,28 @@ package ports
 
 import (
 	"context"
-	"iter"
 
 	"github.com/duynguyendang/manglekit/internal/core/domain"
 )
 
 // ----------------------------------------------------------------------------
-// 1. Reasoning Port (Mangle)
+// Reasoning Port (Mangle)
 // ----------------------------------------------------------------------------
 
 // ReasoningPort executes formal logic verification (Datalog evaluation).
+//
+// NOTE: the former "GenePool" abstraction (DomainGene, GenePoolPort, the
+// genome parameter on every verify call) was removed in v0.9: no engine path
+// ever consumed it. Runtime adaptation lives in ooda.Memory; learning that
+// affects enforcement goes through policy sources (mkit gen -> review ->
+// ReloadPolicy). See docs/adr/003-gene-pool-removed-from-kernel.md.
 type ReasoningPort interface {
-	// Verify checks the subject (Plan or Content) against the provided genome (axioms).
-	Verify(ctx context.Context, subject interface{}, genome []domain.DomainGene) (*domain.AuditResult, error)
+	// Verify checks the subject (Plan or Content) against the loaded policy.
+	Verify(ctx context.Context, subject interface{}) (*domain.AuditResult, error)
 
-	// VerifyAtoms checks a raw set of atoms against the genome.
-	VerifyAtoms(ctx context.Context, atoms []domain.Atom, genome []domain.DomainGene) (*domain.AuditResult, error)
+	// VerifyAtoms checks a raw set of atoms against the loaded policy.
+	VerifyAtoms(ctx context.Context, atoms []domain.Atom) (*domain.AuditResult, error)
 
-	// Query executes a raw Datalog query against the provided genome.
-	Query(ctx context.Context, query string, genome []domain.DomainGene) ([]domain.Atom, error)
-}
-
-// ----------------------------------------------------------------------------
-// 2. GenePool Port
-// ----------------------------------------------------------------------------
-
-// GenePoolPort handles hot-reloading and querying of the tiered knowledge base.
-type GenePoolPort interface {
-	// ActiveGenes returns the iterator of genes available for the current context.
-	ActiveGenes(ctx context.Context, intent domain.IntentStr) iter.Seq[*domain.DomainGene]
-
-	// Reload refreshes the gene pool from the underlying storage.
-	Reload(ctx context.Context) error
+	// Query executes a raw Datalog query against the loaded policy.
+	Query(ctx context.Context, query string) ([]domain.Atom, error)
 }

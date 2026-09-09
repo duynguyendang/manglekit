@@ -20,7 +20,6 @@ type PromptConfig struct {
 	TaskType           domain.TaskType
 	Context            []domain.Atom // Soft Logic (INT8)
 	Axioms             []domain.Atom // Hard Logic (FP32) - Attention Sink
-	Genes              []domain.DomainGene
 	Facts              []byte // N-Quads
 	SteeringMagnitude  float64
 	InjectParadox      bool
@@ -38,7 +37,6 @@ func WithIntent(i domain.IntentStr) PromptOption   { return func(c *PromptConfig
 func WithTaskType(t domain.TaskType) PromptOption  { return func(c *PromptConfig) { c.TaskType = t } }
 func WithContext(a []domain.Atom) PromptOption     { return func(c *PromptConfig) { c.Context = a } }
 func WithAxioms(a []domain.Atom) PromptOption      { return func(c *PromptConfig) { c.Axioms = a } }
-func WithGenes(g []domain.DomainGene) PromptOption { return func(c *PromptConfig) { c.Genes = g } }
 func WithFacts(f []byte) PromptOption              { return func(c *PromptConfig) { c.Facts = f } }
 func WithSteering(m float64, p bool) PromptOption {
 	return func(c *PromptConfig) { c.SteeringMagnitude = m; c.InjectParadox = p }
@@ -84,16 +82,7 @@ func (c *Compiler) Compile(ctx context.Context, intent domain.IntentStr, options
 	}
 	sb.WriteString("\n")
 
-	// 2. Active Datalog Genes translated to Natural Language
-	if len(config.Genes) > 0 {
-		sb.WriteString("## ACTIVE SYSTEM POLICIES\n")
-		for _, gene := range config.Genes {
-			sb.WriteString(c.mangleToNaturalLanguage(gene.Rules))
-		}
-		sb.WriteString("\n")
-	}
-
-	// 3. Teacher-Student Refinement Correction (If audit failed)
+	// 2. Teacher-Student Refinement Correction (If audit failed)
 	if config.RefinementFeedback != nil && !config.RefinementFeedback.AuditResult.Pass {
 		sb.WriteString("## CRITICAL EXECUTION FAILURE\n")
 		sb.WriteString("Your previous proposal violated system invariants. You MUST correct this.\n")
@@ -104,7 +93,7 @@ func (c *Compiler) Compile(ctx context.Context, intent domain.IntentStr, options
 		sb.WriteString("\n")
 	}
 
-	// 4. Soft Context (Pruned by ContextManager)
+	// 3. Soft Context (Pruned by ContextManager)
 	if len(config.Context) > 0 {
 		sb.WriteString("## OBSERVED CONTEXT\n")
 		for _, atom := range config.Context {
@@ -113,7 +102,7 @@ func (c *Compiler) Compile(ctx context.Context, intent domain.IntentStr, options
 		sb.WriteString("\n")
 	}
 
-	// 5. Hard Structural Facts (N-Quads from tri-stream recall)
+	// 4. Hard Structural Facts (N-Quads from tri-stream recall)
 	if len(config.Facts) > 0 {
 		sb.WriteString("## STRUCTURAL TOPOLOGY (Required Sub-graph)\n")
 		sb.WriteString(string(config.Facts))
@@ -132,23 +121,3 @@ func (c *Compiler) Compile(ctx context.Context, intent domain.IntentStr, options
 	return sb.String(), nil
 }
 
-// mangleToNaturalLanguage translates raw Datalog constraints into LLM instructions.
-func (c *Compiler) mangleToNaturalLanguage(rules []byte) string {
-	// A naive string-based translation approach for the MVP.
-	// In production, this uses an AST walker over the parsed Mangle program.
-	str := string(rules)
-	lines := strings.Split(str, "\n")
-	var out []string
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "halt(") {
-			out = append(out, "- NEVER allow action where: "+line)
-		} else if strings.HasPrefix(line, "warn(") {
-			out = append(out, "- Avoid action if possible: "+line)
-		} else if line != "" {
-			out = append(out, "- Infer: "+line)
-		}
-	}
-	return strings.Join(out, "\n") + "\n"
-}

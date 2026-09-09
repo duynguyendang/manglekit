@@ -20,18 +20,16 @@ type Action interface {
 type SupervisedAction struct {
 	inner    Action
 	verifier ports.ReasoningPort
-	genePool ports.GenePoolPort
 	logger   core.Logger
 }
 
 // New wraps an inner capability with the Zero-Trust Gatekeeper.
 // The pre-flight gate is always fail-closed: verifier errors and Tier-0/1
 // violations block execution.
-func New(inner Action, verifier ports.ReasoningPort, genePool ports.GenePoolPort) *SupervisedAction {
+func New(inner Action, verifier ports.ReasoningPort) *SupervisedAction {
 	return &SupervisedAction{
 		inner:    inner,
 		verifier: verifier,
-		genePool: genePool,
 		logger:   core.NopLogger{},
 	}
 }
@@ -46,13 +44,7 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 		ContextFacts: facts,
 	}
 
-	// 2. Load active system rules
-	var activeGenes []domain.DomainGene
-	for gene := range g.genePool.ActiveGenes(ctx, intent) {
-		activeGenes = append(activeGenes, *gene)
-	}
-
-	// 3. Assess (Shadow Audit)
+	// 2. Assess (Shadow Audit)
 	// Instead of verifying a Plan, we verify the literal execution payload facts
 	// against the loaded system axioms to ensure a catastrophic safety policy
 	// isn't violated before we touch the external system.
@@ -68,7 +60,7 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 		}
 	}
 
-	res, err := g.verifier.VerifyAtoms(ctx, atoms, activeGenes)
+	res, err := g.verifier.VerifyAtoms(ctx, atoms)
 	if err != nil {
 		return domain.Envelope{}, &core.SupervisorError{Reason: err}
 	}
@@ -87,7 +79,7 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 		return envelope, policyViolationFromResult(ctx, res, "Supervisor Pre-Flight check failed.")
 	}
 
-	// 4. Act (Execute Inner)
+	// 3. Act (Execute Inner)
 	result, err := g.inner.Execute(ctx, envelope)
 	if err != nil {
 		return domain.Envelope{}, err
@@ -103,7 +95,7 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 		result.Metadata["manglekit.audit_trail"] = preFlightTrail
 	}
 
-	// 5. Reflect (Post-Execution Validation)
+	// 4. Reflect (Post-Execution Validation)
 	// Flatten the result output to facts using the engine's output entity ID
 	outFacts := g.flattenToQuads(core.EntityOutput, result.Payload)
 	// Convert output quads to atoms for verification
@@ -134,7 +126,7 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 		// Post-check (Reflect) is fail-closed, consistent with the
 		// pre-check: a verifier error blocks the result instead of
 		// silently passing it through (ADR-001; enforcement contract).
-		res, err := g.verifier.VerifyAtoms(postCtx, outAtoms, activeGenes)
+		res, err := g.verifier.VerifyAtoms(postCtx, outAtoms)
 		if err != nil {
 			return domain.Envelope{}, &core.SupervisorError{
 				Reason: fmt.Errorf("post-check (Reflect) verifier error: %w", err),

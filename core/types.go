@@ -116,7 +116,7 @@ type Envelope struct {
 
 	// ContextFacts contains flattened quad facts for Datalog evaluation.
 	ContextFacts []Quad `json:"context_facts,omitempty"`
-	// Violations holds GenePool axiom violations after Shadow Audit.
+	// Violations holds policy axiom violations detected by the Shadow Audit gate.
 	Violations []ViolationRule `json:"violations,omitempty"`
 }
 

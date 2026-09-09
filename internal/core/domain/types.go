@@ -15,7 +15,7 @@ const (
 	VerifyStatusWarning VerifyStatus = "WARNING"
 )
 
-// TrustTier defines the authority level of a gene or action.
+// TrustTier defines the authority level of an action or decision.
 type TrustTier string
 
 const (

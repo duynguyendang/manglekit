@@ -85,18 +85,6 @@ func TestCognitiveFrameDefaults(t *testing.T) {
 	}
 }
 
-func TestDomainGeneSignature(t *testing.T) {
-	var sig [32]byte
-	sig[0] = 0xab
-	gene := DomainGene{Name: "g1", Tier: Tier0Kernel, Rules: []byte("halt(Req)."), Signature: sig}
-	if gene.Signature[0] != 0xab {
-		t.Errorf("gene signature not preserved")
-	}
-	if string(gene.Rules) != "halt(Req)." {
-		t.Errorf("gene rules not preserved: %q", string(gene.Rules))
-	}
-}
-
 func TestAuditResultDefaults(t *testing.T) {
 	res := AuditResult{Pass: true, ViolationTier: Tier3User}
 	if !res.Pass {

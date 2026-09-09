@@ -110,7 +110,7 @@ func TestVerifyAtoms_HaltCarriesRealTier(t *testing.T) {
 					}, nil
 				},
 			}}
-			res, err := a.VerifyAtoms(reqCtx(core.EntityInput), probeAtom, nil)
+			res, err := a.VerifyAtoms(reqCtx(core.EntityInput), probeAtom)
 			if err != nil {
 				t.Fatalf("policy deny must not surface as Go error, got %v", err)
 			}
@@ -136,7 +136,7 @@ func TestVerifyAtoms_EngineErrorSurfacesAsError(t *testing.T) {
 			return core.Decision{Outcome: core.DecisionHalt, Reasons: []string{"boom"}}, engineErr
 		},
 	}}
-	_, err := a.VerifyAtoms(reqCtx(core.EntityInput), probeAtom, nil)
+	_, err := a.VerifyAtoms(reqCtx(core.EntityInput), probeAtom)
 	if err == nil {
 		t.Fatal("expected Go error for engine failure")
 	}
@@ -146,7 +146,7 @@ func TestVerifyAtoms_EngineErrorSurfacesAsError(t *testing.T) {
 
 	// And the gate turns it into a SupervisorError (blocks).
 	inner := &mockAction{executeResult: domain.Envelope{Payload: "x"}}
-	sup := New(inner, a, &mockGenePoolPort{})
+	sup := New(inner, a)
 	_, err = sup.ExecuteInternal(reqCtx(core.EntityInput), "test-intent", core.Envelope{Payload: "p"})
 	if err == nil || !errors.Is(err, core.ErrSupervisorFailure) {
 		t.Fatalf("expected ErrSupervisorFailure from gate, got %v", err)
@@ -162,7 +162,7 @@ func TestVerifyAtoms_PostCheckAlignmentCarriesTier(t *testing.T) {
 			}
 		},
 	}}
-	res, err := a.VerifyAtoms(reqCtx(core.EntityOutput), probeAtom, nil)
+	res, err := a.VerifyAtoms(reqCtx(core.EntityOutput), probeAtom)
 	if err != nil {
 		t.Fatalf("alignment deny must not surface as Go error, got %v", err)
 	}
@@ -176,7 +176,7 @@ func TestVerifyAtoms_PostCheckAlignmentCarriesTier(t *testing.T) {
 			return core.Envelope{}, errors.New("policy evaluation error")
 		},
 	}}
-	if _, err := b.VerifyAtoms(reqCtx(core.EntityOutput), probeAtom, nil); err == nil {
+	if _, err := b.VerifyAtoms(reqCtx(core.EntityOutput), probeAtom); err == nil {
 		t.Fatal("expected Go error for post-check engine failure")
 	}
 }
@@ -189,7 +189,7 @@ func TestVerifyAtoms_FactCapBlocks(t *testing.T) {
 		atoms[i] = domain.Atom{Subject: "Req", Predicate: fmt.Sprintf("p%d", i), Object: "v"}
 	}
 	a := &sdkEvaluatorAdapter{inner: &fakeEvaluator{}}
-	res, err := a.VerifyAtoms(reqCtx(core.EntityInput), atoms, nil)
+	res, err := a.VerifyAtoms(reqCtx(core.EntityInput), atoms)
 	if err != nil {
 		t.Fatalf("expected AuditResult deny, not Go error: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestVerifyAtoms_FactCapBlocks(t *testing.T) {
 	}
 
 	// Just under the cap: no block from the cap itself.
-	res2, err := a.VerifyAtoms(reqCtx(core.EntityInput), atoms[:maxFactsPerVerify], nil)
+	res2, err := a.VerifyAtoms(reqCtx(core.EntityInput), atoms[:maxFactsPerVerify])
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestSupervisedAction_PostCheck_SoftTierDoesNotBlock(t *testing.T) {
 		},
 		errs: []error{nil, nil},
 	}
-	sup := New(inner, verifier, &mockGenePoolPort{})
+	sup := New(inner, verifier)
 	result, err := sup.ExecuteInternal(postCheckTestEnv(context.Background()), "intent", core.Envelope{Payload: "in"})
 	if err != nil {
 		t.Fatalf("soft post-check tier must not block, got %v", err)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"iter"
 	"regexp"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -127,7 +126,7 @@ func preCheckFromContext(ctx context.Context) *preCheckContext {
 	return pc
 }
 
-func (a *sdkEvaluatorAdapter) Verify(ctx context.Context, subject interface{}, genome []domain.DomainGene) (*domain.AuditResult, error) {
+func (a *sdkEvaluatorAdapter) Verify(ctx context.Context, subject interface{}) (*domain.AuditResult, error) {
 	// Fail-closed: unknown types are treated as a Tier-0 violation.
 	atoms, ok := subject.([]domain.Atom)
 	if !ok {
@@ -137,10 +136,10 @@ func (a *sdkEvaluatorAdapter) Verify(ctx context.Context, subject interface{}, g
 			ConflictPath:  "sdk_adapter.unknown_subject_type",
 		}, nil
 	}
-	return a.VerifyAtoms(ctx, atoms, genome)
+	return a.VerifyAtoms(ctx, atoms)
 }
 
-func (a *sdkEvaluatorAdapter) VerifyAtoms(ctx context.Context, atoms []domain.Atom, genome []domain.DomainGene) (*domain.AuditResult, error) {
+func (a *sdkEvaluatorAdapter) VerifyAtoms(ctx context.Context, atoms []domain.Atom) (*domain.AuditResult, error) {
 	pc := preCheckFromContext(ctx)
 	if len(atoms) == 0 && pc == nil {
 		return &domain.AuditResult{Pass: true}, nil
@@ -249,7 +248,7 @@ func (a *sdkEvaluatorAdapter) VerifyAtoms(ctx context.Context, atoms []domain.At
 	return &domain.AuditResult{Pass: true, Trail: decision.AuditTrail}, nil
 }
 
-func (a *sdkEvaluatorAdapter) Query(ctx context.Context, query string, genome []domain.DomainGene) ([]domain.Atom, error) {
+func (a *sdkEvaluatorAdapter) Query(ctx context.Context, query string) ([]domain.Atom, error) {
 	results, err := a.inner.Query(ctx, []string{}, query)
 	if err != nil {
 		return nil, err
@@ -268,44 +267,9 @@ func (a *sdkEvaluatorAdapter) Query(ctx context.Context, query string, genome []
 	return atoms, nil
 }
 
-type sdkGenePoolAdapter struct {
-	evaluator core.Evaluator
-}
-
-func (a *sdkGenePoolAdapter) ActiveGenes(ctx context.Context, intent domain.IntentStr) iter.Seq[*domain.DomainGene] {
-	return func(yield func(*domain.DomainGene) bool) {
-		genes := a.loadGenesForIntent(ctx, string(intent))
-		for i := range genes {
-			if !yield(&genes[i]) {
-				return
-			}
-		}
-	}
-}
-
-func (a *sdkGenePoolAdapter) loadGenesForIntent(ctx context.Context, intent string) []domain.DomainGene {
-	var genes []domain.DomainGene
-
-	genes = append(genes, domain.DomainGene{
-		Name:         "sdk_default",
-		Tier:         domain.Tier1Admin,
-		TierID:       "admin.default",
-		Rules:        []byte{},
-		Capabilities: []string{"audit"},
-		Intents:      []string{intent},
-	})
-
-	return genes
-}
-
-func (a *sdkGenePoolAdapter) Reload(ctx context.Context) error {
-	return nil
-}
-
 type sdkActionAdapter struct {
 	inner    core.Action
 	verifier ports.ReasoningPort
-	genePool ports.GenePoolPort
 }
 
 func (a *sdkActionAdapter) Execute(ctx context.Context, input domain.Envelope) (domain.Envelope, error) {
@@ -362,7 +326,7 @@ func (a *supervisedActionV2) Execute(ctx context.Context, input core.Envelope) (
 
 	// Thread the caller's envelope context (action name, metadata,
 	// security labels, explicit facts) through to the pre-flight check.
-	// ExecuteInternal only receives the payload; without this, policies
+	// ExecuteInternal receives only the payload; without this, policies
 	// gated on action_operation/meta/label can never fire.
 	pc := &preCheckContext{
 		actionName: a.wrapped.Metadata().Name,
@@ -386,18 +350,15 @@ func (a *supervisedActionV2) Metadata() core.ActionMetadata {
 
 func NewSupervisedActionFromSDK(action core.Action, evaluator core.Evaluator, logger core.Logger) core.Action {
 	reasoningAdapter := &sdkEvaluatorAdapter{inner: evaluator}
-	genePoolAdapter := &sdkGenePoolAdapter{evaluator: evaluator}
 
 	innerAdapter := &sdkActionAdapter{
 		inner:    action,
 		verifier: reasoningAdapter,
-		genePool: genePoolAdapter,
 	}
 
 	supervised := &SupervisedAction{
 		inner:    innerAdapter,
 		verifier: reasoningAdapter,
-		genePool: genePoolAdapter,
 		logger:   logger,
 	}
 

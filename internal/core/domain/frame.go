@@ -38,7 +38,6 @@ type CognitiveFrame struct {
 	// Memory & Logic
 	Context       []Atom       // Soft Logic (INT8) - Observed facts, pruneable
 	AttentionSink []Atom       // Hard Logic (FP32) - Immutable Axioms (Tier 0), never pruned
-	ActiveGenes   []DomainGene // Logic Pinning - active rules for this epoch
 
 	// Reasoning
 	Draft  interface{}  // Neural proposal: *Plan or []byte

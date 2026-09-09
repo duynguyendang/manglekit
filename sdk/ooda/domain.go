@@ -80,22 +80,6 @@ type Atom struct {
 	OriginIntent IntentStr `json:"origin_intent,omitempty"`
 }
 
-// DomainGene is a crystallized unit of Datalog logic with trust tiering
-type DomainGene struct {
-	Name         string    `json:"name"`
-	Tier         TrustTier `json:"tier"`
-	TierID       string    `json:"tier_id"`
-	Rules        []byte    `json:"rules"`     // Compiled Datalog content
-	Signature    [32]byte  `json:"signature"` // SHA256 integrity hash
-	MMapAddr     uintptr   `json:"-"`         // Zero-copy mmap pointer
-	Capabilities []string  `json:"capabilities"`
-	Intents      []string  `json:"intents"`
-	FactPath     string    `json:"fact_path,omitempty"`
-	SourcePath   string    `json:"source_path,omitempty"`
-	IsUnverified bool      `json:"is_unverified"`
-}
-
-// AuditResult represents the verification trace produced by the ReasoningPort
 type AuditResult struct {
 	Pass          bool      `json:"pass"`
 	ViolationTier TrustTier `json:"violation_tier"` // Which tier was violated
@@ -127,7 +111,6 @@ type EASTState struct {
 type ExecutionObject struct {
 	AttentionSink []Atom       // FP32 — immutable Tier 0 axioms, never pruned
 	Context       []Atom       // INT8 — observed facts from MEB, prunable
-	ActiveRules   []DomainGene // Datalog rules active for this epoch
 	EAST          EASTState    // Steering state computed during Orient
 	GraphID       string       // MEB graph scope for this epoch
 	KBVersion     string       // Cache invalidation token
@@ -138,7 +121,6 @@ func NewExecutionObject(frame *CognitiveFrame) *ExecutionObject {
 	return &ExecutionObject{
 		AttentionSink: frame.AttentionSink,
 		Context:       frame.Context,
-		ActiveRules:   frame.ActiveGenes,
 		EAST:          frame.EAST,
 		GraphID:       frame.GraphID,
 		KBVersion:     frame.KBVersion,
@@ -163,7 +145,6 @@ type CognitiveFrame struct {
 	// Memory & Logic
 	Context       []Atom         // Soft Logic (INT8) - Observed facts, pruneable
 	AttentionSink []Atom         // Hard Logic (FP32) - Immutable Axioms (Tier 0), never pruned
-	ActiveGenes   []DomainGene   // Logic Pinning - crystallized rules for this epoch
 	RawContext    map[string]any // Legacy escape hatch for transitional state
 
 	// Knowledge Scope

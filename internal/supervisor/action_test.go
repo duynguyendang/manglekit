@@ -3,7 +3,6 @@ package supervisor
 import (
 	"context"
 	"errors"
-	"iter"
 	"testing"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -25,44 +24,16 @@ type mockReasoningPortForSup struct {
 	verifyAtomsErr    error
 }
 
-func (m *mockReasoningPortForSup) Verify(ctx context.Context, subject interface{}, genome []domain.DomainGene) (*domain.AuditResult, error) {
+func (m *mockReasoningPortForSup) Verify(ctx context.Context, subject interface{}) (*domain.AuditResult, error) {
 	return nil, nil
 }
 
-func (m *mockReasoningPortForSup) VerifyAtoms(ctx context.Context, atoms []domain.Atom, genome []domain.DomainGene) (*domain.AuditResult, error) {
+func (m *mockReasoningPortForSup) VerifyAtoms(ctx context.Context, atoms []domain.Atom) (*domain.AuditResult, error) {
 	return m.verifyAtomsResult, m.verifyAtomsErr
 }
 
-func (m *mockReasoningPortForSup) Query(ctx context.Context, query string, genome []domain.DomainGene) ([]domain.Atom, error) {
+func (m *mockReasoningPortForSup) Query(ctx context.Context, query string) ([]domain.Atom, error) {
 	return nil, nil
-}
-
-type mockGenePoolPort struct {
-	activeGenes []domain.DomainGene
-}
-
-func (m *mockGenePoolPort) ActiveGenes(ctx context.Context, intent domain.IntentStr) iter.Seq[*domain.DomainGene] {
-	return func(yield func(*domain.DomainGene) bool) {
-		for _, g := range m.activeGenes {
-			g := g
-			yield(&g)
-		}
-	}
-}
-
-func (m *mockGenePoolPort) Reload(ctx context.Context) error {
-	return nil
-}
-
-type mockSupervisorAction struct {
-	executeInput  any
-	executeResult domain.Envelope
-	executeErr    error
-}
-
-func (m *mockSupervisorAction) Execute(ctx context.Context, input domain.Envelope) (domain.Envelope, error) {
-	m.executeInput = input.Payload
-	return m.executeResult, m.executeErr
 }
 
 func TestSupervisedAction_ExecuteInternal_Pass(t *testing.T) {
@@ -72,13 +43,7 @@ func TestSupervisedAction_ExecuteInternal_Pass(t *testing.T) {
 	verifier := &mockReasoningPortForSup{
 		verifyAtomsResult: &domain.AuditResult{Pass: true},
 	}
-	genePool := &mockGenePoolPort{
-		activeGenes: []domain.DomainGene{
-			{Name: "test-gene", Tier: domain.Tier0Kernel},
-		},
-	}
-
-	supervised := New(inner, verifier, genePool)
+	supervised := New(inner, verifier)
 
 	env := core.Envelope{Payload: "test-input"}
 	result, err := supervised.ExecuteInternal(context.Background(), "test-intent", env)
@@ -101,13 +66,7 @@ func TestSupervisedAction_ExecuteInternal_VerifierFailTier0(t *testing.T) {
 			ConflictPath:  "test-rule",
 		},
 	}
-	genePool := &mockGenePoolPort{
-		activeGenes: []domain.DomainGene{
-			{Name: "test-gene", Tier: domain.Tier0Kernel},
-		},
-	}
-
-	supervised := New(inner, verifier, genePool)
+	supervised := New(inner, verifier)
 
 	env := core.Envelope{Payload: "test-input"}
 	_, err := supervised.ExecuteInternal(context.Background(), "test-intent", env)
@@ -130,13 +89,7 @@ func TestSupervisedAction_ExecuteInternal_VerifierFailTier1(t *testing.T) {
 			ConflictPath:  "admin-rule",
 		},
 	}
-	genePool := &mockGenePoolPort{
-		activeGenes: []domain.DomainGene{
-			{Name: "test-gene", Tier: domain.Tier0Kernel},
-		},
-	}
-
-	supervised := New(inner, verifier, genePool)
+	supervised := New(inner, verifier)
 
 	env := core.Envelope{Payload: "test-input"}
 	_, err := supervised.ExecuteInternal(context.Background(), "test-intent", env)
@@ -159,13 +112,7 @@ func TestSupervisedAction_ExecuteInternal_Tier2AllowsPass(t *testing.T) {
 			ConflictPath:  "playbook-rule",
 		},
 	}
-	genePool := &mockGenePoolPort{
-		activeGenes: []domain.DomainGene{
-			{Name: "test-gene", Tier: domain.Tier0Kernel},
-		},
-	}
-
-	supervised := New(inner, verifier, genePool)
+	supervised := New(inner, verifier)
 
 	env := core.Envelope{Payload: "test-input"}
 	result, err := supervised.ExecuteInternal(context.Background(), "test-intent", env)
@@ -186,13 +133,7 @@ func TestSupervisedAction_ExecuteInternal_InnerError(t *testing.T) {
 	verifier := &mockReasoningPortForSup{
 		verifyAtomsResult: &domain.AuditResult{Pass: true},
 	}
-	genePool := &mockGenePoolPort{
-		activeGenes: []domain.DomainGene{
-			{Name: "test-gene", Tier: domain.Tier0Kernel},
-		},
-	}
-
-	supervised := New(inner, verifier, genePool)
+	supervised := New(inner, verifier)
 
 	env := core.Envelope{Payload: "test-input"}
 	_, err := supervised.ExecuteInternal(context.Background(), "test-intent", env)
@@ -208,13 +149,7 @@ func TestSupervisedAction_ExecuteInternal_VerifierError(t *testing.T) {
 	verifier := &mockReasoningPortForSup{
 		verifyAtomsErr: errors.New("verifier error"),
 	}
-	genePool := &mockGenePoolPort{
-		activeGenes: []domain.DomainGene{
-			{Name: "test-gene", Tier: domain.Tier0Kernel},
-		},
-	}
-
-	supervised := New(inner, verifier, genePool)
+	supervised := New(inner, verifier)
 
 	env := core.Envelope{Payload: "test-input"}
 	_, err := supervised.ExecuteInternal(context.Background(), "test-intent", env)
@@ -228,13 +163,7 @@ func TestSupervisedAction_FlattenToQuads_WithTags(t *testing.T) {
 	verifier := &mockReasoningPortForSup{
 		verifyAtomsResult: &domain.AuditResult{Pass: true},
 	}
-	genePool := &mockGenePoolPort{
-		activeGenes: []domain.DomainGene{
-			{Name: "test-gene", Tier: domain.Tier0Kernel},
-		},
-	}
-
-	supervised := New(inner, verifier, genePool)
+	supervised := New(inner, verifier)
 
 	type testStruct struct {
 		Name string `mangle:"name"`
@@ -252,13 +181,7 @@ func TestSupervisedAction_FlattenToQuads_NoTags(t *testing.T) {
 	verifier := &mockReasoningPortForSup{
 		verifyAtomsResult: &domain.AuditResult{Pass: true},
 	}
-	genePool := &mockGenePoolPort{
-		activeGenes: []domain.DomainGene{
-			{Name: "test-gene", Tier: domain.Tier0Kernel},
-		},
-	}
-
-	supervised := New(inner, verifier, genePool)
+	supervised := New(inner, verifier)
 
 	type testStruct struct {
 		Name string
@@ -276,13 +199,7 @@ func TestSupervisedAction_FlattenToQuads_NonStruct(t *testing.T) {
 	verifier := &mockReasoningPortForSup{
 		verifyAtomsResult: &domain.AuditResult{Pass: true},
 	}
-	genePool := &mockGenePoolPort{
-		activeGenes: []domain.DomainGene{
-			{Name: "test-gene", Tier: domain.Tier0Kernel},
-		},
-	}
-
-	supervised := New(inner, verifier, genePool)
+	supervised := New(inner, verifier)
 
 	quads := supervised.flattenToQuads("TestSubject", 123)
 	if len(quads) != 0 {
@@ -300,13 +217,7 @@ func TestSupervisedAction_FlattenToQuads_Pointer(t *testing.T) {
 	verifier := &mockReasoningPortForSup{
 		verifyAtomsResult: &domain.AuditResult{Pass: true},
 	}
-	genePool := &mockGenePoolPort{
-		activeGenes: []domain.DomainGene{
-			{Name: "test-gene", Tier: domain.Tier0Kernel},
-		},
-	}
-
-	supervised := New(inner, verifier, genePool)
+	supervised := New(inner, verifier)
 
 	type testStruct struct {
 		Name string `mangle:"name"`
@@ -328,11 +239,11 @@ type multiCallReasoningPort struct {
 	calls   int
 }
 
-func (m *multiCallReasoningPort) Verify(ctx context.Context, subject interface{}, genome []domain.DomainGene) (*domain.AuditResult, error) {
+func (m *multiCallReasoningPort) Verify(ctx context.Context, subject interface{}) (*domain.AuditResult, error) {
 	return nil, nil
 }
 
-func (m *multiCallReasoningPort) VerifyAtoms(ctx context.Context, atoms []domain.Atom, genome []domain.DomainGene) (*domain.AuditResult, error) {
+func (m *multiCallReasoningPort) VerifyAtoms(ctx context.Context, atoms []domain.Atom) (*domain.AuditResult, error) {
 	i := m.calls
 	m.calls++
 	if i >= len(m.results) {
@@ -341,7 +252,7 @@ func (m *multiCallReasoningPort) VerifyAtoms(ctx context.Context, atoms []domain
 	return m.results[i], m.errs[i]
 }
 
-func (m *multiCallReasoningPort) Query(ctx context.Context, query string, genome []domain.DomainGene) ([]domain.Atom, error) {
+func (m *multiCallReasoningPort) Query(ctx context.Context, query string) ([]domain.Atom, error) {
 	return nil, nil
 }
 
@@ -368,9 +279,7 @@ func TestSupervisedAction_PostCheck_VerifierError_FailClosed(t *testing.T) {
 			errors.New("verifier exploded during Reflect"),
 		},
 	}
-	genePool := &mockGenePoolPort{activeGenes: []domain.DomainGene{{Name: "g", Tier: domain.Tier0Kernel}}}
-
-	supervised := New(inner, verifier, genePool)
+	supervised := New(inner, verifier)
 
 	_, err := supervised.ExecuteInternal(postCheckTestEnv(context.Background()), "test-intent", core.Envelope{Payload: "test-input"})
 	if err == nil {
@@ -395,9 +304,7 @@ func TestSupervisedAction_PostCheck_Violation_Blocks(t *testing.T) {
 		},
 		errs: []error{nil, nil},
 	}
-	genePool := &mockGenePoolPort{activeGenes: []domain.DomainGene{{Name: "g", Tier: domain.Tier0Kernel}}}
-
-	supervised := New(inner, verifier, genePool)
+	supervised := New(inner, verifier)
 
 	_, err := supervised.ExecuteInternal(postCheckTestEnv(context.Background()), "test-intent", core.Envelope{Payload: "test-input"})
 	if err == nil {
@@ -419,9 +326,7 @@ func TestSupervisedAction_PostCheck_Pass_StillSucceeds(t *testing.T) {
 		},
 		errs: []error{nil, nil},
 	}
-	genePool := &mockGenePoolPort{activeGenes: []domain.DomainGene{{Name: "g", Tier: domain.Tier0Kernel}}}
-
-	supervised := New(inner, verifier, genePool)
+	supervised := New(inner, verifier)
 
 	result, err := supervised.ExecuteInternal(postCheckTestEnv(context.Background()), "test-intent", core.Envelope{Payload: "test-input"})
 	if err != nil {
