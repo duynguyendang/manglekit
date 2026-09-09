@@ -110,9 +110,16 @@ observability:
 ## Core Capabilities
 
 1.  **OODA Loop Execution**: Orchestrates AI workflows using a structural Observe, Orient, Decide, Verify, Act pipeline.
-2.  **Shadow Audit (Self-Correction)**: The *Verify* step evaluates AI-generated plans against the Tier 0/1/2 GenePool policies using Datalog *before* execution, in a **fail-closed** manner. If a policy is violated, the action is blocked rather than allowed through.
+2.  **Shadow Audit (Fail-Closed Governance)**: The gate evaluates every
+    action's facts against the tiered policy (T0–T3) using Datalog *before*
+    execution — and reflects on the output *after* it. Both checks are
+    **fail-closed**: a broken verifier blocks the action. Violations at T0/T1
+    block; rules tagged T2/T3 are advisory (logged, not blocking) — tier
+    semantics are real, so learned playbook rules cannot silently hard-block
+    production traffic. A blocking-tier violation surfaces to the caller as a
+    structured `core.PolicyViolationError` — before the handler ever runs.
 3.  **The Silo (Persistent Knowledge)**: Native BadgerDB integration providing high-performance SPOg (Subject-Predicate-Object-Graph) quad indexing and vector storage for long-term memory.
-4.  **Extractors**: Built-in extractors capable of ingesting Markdown/Code into structured data. (Dynamic rule induction is planned — see [ROADMAP.md](./ROADMAP.md).)
+4.  **Rule Learning**: Extractors ingest Markdown/code into structured data. Offline rule induction ships today as `mkit gen` (Teacher-Student loop with syntax validation); the optional `x/genes` extension packages signed learned rules that enter enforcement only through the official policy channel (`LoadPolicy`), with hard tiers requiring an explicit human-review opt-in.
 5.  **Deep Observability**: Fully integrated OpenTelemetry tracing that links Genkit spans directly to logic rules, showing exactly *why* a decision was made.
 
 ## System Building Blocks
@@ -120,10 +127,11 @@ observability:
 | Component | Role | Responsibility |
 | :--- | :--- | :--- |
 | **SDK** | **Client** | The entry point. Developers use `client.Supervise()` (or `sdk.Define`) to wrap capabilities. |
-| **GenePool** | **Logic Store** | Datalog files (`.dl`) defining the Tier 0, 1, and 2 "Standard Operating Procedures" enforced by the engine. |
+| **GenePool** | **Logic Store** | Datalog files (`.dl`) defining the Tier 0–3 "Standard Operating Procedures" enforced by the engine. (Terminology for the policy set — tiers are enforced natively; learned-rule packaging lives in `x/genes`.) |
 | **The Silo** | **Persistent Memory**| BadgerDB backed SPOg quad fact and vector storage. |
 | **Supervisor** | **Interceptor** | The zero-trust gateway that enforces the GenePool on every action. |
 | **Adapters** | **Drivers** | Universal adapters for LLMs (Genkit), Extractors, Tools (MCP), Functions, and Resilience. |
+| **`x/` extensions** | **Optional layers** | Public extensions the core never imports: `x/east` (EAST-steered generation) and `x/genes` (signed learned-rule packaging). |
 
 ---
 
@@ -133,9 +141,9 @@ observability:
 |---|---|
 | Building OODA applications (phases, CognitiveFrame, memory, Genkit flows, middleware) | [docs/guides/ooda.md](./docs/guides/ooda.md) |
 | Datalog engine capabilities (comparisons, negation, aggregation, arithmetic) | [docs/guides/datalog.md](./docs/guides/datalog.md) |
-| Runnable examples (22 demos, one directory each) | [manglekit-examples](https://github.com/duynguyendang/manglekit-examples) |
+| Runnable examples (27 demos, one directory each — incl. `skill_learning`: cross-session OODA skill learning) | [manglekit-examples](https://github.com/duynguyendang/manglekit-examples) |
 | High-level design (layers, flows, governance) | [ARCHITECTURE.md](https://github.com/duynguyendang/manglekit) workspace docs |
-| CLI reference (`eval`, `gen`, `inspect`, `kg`, `run`, `serve`, `skill`) | [cmd/mkit/README.md](./cmd/mkit/README.md) |
+| CLI reference (`eval`, `gen`, `check`, `inspect`, `kg`, `run`, `serve`, `skill`) | [cmd/mkit/README.md](./cmd/mkit/README.md) |
 
 ---
 
@@ -143,16 +151,20 @@ observability:
 
 ```
 manglekit/
-├── adapters/           # Drivers for External Systems (AI, MCP, Vector)
-│   ├── ai/             # Google Genkit & LLM Adapters
-│   ├── knowledge/      # N-Quads/RDF Knowledge Loaders
-│   ├── mcp/            # Model Context Protocol Tools
-│   └── resilience/     # Circuit Breaker
+├── adapters/           # Drivers for External Systems
+│   ├── ai/             # Google Genkit bridge (actions, OODA flows, streaming gate)
+│   ├── extractor/      # LLM-driven structured extraction into Go types
+│   ├── func/           # Plain Go functions → supervised Actions
+│   ├── knowledge/      # N-Quads/N-Triples/TTL knowledge loaders
+│   ├── mcp/            # Model Context Protocol tools (policy-gated)
+│   ├── resilience/     # Circuit breaker
+│   ├── storage/        # BadgerDB quads (MEB bridge), session stores
+│   └── vector/         # Vector store + Genkit retriever
 ├── agents/             # Reference agent (Architect)
 ├── cmd/                # CLI Tools
 │   └── mkit/           # The 'mkit' Developer Utility
-├── config/             # Configuration Loading
-├── core/               # Public Interfaces & Types (Action, Envelope)
+├── config/             # Configuration Loading (mangle.yaml)
+├── core/               # Public Interfaces & Types (Action, Envelope, Errors)
 ├── docs/               # Guides (OODA, Datalog)
 ├── internal/           # Private Implementation
 │   ├── engine/         # The Datalog Logic Engine (Solver, Runtime)
@@ -160,8 +172,13 @@ manglekit/
 │   └── ...
 ├── multiagent/         # Multi-agent runtime (AgentSystem, workflows)
 ├── providers/          # LLM/embedder/memory provider plugins
-└── sdk/                # The User-Facing API (Client, Loop)
-    └── ooda/           # OODA Loop Implementation
+├── scenario/           # BDD-style policy-scenario harness
+├── sdk/                # The User-Facing API (Client, Options, OODA)
+│   └── ooda/           # OODA Loop Implementation
+├── testutil/           # Deterministic mocks for consumer test suites
+└── x/                  # Optional public extensions (core never imports x/)
+    ├── east/           # EAST (v4) generation steering
+    └── genes/          # Signed learned-rule packaging → policy channel
 ```
 
 Runnable demos live in the sibling
@@ -193,17 +210,20 @@ Manglekit is a **Sovereign Logic Kernel** built on four core layers:
 ### Layer 3: The Zero-Trust Supervisor (Interceptor)
 
 *   **Role**: The mechanical port that physically blocks unverified Actions.
-*   **Pattern**: Middleware / Decorator for execution protocols. The
-    pre-flight check is fail-closed: verifier errors and Tier-0/1 violations
-    block execution.
+*   **Pattern**: Middleware / Decorator for execution protocols. Both gates
+    are **fail-closed**: verifier/engine errors always block (`SupervisorError`);
+    policy denies block at Tier-0/1 (`PolicyViolationError`), while
+    explicitly-tagged Tier-2/3 rules stay advisory. Payload facts are
+    resource-capped, and every decision carries an audit trail
+    (`Explain`/`--explain`).
 
 ### Layer 4: The Brain (Memory & Logic Store)
 
 *   **Role**: The deterministic reasoning and storage layer.
 *   **Components**:
     *   **The Silo**: Persistent BadgerDB storage for metadata, vectors, and facts (Quads).
-    *   **Tiered GenePool**: The set of `.dl` policy files the engine loads by trust level (Axioms, Governance, User). AI-induced rule learning is planned — see ROADMAP.md.
-    *   **Policy Solver**: Robust Datalog Evaluator supporting comparisons (`:ge`/`:le`/`:gt`/`:lt`), negation (`!`), aggregation (`fn:sum`/`fn:max`/`fn:min`/`fn:count`), arithmetic (`fn:mult`/`fn:div`/`fn:plus`/`fn:minus`), and stratified execution.
+    *   **Tiered policy ("GenePool")**: The set of `.dl` policy files the engine loads by trust level (T0 axiom, T1 governance, T2 playbook, T3 user). Learned rules reach enforcement only as policy source: offline `mkit gen` today, signed `x/genes` packaging with human-review promotion, or app-side runtime adaptation via `ooda.Memory` (see the `skill_learning` example).
+    *   **Policy Solver**: Deterministic Datalog evaluator — comparisons (`:ge`/`:le`/`:gt`/`:lt`), negation (`!`), aggregation (`fn:sum`/`fn:max`/`fn:min`/`fn:group_by`), stratified execution, external Go predicates, temporal facts, EXPLAIN proofs, and hot reload (engine builtins survive reloads).
 *   **Guarantees**: Fast (microsecond latency), deterministic, testable, verifiable.
 
 ### Universal Adapters
