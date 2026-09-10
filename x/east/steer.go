@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/duynguyendang/manglekit/sdk/ooda"
+	"github.com/duynguyendang/manglekit/x/ooda"
 	"github.com/duynguyendang/manglekit/sdk/ports"
 )
 

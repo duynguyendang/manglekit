@@ -91,7 +91,9 @@ type PolicyConfig struct {
 
 	// ParadoxThreshold is the EAST magnitude above which cognitive paradox injection
 	// is triggered. Only effective when SteeringEnabled is true.
-	// Default: 0.8. YAML key: paradox_threshold.
+	// When unset, sdk applies its defaultParadoxThreshold (0.8) — the single
+	// config-side owner, kept in sync with x/ooda.DefaultParadoxThreshold.
+	// YAML key: paradox_threshold.
 	ParadoxThreshold float64 `yaml:"paradox_threshold,omitempty" mapstructure:"paradox_threshold"`
 }
 

@@ -70,13 +70,11 @@ package ai
 //
 // # OODA Loop Integration
 //
-// The OODA loop can be configured to use middleware for LLM-based actions:
-//
-//	frame := ooda.NewCognitiveFrame(input, intent, taskType).
-//	    WithGenerateOptions(
-//	        mkai.WithRetry(3),
-//	        mkai.WithFallback(fallbackModels),
-//	    )
+// Genkit-backed OODA flows live in the optional extension package
+// github.com/duynguyendang/manglekit/x/oodaflow (package oodaflow):
+// it wraps x/ooda frames as Genkit flows/streaming flows and applies the
+// middleware options from this package at the generation level. This
+// adapter package itself is loop-agnostic (ADR-004).
 //
 // # MCP Tool Approval
 //

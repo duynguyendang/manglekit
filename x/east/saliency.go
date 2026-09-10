@@ -1,9 +1,9 @@
 // Package east implements EAST (Entropy-Activity-Steering-Throttling), the
 // OODA v4 generative/research path. It is an extension to the deterministic
-// core OODA loop (sdk/ooda): callers that want creative/steered generation
+// core OODA loop (x/ooda): callers that want creative/steered generation
 // opt into this package explicitly.
 //
-// It depends only on the public sdk/ooda surface (CognitiveFrame, EASTState,
+// It depends only on the public x/ooda surface (CognitiveFrame, EASTState,
 // Atom, TrustTier) and is never imported by the core, sdk, or adapters.
 package east
 
@@ -11,7 +11,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/duynguyendang/manglekit/sdk/ooda"
+	"github.com/duynguyendang/manglekit/x/ooda"
 )
 
 // MeasureSaliency evaluates input importance based on keyword detection.

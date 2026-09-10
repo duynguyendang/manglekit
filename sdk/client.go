@@ -125,8 +125,17 @@ func (c *Client) Engine() core.Evaluator {
 	return c.engine
 }
 
+// defaultParadoxThreshold is the governance client's config default for the
+// EAST paradox-injection threshold — the single owner of the default on the
+// sdk side (kept in sync with x/ooda.DefaultParadoxThreshold, the frame-level
+// default for loop callers). The sdk deliberately does not import x/: this is
+// a plain config pass-through value.
+const defaultParadoxThreshold = 0.8
+
 // ParadoxThreshold returns the configured EAST paradox-injection threshold.
-// Pass it to ooda.OODAFlowConfig.ParadoxThreshold to steer the OODA loop.
+// Pure config accessor: the value is meant for cognitive-loop callers
+// (x/oodaflow.OODAFlowConfig.ParadoxThreshold, x/east steering) — the
+// governance gate itself never reads it.
 func (c *Client) ParadoxThreshold() float64 {
 	return c.paradoxThreshold
 }

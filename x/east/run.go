@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk/ooda"
+	"github.com/duynguyendang/manglekit/x/ooda"
 )
 
 var (

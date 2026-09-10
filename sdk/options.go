@@ -18,7 +18,6 @@ import (
 	"github.com/duynguyendang/manglekit/internal/statemanager"
 	"github.com/duynguyendang/manglekit/internal/supervisor"
 	"github.com/duynguyendang/manglekit/internal/telemetry"
-	"github.com/duynguyendang/manglekit/sdk/ooda"
 	"github.com/duynguyendang/manglekit/sdk/ports"
 )
 
@@ -337,7 +336,7 @@ func WithConfig(cfg *config.Config) ClientOption {
 		c.steeringEnabled = cfg.Policy.SteeringEnabled
 		c.paradoxThreshold = cfg.Policy.ParadoxThreshold
 		if c.paradoxThreshold <= 0 {
-			c.paradoxThreshold = ooda.DefaultParadoxThreshold
+			c.paradoxThreshold = defaultParadoxThreshold
 		}
 
 		return nil

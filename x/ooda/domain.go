@@ -90,7 +90,9 @@ type AuditResult struct {
 }
 
 // DefaultParadoxThreshold is the EAST magnitude above which cognitive paradox
-// injection is triggered when no per-state threshold is configured.
+// injection is triggered for frames built without an explicit threshold.
+// Frame-level owner of the default; the sdk client config side keeps a
+// mirrored unexported constant (sdk never imports x/ — ADR-004).
 const DefaultParadoxThreshold = 0.8
 
 // EASTState tracks the cognitive pressure metrics for steering.
