@@ -216,7 +216,7 @@ func TestSupervisedAction_PostCheck_SoftTierDoesNotBlock(t *testing.T) {
 	inner := &mockAction{executeResult: domain.Envelope{Payload: "result"}}
 	verifier := &multiCallReasoningPort{
 		results: []*domain.AuditResult{
-			{Pass: true},                                                        // pre-check
+			{Pass: true}, // pre-check
 			{Pass: false, ViolationTier: domain.Tier2AI, ConflictPath: "soft"}, // post-check soft
 		},
 		errs: []error{nil, nil},
@@ -228,5 +228,47 @@ func TestSupervisedAction_PostCheck_SoftTierDoesNotBlock(t *testing.T) {
 	}
 	if result.Payload != "result" {
 		t.Errorf("unexpected payload %v", result.Payload)
+	}
+}
+
+// Regression (v0.10.2): when halts of DIFFERENT tiers match at once, the
+// deny error must report the tier that caused the block (and that rule),
+// not whichever rule happens to be first in the trail.
+func TestPolicyViolationFromResult_MultiTierProvenance(t *testing.T) {
+	ctx := reqCtx(core.EntityInput)
+
+	// Trail order: T3 first (matches arrive unordered), T1 is the blocker.
+	trail := haltTrail(core.TierT3_User, core.TierT1_Governance)
+	res := &domain.AuditResult{
+		Pass:          false,
+		ViolationTier: domain.Tier1Admin,
+		ConflictPath:  "blocked",
+		Trail:         trail,
+	}
+	verr := policyViolationFromResult(ctx, res, "test deny")
+	if verr.Tier != string(core.TierT1_Governance) {
+		t.Errorf("Tier = %q, want T1 (the blocking tier)", verr.Tier)
+	}
+	if !strings.Contains(verr.MatchedRule, `"T1"`) {
+		t.Errorf("MatchedRule = %q, want the T1 rule definition", verr.MatchedRule)
+	}
+
+	// No matching-tier rule found: fall back to first definition but keep
+	// the violation's own tier (never "TIER_1"-style domain vocabulary).
+	odd := core.NewAuditTrail("fake", "q")
+	odd.AddRule("halt", `halt("Req", "other", "T2")`, "p.dl", "halt", core.TierT2_Playbook, nil)
+	res2 := &domain.AuditResult{Pass: false, ViolationTier: domain.Tier1Admin, ConflictPath: "c", Trail: odd}
+	verr2 := policyViolationFromResult(ctx, res2, "test deny")
+	if verr2.Tier != string(core.TierT1_Governance) {
+		t.Errorf("fallback Tier = %q, want T1 preserved", verr2.Tier)
+	}
+	if verr2.MatchedRule == "" {
+		t.Error("fallback should still carry some matched rule text")
+	}
+
+	// Nil trail (SDK post-check shape): core-vocabulary tier from the decision.
+	res3 := &domain.AuditResult{Pass: false, ViolationTier: domain.Tier0Kernel, ConflictPath: "cap"}
+	if got := policyViolationFromResult(ctx, res3, "d").Tier; got != string(core.TierT0_Axiom) {
+		t.Errorf("nil-trail Tier = %q, want T0", got)
 	}
 }

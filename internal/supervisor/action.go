@@ -189,14 +189,33 @@ func (g *SupervisedAction) flattenToQuads(subjectID string, v any) []domain.Quad
 	return quads
 }
 
+// coreTierName maps the gate's TrustTier back to the core tier vocabulary
+// ("T0".."T3") used inside policy rules, so deny errors report one consistent
+// vocabulary regardless of whether a matching trail rule is found.
+func coreTierName(t domain.TrustTier) string {
+	switch t {
+	case domain.Tier0Kernel:
+		return string(core.TierT0_Axiom)
+	case domain.Tier1Admin:
+		return string(core.TierT1_Governance)
+	case domain.Tier2AI:
+		return string(core.TierT2_Playbook)
+	case domain.Tier3User:
+		return string(core.TierT3_User)
+	default:
+		return string(t)
+	}
+}
+
 // policyViolationFromResult builds the structured PolicyViolationError the
-// supervisor returns on a gate block. It enriches the basic tier/rule fields
-// with the action name (from the pre-check context) and, when the engine's
-// AuditTrail is attached to the result, the matched rule text and real
-// governance tier, so callers get an actionable deny error.
+// supervisor returns on a gate block. Tier and MatchedRule always describe
+// the VIOLATION's own blocking tier: when several rules of different tiers
+// halt at once, the rule picked for provenance is the one whose tier maps to
+// res.ViolationTier (the tier that actually caused the block) — never
+// "first rule wins", which could report "blocked at tier T3" for a T1 block.
 func policyViolationFromResult(ctx context.Context, res *domain.AuditResult, description string) *core.PolicyViolationError {
 	err := core.NewPolicyViolationError(
-		string(res.ViolationTier),
+		coreTierName(res.ViolationTier),
 		res.ConflictPath,
 		description,
 		"",
@@ -206,12 +225,21 @@ func policyViolationFromResult(ctx context.Context, res *domain.AuditResult, des
 	}
 	if res.Trail != nil {
 		for _, rule := range res.Trail.MatchedRules {
-			if rule.Definition != "" {
+			if rule.Definition != "" && rule.Tier != "" && mapCoreTier(rule.Tier) == res.ViolationTier {
 				err.MatchedRule = rule.Definition
-				if rule.Tier != "" {
-					err.Tier = string(rule.Tier)
-				}
+				err.Tier = string(rule.Tier)
 				break
+			}
+		}
+		if err.MatchedRule == "" {
+			// No tier-matching rule (nil-trail post-checks, tierless legacy
+			// halts): keep the first definition for context but preserve the
+			// violation's own tier.
+			for _, rule := range res.Trail.MatchedRules {
+				if rule.Definition != "" {
+					err.MatchedRule = rule.Definition
+					break
+				}
 			}
 		}
 	}
