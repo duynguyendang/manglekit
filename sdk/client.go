@@ -80,6 +80,10 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		agentMemory: NewHybridMemory(core.NopStore{}, core.NopVectorStore{}, core.NopEmbedder{}),
 		registry:    make(map[string]core.Action),
 		initCtx:     ctx,
+		// Config-side default for loop callers; a loaded mangle.yaml may
+		// override it. Kept parity-checked against x/ooda's frame-level
+		// default by x/oodaflow's TestDefaultsAreSingleSourced.
+		paradoxThreshold: defaultParadoxThreshold,
 	}
 
 	// Apply options

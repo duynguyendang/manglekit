@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/x/ooda"
 	"github.com/duynguyendang/manglekit/sdk/ports"
+	"github.com/duynguyendang/manglekit/x/ooda"
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
 )
@@ -38,7 +38,7 @@ type OODAFlowConfig struct {
 	Timeout         time.Duration
 	GenerateOptions []core.GenerateOption
 	// ParadoxThreshold is the EAST magnitude above which cognitive paradox
-	// injection is triggered. Defaults to 0.8 when unset.
+	// injection is triggered. Defaults to ooda.DefaultParadoxThreshold.
 	ParadoxThreshold float64
 }
 
@@ -57,7 +57,7 @@ func NewOODAFlow(cfg *OODAFlowConfig) *OODAFlow {
 		cfg.Timeout = 5 * time.Minute
 	}
 	if cfg.ParadoxThreshold <= 0 {
-		cfg.ParadoxThreshold = 0.8
+		cfg.ParadoxThreshold = ooda.DefaultParadoxThreshold
 	}
 	return &OODAFlow{config: cfg}
 }
