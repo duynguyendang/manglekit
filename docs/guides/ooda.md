@@ -3,6 +3,11 @@
 > Moved from the README in v0.6. For the high-level design see
 > [manglekit-hld.md](../../../docs/design/manglekit-hld.md); for current-state
 > context see [docs/context/architecture/ooda-loop.md](../../../docs/context/architecture/ooda-loop.md).
+>
+> **v0.10 (ADR-004):** the OODA runtime moved from `sdk/ooda` to the optional
+> extension package `github.com/duynguyendang/manglekit/x/ooda` (same exported
+> names), and the Genkit flow bridge moved from `adapters/ai` to
+> `github.com/duynguyendang/manglekit/x/oodaflow` (package `oodaflow`).
 
 This section provides a comprehensive guide on building applications using the OODA (Observe-Orient-Decide-Verify-Act) cognitive loop in Manglekit.
 
@@ -62,7 +67,6 @@ type CognitiveFrame struct {
     // Memory & Logic
     Context       []Atom         // Soft Logic (INT8) - Pruneable facts
     AttentionSink []Atom         // Hard Logic (FP32) - Immutable Axioms (Tier 0)
-    ActiveGenes   []DomainGene   // Crystallized rules for this epoch
     RawContext    map[string]any // Legacy escape hatch
 
     // Reasoning
@@ -92,9 +96,11 @@ type Phase string
 const (
     PhaseObserve Phase = "observe"
     PhaseOrient  Phase = "orient"
+    PhasePlan    Phase = "plan"   // between Orient and Decide
     PhaseDecide  Phase = "decide"
     PhaseVerify  Phase = "verify"
     PhaseAct     Phase = "act"
+    PhasePostAct Phase = "post_act" // EAST post-act (validate + route)
 )
 
 // TaskType represents the operational mode for this epoch
@@ -141,7 +147,7 @@ import (
     "context"
     "fmt"
 
-    "github.com/duynguyendang/manglekit/sdk/ooda"
+    "github.com/duynguyendang/manglekit/x/ooda"
 )
 
 // MyObserver implements the Observer phase
@@ -238,7 +244,7 @@ import (
     "context"
     "fmt"
 
-    "github.com/duynguyendang/manglekit/sdk/ooda"
+    "github.com/duynguyendang/manglekit/x/ooda"
 )
 
 func main() {
@@ -373,7 +379,7 @@ import (
     "context"
     "fmt"
 
-    "github.com/duynguyendang/manglekit/sdk/ooda"
+    "github.com/duynguyendang/manglekit/x/ooda"
 )
 
 type StatefulOODA struct {
@@ -538,14 +544,19 @@ For a full derivation tree of *why* an action was denied, use
 
 ## OODA + Genkit Flows
 
-Manglekit integrates the OODA loop with Genkit Flows, enabling **traced OODA phases** in the Genkit Dev UI, **streaming responses**, **middleware application**, and **flow registration** with Genkit's runtime.
+The flow bridge lives in the optional extension package `manglekit/x/oodaflow`
+(package name `oodaflow`; moved out of `adapters/ai` in v0.10, ADR-004). It
+integrates the OODA loop with Genkit Flows, enabling **traced OODA phases** in
+the Genkit Dev UI, **streaming responses**, **middleware application**, and
+**flow registration** with Genkit's runtime. Middleware and supervised
+streaming helpers below still come from `adapters/ai` (`mkai`).
 
 ### Running OODA as a Genkit Flow
 
 ```go
 import (
-    mkai "github.com/duynguyendang/manglekit/adapters/ai"
-    "github.com/duynguyendang/manglekit/sdk/ooda"
+    "github.com/duynguyendang/manglekit/x/ooda"
+    "github.com/duynguyendang/manglekit/x/oodaflow"
     "github.com/firebase/genkit/go/genkit"
     "github.com/firebase/genkit/go/plugins/googlegenai"
 )
@@ -554,7 +565,7 @@ func main() {
     ctx := context.Background()
     g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}))
 
-    flow := mkai.NewOODAFlow(&mkai.OODAFlowConfig{
+    flow := oodaflow.NewOODAFlow(&oodaflow.OODAFlowConfig{
         MaxRetries:     3,
         Timeout:        5 * time.Minute,
         KnowledgeStore: myKnowledgeStore,
@@ -564,7 +575,7 @@ func main() {
     flow.DefineFlow(g, "myOodaFlow")
     flow.DefineStreamingFlow(g, "myOodaStreamingFlow")
 
-    result, err := flow.Run(ctx, &mkai.OODAFlowInput{
+    result, err := flow.Run(ctx, &oodaflow.OODAFlowInput{
         Input:    "Generate an architecture document",
         Intent:   "document_generation",
         TaskType: ooda.TaskTypeGeneration,
@@ -575,15 +586,15 @@ func main() {
 ### Genkit Bridge & Flow Registry
 
 ```go
-bridge := mkai.NewOODAGenkitBridge(g, &mkai.OODAFlowConfig{
+bridge := oodaflow.NewOODAGenkitBridge(g, &oodaflow.OODAFlowConfig{
     MaxRetries: 3,
 })
 
 bridge.DefineOODAFlow("documentGeneration")
 
-registry := mkai.NewFlowRegistry(g)
-registry.RegisterAndDefine("docGen", mkai.NewOODAFlow(cfg1))
-registry.RegisterAndDefine("codeReview", mkai.NewOODAFlow(cfg2))
+registry := oodaflow.NewFlowRegistry(g)
+registry.RegisterAndDefine("docGen", oodaflow.NewOODAFlow(cfg1))
+registry.RegisterAndDefine("codeReview", oodaflow.NewOODAFlow(cfg2))
 ```
 
 ### Flow Input/Output Types
@@ -718,14 +729,15 @@ resp, err := generator.Generate(ctx, prompt,
 
 ### OODA Frame with GenerateOptions
 
-Configure the CognitiveFrame with middleware options that are passed to the TextGenerator during the Act phase:
+Set the frame's `GenerateOptions` field (`x/ooda/domain.go:200`) so the
+options are passed to the TextGenerator during the Act phase:
 
 ```go
-frame := ooda.NewCognitiveFrame(input, intent, taskType).
-    WithGenerateOptions(
-        mkai.WithRetry(3),
-        mkai.WithFallback(fallbackModels),
-    )
+frame := ooda.NewCognitiveFrame(input, intent, taskType)
+frame.GenerateOptions = []core.GenerateOption{
+    mkai.WithRetry(3),
+    mkai.WithFallback(fallbackModels),
+}
 
 result, err := ooda.RunOODA(ctx, frame)
 ```

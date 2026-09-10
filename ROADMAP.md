@@ -16,9 +16,12 @@ capabilities are real and exercised by the live path (`NewClient` → `client.Su
 - **Shadow Audit (fail-closed verification)**: The supervisor enforces a real
   fail-closed pre/post gate against the active Datalog policy on every supervised
   action. A violated policy blocks execution rather than passing through.
-- **OODA cognitive loop**: `sdk/ooda/` implements the live Observe–Orient–Decide–
+- **OODA cognitive loop**: `x/ooda/` implements the live Observe–Orient–Decide–
   Verify–Act pipeline (with its own `EASTState`), independent of the removed
-  `internal/kernel` scaffolding.
+  `internal/kernel` scaffolding. Since 2026-09-10 (ADR-004, ship at v0.10.0)
+  it lives in the optional `manglekit/x/ooda` extension — moved out of
+  `sdk/ooda`; the kernel itself ships without the loop, and Genkit flow
+  wiring moved to `x/oodaflow`.
 - **The Silo (memory)**: BadgerDB-backed SPOg quad storage and vector embeddings
   (`internal/engine` + `internal/statemanager`).
 
@@ -53,6 +56,7 @@ functionality already present in the live path:
   rather than the real engine adapters built in
   `internal/supervisor/sdk_adapter.go`.
 - The `internal/kernel` "EAST loop" and embedded `.dl` genes were an
-  unwired re-implementation of `sdk/ooda` and the engine's tiered loading.
+  unwired re-implementation of the OODA runtime (then `sdk/ooda`, now
+  `x/ooda`) and the engine's tiered loading.
 
 The design intent now lives in this document rather than in rotting mock code.

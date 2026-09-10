@@ -90,6 +90,12 @@ Change `Topic` to `"passwords"` and the request is blocked with a
 > (`main.go` + `policy.dl` + a contract test) for you. Install with
 > `make install-cli`.
 
+> **Loops are opt-in (ADR-004):** since v0.10 the OODA cognitive runtime is
+> the extension package `github.com/duynguyendang/manglekit/x/ooda` — import
+> `x/ooda` for loops (`ooda.Run` / `ooda.RunOODA`), `x/oodaflow` to run them
+> as Genkit flows. It moved from `sdk/ooda` with the same exported names; the
+> SDK itself ships governance-only and never imports `x/`.
+
 ### Configuration file (optional)
 
 Instead of options, load a YAML config with `sdk.WithConfigFile("mangle.yaml")`:
@@ -131,7 +137,7 @@ observability:
 | **The Silo** | **Persistent Memory**| BadgerDB backed SPOg quad fact and vector storage. |
 | **Supervisor** | **Interceptor** | The zero-trust gateway that enforces the GenePool on every action. |
 | **Adapters** | **Drivers** | Universal adapters for LLMs (Genkit), Extractors, Tools (MCP), Functions, and Resilience. |
-| **`x/` extensions** | **Optional layers** | Public extensions the core never imports: `x/east` (EAST-steered generation) and `x/genes` (signed learned-rule packaging). |
+| **`x/` extensions** | **Optional layers** | Public extensions the core never imports: `x/ooda` (OODA cognitive-loop runtime), `x/oodaflow` (OODA-as-Genkit-flow bridge), `x/agents` (reference Architect agent), `x/east` (EAST-steered generation) and `x/genes` (signed learned-rule packaging). |
 
 ---
 
@@ -152,7 +158,7 @@ observability:
 ```
 manglekit/
 ├── adapters/           # Drivers for External Systems
-│   ├── ai/             # Google Genkit bridge (actions, OODA flows, streaming gate)
+│   ├── ai/             # Google Genkit bridge (actions, streaming gate, middleware)
 │   ├── extractor/      # LLM-driven structured extraction into Go types
 │   ├── func/           # Plain Go functions → supervised Actions
 │   ├── knowledge/      # N-Quads/N-Triples/TTL knowledge loaders
@@ -160,7 +166,6 @@ manglekit/
 │   ├── resilience/     # Circuit breaker
 │   ├── storage/        # BadgerDB quads (MEB bridge), session stores
 │   └── vector/         # Vector store + Genkit retriever
-├── agents/             # Reference agent (Architect)
 ├── cmd/                # CLI Tools
 │   └── mkit/           # The 'mkit' Developer Utility
 ├── config/             # Configuration Loading (mangle.yaml)
@@ -173,12 +178,15 @@ manglekit/
 ├── multiagent/         # Multi-agent runtime (AgentSystem, workflows)
 ├── providers/          # LLM/embedder/memory provider plugins
 ├── scenario/           # BDD-style policy-scenario harness
-├── sdk/                # The User-Facing API (Client, Options, OODA)
-│   └── ooda/           # OODA Loop Implementation
+├── sdk/                # The User-Facing API (Client, Options)
+│   └── ports/          # Extension contracts (TransientStore, ReasoningPort, …)
 ├── testutil/           # Deterministic mocks for consumer test suites
 └── x/                  # Optional public extensions (core never imports x/)
+    ├── agents/         # Reference agent (Architect) + toolkit
     ├── east/           # EAST (v4) generation steering
-    └── genes/          # Signed learned-rule packaging → policy channel
+    ├── genes/          # Signed learned-rule packaging → policy channel
+    ├── ooda/           # OODA loop runtime (frame, chassis, registry)
+    └── oodaflow/       # OODA-as-Genkit-flow bridge
 ```
 
 Runnable demos live in the sibling
@@ -200,6 +208,8 @@ Manglekit is a **Sovereign Logic Kernel** built on four core layers:
 ### Layer 2: The Cognitive Loop (OODA)
 
 *   **Role**: An intelligent orchestration layer that binds logic to execution.
+    The loop ships as the opt-in extension `x/ooda` (ADR-004, v0.10);
+    the governance core (Layers 1, 3, 4) works without it.
 *   **Lifecycle**: `Observe -> Orient -> Decide -> Verify -> Act`
     *   **Observe**: Ingest raw signals and extract logical quad facts (SPOg) and embeddings into The Silo.
     *   **Orient**: Align input context against The Silo and Tiered Policy Rules.
