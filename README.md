@@ -127,6 +127,12 @@ observability:
 3.  **The Silo (Persistent Knowledge)**: Native BadgerDB integration providing high-performance SPOg (Subject-Predicate-Object-Graph) quad indexing and vector storage for long-term memory.
 4.  **Rule Learning**: Extractors ingest Markdown/code into structured data. Offline rule induction ships today as `mkit gen` (Teacher-Student loop with syntax validation); the optional `x/genes` extension packages signed learned rules that enter enforcement only through the official policy channel (`LoadPolicy`), with hard tiers requiring an explicit human-review opt-in.
 5.  **Deep Observability**: Fully integrated OpenTelemetry tracing that links Genkit spans directly to logic rules, showing exactly *why* a decision was made.
+6.  **The Kernel Eats Its Own Dogfood**: manglekit learns policy from its own sources. A deterministic scanner induces *signed* advisory genes (`x/genes`, tiers T3/T2) from shipped code; the induced pool is a committed, human-reviewed artifact; CI (`policy-hygiene.yml`) fails any PR whose code changes what the repo teaches itself without a re-reviewed pool. Machine-derived policy reaches enforcement through exactly one door — the policy channel — and hard tiers require an explicit human opt-in.
+
+    ```text
+    code signals ─▶ signed T3 gene ─▶ reviewed pool ─▶ human --confirm ─▶ T1
+    (learn_from_code, manglekit-examples)               (this repo gated by it)
+    ```
 
 ## System Building Blocks
 
@@ -147,7 +153,8 @@ observability:
 |---|---|
 | Building OODA applications (phases, CognitiveFrame, memory, Genkit flows, middleware) | [docs/guides/ooda.md](./docs/guides/ooda.md) |
 | Datalog engine capabilities (comparisons, negation, aggregation, arithmetic) | [docs/guides/datalog.md](./docs/guides/datalog.md) |
-| Runnable examples (27 demos, one directory each — incl. `skill_learning`: cross-session OODA skill learning) | [manglekit-examples](https://github.com/duynguyendang/manglekit-examples) |
+| Runnable examples (28 demos, one directory each — incl. `skill_learning` and `learn_from_code`) | [manglekit-examples](https://github.com/duynguyendang/manglekit-examples) |
+| Governance features, proven running (tiers vs binary gates, explainable denies, hot reload, streaming coverage, CI exit codes, signed genes) | [examples — Proof points](https://github.com/duynguyendang/manglekit-examples#proof-points) |
 | High-level design (layers, flows, governance) | [ARCHITECTURE.md](https://github.com/duynguyendang/manglekit) workspace docs |
 | CLI reference (`eval`, `gen`, `check`, `inspect`, `kg`, `run`, `serve`, `skill`) | [cmd/mkit/README.md](./cmd/mkit/README.md) |
 
