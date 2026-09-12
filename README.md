@@ -153,7 +153,7 @@ observability:
 |---|---|
 | Building OODA applications (phases, CognitiveFrame, memory, Genkit flows, middleware) | [docs/guides/ooda.md](./docs/guides/ooda.md) |
 | Datalog engine capabilities (comparisons, negation, aggregation, arithmetic) | [docs/guides/datalog.md](./docs/guides/datalog.md) |
-| Runnable examples (28 demos, one directory each — incl. `skill_learning` and `learn_from_code`) | [manglekit-examples](https://github.com/duynguyendang/manglekit-examples) |
+| Runnable examples (25 demos under six domain folders — incl. `skill_learning` and `learn_from_code`) | [manglekit-examples](https://github.com/duynguyendang/manglekit-examples) |
 | Governance features, proven running (tiers vs binary gates, explainable denies, hot reload, streaming coverage, CI exit codes, signed genes) | [examples — Proof points](https://github.com/duynguyendang/manglekit-examples#proof-points) |
 | High-level design (layers, flows, governance) | [ARCHITECTURE.md](https://github.com/duynguyendang/manglekit) workspace docs |
 | CLI reference (`eval`, `gen`, `check`, `inspect`, `kg`, `run`, `serve`, `skill`) | [cmd/mkit/README.md](./cmd/mkit/README.md) |
