@@ -2,7 +2,7 @@ name: policy-hygiene
 # Dogfood gate: the learn_from_code pool (examples repo, dogfood/genes.yaml)
 # is a reviewed artifact of what THIS kernel's sources induce. PRs that add,
 # remove, or change a code signal must carry a regenerated, reviewed pool in
-# the same PR. See manglekit-examples/learn_from_code/dogfood/README.md.
+# the same PR. See manglekit-examples/learning/learn_from_code/dogfood/README.md.
 on:
   pull_request:
   workflow_dispatch:
@@ -22,5 +22,5 @@ jobs:
         with:
           go-version-file: manglekit/go.mod
       - name: policy pool drift check
-        working-directory: manglekit-examples/learn_from_code
+        working-directory: manglekit-examples/learning/learn_from_code
         run: ./dogfood/check-drift.sh ../../manglekit
