@@ -9,7 +9,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/ai"
-	genkcore "github.com/firebase/genkit/go/core"
+	genkstatus "github.com/firebase/genkit/go/core/status"
 	"github.com/firebase/genkit/go/genkit"
 )
 
@@ -50,9 +50,11 @@ func GenerateStruct[T any](ctx context.Context, gen core.TextGenerator, sysPromp
 		)
 
 		if err != nil {
-			var schemaErr *genkcore.SchemaValidationError
-			if errors.As(err, &schemaErr) {
-				return result, fmt.Errorf("structured output validation failed: %w", schemaErr)
+			// genkit >= v1.12 reports a model output that fails the expected
+			// schema as status.ErrInvalidOutput (the old
+			// core.SchemaValidationError type was removed in v1.13).
+			if errors.Is(err, genkstatus.ErrInvalidOutput) {
+				return result, fmt.Errorf("structured output validation failed: %w", err)
 			}
 			return result, fmt.Errorf("genkit native generation failed: %w", err)
 		}

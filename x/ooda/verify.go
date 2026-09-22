@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/duynguyendang/manglekit/core"
-	genkcore "github.com/firebase/genkit/go/core"
+	genkstatus "github.com/firebase/genkit/go/core/status"
 )
 
 // ValidationError represents a validation failure with tier information.
@@ -39,12 +39,14 @@ func VerifySchema(ctx context.Context, frame *CognitiveFrame) error {
 	if frame.Brain != nil {
 		auditTrail, err := frame.Brain.Verify(ctx, frame)
 		if err != nil {
-			var schemaErr *genkcore.SchemaValidationError
-			if errors.As(err, &schemaErr) {
+			// genkit >= v1.12 classifies a schema-invalid action output as
+			// status.ErrInvalidOutput (core.SchemaValidationError was
+			// removed upstream in v1.13).
+			if errors.Is(err, genkstatus.ErrInvalidOutput) {
 				return &ValidationError{
 					RuleName: "SCHEMA_VALIDATION",
 					Tier:     Tier1Admin,
-					Message:  fmt.Sprintf("action '%s' output failed schema validation: %v", actionName, schemaErr),
+					Message:  fmt.Sprintf("action '%s' output failed schema validation: %v", actionName, err),
 				}
 			}
 			return fmt.Errorf("schema verification failed: %w", err)
