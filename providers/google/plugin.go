@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/ai"
@@ -17,7 +18,33 @@ type Config struct {
 	ModelName  string
 	Project    string // Vertex AI project (enables Vertex mode)
 	Location   string // Vertex AI region (e.g. "us-central1", "us", "eu", "global")
-	APIVersion string // Vertex AI API version override (e.g. "v1", "v1beta")
+	APIVersion string // API version override ("v1", "v1beta"; "v1alpha" for GoogleAI)
+	BaseURL    string // endpoint override — a proxy, a regional host, a mock
+
+	// Platform selects the backend explicitly: "googleai" (default) or
+	// "vertex". Set it to "vertex" WITHOUT a Project to use Vertex AI
+	// Express Mode: API-key auth, no project, no location, no ADC.
+	// Leaving it empty keeps the historical rule (Project set => Vertex).
+	Platform string
+}
+
+// isVertex reports which backend this config selects. An EXPLICIT Platform
+// wins; only when it is empty does the historical rule apply (Project set =>
+// Vertex), so configs written before Platform existed keep their behavior.
+func (c Config) isVertex() bool {
+	switch strings.ToLower(strings.TrimSpace(c.Platform)) {
+	case "vertex", "vertexai", "vertex_express":
+		return true
+	case "googleai", "google", "gemini":
+		return false
+	}
+	return c.Project != ""
+}
+
+// expressVertex reports the Vertex Express Mode case specifically: API key
+// auth with no project or location to resolve.
+func (c Config) expressVertex() bool {
+	return c.isVertex() && c.Project == ""
 }
 
 // Init sets up the Google provider using a Proxy Pattern.
@@ -33,7 +60,7 @@ func InitWithConfig(ctx context.Context, globalG *genkit.Genkit, cfg Config, log
 	apiKey := cfg.APIKey
 	modelName := cfg.ModelName
 
-	if cfg.Project != "" {
+	if cfg.isVertex() {
 		return initVertexAI(ctx, globalG, cfg, logger)
 	}
 
@@ -45,7 +72,11 @@ func InitWithConfig(ctx context.Context, globalG *genkit.Genkit, cfg Config, log
 		return "", fmt.Errorf("google provider: API Key is required")
 	}
 
-	plugin := &googlegenai.GoogleAI{APIKey: apiKey}
+	plugin := &googlegenai.GoogleAI{
+		APIKey:     apiKey,
+		APIVersion: cfg.APIVersion, // empty keeps the genai SDK default
+		BaseURL:    cfg.BaseURL,    // proxy / mock endpoint override
+	}
 	localG := genkit.Init(context.Background(), genkit.WithPlugins(plugin))
 	if localG == nil {
 		return "", fmt.Errorf("failed to init local genkit sandbox for google")
@@ -68,8 +99,26 @@ func InitWithConfig(ctx context.Context, globalG *genkit.Genkit, cfg Config, log
 	return globalName, nil
 }
 
-// initVertexAI sets up the Vertex AI provider with multi-region support.
+// initVertexAI sets up the Vertex AI provider: ADC/project mode (the
+// historical path) or Express Mode — API key only, no project, no location,
+// no ADC — when Project is empty (genkit >= v1.12).
 func initVertexAI(ctx context.Context, globalG *genkit.Genkit, cfg Config, logger core.Logger) (string, error) {
+	apiKey := cfg.APIKey
+	if apiKey == "" {
+		apiKey = os.Getenv("GOOGLE_CLOUD_API_KEY")
+	}
+
+	if cfg.expressVertex() {
+		if apiKey == "" {
+			return "", fmt.Errorf("google provider: Vertex Express Mode needs an API key (cfg.APIKey or GOOGLE_CLOUD_API_KEY) or a Project")
+		}
+		return registerVertex(ctx, globalG, cfg, logger, &googlegenai.VertexAI{
+			APIKey:     apiKey,
+			APIVersion: cfg.APIVersion,
+			BaseURL:    cfg.BaseURL,
+		})
+	}
+
 	location := cfg.Location
 	if location == "" {
 		location = os.Getenv("GOOGLE_CLOUD_LOCATION")
@@ -81,11 +130,17 @@ func initVertexAI(ctx context.Context, globalG *genkit.Genkit, cfg Config, logge
 		location = "us-central1"
 	}
 
-	plugin := &googlegenai.VertexAI{
+	return registerVertex(ctx, globalG, cfg, logger, &googlegenai.VertexAI{
 		ProjectID:  cfg.Project,
 		Location:   location,
 		APIVersion: cfg.APIVersion,
-	}
+		BaseURL:    cfg.BaseURL,
+	})
+}
+
+// registerVertex builds the plugin, resolves the model in a local Genkit
+// sandbox and proxies it into the global registry.
+func registerVertex(ctx context.Context, globalG *genkit.Genkit, cfg Config, logger core.Logger, plugin *googlegenai.VertexAI) (string, error) {
 	localG := genkit.Init(context.Background(), genkit.WithPlugins(plugin))
 	if localG == nil {
 		return "", fmt.Errorf("failed to init local genkit sandbox for vertex ai")
@@ -96,7 +151,7 @@ func initVertexAI(ctx context.Context, globalG *genkit.Genkit, cfg Config, logge
 		realModel = genkit.LookupModel(localG, "vertexai/"+cfg.ModelName)
 	}
 	if realModel == nil {
-		return "", fmt.Errorf("model '%s' not found in vertex ai plugin (project=%s, location=%s)", cfg.ModelName, cfg.Project, location)
+		return "", fmt.Errorf("model '%s' not found in vertex ai plugin (project=%q, express=%t)", cfg.ModelName, cfg.Project, cfg.expressVertex())
 	}
 
 	globalName := "vertexai/" + cfg.ModelName
