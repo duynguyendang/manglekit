@@ -50,6 +50,12 @@ func GenerateStruct[T any](ctx context.Context, gen core.TextGenerator, sysPromp
 		)
 
 		if err != nil {
+			// A safety refusal is not a schema mismatch: the model answered
+			// "no", so retrying the same prompt only burns attempts. Surface
+			// it as ErrModelBlocked (see errors.go).
+			if errors.Is(err, ErrModelBlocked) {
+				return result, fmt.Errorf("model refused the request: %w", err)
+			}
 			// genkit >= v1.12 reports a model output that fails the expected
 			// schema as status.ErrInvalidOutput (the old
 			// core.SchemaValidationError type was removed in v1.13).
