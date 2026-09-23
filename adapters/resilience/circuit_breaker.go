@@ -22,6 +22,27 @@ const (
 type CircuitBreakerConfig struct {
 	FailureThreshold uint64
 	ResetTimeout     time.Duration
+
+	// FailureWhen decides which errors count against provider health. Nil
+	// means "count every error" (the historical behavior).
+	//
+	// Wire a classifier at the boundary that knows the difference, e.g.
+	// adapters/ai.IsInfraFailure: without it, a caller-side mistake (bad
+	// prompt, unknown model, rejected key) opens the circuit and masks a real
+	// outage — and in HALF_OPEN it re-opens the circuit even though the
+	// provider demonstrably answered.
+	FailureWhen func(error) bool
+}
+
+// counts reports whether err should be recorded as an infrastructure failure.
+func (c *CircuitBreaker) counts(err error) bool {
+	if err == nil {
+		return false
+	}
+	if c.config.FailureWhen == nil {
+		return true
+	}
+	return c.config.FailureWhen(err)
 }
 
 type CircuitBreaker struct {
@@ -91,13 +112,15 @@ func (c *CircuitBreaker) runProbe(ctx context.Context, env core.Envelope) (core.
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if err != nil {
-		// Probe failed, return to Open
+	if c.counts(err) {
+		// Probe failed with an infrastructure error, return to Open
 		c.state = StateOpen
 		c.lastOpen = time.Now()
 		c.generation++
 	} else {
-		// Probe succeeded, close the circuit
+		// The provider ANSWERED — successfully, or with a rejection caused by
+		// the request itself. Either way the service is reachable, so the
+		// circuit closes; the caller still receives the error unchanged.
 		c.state = StateClosed
 		c.failures = 0
 		c.generation++
@@ -117,15 +140,20 @@ func (c *CircuitBreaker) runStandard(ctx context.Context, env core.Envelope) (co
 		return resp, err
 	}
 
-	if err != nil {
+	switch {
+	case err == nil:
+		c.failures = 0
+	case c.counts(err):
 		c.failures++
 		if c.failures >= c.config.FailureThreshold {
 			c.state = StateOpen
 			c.lastOpen = time.Now()
 			c.generation++
 		}
-	} else {
-		c.failures = 0
+	default:
+		// A caller-side rejection (bad prompt, unknown model, refused
+		// credential, safety block) is not evidence the provider is down.
+		// Neither credit nor blame: leave the counter where it is.
 	}
 
 	return resp, err
