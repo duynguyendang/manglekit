@@ -33,15 +33,6 @@ func runCheck(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to read policy file: %w", err)
 	}
 
-	e, err := engine.New()
-	if err != nil {
-		return fmt.Errorf("failed to initialize engine: %w", err)
-	}
-
-	if err := e.LoadPolicy(cmd.Context(), string(content)); err != nil {
-		return fmt.Errorf("policy %s is invalid: %w", path, err)
-	}
-
 	out := cmd.OutOrStdout()
 	errOut := cmd.ErrOrStderr()
 
@@ -67,6 +58,15 @@ func runCheck(cmd *cobra.Command, args []string) error {
 		if errCount > 0 {
 			return &LintError{Count: errCount}
 		}
+	}
+
+	e, err := engine.New()
+	if err != nil {
+		return fmt.Errorf("failed to initialize engine: %w", err)
+	}
+
+	if err := e.LoadPolicy(cmd.Context(), string(content)); err != nil {
+		return fmt.Errorf("policy %s is invalid: %w", path, err)
 	}
 
 	fmt.Fprintf(out, "OK: %s parsed and compiled successfully\n", path)

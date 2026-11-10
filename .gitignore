@@ -29,6 +29,7 @@ go.work.sum
 
 # Custom binaries
 manglekit
+bin/
 
 # Editor/IDE
 # .idea/

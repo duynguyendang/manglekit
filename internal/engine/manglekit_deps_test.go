@@ -82,10 +82,13 @@ func TestMangleRuntime_Negation(t *testing.T) {
 
 func TestMangleRuntime_NegationWildcard(t *testing.T) {
 	runtime := NewMangleRuntime()
+	// In Datalog, unbound wildcards in negative premises (!role_cap(_, C)) are rejected by Mangle v0.7.0 safety analysis.
+	// We project via a helper relation (has_role_cap(C) :- role_cap(_, C)).
 	rules := `
 		role_cap("writer", "doc_gen"). role_cap("reviewer", "quality").
+		has_role_cap(C) :- role_cap(_, C).
 		doc_needs("BRD", "doc_gen"). doc_needs("BRD", "quality"). doc_needs("EST", "data_analysis").
-		missing(D, C) :- doc_needs(D, C), !role_cap(_, C).
+		missing(D, C) :- doc_needs(D, C), !has_role_cap(C).
 	`
 	if err := runtime.LoadFromString(context.Background(), rules); err != nil {
 		t.Fatal(err)
