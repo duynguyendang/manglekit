@@ -14,7 +14,7 @@ import (
 
 func TestEvalRequiresDataOrKnowledge(t *testing.T) {
 	dir := t.TempDir()
-	policy := filepath.Join(dir, "policy.dl")
+	policy := filepath.Join(dir, "policy.mg")
 	// A minimal, valid Datalog program so engine init succeeds.
 	if err := os.WriteFile(policy, []byte("halt(Req).\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -32,7 +32,7 @@ func TestEvalRequiresDataOrKnowledge(t *testing.T) {
 
 func TestEvalJSONOutputIsCleanOnStdout(t *testing.T) {
 	dir := t.TempDir()
-	policy := filepath.Join(dir, "policy.dl")
+	policy := filepath.Join(dir, "policy.mg")
 	if err := os.WriteFile(policy, []byte(`Decl high(R).
 high(R) :- json_str(R, "risk_level", "critical").
 `), 0o600); err != nil {
@@ -70,7 +70,7 @@ high(R) :- json_str(R, "risk_level", "critical").
 
 func TestEvalJSONOutputEmptyResults(t *testing.T) {
 	dir := t.TempDir()
-	policy := filepath.Join(dir, "policy.dl")
+	policy := filepath.Join(dir, "policy.mg")
 	if err := os.WriteFile(policy, []byte(`Decl high(R).
 high(R) :- json_str(R, "risk_level", "critical").
 `), 0o600); err != nil {
@@ -103,7 +103,7 @@ high(R) :- json_str(R, "risk_level", "critical").
 
 func TestEvalInvalidOutputModeIsUsageError(t *testing.T) {
 	dir := t.TempDir()
-	policy := filepath.Join(dir, "policy.dl")
+	policy := filepath.Join(dir, "policy.mg")
 	if err := os.WriteFile(policy, []byte("halt(Req).\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestEvalInvalidOutputModeIsUsageError(t *testing.T) {
 // policy denies the input — eval must return an error mapping to exit 1.
 func TestEvalDenyQueryReturnsPolicyViolation(t *testing.T) {
 	dir := t.TempDir()
-	policy := filepath.Join(dir, "policy.dl")
+	policy := filepath.Join(dir, "policy.mg")
 	if err := os.WriteFile(policy, []byte(`Decl risky(X).
 risky(S) :- json_str(S, "level", "high").
 halt(Req, "high risk", "T1") :- risky(Req).
@@ -163,7 +163,7 @@ halt(Req, "high risk", "T1") :- risky(Req).
 // non-deny goal with results keeps exit 0.
 func TestEvalAllowedQueryExitsZero(t *testing.T) {
 	dir := t.TempDir()
-	policy := filepath.Join(dir, "policy.dl")
+	policy := filepath.Join(dir, "policy.mg")
 	if err := os.WriteFile(policy, []byte(`Decl risky(X).
 risky(S) :- json_str(S, "level", "high").
 halt(Req, "high risk", "T1") :- risky(Req).

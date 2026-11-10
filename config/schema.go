@@ -74,7 +74,7 @@ type MemoryConfig struct {
 
 // PolicyConfig settings for the Datalog Policy Engine.
 type PolicyConfig struct {
-	// Path to the Datalog policy source file (.dl or .dlog) or directory.
+	// Path to the Datalog policy source file (.mg, .dl, or .dlog) or directory.
 	Path string `yaml:"path" mapstructure:"path"`
 
 	// EvaluationTimeout is the max duration (in seconds) for rule evaluation.

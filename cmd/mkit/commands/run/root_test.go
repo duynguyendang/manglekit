@@ -37,7 +37,7 @@ func TestRunFlagsAreMarkedRequired(t *testing.T) {
 
 func TestRunFormatJSON(t *testing.T) {
 	dir := t.TempDir()
-	policy := filepath.Join(dir, "policy.dl")
+	policy := filepath.Join(dir, "policy.mg")
 	if err := os.WriteFile(policy, []byte("Decl high(S).\nhigh(S) :- json_str(S, \"risk_level\", \"critical\").\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestRunFormatJSON(t *testing.T) {
 
 func TestRunFormatNQuadsUnchanged(t *testing.T) {
 	dir := t.TempDir()
-	policy := filepath.Join(dir, "policy.dl")
+	policy := filepath.Join(dir, "policy.mg")
 	if err := os.WriteFile(policy, []byte("Decl high(S).\nhigh(S) :- json_str(S, \"risk_level\", \"critical\").\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestRunFormatNQuadsUnchanged(t *testing.T) {
 }
 
 func TestRunRejectsUnknownFormat(t *testing.T) {
-	RunCmd.SetArgs([]string{"--policy", "p.dl", "--data", "d.json", "--target", "x", "--output", "o", "--format", "yaml"})
+	RunCmd.SetArgs([]string{"--policy", "p.mg", "--data", "d.json", "--target", "x", "--output", "o", "--format", "yaml"})
 	err := RunCmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "invalid --format") {
 		t.Fatalf("expected invalid-format usage error, got %v", err)

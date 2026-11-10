@@ -68,7 +68,7 @@ func (f *fakeEvaluator) Logger() core.Logger { return core.NopLogger{} }
 func haltTrail(tiers ...core.Tier) *core.AuditTrail {
 	trail := core.NewAuditTrail("fake", "halt-query")
 	for _, t := range tiers {
-		trail.AddRule("halt", fmt.Sprintf(`halt("Req", "r", "%s")`, t), "policy.dl", "halt", t, nil)
+		trail.AddRule("halt", fmt.Sprintf(`halt("Req", "r", "%s")`, t), "policy.mg", "halt", t, nil)
 	}
 	return trail
 }

@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	policyStrict  = "testdata/routing_policy.dl"
-	policyRelaxed = "testdata/routing_policy_relaxed.dl"
-	policyBroken  = "testdata/routing_policy_broken.dl"
+	policyStrict  = "testdata/routing_policy.mg"
+	policyRelaxed = "testdata/routing_policy_relaxed.mg"
+	policyBroken  = "testdata/routing_policy_broken.mg"
 )
 
 type routeReq struct {

@@ -14,7 +14,7 @@ type ReflectRes struct{}
 
 func TestActionReflection(t *testing.T) {
 	// Create a dummy policy file to initialize the engine runtime
-	tmpFile, err := os.CreateTemp("", "policy*.dl")
+	tmpFile, err := os.CreateTemp("", "policy*.mg")
 	require.NoError(t, err)
 	defer os.Remove(tmpFile.Name())
 

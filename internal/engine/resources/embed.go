@@ -2,10 +2,10 @@ package resources
 
 import _ "embed"
 
-//go:embed planner.dl
+//go:embed planner.mg
 var plannerRules string
 
-//go:embed std.dl
+//go:embed std.mg
 var stdLib string
 
 // GetPlannerRules returns the core Datalog rules for the Logic Planner.

@@ -32,7 +32,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 // WithPolicyPath), returning typed errors for a missing file or an invalid
 // policy. For anything beyond a policy file, use NewClient with options.
 //
-//	client, err := manglekit.QuickClient(ctx, "policy.dl")
+//	client, err := manglekit.QuickClient(ctx, "policy.mg")
 func QuickClient(ctx context.Context, policyPath string) (*Client, error) {
 	return sdk.NewClient(ctx, sdk.WithPolicyPath(policyPath))
 }

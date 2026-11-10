@@ -15,7 +15,7 @@ import (
 
 // GeneratedPolicy represents the structured response from the LLM.
 type GeneratedPolicy struct {
-	// DatalogContent contains the raw .dl code.
+	// DatalogContent contains the raw .mg code.
 	DatalogContent string `json:"datalog_content"`
 	// Explanation provides a human-readable summary of the logic.
 	Explanation string `json:"explanation"`

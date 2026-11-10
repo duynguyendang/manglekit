@@ -121,9 +121,9 @@ func TestPrependStdLib_keepsNonRuleLines(t *testing.T) {
 }
 
 func TestStdLibShape_pinsCurrentPredicates(t *testing.T) {
-	// This test pins the current std.dl shape so a CI failure
+	// This test pins the current std.mg shape so a CI failure
 	// catches accidental predicate additions or removals.
-	// If std.dl deliberately changes, update these counts.
+	// If std.mg deliberately changes, update these counts.
 	std := resources.StdLib()
 
 	// Expected predicate names (symbols the policy layer depends on)
@@ -138,23 +138,23 @@ func TestStdLibShape_pinsCurrentPredicates(t *testing.T) {
 
 	for _, name := range required {
 		if !strings.Contains(std, name) {
-			t.Errorf("std.dl is missing required predicate %q — remove from test or restore to std.dl", name)
+			t.Errorf("std.mg is missing required predicate %q — remove from test or restore to std.mg", name)
 		}
 	}
 
 	// Verify zero-arg Decl patterns are handled correctly
-	// (currently std.dl has no zero-arg Decls, but the parser handles them)
+	// (currently std.mg has no zero-arg Decls, but the parser handles them)
 	callerDecls := collectCallerDecls("Decl foo().")
 	if !callerDecls[ast.PredicateSym{Symbol: "foo", Arity: 0}] {
 		t.Error("zero-arg Decl foo() should have arity 0")
 	}
 
-	// Sanity: the std.dl itself should not produce unexpected Decls
+	// Sanity: the std.mg itself should not produce unexpected Decls
 	stdDecls := collectCallerDecls(std)
 	if len(stdDecls) < 20 {
-		t.Errorf("expected at least 20 Decl lines in std.dl, got %d — std.dl may be truncated", len(stdDecls))
+		t.Errorf("expected at least 20 Decl lines in std.mg, got %d — std.mg may be truncated", len(stdDecls))
 	}
-	// std.dl has multi-arity predicates (deny/1, deny/2, deny/3 etc)
+	// std.mg has multi-arity predicates (deny/1, deny/2, deny/3 etc)
 	denyCount := 0
 	for sym := range stdDecls {
 		if sym.Symbol == "deny" {
@@ -162,16 +162,16 @@ func TestStdLibShape_pinsCurrentPredicates(t *testing.T) {
 		}
 	}
 	if denyCount < 3 {
-		t.Errorf("expected deny/1, deny/2, deny/3 in std.dl Decls, got %d variants", denyCount)
+		t.Errorf("expected deny/1, deny/2, deny/3 in std.mg Decls, got %d variants", denyCount)
 	}
 
 	if stdDecls[ast.PredicateSym{Symbol: "triple", Arity: 3}] == false {
-		t.Error("std.dl must declare triple/3")
+		t.Error("std.mg must declare triple/3")
 	}
 	if stdDecls[ast.PredicateSym{Symbol: "halt", Arity: 1}] == false {
-		t.Error("std.dl must declare halt/1")
+		t.Error("std.mg must declare halt/1")
 	}
 	if stdDecls[ast.PredicateSym{Symbol: "halt", Arity: 2}] == false {
-		t.Error("std.dl must declare halt/2")
+		t.Error("std.mg must declare halt/2")
 	}
 }

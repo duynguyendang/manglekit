@@ -84,7 +84,7 @@ func TestReloadFromSource_ConcurrentQueriesNeverSeePartialPolicy(t *testing.T) {
 }
 
 // Regression: explicitly loaded facts whose predicate is IDB in the OLD
-// program (triple/3 is IDB because std.dl derives it from quad/4) must
+// program (triple/3 is IDB because std.mg derives it from quad/4) must
 // survive a LoadFromSource reload. Dropping them wiped knowledge-graph
 // facts the replacement policy needed (hybrid_rag Feature 4).
 func TestReloadFromSource_PreservesExplicitFactsOfOldIDBPredicates(t *testing.T) {
@@ -129,7 +129,7 @@ can_access(User, Module) :-
 	assert.False(t, found, "old-policy derivations must not survive a reload")
 }
 
-// Persistent builtin units (planner.dl-style, agent registry) must survive
+// Persistent builtin units (planner.mg-style, agent registry) must survive
 // a policy reload; AddPolicy'd USER rules are still replaced (that is the
 // documented swap semantics). Regression test for the v0.8-era finding that
 // reload dropped engine builtins along with the user program.
@@ -200,7 +200,7 @@ marker("m").
 
 	ok, err = e.ExecuteQuery(ctx, nil, `plan_step("deploy", 1)`)
 	require.NoError(t, err)
-	require.True(t, ok, "planner.dl rules must survive a policy reload")
+	require.True(t, ok, "planner.mg rules must survive a policy reload")
 
 	ok, err = e.ExecuteQuery(ctx, nil, `marker("m")`)
 	require.NoError(t, err)

@@ -74,7 +74,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 }
 
 var CheckCmd = &cobra.Command{
-	Use:   "check <policy.dl>",
+	Use:   "check <policy.mg>",
 	Short: "Load, compile, and lint a policy without running a query",
 	Long: `Load, compile, and lint a policy without running a query.
 
@@ -86,7 +86,7 @@ it checks for ungrounded negated variables and dead rule premises.`,
 }
 
 var LintCmd = &cobra.Command{
-	Use:   "lint <policy.dl>",
+	Use:   "lint <policy.mg>",
 	Short: "Lint a Datalog policy for ungrounded variables and dead rules",
 	Long:  "Alias for `mkit check --lint`.",
 	Args:  cobra.ExactArgs(1),

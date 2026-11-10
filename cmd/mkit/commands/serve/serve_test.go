@@ -101,7 +101,7 @@ func TestServe_V1Endpoints(t *testing.T) {
 
 	state := &ServerState{
 		Client:     client,
-		PolicyPath: "test.dl",
+		PolicyPath: "test.mg",
 	}
 	state.SetPolicyHash("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
 

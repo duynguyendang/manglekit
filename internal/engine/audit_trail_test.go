@@ -83,13 +83,13 @@ allow("reader", "read", "document").
 func TestAuditTrail_Summary(t *testing.T) {
 	audit := core.NewAuditTrail("test-engine", "test_query")
 
-	audit.AddRule("allow", "allow(X, Y, Z) :- true.", "governance.dl", "allow", core.TierT1_Governance, map[string]string{
+	audit.AddRule("allow", "allow(X, Y, Z) :- true.", "governance.mg", "allow", core.TierT1_Governance, map[string]string{
 		"X": "reader",
 		"Y": "read",
 		"Z": "document",
 	})
 
-	audit.AddRule("can_execute", "can_execute(Agent, Action).", "registry.dl", "can_execute", core.TierT2_Playbook, map[string]string{
+	audit.AddRule("can_execute", "can_execute(Agent, Action).", "registry.mg", "can_execute", core.TierT2_Playbook, map[string]string{
 		"Agent":  "planner",
 		"Action": "plan",
 	})
@@ -143,8 +143,8 @@ func TestGetSourceFileForPredicate(t *testing.T) {
 		predicate string
 		expected  string
 	}{
-		{"allow", "governance.dl"},
-		{"validation_rule", "registry.dl"},
+		{"allow", "governance.mg"},
+		{"validation_rule", "registry.mg"},
 		{"unknown_predicate", "unknown"},
 	}
 

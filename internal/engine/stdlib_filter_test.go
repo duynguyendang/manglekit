@@ -52,10 +52,10 @@ func TestPrependStdLib_FiltersCallerDecls(t *testing.T) {
 	assert.Contains(t, out, "triple(S, P, O) :- quad", "rules for caller-declared predicates must survive (only the Decl is dropped)")
 }
 
-// TestStdLibShape pins the assumptions the line-based std.dl filter
+// TestStdLibShape pins the assumptions the line-based std.mg filter
 // makes about the embedded standard library: every non-comment
 // statement is single-line (terminates with "." on the same line) and
-// every Decl is recognized by declLineRE. If std.dl gains a multi-line
+// every Decl is recognized by declLineRE. If std.mg gains a multi-line
 // rule or an exotic Decl form, this fails before the filter silently
 // corrupts the merged program.
 func TestStdLibShape(t *testing.T) {
@@ -65,10 +65,10 @@ func TestStdLibShape(t *testing.T) {
 			continue
 		}
 		require.True(t, strings.HasSuffix(trimmed, "."),
-			"std.dl line %d does not end with '.': %q — the filter assumes single-line statements", i+1, line)
+			"std.mg line %d does not end with '.': %q — the filter assumes single-line statements", i+1, line)
 		if strings.HasPrefix(trimmed, "Decl ") {
 			_, ok := declSym(trimmed)
-			require.True(t, ok, "std.dl line %d: Decl not recognized by declLineRE: %q", i+1, line)
+			require.True(t, ok, "std.mg line %d: Decl not recognized by declLineRE: %q", i+1, line)
 		}
 	}
 }

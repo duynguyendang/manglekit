@@ -4,7 +4,7 @@ import (
 	_ "embed"
 )
 
-//go:embed golden.dl
+//go:embed golden.mg
 var goldenRules string
 
 // GetGoldenRules returns the embedded golden rules content.

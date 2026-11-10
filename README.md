@@ -21,7 +21,7 @@ Manglekit solves this by placing every AI agent action behind a **fail-closed, a
 
 Three steps: define a Datalog policy, register a supervised action, and execute it through the gate.
 
-### 1. Define the policy (`policy.dl`)
+### 1. Define the policy (`policy.mg`)
 
 Gate payment refunds: require manager approval for amounts over $1,000 (100,000 cents), and block unverified destination accounts:
 
@@ -74,7 +74,7 @@ type RefundRequest struct {
 func main() {
     ctx := context.Background()
 
-    client, err := manglekit.NewClient(ctx, manglekit.WithPolicyPath("policy.dl"))
+    client, err := manglekit.NewClient(ctx, manglekit.WithPolicyPath("policy.mg"))
     if err != nil {
         log.Fatalf("client init: %v", err)
     }
@@ -185,7 +185,7 @@ For Python, TypeScript, and foreign runtimes, MangleKit runs as a standalone sid
 
 ```bash
 # Start the HTTP policy gate
-mkit serve --port 8080 --policy policy.dl
+mkit serve --port 8080 --policy policy.mg
 ```
 
 Send tool-call intent to `/v1/assess` before executing it in your agent runtime. Decisions are returned with decision IDs, SHA-256 policy fingerprints, and complete derivation trees.

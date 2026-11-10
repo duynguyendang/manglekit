@@ -18,13 +18,13 @@ var (
 
 var newCmd = &cobra.Command{
 	Use:   "new <name>",
-	Short: "Scaffold a new policy-gated skill (main.go + policy.dl + contract test)",
+	Short: "Scaffold a new policy-gated skill (main.go + policy.mg + contract test)",
 	Long: `Scaffold a new Manglekit skill using only the blessed APIs
 (sdk.NewClient + sdk.WithPolicyPath + sdk.Define).
 
 Emits into <dir>/<name>/:
   - main.go       typed skill wired through the zero-trust supervisor
-  - policy.dl     starter Datalog policy with a sample halt rule
+  - policy.mg     starter Datalog policy with a sample halt rule
   - main_test.go  contract test (allowed path + fail-closed block)`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -61,7 +61,7 @@ func runNew(name string) error {
 	files := map[string]string{
 		"main.go":      "templates/main.go.tmpl",
 		"main_test.go": "templates/main_test.go.tmpl",
-		"policy.dl":    "templates/policy.dl.tmpl",
+		"policy.mg":    "templates/policy.mg.tmpl",
 	}
 	for outName, tmplName := range files {
 		if err := renderFile(dir, outName, tmplName, data); err != nil {

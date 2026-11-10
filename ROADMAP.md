@@ -9,7 +9,7 @@ the codebase.
 Manglekit is a lean **supervisor → engine** governance kernel. The following
 capabilities are real and exercised by the live path (`NewClient` → `client.Supervise`):
 
-- **Tiered GenePool (Symbolic reasoning)**: Datalog `.dl` policy files loaded in tiers
+- **Tiered GenePool (Symbolic reasoning)**: Datalog `.mg` policy files loaded in tiers
   (Tier 0 axioms, Tier 1 standard library, Tier 2 user policy) by the engine
   (`internal/engine/solver.go`). This *is* the "GenePool" — a set of Datalog policies,
   not a separate Go engine.
@@ -55,7 +55,7 @@ functionality already present in the live path:
 - The dead `GenePoolPort`/`ReasoningPort` consumers pointed at mock implementations
   rather than the real engine adapters built in
   `internal/supervisor/sdk_adapter.go`.
-- The `internal/kernel` "EAST loop" and embedded `.dl` genes were an
+- The `internal/kernel` "EAST loop" and embedded `.mg` genes were an
   unwired re-implementation of the OODA runtime (then `sdk/ooda`, now
   `x/ooda`) and the engine's tiered loading.
 

@@ -103,7 +103,7 @@ func TestWithPolicyPath_LoadsPolicy(t *testing.T) {
 	// Create a temporary policy file with a deny rule
 	// We use "Req" as the entity ID because that's core.EntityInput
 	content := `halt("Req").`
-	tmpfile, err := os.CreateTemp("", "policy.dl")
+	tmpfile, err := os.CreateTemp("", "policy.mg")
 	assert.NoError(t, err)
 	defer os.Remove(tmpfile.Name())
 

@@ -44,7 +44,7 @@ func TestRunNew_ScaffoldsValidGo(t *testing.T) {
 	}
 
 	outDir := filepath.Join(dir, "pii_scan")
-	for _, f := range []string{"main.go", "main_test.go", "policy.dl"} {
+	for _, f := range []string{"main.go", "main_test.go", "policy.mg"} {
 		if _, err := os.Stat(filepath.Join(outDir, f)); err != nil {
 			t.Fatalf("expected %s to exist: %v", f, err)
 		}
@@ -57,12 +57,12 @@ func TestRunNew_ScaffoldsValidGo(t *testing.T) {
 		}
 	}
 
-	policy, err := os.ReadFile(filepath.Join(outDir, "policy.dl"))
+	policy, err := os.ReadFile(filepath.Join(outDir, "policy.mg"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(policy), `action_operation("Req", "pii_scan")`) {
-		t.Error("policy.dl does not reference the scaffolded action name")
+		t.Error("policy.mg does not reference the scaffolded action name")
 	}
 
 	mainSrc, err := os.ReadFile(filepath.Join(outDir, "main.go"))

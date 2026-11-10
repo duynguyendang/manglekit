@@ -10,7 +10,7 @@ import (
 	"github.com/duynguyendang/manglekit/internal/engine"
 )
 
-//go:embed assets/agent_registry.dlog
+//go:embed assets/agent_registry.mg
 var defaultAgentRegistry string
 
 // AgentRole represents the role of an agent
@@ -99,7 +99,7 @@ func (s *AgentSystem) QueryWithAudit(ctx context.Context, facts []string, query 
 }
 
 // LoadAgentDefinitions loads agent definitions from Datalog.
-// The default registry is embedded in the binary from assets/agent_registry.dlog
+// The default registry is embedded in the binary from assets/agent_registry.mgog
 // and is loaded as a PERSISTENT unit, so a policy reload does not silently
 // strip the agent registry. Callers may also load custom rules by calling
 // Engine().Runtime().AddPolicy() directly after this call (those belong to

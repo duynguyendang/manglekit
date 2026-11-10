@@ -15,7 +15,7 @@ Evaluate a Datalog query against a policy blueprint, input data (JSON), and opti
 
 **Usage:**
 ```bash
-mkit eval -p <policy.dl> -q <query> [flags]
+mkit eval -p <policy.mg> -q <query> [flags]
 ```
 
 **Flags:**
@@ -26,7 +26,7 @@ mkit eval -p <policy.dl> -q <query> [flags]
 
 **Example:**
 ```bash
-mkit eval -p policy.dl -d input.json -q "deny(S, R)?"
+mkit eval -p policy.mg -d input.json -q "deny(S, R)?"
 ```
 
 ---
@@ -111,7 +111,7 @@ mkit serve [flags]
 
 **Example:**
 ```bash
-mkit serve --port 9090 --policy firewall.dl
+mkit serve --port 9090 --policy firewall.mg
 ```
 
 ## Environment Variables

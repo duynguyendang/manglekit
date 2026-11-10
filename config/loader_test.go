@@ -10,7 +10,7 @@ import (
 )
 
 func TestLoad_WithValidYAML(t *testing.T) {
-	policyFile, err := os.CreateTemp("", "policy-*.dl")
+	policyFile, err := os.CreateTemp("", "policy-*.mg")
 	if err != nil {
 		t.Fatalf("Failed to create temp policy file: %v", err)
 	}
@@ -106,7 +106,7 @@ actions:
 }
 
 func TestLoad_WithEnvironmentVariables(t *testing.T) {
-	policyFile, err := os.CreateTemp("", "policy-*.dl")
+	policyFile, err := os.CreateTemp("", "policy-*.mg")
 	if err != nil {
 		t.Fatalf("Failed to create temp policy file: %v", err)
 	}
@@ -161,7 +161,7 @@ observability:
 }
 
 func TestLoad_WithDefaults(t *testing.T) {
-	policyFile, err := os.CreateTemp("", "policy-*.dl")
+	policyFile, err := os.CreateTemp("", "policy-*.mg")
 	if err != nil {
 		t.Fatalf("Failed to create temp policy file: %v", err)
 	}
@@ -223,7 +223,7 @@ invalid:
 }
 
 func TestLoadFromReader(t *testing.T) {
-	policyFile, err := os.CreateTemp("", "policy-*.dl")
+	policyFile, err := os.CreateTemp("", "policy-*.mg")
 	if err != nil {
 		t.Fatalf("Failed to create temp policy file: %v", err)
 	}
@@ -269,8 +269,8 @@ observability:
 
 func TestExpandEnvWithDefaults_DefaultSyntax(t *testing.T) {
 	os.Unsetenv("POLICY_PATH")
-	result, warnings := expandEnvWithDefaults("path: ${POLICY_PATH:-./policies/main.dl}")
-	expected := "path: ./policies/main.dl"
+	result, warnings := expandEnvWithDefaults("path: ${POLICY_PATH:-./policies/main.mg}")
+	expected := "path: ./policies/main.mg"
 	if result != expected {
 		t.Errorf("Expected %q, got %q", expected, result)
 	}
@@ -278,10 +278,10 @@ func TestExpandEnvWithDefaults_DefaultSyntax(t *testing.T) {
 		t.Errorf("Expected no warnings when a default is provided, got %v", warnings)
 	}
 
-	os.Setenv("POLICY_PATH", "/custom/path.dl")
+	os.Setenv("POLICY_PATH", "/custom/path.mg")
 	defer os.Unsetenv("POLICY_PATH")
-	result, warnings = expandEnvWithDefaults("path: ${POLICY_PATH:-./policies/main.dl}")
-	expected = "path: /custom/path.dl"
+	result, warnings = expandEnvWithDefaults("path: ${POLICY_PATH:-./policies/main.mg}")
+	expected = "path: /custom/path.mg"
 	if result != expected {
 		t.Errorf("Expected %q, got %q", expected, result)
 	}
@@ -387,15 +387,15 @@ func TestValidate_EmptyOptionalFields(t *testing.T) {
 }
 
 func TestValidate_MissingPolicyPath(t *testing.T) {
-	cfg := &Config{Policy: PolicyConfig{Path: "/nonexistent/policy.dl"}}
+	cfg := &Config{Policy: PolicyConfig{Path: "/nonexistent/policy.mg"}}
 	err := cfg.Validate()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "policy.path")
-	assert.Contains(t, err.Error(), "/nonexistent/policy.dl")
+	assert.Contains(t, err.Error(), "/nonexistent/policy.mg")
 }
 
 func TestValidate_ExistingPolicyPath(t *testing.T) {
-	policyFile, err := os.CreateTemp("", "policy-*.dl")
+	policyFile, err := os.CreateTemp("", "policy-*.mg")
 	if err != nil {
 		t.Fatal(err)
 	}

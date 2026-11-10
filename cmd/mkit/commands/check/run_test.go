@@ -13,7 +13,7 @@ import (
 
 func TestCheckValidPolicy(t *testing.T) {
 	dir := t.TempDir()
-	policy := filepath.Join(dir, "policy.dl")
+	policy := filepath.Join(dir, "policy.mg")
 	if err := os.WriteFile(policy, []byte(`Decl blocked(R).
 deny(R, "blocked by policy") :- blocked(R).
 `), 0o600); err != nil {
@@ -31,7 +31,7 @@ deny(R, "blocked by policy") :- blocked(R).
 
 func TestCheckInvalidPolicy(t *testing.T) {
 	dir := t.TempDir()
-	policy := filepath.Join(dir, "policy.dl")
+	policy := filepath.Join(dir, "policy.mg")
 	// 'denyy' is a typo: undeclared predicate usage should fail compilation.
 	if err := os.WriteFile(policy, []byte(`deny(R, "typo") :- denyy(R).
 `), 0o600); err != nil {
@@ -46,7 +46,7 @@ func TestCheckInvalidPolicy(t *testing.T) {
 }
 
 func TestCheckMissingFile(t *testing.T) {
-	CheckCmd.SetArgs([]string{filepath.Join(t.TempDir(), "nope.dl")})
+	CheckCmd.SetArgs([]string{filepath.Join(t.TempDir(), "nope.mg")})
 	assert.Error(t, CheckCmd.Execute())
 }
 
@@ -57,7 +57,7 @@ func TestCheckRequiresExactlyOneArg(t *testing.T) {
 
 func TestLint_UngroundedNegatedVariable(t *testing.T) {
 	dir := t.TempDir()
-	policy := filepath.Join(dir, "bad_negation.dl")
+	policy := filepath.Join(dir, "bad_negation.mg")
 	// X in !auth(Req, X) is not bound positively in the body!
 	policySrc := `
 Decl auth(R, User).

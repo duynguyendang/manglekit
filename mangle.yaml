@@ -9,9 +9,9 @@
 # Policy configuration
 # Defines where the Datalog policy file is located and evaluation settings
 policy:
-  # Path to the Datalog policy file (.dl)
+  # Path to the Datalog policy file (.mg)
   # This file contains the authorization rules and logic
-  path: "${POLICY_PATH:-./policies/main.dl}"
+  path: "${POLICY_PATH:-./policies/main.mg}"
   
   # Timeout for policy evaluation in seconds
   evaluation_timeout: 30

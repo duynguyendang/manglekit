@@ -26,7 +26,7 @@ func TestDualModeInput(t *testing.T) {
 		age("init", 0).
 		deny("Req") :- age("Req", 18).
 		`
-		f, err := os.CreateTemp("", "policy_typed_*.dl")
+		f, err := os.CreateTemp("", "policy_typed_*.mg")
 		require.NoError(t, err)
 		defer os.Remove(f.Name())
 		_, err = f.WriteString(policy)

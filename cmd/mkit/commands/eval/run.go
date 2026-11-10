@@ -77,7 +77,7 @@ Exit codes: 0 success, 1 policy-deny, 2 usage error, 3 runtime error.`,
 		}
 
 		// 2. Initialize Engine
-		// New() now auto-loads std.dl, so no manual declaration fixes needed!
+		// New() now auto-loads std.mg, so no manual declaration fixes needed!
 		e, err := engine.New()
 		if err != nil {
 			return fmt.Errorf("failed to initialize engine: %w", err)
@@ -271,7 +271,7 @@ func pad(s string, width int) string {
 }
 
 func init() {
-	EvalCmd.Flags().StringVarP(&policyPath, "policy", "p", "", "Path to the .dl file")
+	EvalCmd.Flags().StringVarP(&policyPath, "policy", "p", "", "Path to the .mg file")
 	EvalCmd.MarkFlagRequired("policy")
 
 	EvalCmd.Flags().StringVarP(&dataPath, "data", "d", "", "Path to the .json input file. Optional if --knowledge is provided.")

@@ -41,7 +41,7 @@ func WithEngine(e core.Evaluator) ClientOption {
 // and enables proper cancellation propagation.
 //
 // Parameters:
-//   - path: A file path to the .dl policy file.
+//   - path: A file path to the .mg policy file.
 func WithPolicyPath(path string) ClientOption {
 	return func(c *Client) error {
 		c.blueprintPath = path

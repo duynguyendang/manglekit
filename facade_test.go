@@ -14,12 +14,12 @@ import (
 func TestQuickClient(t *testing.T) {
 	ctx := context.Background()
 
-	c, err := manglekit.QuickClient(ctx, "sdk/testdata/policy.dl")
+	c, err := manglekit.QuickClient(ctx, "sdk/testdata/policy.mg")
 	require.NoError(t, err)
 	defer c.Shutdown(ctx)
 	assert.NotNil(t, c.Engine())
 
-	_, err = manglekit.QuickClient(ctx, "no/such/file.dl")
+	_, err = manglekit.QuickClient(ctx, "no/such/file.mg")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read policy")
 }

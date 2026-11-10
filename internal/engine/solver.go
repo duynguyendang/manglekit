@@ -129,7 +129,7 @@ func New() (*PolicyEngine, error) {
 
 	// Auto-load Standard Library
 	if err := pe.runtime.AddPolicy(context.Background(), resources.StdLib()); err != nil {
-		return nil, fmt.Errorf("manglekit: failed to load std.dl: %w", err)
+		return nil, fmt.Errorf("manglekit: failed to load std.mg: %w", err)
 	}
 
 	return pe, nil
@@ -221,13 +221,13 @@ func NewWithObservability(tracer core.Tracer, logger core.Logger) (*PolicyEngine
 		}
 	}
 
-	// Load Manglekit Standard Library (std.dl)
+	// Load Manglekit Standard Library (std.mg)
 	if err := pe.runtime.AddPolicy(context.Background(), resources.StdLib()); err != nil {
 		if logger != nil {
 			logger.Error("failed to load standard library", "error", err)
 		}
 		// Failure to load stdlib is critical for dynamic features
-		return nil, fmt.Errorf("manglekit: failed to load std.dl: %w", err)
+		return nil, fmt.Errorf("manglekit: failed to load std.mg: %w", err)
 	}
 
 	return pe, nil
@@ -1369,10 +1369,10 @@ var TierMapping = map[string]core.Tier{
 
 // TierSourceFiles maps tiers to their source files.
 var TierSourceFiles = map[core.Tier]string{
-	core.TierT0_Axiom:      "axioms.dl",
-	core.TierT1_Governance: "governance.dl",
-	core.TierT2_Playbook:   "registry.dl",
-	core.TierT3_User:       "user-input.dl",
+	core.TierT0_Axiom:      "axioms.mg",
+	core.TierT1_Governance: "governance.mg",
+	core.TierT2_Playbook:   "registry.mg",
+	core.TierT3_User:       "user-input.mg",
 	core.TierUnknown:       "unknown",
 }
 

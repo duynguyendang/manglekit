@@ -45,7 +45,7 @@ Exit codes follow the mkit contract:
 }
 
 func init() {
-	TestCmd.Flags().StringVarP(&policyFlag, "policy", "p", "", "Path to the .dl policy file (overrides policy path in fixture)")
+	TestCmd.Flags().StringVarP(&policyFlag, "policy", "p", "", "Path to the .mg policy file (overrides policy path in fixture)")
 	TestCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed explanation tree for every test")
 	TestCmd.Flags().StringVarP(&outputFmt, "output", "o", "text", "Output format: text or json")
 }

@@ -174,7 +174,7 @@ var RunCmd = &cobra.Command{
 }
 
 func init() {
-	RunCmd.Flags().StringVarP(&policyPath, "policy", "p", "", "Path to .dl file")
+	RunCmd.Flags().StringVarP(&policyPath, "policy", "p", "", "Path to .mg file")
 	RunCmd.Flags().StringVarP(&dataPath, "data", "d", "", "Path to input file (.json or .nq/nt)")
 	RunCmd.Flags().StringVarP(&targets, "target", "t", "", "Comma-separated list of predicates to infer")
 	RunCmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output file path")

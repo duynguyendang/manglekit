@@ -23,7 +23,7 @@ halt("Req", "denied by v2", "T3").
 
 func writePolicy(t *testing.T, content string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "policy.dl")
+	path := filepath.Join(t.TempDir(), "policy.mg")
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
 	return path
 }

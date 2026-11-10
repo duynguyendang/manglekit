@@ -28,7 +28,7 @@ halt("Req", "high_value_refund_requires_manager", "T1") :-
 `
 
 const sampleYAMLSuite = `
-policy: "policy.dl"
+policy: "policy.mg"
 tests:
   - name: "disallow refund over 1000 without manager approval"
     action: "refund"
@@ -53,7 +53,7 @@ tests:
 `
 
 const failingYAMLSuite = `
-policy: "policy.dl"
+policy: "policy.mg"
 tests:
   - name: "this test is expected to fail"
     action: "refund"
@@ -65,7 +65,7 @@ tests:
 func setupFixture(t *testing.T, policy, suite string) string {
 	t.Helper()
 	dir := t.TempDir()
-	policyPath := filepath.Join(dir, "policy.dl")
+	policyPath := filepath.Join(dir, "policy.mg")
 	suitePath := filepath.Join(dir, "tests.yaml")
 
 	require.NoError(t, os.WriteFile(policyPath, []byte(policy), 0o600))

@@ -5,5 +5,5 @@ import (
 	_ "embed"
 )
 
-//go:embed templates/main.go.tmpl templates/main_test.go.tmpl templates/policy.dl.tmpl
+//go:embed templates/main.go.tmpl templates/main_test.go.tmpl templates/policy.mg.tmpl
 var templateFS embed.FS

@@ -92,10 +92,10 @@ type MangleRuntime struct {
 	predToStratum map[ast.PredicateSym]int
 	baseFactStore factstore.SimpleInMemoryStore
 	ruleUnits     []parse.SourceUnit
-	// persistentUnits are engine-builtin rule units (e.g. planner.dl, the
+	// persistentUnits are engine-builtin rule units (e.g. planner.mg, the
 	// multiagent registry) that SURVIVE ReloadFromSource: a reload swaps
 	// the user policy program, never the builtins. persistentSources keeps
-	// their text so the std.dl Decl-merge can filter against them too.
+	// their text so the std.mg Decl-merge can filter against them too.
 	persistentUnits   []parse.SourceUnit
 	persistentSources []string
 	ready             bool // Flag to indicate if the runtime is initialized
@@ -106,7 +106,7 @@ type MangleRuntime struct {
 	// mutates it in place); the mirror lets ReloadFromSource drop stale
 	// derivations WITHOUT discarding explicitly loaded facts whose
 	// predicate happens to be IDB in the old program (e.g. triple/3,
-	// which std.dl derives from quad/4).
+	// which std.mg derives from quad/4).
 	explicitFactStore factstore.SimpleInMemoryStore
 
 	// Temporal store for time-based facts (optional)
@@ -452,7 +452,7 @@ func (r *MangleRuntime) Load(ctx context.Context, path string) error {
 	}
 
 	if len(ruleFiles) == 0 && len(factFiles) == 0 {
-		return fmt.Errorf("no .dlog or fact files found in %s", path)
+		return fmt.Errorf("no .mg, .dl, .dlog or fact files found in %s", path)
 	}
 
 	// 2. Parse and Build State (Local Variables)
@@ -528,17 +528,17 @@ func (r *MangleRuntime) Load(ctx context.Context, path string) error {
 
 // LoadFromSource parses and loads a full Datalog program from a string.
 // REPLACES the user policy program (persistent builtin units such as
-// planner.dl survive; std.dl is re-merged into the loaded source).
+// planner.mg survive; std.mg is re-merged into the loaded source).
 //
 // Unlike AddPolicy, this path scans the external-predicate registry
 // and auto-emits the matching `Decl ... external()` declarations. It
-// also implicitly merges the Manglekit standard library (std.dl) so
+// also implicitly merges the Manglekit standard library (std.mg) so
 // callers do not have to re-declare meta/2, triple/3, halt/2, etc.
 //
-// The std.dl merge is idempotent: if the caller's source already
+// The std.mg merge is idempotent: if the caller's source already
 // declares a predicate with the same symbol and arity as one in
-// std.dl (e.g. the caller explicitly wants to mark a predicate as
-// `Decl ... external()`), the std.dl declaration for that
+// std.mg (e.g. the caller explicitly wants to mark a predicate as
+// `Decl ... external()`), the std.mg declaration for that
 // predicate is skipped. This avoids the "cannot redeclare" error
 // that would otherwise reject otherwise-valid policies.
 func (r *MangleRuntime) LoadFromSource(ctx context.Context, source string) error {
@@ -553,16 +553,16 @@ func (r *MangleRuntime) LoadFromSource(ctx context.Context, source string) error
 // invalidates the IDB cache. Base facts loaded beforehand are preserved.
 //
 // The swap replaces the USER program (the previously loaded policy and any
-// rules added via AddPolicy); persistent builtin units (planner.dl, the
+// rules added via AddPolicy); persistent builtin units (planner.mg, the
 // multiagent registry — see AddPersistentPolicy) survive the reload, and
-// std.dl is re-merged into the new main unit.
+// std.mg is re-merged into the new main unit.
 func (r *MangleRuntime) ReloadFromSource(ctx context.Context, source string) error {
 	if source == "" {
 		return fmt.Errorf("source cannot be empty")
 	}
 
 	// Snapshot persistent builtin units (and their source text) so the
-	// reloaded program keeps them and the std.dl Decl filter accounts for
+	// reloaded program keeps them and the std.mg Decl filter accounts for
 	// their declarations.
 	r.mu.Lock()
 	persistentUnits := append([]parse.SourceUnit(nil), r.persistentUnits...)
@@ -571,13 +571,13 @@ func (r *MangleRuntime) ReloadFromSource(ctx context.Context, source string) err
 
 	// Discover which predicate symbols/arity pairs the caller's
 	// source (and the persistent builtins) already declare, so we
-	// can filter the std.dl merge to only the predicates not already
+	// can filter the std.mg merge to only the predicates not already
 	// declared.
 	callerDecls := collectCallerDecls(source + "\n" + strings.Join(persistentSources, "\n"))
 
 	// Also collect external predicate names from the registry so
-	// std.dl Decl and defining rules for those names can be filtered
-	// out. An external predicate cannot coexist with a std.dl IDB of
+	// std.mg Decl and defining rules for those names can be filtered
+	// out. An external predicate cannot coexist with a std.mg IDB of
 	// the same name.
 	extPredRegistry := r.externalPreds.List()
 	extPredNames := make(map[string]bool, len(extPredRegistry))
@@ -637,7 +637,7 @@ func (r *MangleRuntime) ReloadFromSource(ctx context.Context, source string) err
 	// the caller explicitly loaded them: derived facts are artifacts
 	// of the replaced rules and must not leak into the new policy as
 	// base facts, but a fact loaded via LoadFacts must survive even
-	// when its predicate is IDB in the old program (std.dl, which
+	// when its predicate is IDB in the old program (std.mg, which
 	// every program embeds, derives triple/3 from quad/4, so plain
 	// knowledge-graph triple facts are "IDB" by that definition).
 	r.mu.RLock()
@@ -767,7 +767,7 @@ func (r *MangleRuntime) AddPolicy(ctx context.Context, source string) error {
 
 // AddPersistentPolicy adds rules that SURVIVE ReloadFromSource (the reload
 // swaps the user policy program only). Intended for engine-internal builtin
-// rule sets (planner.dl, the multiagent registry).
+// rule sets (planner.mg, the multiagent registry).
 func (r *MangleRuntime) AddPersistentPolicy(ctx context.Context, source string) error {
 	return r.addPolicy(ctx, source, true)
 }
@@ -1251,7 +1251,7 @@ func goValueToAstConstant(v any) ast.BaseTerm {
 // --- Helper Functions ---
 
 func isRuleFile(p string) bool {
-	return strings.HasSuffix(p, ".dlog") || strings.HasSuffix(p, ".dl")
+	return strings.HasSuffix(p, ".mg") || strings.HasSuffix(p, ".dlog") || strings.HasSuffix(p, ".dl")
 }
 
 func isFactFile(p string) bool {
@@ -1510,7 +1510,7 @@ func declSym(line string) (ast.PredicateSym, bool) {
 
 // collectCallerDecls scans the caller's source for `Decl pred(...)` lines
 // and returns the set of (symbol, arity) pairs the caller has already
-// declared. We use this to filter the std.dl merge in LoadFromSource so
+// declared. We use this to filter the std.mg merge in LoadFromSource so
 // callers that already declare a std predicate (e.g. to mark it as
 // external()) don't get a "cannot redeclare" error.
 //
@@ -1528,14 +1528,14 @@ func collectCallerDecls(source string) map[ast.PredicateSym]bool {
 }
 
 // prependStdLibIfMissing returns `stdLib + "\n" + source` with each
-// std.dl Decl removed if the caller has already declared a predicate
+// std.mg Decl removed if the caller has already declared a predicate
 // with the same symbol and arity, or if the predicate name appears in
 // the external predicate registry. Whole clauses (rules AND facts,
 // including multi-line ones) whose head is an external predicate are
 // also removed: an external predicate cannot have an IDB definition,
 // and base facts for it would shadow the Go callback. This makes the
-// std.dl merge idempotent and prevents collisions between external
-// predicates and std.dl's built-in vocabulary.
+// std.mg merge idempotent and prevents collisions between external
+// predicates and std.mg's built-in vocabulary.
 func prependStdLibIfMissing(stdLib, source string, callerDecls map[ast.PredicateSym]bool, extPredNames map[string]bool) string {
 	if len(callerDecls) == 0 && len(extPredNames) == 0 {
 		return stdLib + "\n" + source

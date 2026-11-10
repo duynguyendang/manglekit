@@ -44,7 +44,7 @@ This project adheres to the [Contributor Covenant Code of Conduct](https://www.c
 4. **Build and Run**:
     ```
     make build  # Or: go build ./...
-    make run    # Or: go run ./cmd/mkit run --policy path/to/policy.dl --data path/to/data.json --targets result
+    make run    # Or: go run ./cmd/mkit run --policy path/to/policy.mg --data path/to/data.json --targets result
     ```
 
 ## Building and Testing

@@ -59,19 +59,19 @@ func TestWithPolicyPath(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("loads policy", func(t *testing.T) {
-		c, err := NewClient(ctx, WithPolicyPath("testdata/policy.dl"))
+		c, err := NewClient(ctx, WithPolicyPath("testdata/policy.mg"))
 		require.NoError(t, err)
 		defer c.Shutdown(ctx)
 	})
 
 	t.Run("missing file is a typed error", func(t *testing.T) {
-		_, err := NewClient(ctx, WithPolicyPath("testdata/does-not-exist.dl"))
+		_, err := NewClient(ctx, WithPolicyPath("testdata/does-not-exist.mg"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to read policy")
 	})
 
 	t.Run("policy path loads cleanly", func(t *testing.T) {
-		c, err := NewClient(ctx, WithPolicyPath("testdata/policy.dl"))
+		c, err := NewClient(ctx, WithPolicyPath("testdata/policy.mg"))
 		require.NoError(t, err)
 		defer c.Shutdown(ctx)
 	})
@@ -80,7 +80,7 @@ func TestWithPolicyPath(t *testing.T) {
 // RegisterSupervised must wrap and register in one call (T-006).
 func TestRegisterSupervised(t *testing.T) {
 	ctx := context.Background()
-	c, err := NewClient(ctx, WithPolicyPath("testdata/policy.dl"))
+	c, err := NewClient(ctx, WithPolicyPath("testdata/policy.mg"))
 	require.NoError(t, err)
 	defer c.Shutdown(ctx)
 
