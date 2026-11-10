@@ -111,11 +111,11 @@ type EASTState struct {
 // ExecutionObject is the unified output of the ORIENT phase.
 // It synthesizes all knowledge the OODA epoch needs into a single inspectable struct.
 type ExecutionObject struct {
-	AttentionSink []Atom       // FP32 — immutable Tier 0 axioms, never pruned
-	Context       []Atom       // INT8 — observed facts from MEB, prunable
-	EAST          EASTState    // Steering state computed during Orient
-	GraphID       string       // MEB graph scope for this epoch
-	KBVersion     string       // Cache invalidation token
+	AttentionSink []Atom    // FP32 — immutable Tier 0 axioms, never pruned
+	Context       []Atom    // INT8 — observed facts from MEB, prunable
+	EAST          EASTState // Steering state computed during Orient
+	GraphID       string    // MEB graph scope for this epoch
+	KBVersion     string    // Cache invalidation token
 }
 
 // NewExecutionObject builds an ExecutionObject from a CognitiveFrame after Orient completes.

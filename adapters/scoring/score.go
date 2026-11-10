@@ -139,8 +139,14 @@ func (s *ScoreServer) Score(ctx context.Context, prompt string, labels, options 
 		return nil, fmt.Errorf("scoring: /v1/score returned %d probabilities for %d labels", len(sr.Scores[0]), len(ids))
 	}
 	// apply_softmax already normalizes over the labels; Build renormalizes as
-	// a no-op and derives margin/entropy from the same numbers.
-	return Build(labels, options, sr.Scores[0])
+	// a no-op and derives margin/entropy from the same numbers. The server was
+	// told exactly which label ids to score, so nothing can be truncated here.
+	d, err := Build(labels, options, sr.Scores[0])
+	if err != nil {
+		return nil, err
+	}
+	d.Source = "score_server"
+	return d, nil
 }
 
 // resolveLabelIDs maps labels to single token ids, in label order. Explicit

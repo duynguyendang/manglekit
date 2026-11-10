@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -170,6 +171,20 @@ func (s *ChatScorer) Score(ctx context.Context, prompt string, labels, options [
 // decisionFromAnswerToken reads the option labels out of the answer position's
 // logprob set. Token surfaces are trimmed so " A" and "A" resolve alike;
 // non-option candidates in the list are DISCARDED, never folded into the total.
+//
+// Truncation is handled with bounds, not with a guess. Every token outside the
+// returned top-K has probability <= p_K (the list is sorted descending), so for
+// a missing label set M:
+//
+//	D = Σ_observed p + Σ_M p  <=  Σ_observed p + |M| · p_K
+//	=> normalized(p_top) >= p_top / (Σ_observed p + |M| · p_K)   [sound LCB]
+//
+// Two consequences worth stating: the observed argmax is also the TRUE argmax
+// (any missing label has p <= p_K <= p_top), so truncation never changes the
+// winner — only how much we may trust the margin. And Distribution is set to
+// the LOWER bounds, so a caller that ignores Truncated under-estimates
+// confidence instead of over-estimating it. Upper carries the survivor-
+// normalized view for reporting only.
 func decisionFromAnswerToken(content chatContentLogProb, labels, options []string) (*Decision, error) {
 	seen := map[string]float64{}
 	observe := func(token string, logProb float64) {
@@ -182,25 +197,111 @@ func decisionFromAnswerToken(content chatContentLogProb, labels, options []strin
 		}
 	}
 	observe(content.Token, content.LogProb)
+	pK := math.Inf(1) // smallest logprob in the returned list, as a probability
 	for _, t := range content.TopLogProbs {
 		observe(t.Token, t.LogProb)
+		p := math.Exp(t.LogProb)
+		if p < pK {
+			pK = p
+		}
 	}
 
-	logs := make([]float64, len(labels))
+	observed := make([]float64, len(labels))
 	var missing []string
+	sumObserved := 0.0
 	for i, lb := range labels {
 		lp, ok := seen[strings.TrimSpace(lb)]
 		if !ok {
 			missing = append(missing, lb)
 			continue
 		}
-		logs[i] = lp
+		observed[i] = math.Exp(lp)
+		sumObserved += observed[i]
 	}
-	if len(missing) > 0 {
-		return nil, fmt.Errorf("%w: %s (not among the %d candidates returned; raise TopLogProbs or use a /v1/score endpoint)",
-			ErrLabelsUnobserved, strings.Join(missing, ", "), len(content.TopLogProbs))
+	if sumObserved <= 0 {
+		return nil, fmt.Errorf("%w: %s (none of the options appeared among the %d candidates returned)",
+			ErrLabelsUnobserved, strings.Join(labels, ", "), len(content.TopLogProbs))
 	}
-	// exp(logprob) then renormalize over exactly these labels — the restricted
-	// softmax, done here because the API only hands back log-probabilities.
-	return Build(labels, options, Softmax(logs))
+	if len(missing) == 0 {
+		d, err := Build(labels, options, observed)
+		if err != nil {
+			return nil, err
+		}
+		d.Source = sourceChatLogProbs
+		return d, nil
+	}
+
+	// Truncated: bound the unknown mass and report both views.
+	if math.IsInf(pK, 1) {
+		pK = 0
+	}
+	denomUpperBound := sumObserved + float64(len(missing))*pK
+
+	lower := make(map[string]float64, len(options))
+	upper := make(map[string]float64, len(options))
+	best, bestP := 0, -1.0
+	for i, o := range options {
+		u := observed[i] / sumObserved
+		l := 0.0
+		if observed[i] > 0 && denomUpperBound > 0 {
+			l = observed[i] / denomUpperBound
+		}
+		upper[o] = u
+		lower[o] = l
+		if observed[i] > bestP {
+			bestP, best = observed[i], i
+		}
+	}
+
+	d, err := Build(labels, options, observed)
+	if err != nil {
+		return nil, err
+	}
+	// Overwrite with the conservative view: Distribution = lower bounds.
+	d.Distribution = lower
+	d.Lower = lower
+	d.Upper = upper
+	d.Choice = options[best]
+	d.Margin = lower[options[best]] - secondLargest(lower)
+	d.Entropy = entropyOf(lower)
+	d.Truncated = true
+	d.Missing = missing
+	d.Source = sourceChatLogProbsTruncated
+	return d, nil
+}
+
+// sourceChatLogProbs and its truncated variant are the score_source values a
+// policy can gate on.
+const (
+	sourceChatLogProbs          = "chat_logprobs"
+	sourceChatLogProbsTruncated = "chat_logprobs_truncated"
+)
+
+func secondLargest(m map[string]float64) float64 {
+	top, second := -1.0, 0.0
+	for _, v := range m {
+		switch {
+		case v > top:
+			top, second = v, top
+			if second < 0 {
+				second = 0
+			}
+		case v > second:
+			second = v
+		}
+	}
+	if second < 0 {
+		return 0
+	}
+	return second
+}
+
+func entropyOf(m map[string]float64) float64 {
+	var h float64
+	for _, v := range m {
+		if v > 0 {
+			h -= v * math.Log(v)
+		}
+	}
+	return h
 }

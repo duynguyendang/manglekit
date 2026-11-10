@@ -20,7 +20,7 @@ type PromptConfig struct {
 	TaskType           domain.TaskType
 	Context            []domain.Atom // Soft Logic (INT8)
 	Axioms             []domain.Atom // Hard Logic (FP32) - Attention Sink
-	Facts              []byte // N-Quads
+	Facts              []byte        // N-Quads
 	SteeringMagnitude  float64
 	InjectParadox      bool
 	RefinementFeedback *RefinementContext
@@ -33,11 +33,11 @@ type PromptConfig struct {
 type PromptOption func(*PromptConfig)
 
 // Functional Options Setters
-func WithIntent(i domain.IntentStr) PromptOption   { return func(c *PromptConfig) { c.Intent = i } }
-func WithTaskType(t domain.TaskType) PromptOption  { return func(c *PromptConfig) { c.TaskType = t } }
-func WithContext(a []domain.Atom) PromptOption     { return func(c *PromptConfig) { c.Context = a } }
-func WithAxioms(a []domain.Atom) PromptOption      { return func(c *PromptConfig) { c.Axioms = a } }
-func WithFacts(f []byte) PromptOption              { return func(c *PromptConfig) { c.Facts = f } }
+func WithIntent(i domain.IntentStr) PromptOption  { return func(c *PromptConfig) { c.Intent = i } }
+func WithTaskType(t domain.TaskType) PromptOption { return func(c *PromptConfig) { c.TaskType = t } }
+func WithContext(a []domain.Atom) PromptOption    { return func(c *PromptConfig) { c.Context = a } }
+func WithAxioms(a []domain.Atom) PromptOption     { return func(c *PromptConfig) { c.Axioms = a } }
+func WithFacts(f []byte) PromptOption             { return func(c *PromptConfig) { c.Facts = f } }
 func WithSteering(m float64, p bool) PromptOption {
 	return func(c *PromptConfig) { c.SteeringMagnitude = m; c.InjectParadox = p }
 }
@@ -120,4 +120,3 @@ func (c *Compiler) Compile(ctx context.Context, intent domain.IntentStr, options
 
 	return sb.String(), nil
 }
-

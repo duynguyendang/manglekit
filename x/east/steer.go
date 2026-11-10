@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/duynguyendang/manglekit/x/ooda"
 	"github.com/duynguyendang/manglekit/sdk/ports"
+	"github.com/duynguyendang/manglekit/x/ooda"
 )
 
 // SteeringPolicy defines template keys used for prompt assembly when the

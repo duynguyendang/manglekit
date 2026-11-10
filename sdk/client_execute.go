@@ -27,8 +27,8 @@ func (c *Client) Execute(ctx context.Context, input core.Envelope, opts ...Execu
 		if actionName == "" {
 			return core.Envelope{}, fmt.Errorf("routing decision returned empty action name")
 		}
-		// Forward payload and metadata
-		return c.ExecuteByName(ctx, actionName, input.Payload, opts...)
+		// Forward the full envelope (payload, facts, metadata, labels)
+		return c.ExecuteByName(ctx, actionName, input, opts...)
 	}
 
 	return core.Envelope{}, fmt.Errorf("no execution route defined for this input (decision=%s, meta=%v)", decision, meta)

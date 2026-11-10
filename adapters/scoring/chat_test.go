@@ -112,12 +112,85 @@ func TestChatScorerRestrictedSoftmax(t *testing.T) {
 	}
 }
 
-// TestChatScorerTruncatedIsNotSilentlyRenormalized: missing label = unknowable.
-func TestChatScorerTruncatedIsNotSilentlyRenormalized(t *testing.T) {
+// TestChatScorerTruncatedYieldsSoundBounds: a missing label is no longer a
+// dead end — it is a BOUND. Truncation cannot change the winner (any missing
+// label has p <= p_K <= p_top), so the choice stands, while Distribution
+// carries sound LOWER bounds and Upper carries the survivor-normalized view
+// for reporting. Renormalizing over survivors and calling it confidence is
+// exactly the failure mode this replaces.
+func TestChatScorerTruncatedYieldsSoundBounds(t *testing.T) {
 	content := logProbContentForTest{Token: "A", LogProb: -0.2, TopLogProbs: []struct {
 		Token   string  `json:"token"`
 		LogProb float64 `json:"logprob"`
-	}{top("A", -0.2), top("B", -1.8), top("maybe", -2.5)}}
+	}{top("A", -0.2), top("B", -1.8), top("maybe", -2.5)}} // p_K = e^-2.5; C absent
+	srv := chatStub(t, content, nil)
+	defer srv.Close()
+
+	s, err := NewChatScorer(ChatConfig{BaseURL: srv.URL, Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := s.Score(context.Background(), "Route this", []string{"A", "B", "C"},
+		[]string{"billing", "tech", "account"})
+	if err != nil {
+		t.Fatalf("truncation must yield bounds, not an error: %v", err)
+	}
+	if !d.Truncated {
+		t.Fatal("Truncated must be set")
+	}
+	if len(d.Missing) != 1 || d.Missing[0] != "C" {
+		t.Fatalf("Missing must name the unobserved label, got %v", d.Missing)
+	}
+	if d.Choice != "billing" {
+		t.Fatalf("truncation cannot change the winner, got %q", d.Choice)
+	}
+	if d.Source != "chat_logprobs_truncated" {
+		t.Errorf("score_source must record the truncation, got %q", d.Source)
+	}
+
+	sumLower, sumUpper := 0.0, 0.0
+	for _, o := range []string{"billing", "tech", "account"} {
+		sumLower += d.Distribution[o]
+		sumUpper += d.Upper[o]
+		if d.Distribution[o] > d.Upper[o]+1e-12 {
+			t.Errorf("lower bound must not exceed the upper view for %s", o)
+		}
+	}
+	if sumLower >= 1 {
+		t.Errorf("lower bounds must not sum to 1 — unknown mass exists, got %.4f", sumLower)
+	}
+	if math.Abs(sumUpper-1) > 1e-9 {
+		t.Errorf("upper view must sum to 1, got %.4f", sumUpper)
+	}
+	if d.Distribution["account"] != 0 {
+		t.Errorf("the unobserved option must get lower bound 0, got %v", d.Distribution["account"])
+	}
+
+	// The policy-visible consequence: gating on the bound is fail-closed, and
+	// the flag set still marks the distribution as truncated.
+	th := Thresholds{Auto: 0.8, Margin: 0.2, Review: 0.7}
+	env := Request("x", d, th)
+	if env.Metadata["truncated_top_k"] != "true" {
+		t.Fatalf("truncation must reach the policy as a fact/flag: %v", env.Metadata)
+	}
+	if !containsFact(env.Facts, `score_lcb_pm("billing"`) {
+		t.Fatalf("lower bounds must be published for the policy to gate on: %v", env.Facts)
+	}
+	if !containsFact(env.Facts, `truncated_top_k("true")`) {
+		t.Fatalf("truncation fact missing: %v", env.Facts)
+	}
+	if th.Flags(d)["below_auto"] != "true" {
+		t.Errorf("a bounded top must not clear a 0.80 bar: %v", th.Flags(d))
+	}
+}
+
+// TestChatScorerNothingObservedStillErrors: with NO option among the returned
+// candidates there is nothing to bound, so it remains a hard error.
+func TestChatScorerNothingObservedStillErrors(t *testing.T) {
+	content := logProbContentForTest{Token: "The", LogProb: -0.1, TopLogProbs: []struct {
+		Token   string  `json:"token"`
+		LogProb float64 `json:"logprob"`
+	}{top("The", -0.1), top("maybe", -2.5)}}
 	srv := chatStub(t, content, nil)
 	defer srv.Close()
 
@@ -130,16 +203,21 @@ func TestChatScorerTruncatedIsNotSilentlyRenormalized(t *testing.T) {
 	if !errors.Is(err, ErrLabelsUnobserved) {
 		t.Fatalf("want ErrLabelsUnobserved, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "C") {
-		t.Errorf("error must name the missing label, got %v", err)
-	}
 
-	// And the governed path: the flag set the policy sees.
-	th := Thresholds{Auto: 0.8, Margin: 0.2, Review: 0.7}
-	env := Request("x", nil, th)
+	// And the governed path for a nil decision: the flag set the policy sees.
+	env := Request("x", nil, Thresholds{Auto: 0.8, Margin: 0.2, Review: 0.7})
 	if env.Metadata["unobserved_distribution"] != "true" {
 		t.Fatalf("escalation flag missing: %v", env.Metadata)
 	}
+}
+
+func containsFact(facts []string, needle string) bool {
+	for _, f := range facts {
+		if strings.Contains(f, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestChatScorerNoLogprobsErrors(t *testing.T) {

@@ -180,6 +180,29 @@ func (p *prover) solvePremises(premises []ast.Term, i int, subst map[ast.Variabl
 	case ast.Atom:
 		ground := applySubstToArgs(premise.Args, subst)
 
+		// The integer comparison builtins (:lt/:le/:gt/:ge) parse as atoms
+		// with a ":"-prefixed symbol, but they are NOT predicates — no fact
+		// of that shape is ever in the store. Evaluating them here keeps the
+		// reconstruction honest: without this, every derivation that uses a
+		// comparison fails to reconstruct and the derived fact is mislabelled
+		// "[base fact]", i.e. the audit trail hides the arithmetic that
+		// actually fired.
+		if pass, shown, isBuiltin := evalComparisonBuiltin(premise.Predicate.Symbol, ground); isBuiltin {
+			if !pass {
+				return nil, false
+			}
+			child := core.DerivationStep{
+				Fact:      shown,
+				Predicate: premise.Predicate.Symbol,
+				Via:       core.ViaBuiltin,
+			}
+			rest, ok := p.solvePremises(premises, i+1, subst, depth)
+			if !ok {
+				return nil, false
+			}
+			return append([]core.DerivationStep{child}, rest...), true
+		}
+
 		// Fully ground premise: containment check, then recurse.
 		if isGround(ground) {
 			pattern := ast.Atom{Predicate: premise.Predicate, Args: ground}
@@ -278,6 +301,54 @@ func (p *prover) solvePremises(premises []ast.Term, i int, subst map[ast.Variabl
 			return nil, false
 		}
 		return append([]core.DerivationStep{child}, rest...), true
+	}
+}
+
+// evalComparisonBuiltin evaluates the integer comparison builtins the engine
+// supports (:lt, :le, :gt, :ge — Mangle's comparisons are integer-only, so
+// callers scale floats). isBuiltin=false means "ordinary predicate, fall
+// through to the store lookup". Unbound arguments or non-integer constants
+// make the branch FAIL rather than guess: a proof that cannot be evaluated
+// must not be presented as one.
+func evalComparisonBuiltin(symbol string, args []ast.BaseTerm) (pass bool, shown string, isBuiltin bool) {
+	var op string
+	switch symbol {
+	case ":lt":
+		op = "<"
+	case ":le":
+		op = "<="
+	case ":gt":
+		op = ">"
+	case ":ge":
+		op = ">="
+	default:
+		return false, "", false
+	}
+	if len(args) != 2 {
+		return false, "", true
+	}
+	nums := make([]int64, 2)
+	for i, a := range args {
+		c, isConst := a.(ast.Constant)
+		if !isConst || c.Type != ast.NumberType {
+			return false, "", true
+		}
+		n, err := c.NumberValue()
+		if err != nil {
+			return false, "", true
+		}
+		nums[i] = n
+	}
+	shown = fmt.Sprintf("%d %s %d", nums[0], op, nums[1])
+	switch op {
+	case "<":
+		return nums[0] < nums[1], shown, true
+	case "<=":
+		return nums[0] <= nums[1], shown, true
+	case ">":
+		return nums[0] > nums[1], shown, true
+	default:
+		return nums[0] >= nums[1], shown, true
 	}
 }
 

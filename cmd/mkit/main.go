@@ -14,6 +14,7 @@ import (
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/run"
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/serve"
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/skill"
+	testcmd "github.com/duynguyendang/manglekit/cmd/mkit/commands/test"
 	"github.com/duynguyendang/manglekit/cmd/mkit/commands/version"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -78,6 +79,7 @@ func main() {
 	run.AddCommands(rootCmd)
 	serve.AddCommands(rootCmd)
 	skill.AddCommands(rootCmd)
+	testcmd.AddCommands(rootCmd)
 	check.AddCommands(rootCmd)
 	version.AddCommands(rootCmd)
 	Execute()

@@ -36,8 +36,8 @@ type CognitiveFrame struct {
 	OutputType OutputType // PLAN (structured JSON) or RULE (Datalog rules)
 
 	// Memory & Logic
-	Context       []Atom       // Soft Logic (INT8) - Observed facts, pruneable
-	AttentionSink []Atom       // Hard Logic (FP32) - Immutable Axioms (Tier 0), never pruned
+	Context       []Atom // Soft Logic (INT8) - Observed facts, pruneable
+	AttentionSink []Atom // Hard Logic (FP32) - Immutable Axioms (Tier 0), never pruned
 
 	// Reasoning
 	Draft  interface{}  // Neural proposal: *Plan or []byte

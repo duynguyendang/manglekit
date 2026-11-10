@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/core/domain"
@@ -84,6 +86,11 @@ var predicateIdentRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 func atomToDatalog(pred, subject, object string) string {
 	if !predicateIdentRE.MatchString(pred) {
 		return ""
+	}
+	if !strings.HasPrefix(object, "+") {
+		if _, err := strconv.ParseInt(object, 10, 64); err == nil {
+			return fmt.Sprintf(`%s("%s", %s).`, pred, engine.EscapeString(subject), object)
+		}
 	}
 	return fmt.Sprintf(`%s("%s", "%s").`, pred, engine.EscapeString(subject), engine.EscapeString(object))
 }

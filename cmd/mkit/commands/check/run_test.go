@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCheckValidPolicy(t *testing.T) {
@@ -52,4 +53,45 @@ func TestCheckMissingFile(t *testing.T) {
 func TestCheckRequiresExactlyOneArg(t *testing.T) {
 	CheckCmd.SetArgs([]string{})
 	assert.Error(t, CheckCmd.Execute())
+}
+
+func TestLint_UngroundedNegatedVariable(t *testing.T) {
+	dir := t.TempDir()
+	policy := filepath.Join(dir, "bad_negation.dl")
+	// X in !auth(Req, X) is not bound positively in the body!
+	policySrc := `
+Decl auth(R, User).
+Decl op(R).
+
+halt("Req", "bad_rule", "T1") :- op("Req"), !auth("Req", X).
+`
+	require.NoError(t, os.WriteFile(policy, []byte(policySrc), 0o600))
+
+	var out, errOut bytes.Buffer
+	LintCmd.SetOut(&out)
+	LintCmd.SetErr(&errOut)
+	LintCmd.SetArgs([]string{policy})
+
+	err := LintCmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, errOut.String(), "ungrounded")
+}
+
+func TestLint_NegatedWildcardWarning(t *testing.T) {
+	policySrc := `
+Decl auth(R, User).
+Decl op(R).
+
+halt("Req", "wildcard_rule", "T1") :- op("Req"), !auth("Req", _).
+`
+	issues, err := LintPolicy(policySrc)
+	require.NoError(t, err)
+	foundWarning := false
+	for _, issue := range issues {
+		if issue.Severity == SeverityWarning && strings.Contains(issue.Message, "wildcard") {
+			foundWarning = true
+			break
+		}
+	}
+	assert.True(t, foundWarning, "expected wildcard warning in negated atom")
 }

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/duynguyendang/manglekit/adapters/mcp"
@@ -81,89 +82,220 @@ func TestServe_Success(t *testing.T) {
 	}
 }
 
-func TestServe_PolicyViolation(t *testing.T) {
-	t.Skip("Skipping: The current SupervisedAction architecture doesn't properly pass Facts to Assess. This test needs a fix in the SDK adapter to pass envelope Facts to VerifyAtoms.")
-	/*
-		// This test is kept for reference but disabled due to architecture issues.
-		// The issue: SupervisedAction calls VerifyAtoms which wraps facts in a new envelope,
-		// losing the original Facts from the request.
-		ctx := context.Background()
+func TestServe_V1Endpoints(t *testing.T) {
+	ctx := context.Background()
+	client, err := sdk.NewClient(ctx, sdk.WithSteeringEnabled())
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
 
-		// Use failure mode "closed" (default) to ensure blockage
-		client, err := sdk.NewClient(ctx)
+	client.RegisterAction("dummy_action", client.Supervise(&DummyAction{}))
+
+	policy := `
+	route("dummy_action") :- meta("state", "init").
+	halt("Req", "blocked_in_test", "T1") :- meta("block", "true").
+	`
+	if err := client.Engine().LoadPolicy(ctx, policy); err != nil {
+		t.Fatalf("load policy: %v", err)
+	}
+
+	state := &ServerState{
+		Client:     client,
+		PolicyPath: "test.dl",
+	}
+	state.SetPolicyHash("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+
+	handler := createHandlerWithState(state)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	// 1. GET /v1/health
+	t.Run("health", func(t *testing.T) {
+		resp, err := http.Get(server.URL + "/v1/health")
 		if err != nil {
-			t.Fatalf("Failed to create client: %v", err)
-		}
-
-		// Register supervised dummy action
-		client.RegisterAction("dummy_action", client.Supervise(&DummyAction{}))
-
-		// Policy:
-		// Note: deny, route, meta are already declared in StdLib
-		// Use Correct Arity: deny/1, violation_msg/1, violation_rule/1.
-		// To test blocking, we derive deny from a fact injected in the request
-		fullPolicy := `
-		Decl violation_msg(Msg).
-		Decl violation_rule(ID).
-		Decl sensitive_data(Flag).
-
-		% Route so we can try to execute (and get blocked by Authorize)
-		route("dummy_action") :- meta("state", "init").
-
-		% Deny ANY request that has sensitive_data flag set to "true"
-		deny("Blocked by Test Policy") :- sensitive_data("true").
-
-		% Attach message to the denial
-		violation_msg("Blocked by Test Policy") :- deny(_).
-		violation_rule("rule-1") :- deny(_).
-		`
-
-		err = client.Engine().LoadPolicy(ctx, fullPolicy)
-		if err != nil {
-			t.Fatalf("Failed to load policy: %v", err)
-		}
-
-		handler := createHandler(client)
-		server := httptest.NewServer(handler)
-		defer server.Close()
-
-		// Create request with state init to trigger routing (and then blocking)
-		// We inject a fact "sensitive_data" to trigger the denial rule
-		rawJSON := `{"data": {"foo": "bar"}, "metadata": {"state": "init"}, "facts": ["sensitive_data(\"true\")"]}`
-
-		resp, err := http.Post(server.URL, "application/json", bytes.NewBufferString(rawJSON))
-		if err != nil {
-			t.Fatalf("Failed to send request: %v", err)
+			t.Fatal(err)
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("want 200, got %d", resp.StatusCode)
+		}
+		var h HealthResponse
+		if err := json.NewDecoder(resp.Body).Decode(&h); err != nil {
+			t.Fatal(err)
+		}
+		if h.Status != "ok" || !h.PolicyLoaded {
+			t.Fatalf("unexpected health resp: %+v", h)
+		}
+	})
 
+	// 2. GET /v1/policy
+	t.Run("policy", func(t *testing.T) {
+		resp, err := http.Get(server.URL + "/v1/policy")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("want 200, got %d", resp.StatusCode)
+		}
+		var p PolicyResponse
+		if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
+			t.Fatal(err)
+		}
+		if p.PolicyHash != state.GetPolicyHash() {
+			t.Fatalf("hash mismatch: want %s got %s", state.GetPolicyHash(), p.PolicyHash)
+		}
+	})
+
+	// 3. GET /v1/openapi.json
+	t.Run("openapi", func(t *testing.T) {
+		resp, err := http.Get(server.URL + "/v1/openapi.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("want 200, got %d", resp.StatusCode)
+		}
+	})
+
+	// 4. POST /v1/assess - allowed
+	t.Run("assess_allow", func(t *testing.T) {
+		env := core.NewEnvelope(map[string]string{"foo": "bar"})
+		env.SetMeta("state", "init")
+		body, _ := json.Marshal(env)
+
+		resp, err := http.Post(server.URL+"/v1/assess", "application/json", bytes.NewBuffer(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("want 200, got %d", resp.StatusCode)
+		}
+		var a AssessResponse
+		if err := json.NewDecoder(resp.Body).Decode(&a); err != nil {
+			t.Fatal(err)
+		}
+		if a.Decision != "ALLOW" {
+			t.Fatalf("want ALLOW, got %s", a.Decision)
+		}
+	})
+
+	// 5. POST /v1/assess - deny
+	t.Run("assess_deny", func(t *testing.T) {
+		env := core.NewEnvelope(map[string]string{"foo": "bar"})
+		env.SetMeta("state", "init")
+		env.SetMeta("block", "true")
+		body, _ := json.Marshal(env)
+
+		resp, err := http.Post(server.URL+"/v1/assess", "application/json", bytes.NewBuffer(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusForbidden {
-			t.Errorf("Expected status 403, got %d", resp.StatusCode)
+			t.Fatalf("want 403, got %d", resp.StatusCode)
 		}
+		var d DenyResponse
+		if err := json.NewDecoder(resp.Body).Decode(&d); err != nil {
+			t.Fatal(err)
+		}
+		if d.Decision != core.DecisionHalt {
+			t.Fatalf("want HALT, got %s", d.Decision)
+		}
+		if d.PolicyHash == "" {
+			t.Fatal("expected non-empty policy hash in deny response")
+		}
+	})
 
-		var result map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			t.Fatalf("Failed to decode response: %v", err)
+	// 6. POST /v1/explain
+	t.Run("explain", func(t *testing.T) {
+		req := ExplainRequest{
+			Query: `route("dummy_action")`,
+			Facts: []string{`meta("state", "init").`},
 		}
+		body, _ := json.Marshal(req)
+		resp, err := http.Post(server.URL+"/v1/explain", "application/json", bytes.NewBuffer(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("want 200, got %d", resp.StatusCode)
+		}
+		var expl ExplainResponse
+		if err := json.NewDecoder(resp.Body).Decode(&expl); err != nil {
+			t.Fatal(err)
+		}
+		if !expl.Outcome {
+			t.Fatalf("expected explain outcome true, got false")
+		}
+		if expl.ProofTree == "" {
+			t.Fatal("expected non-empty proof tree")
+		}
+	})
+}
 
-		// Verify JSON Body contains "Blocked by Test Policy"
-		reasons, ok := result["reasons"].([]any)
-		if !ok {
-			t.Fatalf("Response missing 'reasons' field: %v", result)
-		}
+func TestServe_PolicyViolation(t *testing.T) {
+	ctx := context.Background()
 
-		found := false
-		for _, r := range reasons {
-			if rStr, ok := r.(string); ok && rStr == "Blocked by Test Policy" {
-				found = true
-				break
-			}
-		}
+	client, err := sdk.NewClient(ctx, sdk.WithSteeringEnabled())
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
 
-		if !found {
-			t.Errorf("Expected reason 'Blocked by Test Policy', got %v", reasons)
+	client.RegisterAction("dummy_action", client.Supervise(&DummyAction{}))
+
+	fullPolicy := `
+	Decl sensitive_data(Flag).
+
+	route("dummy_action") :- meta("state", "init").
+	halt("Req", "Blocked by Test Policy", "T1") :- sensitive_data("true").
+	`
+
+	err = client.Engine().LoadPolicy(ctx, fullPolicy)
+	if err != nil {
+		t.Fatalf("Failed to load policy: %v", err)
+	}
+
+	handler := createHandler(client)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	rawJSON := `{"data": {"foo": "bar"}, "metadata": {"state": "init"}, "facts": ["sensitive_data(\"true\")."]}`
+
+	resp, err := http.Post(server.URL, "application/json", bytes.NewBufferString(rawJSON))
+	if err != nil {
+		t.Fatalf("Failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("Expected status 403, got %d", resp.StatusCode)
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	reasons, ok := result["reasons"].([]any)
+	if !ok {
+		t.Fatalf("Response missing 'reasons' field: %v", result)
+	}
+
+	found := false
+	for _, r := range reasons {
+		if rStr, ok := r.(string); ok && strings.Contains(rStr, "Blocked by Test Policy") {
+			found = true
+			break
 		}
-	*/
+	}
+
+	if !found {
+		t.Errorf("Expected reason 'Blocked by Test Policy', got %v", reasons)
+	}
 }
 
 func TestLoadMCPActions_MissingFile(t *testing.T) {
