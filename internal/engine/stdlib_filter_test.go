@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"codeberg.org/TauCeti/mangle-go/ast"
+	"codeberg.org/TauCeti/mangle-go/parse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -43,13 +44,42 @@ keep(X) :- trip2(X).
 	assert.Contains(t, out, "result(X) :- trip(1, X, _).", "caller source must be appended")
 }
 
-func TestPrependStdLib_FiltersCallerDecls(t *testing.T) {
-	stdlib := "Decl meta(K, V).\nDecl triple(S, P, O).\ntriple(S, P, O) :- quad(S, P, O, _).\n"
+func TestFilterStdLibUnit(t *testing.T) {
+	stdSrc := `
+Decl meta(K, V).
+Decl triple(S, P, O).
+triple(S, P, O) :- quad(S, P, O, _).
+triple("a", "b", "c").
+Decl halt(Reason).
+`
+	stdUnit, err := parse.Unit(strings.NewReader(stdSrc))
+	require.NoError(t, err)
+
 	caller := map[ast.PredicateSym]bool{{Symbol: "meta", Arity: 2}: true}
-	out := prependStdLibIfMissing(stdlib, "", caller, nil)
-	assert.NotContains(t, out, "Decl meta", "caller-declared predicate's std Decl must be dropped")
-	assert.Contains(t, out, "Decl triple", "other Decls must survive")
-	assert.Contains(t, out, "triple(S, P, O) :- quad", "rules for caller-declared predicates must survive (only the Decl is dropped)")
+	ext := map[string]bool{"triple": true}
+
+	filtered := filterStdLibUnit(stdUnit, caller, ext)
+
+	// meta/2 Decl should be omitted because caller declared it
+	for _, d := range filtered.Decls {
+		assert.NotEqual(t, "meta", d.DeclaredAtom.Predicate.Symbol)
+		assert.NotEqual(t, "triple", d.DeclaredAtom.Predicate.Symbol)
+	}
+
+	// triple clauses should be omitted because triple is external
+	for _, c := range filtered.Clauses {
+		assert.NotEqual(t, "triple", c.Head.Predicate.Symbol)
+	}
+
+	// halt/1 should survive
+	foundHalt := false
+	for _, d := range filtered.Decls {
+		if d.DeclaredAtom.Predicate.Symbol == "halt" {
+			foundHalt = true
+			break
+		}
+	}
+	assert.True(t, foundHalt, "halt Decl should survive")
 }
 
 // TestStdLibShape pins the assumptions the line-based std.mg filter

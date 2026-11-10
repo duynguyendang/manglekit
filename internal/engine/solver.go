@@ -688,8 +688,29 @@ func (e *PolicyEngine) Reflect(ctx context.Context, actionMeta core.ActionMetada
 	return result, nil
 }
 
+// CanDeriveOutputHalt reports whether the currently loaded policy has any
+// rules or base facts that can derive halt/deny for EntityOutput ("Output").
+func (e *PolicyEngine) CanDeriveOutputHalt() bool {
+	if e.runtime == nil {
+		return true
+	}
+	return e.runtime.CanDeriveOutputHalt()
+}
+
 // reflectInternal executes the core validation logic.
 func (e *PolicyEngine) reflectInternal(ctx context.Context, actionMeta core.ActionMetadata, output core.Envelope) (core.Envelope, error) {
+	if e.runtime == nil || !e.runtime.IsReady() {
+		return core.Envelope{}, &core.AlignmentError{
+			Message:    "policy engine not initialized: fail-closed",
+			ActionName: actionMeta.Name,
+		}
+	}
+	// Fast-path: if the loaded program cannot derive halt/deny for "Output"
+	// and the output envelope carries no explicit facts, skip fact extraction
+	// and Datalog evaluation entirely.
+	if !e.runtime.CanDeriveOutputHalt() && len(output.Facts) == 0 {
+		return output, nil
+	}
 	err := e.evaluateGate(ctx, actionMeta.Name, core.EntityOutput, output)
 	if err != nil {
 		return core.Envelope{}, err
@@ -714,6 +735,21 @@ func tierPriority(tier core.Tier) int {
 	}
 }
 
+var (
+	queryHalt3Sym         = ast.NewQuery(ast.PredicateSym{Symbol: core.PredHalt, Arity: 3})
+	queryHalt2Sym         = ast.NewQuery(ast.PredicateSym{Symbol: core.PredHalt, Arity: 2})
+	queryViolationRuleSym = ast.NewQuery(ast.PredicateSym{Symbol: "violation_rule", Arity: 1})
+	queryViolationMsgSym  = ast.NewQuery(ast.PredicateSym{Symbol: core.PredViolation, Arity: 1})
+)
+
+func isNopLogger(l core.Logger) bool {
+	if l == nil {
+		return true
+	}
+	_, ok := l.(core.NopLogger)
+	return ok
+}
+
 // evaluateGate centralizes the logic for "Check -> Deny -> Explain".
 // It is used by both Assess (Pre-Check) and Reflect (Post-Check).
 // This is a convenience wrapper that discards the audit trail.
@@ -736,7 +772,7 @@ func (e *PolicyEngine) evaluateGateWithTrail(ctx context.Context, actionName str
 	// 1. ToFacts: Convert Payload
 	facts, err := toMangleFacts(entityID, env.Payload, env.ContentType)
 	if err != nil {
-		if e.logger != nil {
+		if !isNopLogger(e.logger) {
 			e.logger.Debug("failed to convert payload to facts", "error", err)
 		}
 		// Wrap in InputError to ensure it is BLOCKED upstream
@@ -746,29 +782,17 @@ func (e *PolicyEngine) evaluateGateWithTrail(ctx context.Context, actionName str
 	// 2. Inject Extra Facts (e.g. Action Operation)
 	facts = append(facts, extraFacts...)
 
-	// 3. Inject Labels
-	labelFacts, err := LabelsToFacts(entityID, env.SecurityLabels)
-	if err != nil {
-		if e.logger != nil {
-			e.logger.Error("failed to generate label facts", "error", err)
+	// 3. Inject Labels directly as AST atoms (avoids string format + re-parse)
+	for _, l := range env.SecurityLabels {
+		if l != "" {
+			facts = append(facts, ast.NewAtom("label", ast.String(l)))
 		}
-		return nil, &core.InputError{Err: fmt.Errorf("label conversion error: %w", err)}
-	}
-	for _, f := range labelFacts {
-		atom, err := parse.Atom(f)
-		if err != nil {
-			if e.logger != nil {
-				e.logger.Error("failed to parse label fact", "fact", f, "error", err)
-			}
-			return nil, &core.InputError{Err: fmt.Errorf("label parsing error: %w", err)}
-		}
-		facts = append(facts, atom)
 	}
 
 	// 4. Inject Explicit Facts from Envelope + 5. Metadata (meta/2, attempt/1)
 	facts, err = e.appendEnvelopeFacts(facts, env, actionName)
 	if err != nil {
-		if e.logger != nil {
+		if !isNopLogger(e.logger) {
 			e.logger.Error("failed to convert envelope to facts", "action", actionName, "error", err)
 		}
 		return nil, &core.InputError{Err: fmt.Errorf("envelope fact parsing error: %w", err)}
@@ -776,14 +800,9 @@ func (e *PolicyEngine) evaluateGateWithTrail(ctx context.Context, actionName str
 
 	// 6. Run Query — Tier-Aware Resolution
 	//
-	// Strategy: Query halt(Entity, Reason, Tier) first (arity 3).
-	// Rules loaded with tier annotations produce tier-attributed facts.
-	// If no arity-3 matches, fall back to halt(Entity, Reason) (arity 2)
-	// for backward compatibility — these get TierUnknown (lowest priority).
-	//
-	// This prevents a T3-authored halt from overriding a T0 halt
-	// when both fire on the same envelope.
-
+	// Strategy: Evaluate the working store once, then inspect halt(Entity, Reason, Tier)
+	// (arity 3) first, halt(Entity, Reason) (arity 2) second, and halt(Entity) (arity 1)
+	// third directly on the evaluated store without re-parsing query strings.
 	var violationMsg, ruleID string
 
 	type haltMatch struct {
@@ -793,53 +812,52 @@ func (e *PolicyEngine) evaluateGateWithTrail(ctx context.Context, actionName str
 
 	var matches []haltMatch
 
-	if e.logger != nil {
+	if !isNopLogger(e.logger) {
 		e.logger.Debug("Evaluating Gate Facts", "count", len(facts))
 		for _, f := range facts {
 			e.logger.Debug("Fact", "f", f.String())
 		}
 	}
 
+	workingStore, err := e.runtime.EvaluatedStore(ctx, facts)
+	if err != nil {
+		if !isNopLogger(e.logger) {
+			e.logger.Debug("failed to execute halt query", "error", err)
+		}
+		return nil, fmt.Errorf("halt query error: %w", err)
+	}
+
+	entityTerm := ast.String(entityID)
+
 	// Step 6a: Query arity-3 form: halt(Entity, Reason, Tier)
-	// This is the tier-aware path — rules that emit halt/3 carry explicit tier.
-	queryHalt3 := fmt.Sprintf("%s(\"%s\", Reason, Tier)", core.PredHalt, entityID)
-	err = e.runtime.QueryWithSolutions(ctx, facts, queryHalt3, func(solution map[string]any) error {
-		reason, rOk := solution["Reason"].(string)
-		tierStr, tOk := solution["Tier"].(string)
-		if !rOk {
+	_ = workingStore.GetFacts(queryHalt3Sym, func(factAtom ast.Atom) error {
+		if len(factAtom.Args) != 3 || !factAtom.Args[0].Equals(entityTerm) {
 			return nil
 		}
+		reason, rErr := constantToString(factAtom.Args[1])
+		if rErr != nil {
+			return nil
+		}
+		tierStr, _ := constantToString(factAtom.Args[2])
 		tier := core.Tier(tierStr)
-		if !tOk || tier == "" {
+		if tier == "" {
 			tier = core.TierUnknown
 		}
 		matches = append(matches, haltMatch{reason: reason, tier: tier})
 		return nil
 	})
 
-	if err != nil {
-		if e.logger != nil {
-			e.logger.Debug("halt/3 query failed, falling back to halt/2", "error", err)
-		}
-	}
-
 	// Step 6b: If no arity-3 matches, query arity-2 form for backward compat.
-	// These matches get TierUnknown — they lose to any tier-attributed match.
 	if len(matches) == 0 {
-		queryHalt2 := fmt.Sprintf("%s(\"%s\", Reason)", core.PredHalt, entityID)
-		err = e.runtime.QueryWithSolutions(ctx, facts, queryHalt2, func(solution map[string]any) error {
-			if reason, ok := solution["Reason"].(string); ok {
+		_ = workingStore.GetFacts(queryHalt2Sym, func(factAtom ast.Atom) error {
+			if len(factAtom.Args) != 2 || !factAtom.Args[0].Equals(entityTerm) {
+				return nil
+			}
+			if reason, rErr := constantToString(factAtom.Args[1]); rErr == nil {
 				matches = append(matches, haltMatch{reason: reason, tier: core.TierUnknown})
 			}
 			return nil
 		})
-
-		if err != nil {
-			if e.logger != nil {
-				e.logger.Debug("failed to execute halt query", "error", err)
-			}
-			return nil, fmt.Errorf("halt query error: %w", err)
-		}
 	}
 
 	// Resolve by tier: pick the match with the highest-priority tier
@@ -853,21 +871,17 @@ func (e *PolicyEngine) evaluateGateWithTrail(ctx context.Context, actionName str
 		violationMsg = best.reason
 
 		// Try to find rule ID if available
-		qErr := e.runtime.QueryWithSolutions(ctx, facts, "violation_rule(ID)", func(solution map[string]any) error {
-			if id, ok := solution["ID"].(string); ok {
-				ruleID = id
-				return ErrSolutionFound
+		_ = workingStore.GetFacts(queryViolationRuleSym, func(factAtom ast.Atom) error {
+			if len(factAtom.Args) == 1 {
+				if id, rErr := constantToString(factAtom.Args[0]); rErr == nil {
+					ruleID = id
+					return ErrSolutionFound
+				}
 			}
 			return nil
 		})
-		if errors.Is(qErr, ErrSolutionFound) {
-			qErr = nil
-		}
-		if qErr != nil && e.logger != nil {
-			e.logger.Warn("failed to query violation rule ID", "error", qErr)
-		}
 
-		if e.logger != nil {
+		if !isNopLogger(e.logger) {
 			e.logger.Debug("gate violation detected", "action", actionName, "msg", violationMsg, "rule_id", ruleID, "tier", best.tier, "matches", len(matches))
 		}
 
@@ -888,49 +902,30 @@ func (e *PolicyEngine) evaluateGateWithTrail(ctx context.Context, actionName str
 		}
 	}
 
-	// Priority 2: deny(Entity) (Backward Compatibility)
-	// Map legacy "deny" to core.PredHalt ("halt")
-	queryDeny := fmt.Sprintf("%s(\"%s\")", core.PredHalt, entityID)
-	denied, err := e.runtime.ExecuteQuery(ctx, facts, queryDeny)
-	if err != nil {
-		if e.logger != nil {
-			e.logger.Debug("policy evaluation failed (deny check)", "error", err)
-		}
-		return nil, fmt.Errorf("policy evaluation error: %w", err)
-	}
-
-	if denied {
-		// Query: violation_msg(Msg)
-		qErr := e.runtime.QueryWithSolutions(ctx, facts, fmt.Sprintf("%s(Msg)", core.PredViolation), func(solution map[string]any) error {
-			if msg, ok := solution["Msg"].(string); ok {
-				violationMsg = msg
-				return ErrSolutionFound
+	// Priority 2: deny(Entity) / halt(Entity) (Backward Compatibility)
+	halt1Atom := ast.NewAtom(core.PredHalt, entityTerm)
+	if workingStore.Contains(halt1Atom) {
+		_ = workingStore.GetFacts(queryViolationMsgSym, func(factAtom ast.Atom) error {
+			if len(factAtom.Args) == 1 {
+				if msg, rErr := constantToString(factAtom.Args[0]); rErr == nil {
+					violationMsg = msg
+					return ErrSolutionFound
+				}
 			}
 			return nil
 		})
-		if errors.Is(qErr, ErrSolutionFound) {
-			qErr = nil
-		}
-		if qErr != nil && e.logger != nil {
-			e.logger.Warn("failed to query violation message", "error", qErr)
-		}
 
-		// Query: violation_rule(ID)
-		qErr = e.runtime.QueryWithSolutions(ctx, facts, "violation_rule(ID)", func(solution map[string]any) error {
-			if id, ok := solution["ID"].(string); ok {
-				ruleID = id
-				return ErrSolutionFound
+		_ = workingStore.GetFacts(queryViolationRuleSym, func(factAtom ast.Atom) error {
+			if len(factAtom.Args) == 1 {
+				if id, rErr := constantToString(factAtom.Args[0]); rErr == nil {
+					ruleID = id
+					return ErrSolutionFound
+				}
 			}
 			return nil
 		})
-		if errors.Is(qErr, ErrSolutionFound) {
-			qErr = nil
-		}
-		if qErr != nil && e.logger != nil {
-			e.logger.Warn("failed to query violation rule ID", "error", qErr)
-		}
 
-		if e.logger != nil {
+		if !isNopLogger(e.logger) {
 			e.logger.Debug("gate violation detected (deny)", "action", actionName, "msg", violationMsg, "rule_id", ruleID)
 		}
 		return nil, &core.AlignmentError{
@@ -947,7 +942,7 @@ func (e *PolicyEngine) evaluateGateWithTrail(ctx context.Context, actionName str
 
 // CheckRequirement queries: requires("req_id", "capability")
 func (e *PolicyEngine) CheckRequirement(ctx context.Context, input core.Envelope, reqName string) (bool, error) {
-	if e.runtime == nil {
+	if e.runtime == nil || !e.runtime.HasRequiresPredicate() {
 		return false, nil
 	}
 

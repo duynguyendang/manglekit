@@ -2,10 +2,8 @@ package engine
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -21,6 +19,7 @@ import (
 	"codeberg.org/TauCeti/mangle-go/factstore"
 	"codeberg.org/TauCeti/mangle-go/parse"
 
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/engine/resources"
 )
 
@@ -143,6 +142,12 @@ type MangleRuntime struct {
 	// disableIDBCache forces cache bypass (tests/benchmarks only).
 	disableIDBCache bool
 
+	// Precomputed static program flags (updated under r.mu whenever
+	// programInfo, baseFactStore, or externalPreds change).
+	activeExternalPreds bool // true if programInfo.EdbPredicates references any registered external predicate
+	hasRequiresPred     bool // true if requires/2 is declared, derived, or present in baseFactStore
+	canDeriveOutputHalt bool // true if any rule or base fact can derive halt/deny for "Output" (or runtime not ready)
+
 	// evalCount counts stratified evaluations triggered through the
 	// query/load paths (test hook for batch APIs).
 	evalCount int
@@ -160,6 +165,26 @@ func (r *MangleRuntime) IsReady() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.ready
+}
+
+// HasRequiresPredicate reports whether the loaded program declares, derives,
+// or stores any facts for requires/2.
+func (r *MangleRuntime) HasRequiresPredicate() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.hasRequiresPred
+}
+
+// CanDeriveOutputHalt reports whether the loaded program can derive any
+// halt or deny fact for core.EntityOutput ("Output"). Returns true when
+// uninitialized so callers fail closed.
+func (r *MangleRuntime) CanDeriveOutputHalt() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if !r.ready {
+		return true
+	}
+	return r.canDeriveOutputHalt
 }
 
 // WithEvalTimeout sets the maximum duration for a single Datalog evaluation.
@@ -183,11 +208,12 @@ func (r *MangleRuntime) WithMaxCreatedFacts(n int) *MangleRuntime {
 // NewMangleRuntime initializes a new, empty MangleRuntime.
 func NewMangleRuntime() *MangleRuntime {
 	return &MangleRuntime{
-		predToStratum:     make(map[ast.PredicateSym]int),
-		baseFactStore:     factstore.NewSimpleInMemoryStore(),
-		explicitFactStore: factstore.NewSimpleInMemoryStore(),
-		ready:             false,
-		externalPreds:     NewExternalPredicateRegistry(),
+		predToStratum:       make(map[ast.PredicateSym]int),
+		baseFactStore:       factstore.NewSimpleInMemoryStore(),
+		explicitFactStore:   factstore.NewSimpleInMemoryStore(),
+		ready:               false,
+		canDeriveOutputHalt: true,
+		externalPreds:       NewExternalPredicateRegistry(),
 	}
 }
 
@@ -208,7 +234,14 @@ func (r *MangleRuntime) RegisterExternalPredicate(name string, fn ExternalPredic
 	if name == "" {
 		return fmt.Errorf("external predicate name cannot be empty")
 	}
-	return r.externalPreds.Register(name, fn)
+	if err := r.externalPreds.Register(name, fn); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.updateProgramFlagsLocked()
+	r.invalidateIDBCacheLocked()
+	r.mu.Unlock()
+	return nil
 }
 
 // ExternalPredicates returns the external predicate registry for inspection.
@@ -521,6 +554,7 @@ func (r *MangleRuntime) Load(ctx context.Context, path string) error {
 	r.predToStratum = predToStratum
 	r.ready = true
 	r.programVersion++
+	r.updateProgramFlagsLocked()
 	r.invalidateIDBCacheLocked()
 
 	return nil
@@ -561,19 +595,29 @@ func (r *MangleRuntime) ReloadFromSource(ctx context.Context, source string) err
 		return fmt.Errorf("source cannot be empty")
 	}
 
-	// Snapshot persistent builtin units (and their source text) so the
-	// reloaded program keeps them and the std.mg Decl filter accounts for
-	// their declarations.
+	// Snapshot persistent builtin units so the reloaded program keeps them
+	// and the std.mg Decl filter accounts for their declarations.
 	r.mu.Lock()
 	persistentUnits := append([]parse.SourceUnit(nil), r.persistentUnits...)
-	persistentSources := append([]string(nil), r.persistentSources...)
 	r.mu.Unlock()
 
-	// Discover which predicate symbols/arity pairs the caller's
-	// source (and the persistent builtins) already declare, so we
-	// can filter the std.mg merge to only the predicates not already
-	// declared.
-	callerDecls := collectCallerDecls(source + "\n" + strings.Join(persistentSources, "\n"))
+	// Parse the user's source unit first.
+	cleaned := cleanSource(source)
+	userUnit, err := parse.Unit(strings.NewReader(cleaned))
+	if err != nil {
+		return fmt.Errorf("failed to parse source: %w", err)
+	}
+
+	// Discover declared predicates from the AST directly.
+	callerDecls := make(map[ast.PredicateSym]bool)
+	for _, d := range userUnit.Decls {
+		callerDecls[d.DeclaredAtom.Predicate] = true
+	}
+	for _, pu := range persistentUnits {
+		for _, d := range pu.Decls {
+			callerDecls[d.DeclaredAtom.Predicate] = true
+		}
+	}
 
 	// Also collect external predicate names from the registry so
 	// std.mg Decl and defining rules for those names can be filtered
@@ -585,16 +629,22 @@ func (r *MangleRuntime) ReloadFromSource(ctx context.Context, source string) err
 		extPredNames[name] = true
 	}
 
-	combined := prependStdLibIfMissing(resources.StdLib(), source, callerDecls, extPredNames)
-	cleaned := cleanSource(combined)
-	unit, err := parse.Unit(strings.NewReader(cleaned))
+	// Merge std.mg at the AST level using the cached pre-parsed SourceUnit.
+	stdUnit, err := getCachedStdLib()
 	if err != nil {
-		return fmt.Errorf("failed to parse source: %w", err)
+		return fmt.Errorf("failed to parse stdlib: %w", err)
+	}
+	filteredStd := filterStdLibUnit(stdUnit, callerDecls, extPredNames)
+
+	// Combine filtered std.mg with the caller's unit.
+	mergedUnit := parse.SourceUnit{
+		Decls:   append(filteredStd.Decls, userUnit.Decls...),
+		Clauses: append(filteredStd.Clauses, userUnit.Clauses...),
 	}
 
-	// Local state build: the new main unit plus the persistent builtins.
+	// Local state build: the merged unit plus the persistent builtins.
 	newRuleUnits := make([]parse.SourceUnit, 0, 1+len(persistentUnits))
-	newRuleUnits = append(newRuleUnits, unit)
+	newRuleUnits = append(newRuleUnits, mergedUnit)
 	newRuleUnits = append(newRuleUnits, persistentUnits...)
 
 	// Add external predicates as extra declarations BEFORE analysis
@@ -687,6 +737,7 @@ func (r *MangleRuntime) ReloadFromSource(ctx context.Context, source string) err
 	r.ready = true
 	r.programVersion++
 	r.baseVersion++
+	r.updateProgramFlagsLocked()
 	r.invalidateIDBCacheLocked()
 
 	return nil
@@ -742,6 +793,7 @@ func (r *MangleRuntime) LoadFacts(ctx context.Context, facts []string) error {
 		if err := r.evaluate(ctx, r.baseFactStore); err != nil {
 			return fmt.Errorf("failed to evaluate program with new facts: %w", err)
 		}
+		r.updateProgramFlagsLocked()
 	}
 	return nil
 }
@@ -843,6 +895,7 @@ func (r *MangleRuntime) addPolicy(ctx context.Context, source string, persistent
 	if err := r.evaluate(ctx, r.baseFactStore); err != nil {
 		return fmt.Errorf("failed to evaluate combined program: %w", err)
 	}
+	r.updateProgramFlagsLocked()
 
 	return nil
 }
@@ -857,30 +910,167 @@ func (r *MangleRuntime) invalidateIDBCacheLocked() {
 	r.idbCacheMu.Unlock()
 }
 
-// idbCacheKey computes the cache key for an evaluated working store:
-// program version + base-fact version + a hash of the request-scoped facts.
-func idbCacheKey(programVersion, baseVersion uint64, facts []ast.Atom) uint64 {
-	h := fnv.New64a()
-	var buf [8]byte
-	binary.LittleEndian.PutUint64(buf[:], programVersion)
-	h.Write(buf[:])
-	binary.LittleEndian.PutUint64(buf[:], baseVersion)
-	h.Write(buf[:])
-	for _, f := range facts {
-		h.Write([]byte(f.String()))
-		h.Write([]byte{0})
+// updateProgramFlagsLocked recomputes static query-optimization flags for
+// the currently loaded program and base fact store. The caller must hold r.mu.
+func (r *MangleRuntime) updateProgramFlagsLocked() {
+	r.activeExternalPreds = false
+	r.hasRequiresPred = false
+	r.canDeriveOutputHalt = false
+
+	pi := r.programInfo
+	if pi == nil {
+		return
 	}
-	return h.Sum64()
+
+	if r.externalPreds != nil && r.externalPreds.Count() > 0 {
+		extPreds := r.externalPreds.List()
+		for sym := range pi.EdbPredicates {
+			if _, ok := extPreds[sym.Symbol]; ok {
+				r.activeExternalPreds = true
+				break
+			}
+		}
+	}
+
+	reqSym := ast.PredicateSym{Symbol: "requires", Arity: 2}
+	if _, ok := pi.IdbPredicates[reqSym]; ok {
+		r.hasRequiresPred = true
+	} else if _, ok := pi.EdbPredicates[reqSym]; ok {
+		r.hasRequiresPred = true
+	} else if _, ok := pi.Decls[reqSym]; ok {
+		r.hasRequiresPred = true
+	}
+
+	outputConst := ast.String(core.EntityOutput)
+	for _, c := range pi.Rules {
+		sym := c.Head.Predicate.Symbol
+		if sym != "halt" && sym != "deny" {
+			continue
+		}
+		if isStdLibDenyToHaltAlias(c) {
+			continue
+		}
+		if len(c.Head.Args) == 0 {
+			continue
+		}
+		arg0 := c.Head.Args[0]
+		if _, isVar := arg0.(ast.Variable); isVar || arg0.Equals(outputConst) {
+			r.canDeriveOutputHalt = true
+			break
+		}
+	}
+
+	if !r.canDeriveOutputHalt {
+		for _, f := range pi.InitialFacts {
+			sym := f.Predicate.Symbol
+			if (sym == "halt" || sym == "deny") && len(f.Args) > 0 && f.Args[0].Equals(outputConst) {
+				r.canDeriveOutputHalt = true
+				break
+			}
+		}
+	}
+
+	if !r.canDeriveOutputHalt {
+		for _, predName := range []string{"halt", "deny"} {
+			for arity := 1; arity <= 3; arity++ {
+				q := ast.NewQuery(ast.PredicateSym{Symbol: predName, Arity: arity})
+				_ = r.baseFactStore.GetFacts(q, func(a ast.Atom) error {
+					if len(a.Args) > 0 && a.Args[0].Equals(outputConst) {
+						r.canDeriveOutputHalt = true
+					}
+					return nil
+				})
+				if r.canDeriveOutputHalt {
+					break
+				}
+			}
+			if r.canDeriveOutputHalt {
+				break
+			}
+		}
+	}
+}
+
+// isStdLibDenyToHaltAlias reports whether a clause is one of std.mg's built-in
+// `halt(X, ...) :- deny(X, ...)` alias rules.
+func isStdLibDenyToHaltAlias(c ast.Clause) bool {
+	if c.Head.Predicate.Symbol != "halt" || len(c.Premises) != 1 || c.Transform != nil {
+		return false
+	}
+	prem, ok := c.Premises[0].(ast.Atom)
+	if !ok || prem.Predicate.Symbol != "deny" || prem.Predicate.Arity != c.Head.Predicate.Arity {
+		return false
+	}
+	for i, arg := range c.Head.Args {
+		v, isVar := arg.(ast.Variable)
+		if !isVar || !v.Equals(prem.Args[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+const (
+	fnvOffset64 uint64 = 14695981039346656037
+	fnvPrime64  uint64 = 1099511628211
+)
+
+func fnvHashString(h uint64, s string) uint64 {
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= fnvPrime64
+	}
+	return h
+}
+
+func fnvHashUint64(h uint64, v uint64) uint64 {
+	for i := 0; i < 8; i++ {
+		h ^= uint64(byte(v))
+		h *= fnvPrime64
+		v >>= 8
+	}
+	return h
+}
+
+// idbCacheKey computes the cache key for an evaluated working store:
+// program version + base-fact version + a zero-allocation hash of the
+// request-scoped facts.
+func idbCacheKey(programVersion, baseVersion uint64, facts []ast.Atom) uint64 {
+	h := fnvOffset64
+	h = fnvHashUint64(h, programVersion)
+	h = fnvHashUint64(h, baseVersion)
+	for _, f := range facts {
+		h = fnvHashString(h, f.Predicate.Symbol)
+		h = fnvHashUint64(h, uint64(f.Predicate.Arity))
+		for _, arg := range f.Args {
+			switch a := arg.(type) {
+			case ast.Constant:
+				h ^= uint64(a.Type)
+				h *= fnvPrime64
+				h = fnvHashString(h, a.Symbol)
+				h = fnvHashUint64(h, uint64(a.NumValue))
+			case ast.Variable:
+				h ^= 0xff
+				h *= fnvPrime64
+				h = fnvHashString(h, a.Symbol)
+			default:
+				h = fnvHashString(h, arg.String())
+			}
+			h ^= 0
+			h *= fnvPrime64
+		}
+	}
+	return h
 }
 
 // evaluatedWorkingStore returns a fully evaluated working store containing
 // the base facts plus the request-scoped facts. It is the shared hot path
 // for ExecuteQuery and QueryWithSolutions. When the runtime is cacheable
-// (no external predicates, no temporal store — both of which make results
-// non-deterministic across identical inputs), the evaluated store is cached
-// keyed on (program version, base-fact version, request facts), so the
-// gate's sub-queries over the same envelope run the stratified evaluation
-// only once.
+// (no active external predicates in the program, no temporal store — both
+// of which make results non-deterministic across identical inputs), the
+// evaluated store is cached keyed on (program version, base-fact version,
+// request facts), so the gate's sub-queries over the same envelope run the
+// stratified evaluation only once.
 func (r *MangleRuntime) evaluatedWorkingStore(ctx context.Context, facts []ast.Atom, opts []engine.EvalOption) (*factstore.SimpleInMemoryStore, error) {
 	r.mu.RLock()
 	if !r.ready {
@@ -894,7 +1084,7 @@ func (r *MangleRuntime) evaluatedWorkingStore(ctx context.Context, facts []ast.A
 	pStratum := r.predToStratum
 	progV, baseV := r.programVersion, r.baseVersion
 	cacheable := !r.disableIDBCache &&
-		r.externalPreds.Count() == 0 &&
+		!r.activeExternalPreds &&
 		!r.temporalEnabled
 
 	// Consult the cache BEFORE paying the O(N) base-store copy: a hit
@@ -945,9 +1135,8 @@ func (r *MangleRuntime) evaluatedWorkingStore(ctx context.Context, facts []ast.A
 
 	if cacheable {
 		r.idbCacheMu.Lock()
-		if len(r.idbCache) >= maxIDBCacheEntries {
-			// Simple eviction: drop the whole (small) cache rather
-			// than tracking recency for 8 heavyweight entries.
+		if r.idbCache == nil || len(r.idbCache) >= maxIDBCacheEntries {
+			// Simple eviction or initialization: allocate/reset the map.
 			r.idbCache = make(map[uint64]*factstore.SimpleInMemoryStore)
 		}
 		r.idbCache[cacheKey] = &working
@@ -955,6 +1144,20 @@ func (r *MangleRuntime) evaluatedWorkingStore(ctx context.Context, facts []ast.A
 	}
 
 	return &working, nil
+}
+
+// EvaluatedStore returns the evaluated working store for a request's facts,
+// using the IDB cache when eligible and passing any active evaluation options
+// (external predicates, temporal store, created-fact limit).
+func (r *MangleRuntime) EvaluatedStore(ctx context.Context, facts []ast.Atom) (*factstore.SimpleInMemoryStore, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	evalOpts := r.buildEvalOptionsLockedSnapshot()
+	if r.maxCreatedFacts > 0 {
+		evalOpts = append(evalOpts, engine.WithCreatedFactLimit(r.maxCreatedFacts))
+	}
+	return r.evaluatedWorkingStore(ctx, facts, evalOpts)
 }
 
 // ExecuteQuery runs a boolean Datalog query.
@@ -1119,6 +1322,10 @@ func (r *MangleRuntime) evaluate(ctx context.Context, store factstore.FactStore)
 // atomic swap cannot race the option build.
 func (r *MangleRuntime) buildEvalOptionsLockedSnapshot() []engine.EvalOption {
 	r.mu.RLock()
+	if !r.temporalEnabled && r.evaluationTime.IsZero() && !r.activeExternalPreds {
+		r.mu.RUnlock()
+		return nil
+	}
 	pi := r.programInfo
 	r.mu.RUnlock()
 	return r.buildEvalOptionsFor(pi)
@@ -1508,15 +1715,56 @@ func declSym(line string) (ast.PredicateSym, bool) {
 	return ast.PredicateSym{Symbol: mm[1], Arity: arity}, true
 }
 
+var (
+	stdLibUnitOnce sync.Once
+	cachedStdLib   parse.SourceUnit
+	cachedStdErr   error
+)
+
+// getCachedStdLib returns the parsed SourceUnit for std.mg, parsed once.
+func getCachedStdLib() (parse.SourceUnit, error) {
+	stdLibUnitOnce.Do(func() {
+		cleaned := cleanSource(resources.StdLib())
+		cachedStdLib, cachedStdErr = parse.Unit(strings.NewReader(cleaned))
+	})
+	return cachedStdLib, cachedStdErr
+}
+
+// filterStdLibUnit returns a filtered copy of the standard library SourceUnit,
+// omitting any Decl whose PredicateSym is in callerDecls or whose name is in extPredNames,
+// and omitting any clause whose head predicate name is in extPredNames.
+func filterStdLibUnit(stdUnit parse.SourceUnit, callerDecls map[ast.PredicateSym]bool, extPredNames map[string]bool) parse.SourceUnit {
+	var filteredDecls []ast.Decl
+	for _, d := range stdUnit.Decls {
+		sym := d.DeclaredAtom.Predicate
+		if callerDecls != nil && callerDecls[sym] {
+			continue
+		}
+		if extPredNames != nil && extPredNames[sym.Symbol] {
+			continue
+		}
+		filteredDecls = append(filteredDecls, d)
+	}
+
+	var filteredClauses []ast.Clause
+	for _, c := range stdUnit.Clauses {
+		if extPredNames != nil && extPredNames[c.Head.Predicate.Symbol] {
+			continue
+		}
+		filteredClauses = append(filteredClauses, c)
+	}
+
+	return parse.SourceUnit{
+		Decls:   filteredDecls,
+		Clauses: filteredClauses,
+	}
+}
+
 // collectCallerDecls scans the caller's source for `Decl pred(...)` lines
 // and returns the set of (symbol, arity) pairs the caller has already
 // declared. We use this to filter the std.mg merge in LoadFromSource so
 // callers that already declare a std predicate (e.g. to mark it as
 // external()) don't get a "cannot redeclare" error.
-//
-// The parser is intentionally permissive: we don't need a full Mangle
-// parse to discover Decl lines — a regex over the raw source is
-// sufficient and avoids the cost of parsing twice.
 func collectCallerDecls(source string) map[ast.PredicateSym]bool {
 	decls := make(map[ast.PredicateSym]bool)
 	for _, line := range strings.Split(source, "\n") {

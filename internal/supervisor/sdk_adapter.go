@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -76,23 +75,63 @@ func tierSeverity(t core.Tier) int {
 	}
 }
 
-// predicateIdentRE matches a safe Datalog predicate identifier. Facts whose
-// predicate is not a plain identifier are dropped to prevent Datalog injection.
-var predicateIdentRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+// isValidPredicateIdent checks whether pred is a safe ASCII Datalog identifier
+// (^[A-Za-z_][A-Za-z0-9_]*$) without regex overhead.
+func isValidPredicateIdent(pred string) bool {
+	if len(pred) == 0 {
+		return false
+	}
+	b0 := pred[0]
+	if !((b0 >= 'a' && b0 <= 'z') || (b0 >= 'A' && b0 <= 'Z') || b0 == '_') {
+		return false
+	}
+	for i := 1; i < len(pred); i++ {
+		b := pred[i]
+		if !((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_') {
+			return false
+		}
+	}
+	return true
+}
 
 // atomToDatalog renders a single Datalog fact, escaping the subject/object
 // values and validating the predicate identifier. It returns an empty string
 // when the predicate is not a safe identifier (the caller should skip it).
 func atomToDatalog(pred, subject, object string) string {
-	if !predicateIdentRE.MatchString(pred) {
+	if !isValidPredicateIdent(pred) {
 		return ""
 	}
-	if !strings.HasPrefix(object, "+") {
+	escSubj := engine.EscapeString(subject)
+	if len(object) > 0 && object[0] != '+' {
 		if _, err := strconv.ParseInt(object, 10, 64); err == nil {
-			return fmt.Sprintf(`%s("%s", %s).`, pred, engine.EscapeString(subject), object)
+			return pred + `("` + escSubj + `", ` + object + `).`
 		}
 	}
-	return fmt.Sprintf(`%s("%s", "%s").`, pred, engine.EscapeString(subject), engine.EscapeString(object))
+	escObj := engine.EscapeString(object)
+	return pred + `("` + escSubj + `", "` + escObj + `").`
+}
+
+type outputHaltCapability interface {
+	CanDeriveOutputHalt() bool
+}
+
+func hasHaltOrDenyFact(facts []string) bool {
+	for _, f := range facts {
+		s := strings.TrimSpace(f)
+		if strings.HasPrefix(s, "halt(") || strings.HasPrefix(s, "deny(") {
+			return true
+		}
+	}
+	return false
+}
+
+func hasHaltOrDenyAtom(atoms []domain.Atom) bool {
+	for _, a := range atoms {
+		if a.Predicate == "halt" || a.Predicate == "deny" {
+			return true
+		}
+	}
+	return false
 }
 
 type sdkEvaluatorAdapter struct {
@@ -160,6 +199,15 @@ func (a *sdkEvaluatorAdapter) VerifyAtoms(ctx context.Context, atoms []domain.At
 			ViolationTier: domain.Tier0Kernel,
 			ConflictPath:  fmt.Sprintf("sdk_adapter.fact_limit_exceeded (%d>%d)", len(atoms), maxFactsPerVerify),
 		}, nil
+	}
+
+	// Fast-path post-check when the active policy has no rules or base facts
+	// capable of deriving halt/deny for "Output" and the caller/payload carries
+	// no explicit halt/deny facts.
+	if pc != nil && pc.entityID == core.EntityOutput && pc.actionName != "" {
+		if checker, ok := a.inner.(outputHaltCapability); ok && !checker.CanDeriveOutputHalt() && !hasHaltOrDenyFact(pc.facts) && !hasHaltOrDenyAtom(atoms) {
+			return &domain.AuditResult{Pass: true}, nil
+		}
 	}
 
 	facts := make([]string, 0, len(atoms))

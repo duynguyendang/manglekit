@@ -126,7 +126,7 @@ func (c *Client) runLoopInternal(ctx context.Context, startAction string, payloa
 			return core.Envelope{}, err
 		}
 
-		c.logger.Info("RunLoop step", "step", step, "action", currentAction)
+		c.logger.Debug("RunLoop step", "step", step, "action", currentAction)
 
 		result, err := c.ExecuteSingleStep(ctx, currentAction, currentPayload, &params)
 		if err != nil {

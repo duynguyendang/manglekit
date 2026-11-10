@@ -70,8 +70,20 @@ func LabelsToFacts(entityID string, labels []string) ([]string, error) {
 // escapeString escapes special characters to ensure the resulting string
 // is a valid Mangle string constant.
 func escapeString(s string) string {
+	needsEscape := false
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if b == '\\' || b == '"' || b < 32 {
+			needsEscape = true
+			break
+		}
+	}
+	if !needsEscape {
+		return s
+	}
+
 	var sb strings.Builder
-	sb.Grow(len(s))
+	sb.Grow(len(s) + 8)
 	for i := 0; i < len(s); i++ {
 		b := s[i]
 		switch b {
