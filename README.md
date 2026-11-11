@@ -12,8 +12,9 @@ Manglekit solves this by placing every AI agent action behind a **fail-closed, a
 
 1. **Deterministic Verification**: Policies written in Datalog ([Google Mangle](https://github.com/google/mangle)) verify actions against relational facts, multi-tier priorities (T0–T3), and integer arithmetic (`:gt`, `:lt`, `:ge`, `:le`).
 2. **Zero-Trust Supervision**: A fail-closed gate interceptor evaluates incoming action requests before handler execution and verifies outputs afterward.
-3. **Audit Provenance**: Every denied or allowed action produces a mathematically grounded **derivation tree** proving *which rule fired and why*.
-4. **Polyglot Sidecar**: Run in-process in Go or as a lightweight HTTP/JSON sidecar (`mkit serve`) for Python, TypeScript, and multi-agent frameworks.
+3. **Pluggable Audit Sinks & Proof Bundles**: Cryptographically grounded provenance with SHA-256 policy fingerprints, deterministic `ProofBundle` JSON export, and real-time streaming via `sdk.WithAuditSink`.
+4. **Declarative Policy Testing**: Test policy logic, boundary conditions, and tier halts in YAML fixtures via `mkit test` without writing Go code.
+5. **Polyglot Sidecar & CLI**: Run in-process in Go or as a lightweight HTTP/JSON sidecar (`mkit serve`) with linting (`mkit check`) and query evaluation (`mkit eval`) for Python, TypeScript, and multi-agent frameworks.
 
 ---
 
@@ -176,6 +177,115 @@ Policies in MangleKit are organized by four trust tiers:
 | **T1** | **Governance** | Organizational rules, limits, and role-based constraints. Blocks immediately. |
 | **T2** | **Playbook** | Advisory operational guidance. Surfaces warnings, logged in audit trail, non-blocking. |
 | **T3** | **User Preference** | Advisory user habits. Logged in audit trail, non-blocking. |
+
+---
+
+## Pluggable Audit Sinks & Compliance Proof Bundles
+
+Enterprise deployments subject to regulatory frameworks (SOC 2, GDPR, HIPAA, EU AI Act) require verifiable, tamper-evident audit logs of all AI agent action gating decisions.
+
+### Attaching an Audit Sink
+
+Use `sdk.WithAuditSink` to receive structured `core.AuditRecord` events on both pre-check and post-check evaluations:
+
+```go
+sink := core.AuditSinkFunc(func(ctx context.Context, rec core.AuditRecord) error {
+    // rec contains: Phase ("pre-check"|"post-check"), ActionName, DecisionID,
+    // PolicyHash (SHA-256), Timestamp, and ProofBundle
+    rawJSON, err := rec.ProofBundle.ToJSON()
+    if err != nil {
+        return err
+    }
+    log.Printf("[%s] %s (policy %s) -> %s", rec.Phase, rec.ActionName, rec.PolicyHash[:8], rawJSON)
+    return nil
+})
+
+client, err := manglekit.NewClient(ctx,
+    manglekit.WithPolicyPath("policy.mg"),
+    manglekit.WithAuditSink(sink),
+)
+```
+
+### Deterministic ProofBundle Export
+
+Every evaluation produces a `core.ProofBundle` with deterministic JSON serialization:
+
+```json
+{
+  "policy_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "evaluated_at": "2026-11-11T05:30:00Z",
+  "decision": {
+    "action_name": "process_refund",
+    "phase": "pre-check",
+    "decision_id": "dec_01j7xyz...",
+    "allowed": false,
+    "halt_tier": "T1",
+    "halt_reason": "refund exceeds limit without manager approval"
+  },
+  "facts": [
+    "action_operation(\"Req\", \"process_refund\")",
+    "amount_cents(\"Req\", 150000)"
+  ],
+  "explain": {
+    "query": "halt(\"Req\", Reason, Tier)",
+    "tree": "halt(\"Req\",\"refund exceeds limit without manager approval\",\"T1\")...\n"
+  }
+}
+```
+
+Audit bundles can be reconstructed and verified offline with `core.ProofBundleFromJSON(data)`.
+
+---
+
+## Declarative Policy Testing (`mkit test`)
+
+Test your policies directly without writing Go boilerplate. Define test fixtures in YAML or JSON and run assertions against halt tiers, reason substrings, and permitted actions:
+
+```yaml
+# policy_tests.yaml
+policy: "policy.mg"
+tests:
+  - name: "unapproved refund over limit is halted"
+    facts:
+      - 'action_operation("Req", "process_refund")'
+      - 'amount_cents("Req", 150000)'
+      - 'destination_account("Req", "acc_verified_123")'
+    expect_halt: true
+    expect_tier: "T1"
+    expect_reason_contains: "refund exceeds limit"
+
+  - name: "approved refund is allowed"
+    facts:
+      - 'action_operation("Req", "process_refund")'
+      - 'amount_cents("Req", 150000)'
+      - 'destination_account("Req", "acc_verified_123")'
+      - 'manager_approval("Req", "mgr_bob")'
+    expect_halt: false
+```
+
+Run test suites in CI or pre-commit hooks:
+
+```bash
+# Run tests using policy specified in fixture
+mkit test policy_tests.yaml
+
+# Override policy path or view verbose proof trees
+mkit test -p /etc/manglekit/policy.mg -v policy_tests.yaml
+```
+
+---
+
+## Developer & CI/CD CLI (`mkit`)
+
+MangleKit provides a comprehensive CLI for testing, static verification, evaluation, and serving:
+
+| Command | Purpose |
+|---|---|
+| `mkit test <fixture.yaml>` | Run declarative unit test fixtures against Datalog policies |
+| `mkit check <policy.mg>` | Statically lint and verify policies (syntax, undefined predicates, stratified negation) |
+| `mkit eval -p <policy.mg> -q <query>` | Interactively evaluate Datalog queries with custom facts |
+| `mkit serve --policy <policy.mg>` | Launch HTTP sidecar with `/v1/assess` and `/v1/explain` REST endpoints |
+| `mkit skill new <name>` | Scaffold a new supervised skill package from templates |
 
 ---
 
