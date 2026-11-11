@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/google/uuid"
 )
 
 // reloader is the capability a policy engine must implement to support
@@ -39,6 +41,7 @@ func (c *Client) ReloadPolicySource(ctx context.Context, source string) error {
 	if err := rl.ReloadPolicySource(ctx, source); err != nil {
 		return err
 	}
+	c.setPolicyHashFromBytes([]byte(source))
 	return nil
 }
 
@@ -58,6 +61,7 @@ func (c *Client) ReloadPolicy(ctx context.Context, path string) error {
 		return err
 	}
 	c.blueprintPath = path
+	c.setPolicyHashFromBytes(content)
 	return nil
 }
 
@@ -80,4 +84,38 @@ func (c *Client) Explain(ctx context.Context, queryStr string, facts []string) (
 		return nil, fmt.Errorf("engine %T does not support explanations", c.engine)
 	}
 	return ex.Explain(ctx, facts, queryStr)
+}
+
+// ExplainAction evaluates halt queries for an action and returns a canonical ProofBundle.
+// If the action is halted, ProofBundle.Outcome is "HALT" with the explanation tree.
+// If the action is allowed, ProofBundle.Outcome is "ALLOW".
+func (c *Client) ExplainAction(ctx context.Context, actionName string, facts []string) (*core.ProofBundle, error) {
+	if c.engine == nil {
+		return nil, fmt.Errorf("engine not initialized")
+	}
+	actionFact := fmt.Sprintf("action_operation(%q, %q).", core.EntityInput, actionName)
+	evalFacts := make([]string, 0, len(facts)+1)
+	evalFacts = append(evalFacts, facts...)
+	evalFacts = append(evalFacts, actionFact)
+
+	queryStr := fmt.Sprintf(`halt(%q, Reason, Tier)`, core.EntityInput)
+	expl, err := c.Explain(ctx, queryStr, evalFacts)
+	if err != nil {
+		return nil, err
+	}
+	outcome := core.AuditOutcomeAllow
+	tier := ""
+	if expl != nil && expl.Outcome && len(expl.Derivations) > 0 {
+		outcome = core.AuditOutcomeHalt
+		tier = string(expl.Derivations[0].Tier)
+	}
+	return &core.ProofBundle{
+		DecisionID:  uuid.New().String(),
+		PolicyHash:  c.PolicyHash(),
+		Timestamp:   time.Now().UTC(),
+		ActionName:  actionName,
+		Outcome:     outcome,
+		Tier:        tier,
+		Explanation: expl,
+	}, nil
 }

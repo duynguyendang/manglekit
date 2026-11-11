@@ -2,6 +2,8 @@ package sdk
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"sync"
@@ -37,6 +39,12 @@ type Client struct {
 	registryLock sync.RWMutex
 	// blueprintPath stores the path loaded at startup (for debugging/reloading).
 	blueprintPath string
+	// policyHash stores the SHA-256 fingerprint of the active Datalog policy.
+	policyHash string
+	// policyHashMu guards concurrent access to policyHash.
+	policyHashMu sync.RWMutex
+	// auditSink is an optional sink receiving compliance audit records on supervised executions.
+	auditSink core.AuditSink
 	// shutdownFunc is a cleanup function to stop exporters/tracers.
 	shutdownFunc func(context.Context) error
 	// llm is the plugged-in text generation backend (e.g., Google, OpenAI).
@@ -114,6 +122,7 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 		if err := c.engine.LoadPolicy(ctx, string(content)); err != nil {
 			return nil, fmt.Errorf("failed to load policy %q: %w", c.blueprintPath, err)
 		}
+		c.setPolicyHashFromBytes(content)
 	}
 
 	return c, nil
@@ -121,7 +130,37 @@ func NewClient(ctx context.Context, opts ...ClientOption) (*Client, error) {
 
 // Supervise wraps a raw core.Action in a SupervisedAction using v2 patterns.
 func (c *Client) Supervise(action core.Action) core.Action {
-	return supervisor.NewSupervisedActionFromSDK(action, c.engine, c.logger)
+	opts := []supervisor.SupervisorOption{
+		supervisor.WithActionPolicyHashFunc(c.PolicyHash),
+	}
+	if c.auditSink != nil {
+		opts = append(opts, supervisor.WithActionAuditSink(c.auditSink))
+	}
+	return supervisor.NewSupervisedActionFromSDK(action, c.engine, c.logger, opts...)
+}
+
+// AuditSink returns the configured compliance audit sink, or nil if unset.
+func (c *Client) AuditSink() core.AuditSink {
+	return c.auditSink
+}
+
+// SetAuditSink updates the client's compliance audit sink at runtime.
+func (c *Client) SetAuditSink(sink core.AuditSink) {
+	c.auditSink = sink
+}
+
+// PolicyHash returns the SHA-256 fingerprint of the currently loaded policy.
+func (c *Client) PolicyHash() string {
+	c.policyHashMu.RLock()
+	defer c.policyHashMu.RUnlock()
+	return c.policyHash
+}
+
+func (c *Client) setPolicyHashFromBytes(b []byte) {
+	c.policyHashMu.Lock()
+	defer c.policyHashMu.Unlock()
+	h := sha256.Sum256(b)
+	c.policyHash = hex.EncodeToString(h[:])
 }
 
 // Engine returns the underlying policy engine (Evaluator).
@@ -198,7 +237,11 @@ func (c *Client) LoadPolicy(ctx context.Context, policy string) error {
 	if c.engine == nil {
 		return fmt.Errorf("engine not initialized")
 	}
-	return c.engine.LoadPolicy(ctx, policy)
+	if err := c.engine.LoadPolicy(ctx, policy); err != nil {
+		return err
+	}
+	c.setPolicyHashFromBytes([]byte(policy))
+	return nil
 }
 
 // LoadFromSource loads a Datalog program from a raw string, replacing any
@@ -208,7 +251,11 @@ func (c *Client) LoadFromSource(ctx context.Context, source string) error {
 	if c.engine == nil {
 		return fmt.Errorf("engine not initialized")
 	}
-	return c.engine.LoadFromSource(ctx, source)
+	if err := c.engine.LoadFromSource(ctx, source); err != nil {
+		return err
+	}
+	c.setPolicyHashFromBytes([]byte(source))
+	return nil
 }
 
 // Tracer returns the OpenTelemetry Tracer used by the client.

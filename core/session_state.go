@@ -30,16 +30,27 @@ type SessionState struct {
 	AuditRecords []AuditRecord `json:"audit_records,omitempty"`
 }
 
-// AuditRecord is a trimmed, serializable snapshot of AuditTrail for persistence.
-// It captures the essential rule attribution data without internal pointers.
+// AuditRecord is a serializable snapshot of AuditTrail and gate decisions for compliance and persistence.
+// It captures the essential rule attribution and execution data without internal pointers.
 type AuditRecord struct {
-	Step         int            `json:"step"`
-	Rules        []RuleSnapshot `json:"rules"`
-	Outcome      string         `json:"outcome"` // "PROCEED", "HALT", "RETRY", "ROUTE"
+	// Compliance & Supervision fields
+	Phase       string       `json:"phase,omitempty"`        // "pre-check" or "post-check"
+	ActionName  string       `json:"action_name,omitempty"`
+	DecisionID  string       `json:"decision_id,omitempty"`
+	PolicyHash  string       `json:"policy_hash,omitempty"`
+	Outcome     string       `json:"outcome"`                // "ALLOW", "HALT", "PROCEED", "RETRY", "ROUTE"
+	Tier        string       `json:"tier,omitempty"`
+	RuleID      string       `json:"rule_id,omitempty"`
+	Reasons     []string     `json:"reasons,omitempty"`
+	ProofBundle *ProofBundle `json:"proof_bundle,omitempty"`
+
+	// Session / Step fields
+	Step         int            `json:"step,omitempty"`
+	Rules        []RuleSnapshot `json:"rules,omitempty"`
 	Timestamp    string         `json:"timestamp"`
-	LatencyMs    int64          `json:"latency_ms"`
-	FactCount    int            `json:"fact_count"`
-	MatchedCount int            `json:"matched_count"`
+	LatencyMs    int64          `json:"latency_ms,omitempty"`
+	FactCount    int            `json:"fact_count,omitempty"`
+	MatchedCount int            `json:"matched_count,omitempty"`
 }
 
 // RuleSnapshot is a serializable snapshot of a single matched rule.
@@ -176,12 +187,23 @@ func (s *SessionState) Clone() *SessionState {
 		clone.AuditRecords = make([]AuditRecord, len(s.AuditRecords))
 		for i, rec := range s.AuditRecords {
 			cloneRec := AuditRecord{
-				Step:         rec.Step,
+				Phase:        rec.Phase,
+				ActionName:   rec.ActionName,
+				DecisionID:   rec.DecisionID,
+				PolicyHash:   rec.PolicyHash,
 				Outcome:      rec.Outcome,
+				Tier:         rec.Tier,
+				RuleID:       rec.RuleID,
+				ProofBundle:  rec.ProofBundle,
+				Step:         rec.Step,
 				Timestamp:    rec.Timestamp,
 				LatencyMs:    rec.LatencyMs,
 				FactCount:    rec.FactCount,
 				MatchedCount: rec.MatchedCount,
+			}
+			if len(rec.Reasons) > 0 {
+				cloneRec.Reasons = make([]string, len(rec.Reasons))
+				copy(cloneRec.Reasons, rec.Reasons)
 			}
 			if len(rec.Rules) > 0 {
 				cloneRec.Rules = make([]RuleSnapshot, len(rec.Rules))

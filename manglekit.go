@@ -18,6 +18,9 @@ import (
 type Client = sdk.Client
 type ClientOption = sdk.ClientOption
 type ExecuteOption = sdk.ExecuteOption
+type AuditSink = core.AuditSink
+type AuditRecord = core.AuditRecord
+type ProofBundle = core.ProofBundle
 
 // --- Facade Functions ---
 
@@ -66,6 +69,9 @@ func WithEngine(e core.Evaluator) ClientOption { return sdk.WithEngine(e) }
 
 // WithSteeringEnabled enables policy-driven routing (route/retry).
 func WithSteeringEnabled() ClientOption { return sdk.WithSteeringEnabled() }
+
+// WithAuditSink registers a pluggable compliance audit sink.
+func WithAuditSink(sink core.AuditSink) ClientOption { return sdk.WithAuditSink(sink) }
 
 // WithLogger sets a custom logger for the client.
 func WithLogger(l core.Logger) ClientOption { return sdk.WithLogger(l) }

@@ -60,6 +60,16 @@ func WithSteeringEnabled() ClientOption {
 	}
 }
 
+// WithAuditSink registers a pluggable compliance audit sink that receives
+// structured audit records (core.AuditRecord) on supervised action pre-checks
+// and post-checks without mutating the gate outcome.
+func WithAuditSink(sink core.AuditSink) ClientOption {
+	return func(c *Client) error {
+		c.auditSink = sink
+		return nil
+	}
+}
+
 // WithLogger sets a custom logger for the client.
 //
 // Parameters:

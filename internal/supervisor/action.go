@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/internal/core/domain"
 	"github.com/duynguyendang/manglekit/internal/core/ports"
+	"github.com/google/uuid"
 )
 
 // Action defines the inner, unprotected execution capability.
@@ -18,9 +20,11 @@ type Action interface {
 // SupervisedAction wraps an inner capability with the Zero-Trust Gatekeeper.
 // LLD 6.1: Intercepts execution, shadows audit, and reflects on output.
 type SupervisedAction struct {
-	inner    Action
-	verifier ports.ReasoningPort
-	logger   core.Logger
+	inner          Action
+	verifier       ports.ReasoningPort
+	logger         core.Logger
+	auditSink      core.AuditSink
+	policyHashFunc func() string
 }
 
 // New wraps an inner capability with the Zero-Trust Gatekeeper.
@@ -36,6 +40,16 @@ func New(inner Action, verifier ports.ReasoningPort) *SupervisedAction {
 
 // executeInternal wraps the payload in an Envelope and performs the shadow audit.
 func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.IntentStr, input any) (domain.Envelope, error) {
+	actionName := "unknown"
+	if pc := preCheckFromContext(ctx); pc != nil && pc.actionName != "" {
+		actionName = pc.actionName
+	}
+	decisionID := uuid.New().String()
+	policyHash := ""
+	if g.policyHashFunc != nil {
+		policyHash = g.policyHashFunc()
+	}
+
 	// 1. Flatten payload to facts using the engine's entity ID
 	facts := g.flattenToQuads("Req", input)
 
@@ -71,6 +85,9 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 	preFlightTrail := res.Trail
 
 	if !res.Pass && (res.ViolationTier == domain.Tier0Kernel || res.ViolationTier == domain.Tier1Admin) {
+		tierName := coreTierName(res.ViolationTier)
+		g.emitAuditRecord(ctx, core.PhasePreCheck, actionName, core.AuditOutcomeHalt, decisionID, policyHash, tierName, res.ConflictPath, []string{res.ConflictPath}, res.Trail)
+
 		envelope.Violations = append(envelope.Violations, core.ViolationRule{
 			RuleID:      res.ConflictPath,
 			Description: "Supervisor Pre-Flight check failed.",
@@ -78,6 +95,9 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 		})
 		return envelope, policyViolationFromResult(ctx, res, "Supervisor Pre-Flight check failed.")
 	}
+
+	// Pre-check passed
+	g.emitAuditRecord(ctx, core.PhasePreCheck, actionName, core.AuditOutcomeAllow, decisionID, policyHash, "", "", nil, res.Trail)
 
 	// 3. Act (Execute Inner)
 	result, err := g.inner.Execute(ctx, envelope)
@@ -138,6 +158,9 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 			// block. Unknown/absent tiers block (fail-closed default).
 			// Verifier errors above always block (ADR-001).
 			if res.ViolationTier == domain.Tier0Kernel || res.ViolationTier == domain.Tier1Admin {
+				tierName := coreTierName(res.ViolationTier)
+				g.emitAuditRecord(ctx, core.PhasePostCheck, actionName, core.AuditOutcomeHalt, decisionID, policyHash, tierName, res.ConflictPath, []string{res.ConflictPath}, res.Trail)
+
 				envelope.Violations = append(envelope.Violations, core.ViolationRule{
 					RuleID:      res.ConflictPath,
 					Description: "Supervisor post-check (Reflect) failed.",
@@ -150,11 +173,72 @@ func (g *SupervisedAction) ExecuteInternal(ctx context.Context, intent domain.In
 					"tier", string(res.ViolationTier), "rule", res.ConflictPath)
 			}
 		}
+		var postTrail *core.AuditTrail
+		if res != nil {
+			postTrail = res.Trail
+		}
+		g.emitAuditRecord(ctx, core.PhasePostCheck, actionName, core.AuditOutcomeAllow, decisionID, policyHash, "", "", nil, postTrail)
 	}
 
 	result.ContextFacts = append(result.ContextFacts, outFacts...)
 
 	return result, nil
+}
+
+func (g *SupervisedAction) emitAuditRecord(
+	ctx context.Context,
+	phase string,
+	actionName string,
+	outcome string,
+	decisionID string,
+	policyHash string,
+	tier string,
+	ruleID string,
+	reasons []string,
+	trail *core.AuditTrail,
+) {
+	if g.auditSink == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil && g.logger != nil {
+			g.logger.Warn("audit sink panicked", "panic", r)
+		}
+	}()
+
+	var expl *core.Explanation
+	if trail != nil {
+		expl = trail.ToExplanation()
+	}
+	var proofBundle *core.ProofBundle
+	if expl != nil || outcome == core.AuditOutcomeHalt {
+		proofBundle = &core.ProofBundle{
+			DecisionID:  decisionID,
+			PolicyHash:  policyHash,
+			Timestamp:   time.Now().UTC(),
+			ActionName:  actionName,
+			Outcome:     outcome,
+			Tier:        tier,
+			Explanation: expl,
+		}
+	}
+
+	rec := core.AuditRecord{
+		Phase:       phase,
+		ActionName:  actionName,
+		Outcome:     outcome,
+		DecisionID:  decisionID,
+		PolicyHash:  policyHash,
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Tier:        tier,
+		RuleID:      ruleID,
+		Reasons:     reasons,
+		ProofBundle: proofBundle,
+	}
+
+	if err := g.auditSink.Record(ctx, rec); err != nil && g.logger != nil {
+		g.logger.Warn("audit sink record failed", "error", err)
+	}
 }
 
 // flattenToQuads implements "Zero-Config Reflection" mapping arbitrary Go structs to Datalog Quads via the `mangle` tag.

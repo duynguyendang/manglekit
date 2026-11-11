@@ -265,10 +265,15 @@ func (a *sdkEvaluatorAdapter) VerifyAtoms(ctx context.Context, atoms []domain.At
 				if alignErr.RuleID != "" {
 					conflictPath = alignErr.RuleID
 				}
+				trail := core.NewAuditTrail("engine", fmt.Sprintf("halt(%q, ...)", entityID))
+				if alignErr.MatchedRule != "" || alignErr.RuleID != "" {
+					trail.AddRule(alignErr.RuleID, alignErr.MatchedRule, "", "halt", alignErr.Tier, nil)
+				}
 				return &domain.AuditResult{
 					Pass:          false,
 					ViolationTier: mapCoreTier(alignErr.Tier),
 					ConflictPath:  conflictPath,
+					Trail:         trail,
 				}, nil
 			}
 			// Engine failure: surface as a Go error so the gate wraps it in
@@ -349,10 +354,12 @@ func (a *sdkActionAdapter) Execute(ctx context.Context, input domain.Envelope) (
 }
 
 type supervisedActionV2 struct {
-	inner     *SupervisedAction
-	wrapped   core.Action
-	extractor Extractor // optional: converts free-text payloads to structured data
-	logger    core.Logger
+	inner          *SupervisedAction
+	wrapped        core.Action
+	extractor      Extractor // optional: converts free-text payloads to structured data
+	logger         core.Logger
+	auditSink      core.AuditSink
+	policyHashFunc func() string
 }
 
 // Extractor defines the interface for converting free-text payloads to structured data.
@@ -403,7 +410,30 @@ func (a *supervisedActionV2) Metadata() core.ActionMetadata {
 	return a.wrapped.Metadata()
 }
 
-func NewSupervisedActionFromSDK(action core.Action, evaluator core.Evaluator, logger core.Logger) core.Action {
+// SupervisorOption configures supervised action wrapping.
+type SupervisorOption func(*supervisedActionV2)
+
+// WithActionAuditSink configures the compliance audit sink for a supervised action.
+func WithActionAuditSink(sink core.AuditSink) SupervisorOption {
+	return func(s *supervisedActionV2) {
+		s.auditSink = sink
+		if s.inner != nil {
+			s.inner.auditSink = sink
+		}
+	}
+}
+
+// WithActionPolicyHashFunc configures a policy fingerprint provider for a supervised action.
+func WithActionPolicyHashFunc(fn func() string) SupervisorOption {
+	return func(s *supervisedActionV2) {
+		s.policyHashFunc = fn
+		if s.inner != nil {
+			s.inner.policyHashFunc = fn
+		}
+	}
+}
+
+func NewSupervisedActionFromSDK(action core.Action, evaluator core.Evaluator, logger core.Logger, opts ...SupervisorOption) core.Action {
 	reasoningAdapter := &sdkEvaluatorAdapter{inner: evaluator}
 
 	innerAdapter := &sdkActionAdapter{
@@ -417,11 +447,17 @@ func NewSupervisedActionFromSDK(action core.Action, evaluator core.Evaluator, lo
 		logger:   logger,
 	}
 
-	return &supervisedActionV2{
+	v2 := &supervisedActionV2{
 		inner:   supervised,
 		wrapped: action,
 		logger:  logger,
 	}
+
+	for _, opt := range opts {
+		opt(v2)
+	}
+
+	return v2
 }
 
 // WithExtractor sets the optional text-to-struct extractor on a supervised action.
@@ -437,6 +473,17 @@ func NewSupervisedActionFromSDK(action core.Action, evaluator core.Evaluator, lo
 func WithExtractor(action core.Action, ext Extractor) core.Action {
 	if sv, ok := action.(*supervisedActionV2); ok {
 		sv.extractor = ext
+	}
+	return action
+}
+
+// WithAuditSink sets the audit sink on a supervised action.
+func WithAuditSink(action core.Action, sink core.AuditSink) core.Action {
+	if sv, ok := action.(*supervisedActionV2); ok {
+		sv.auditSink = sink
+		if sv.inner != nil {
+			sv.inner.auditSink = sink
+		}
 	}
 	return action
 }

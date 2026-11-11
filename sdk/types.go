@@ -17,3 +17,12 @@ type Envelope = core.Envelope
 func NewEnvelope(payload any) Envelope {
 	return core.NewEnvelope(payload)
 }
+
+// AuditSink receives compliance audit records on supervised executions.
+type AuditSink = core.AuditSink
+
+// AuditRecord represents a structured audit record emitted on gate checks.
+type AuditRecord = core.AuditRecord
+
+// ProofBundle is a JSON-serializable proof artifact with identity and derivation tree.
+type ProofBundle = core.ProofBundle
